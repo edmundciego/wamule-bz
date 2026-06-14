@@ -20,9 +20,17 @@ export function Field({
 }
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  const isFileInput = props.type === "file";
+
   return (
     <input
-      className={cn("focus-ring h-10 rounded-md border bg-white px-3 text-sm shadow-sm shadow-primary/5 disabled:bg-muted", className)}
+      className={cn(
+        "focus-ring rounded-md border bg-white text-sm shadow-sm shadow-primary/5 disabled:bg-muted",
+        isFileInput
+          ? "min-h-10 cursor-pointer p-1.5 text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-copper file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-copper/90"
+          : "h-10 px-3",
+        className,
+      )}
       {...props}
     />
   );

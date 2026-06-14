@@ -46,11 +46,16 @@ exception when duplicate_object then null; end $$;
 -- -----------------------------------------------------------------------------
 create table if not exists public.admin_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
   full_name text,
   role public.app_role not null default 'Staff',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists uniq_admin_profiles_email
+  on public.admin_profiles(lower(email))
+  where email is not null;
 
 -- -----------------------------------------------------------------------------
 -- Core Entity 1: Parcels
@@ -170,6 +175,10 @@ create table if not exists public.transactions (
   bank_reference text,
   authorized_by uuid not null default auth.uid() references auth.users(id) on delete restrict,
   receipt_file_path text,
+  manual_receipt_number text,
+  receipt_date date,
+  receipt_issued_by text,
+  receipt_notes text,
   notes text,
   created_at timestamptz not null default now(),
 
@@ -190,9 +199,108 @@ create index if not exists idx_transactions_customer_id on public.transactions(c
 create index if not exists idx_transactions_contract_id on public.transactions(contract_id);
 create index if not exists idx_transactions_created_at on public.transactions(created_at desc);
 create index if not exists idx_transactions_transaction_type on public.transactions(transaction_type);
+create index if not exists idx_transactions_manual_receipt_number on public.transactions(manual_receipt_number);
 create unique index if not exists uniq_transactions_bank_reference
   on public.transactions(bank_reference)
   where bank_reference is not null;
+
+-- -----------------------------------------------------------------------------
+-- Support table: Payment documents
+-- Stores private supporting files for bank proofs, receipt photos, and notes.
+-- -----------------------------------------------------------------------------
+create table if not exists public.payment_documents (
+  id bigint generated always as identity primary key,
+  transaction_id bigint references public.transactions(id) on delete set null,
+  customer_id bigint not null references public.customers(id) on delete restrict,
+  document_type text not null,
+  file_path text not null,
+  original_file_name text not null,
+  uploaded_by uuid not null default auth.uid() references auth.users(id) on delete restrict,
+  created_at timestamptz not null default now(),
+
+  constraint payment_documents_document_type_valid check (
+    document_type in ('Bank Transfer Proof', 'Manual Receipt Photo', 'Signed Payment Note', 'Other')
+  )
+);
+
+create index if not exists idx_payment_documents_transaction_id on public.payment_documents(transaction_id);
+create index if not exists idx_payment_documents_customer_id on public.payment_documents(customer_id);
+
+-- -----------------------------------------------------------------------------
+-- Support table: Payment requests
+-- Collections-facing requests for account follow-up. No emails are sent here.
+-- -----------------------------------------------------------------------------
+create table if not exists public.payment_requests (
+  id bigint generated always as identity primary key,
+  customer_id bigint not null references public.customers(id) on delete restrict,
+  contract_id bigint references public.contracts(id) on delete set null,
+  amount_due numeric(12,2) not null,
+  due_date date not null,
+  reason text not null,
+  notes text,
+  status text not null default 'Draft',
+  created_by uuid not null default auth.uid() references auth.users(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint payment_requests_amount_due_positive check (amount_due > 0),
+  constraint payment_requests_status_valid check (status in ('Draft', 'Sent', 'Paid', 'Cancelled'))
+);
+
+create index if not exists idx_payment_requests_customer_id on public.payment_requests(customer_id);
+create index if not exists idx_payment_requests_contract_id on public.payment_requests(contract_id);
+create index if not exists idx_payment_requests_due_date on public.payment_requests(due_date);
+create index if not exists idx_payment_requests_status on public.payment_requests(status);
+
+-- -----------------------------------------------------------------------------
+-- Support tables: Business configuration and installment plans
+-- Sectioned settings keep Wamuale Phase 1 configurable without full multi-project support.
+-- -----------------------------------------------------------------------------
+create table if not exists public.business_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.installment_plans (
+  id bigint generated always as identity primary key,
+  name text not null unique,
+  description text,
+  reservation_fee numeric(12,2) not null default 0,
+  final_purchase_price numeric(12,2) not null default 0,
+  term_months integer not null default 1,
+  monthly_payment numeric(12,2) not null default 0,
+  is_active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint installment_plans_reservation_fee_nonnegative check (reservation_fee >= 0),
+  constraint installment_plans_final_price_nonnegative check (final_purchase_price >= 0),
+  constraint installment_plans_term_positive check (term_months > 0),
+  constraint installment_plans_monthly_nonnegative check (monthly_payment >= 0)
+);
+
+create index if not exists idx_installment_plans_active_sort on public.installment_plans(is_active, sort_order);
+
+insert into public.business_settings (key, value)
+values
+  ('company_profile', '{"company_name":"Wamuale Development","logo_url":"/favicon/android-chrome-192x192.png","contact_email":"","phone_number":"","website":"","location_address":"Mile 3, Hummingbird Highway, Dangriga Town, Belize","short_description":"Private subdivision land development in Dangriga Town, Belize."}'::jsonb),
+  ('public_application', '{"applications_open":true,"public_notice_text":"Submission of this application is solely a request to be considered for the purchase of a lot within Wamuale Development.","application_acknowledgment_text":"By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot.","show_lot_prices_publicly":true,"show_available_lot_count_publicly":true,"default_confirmation_message":"Application submitted. A Wamuale Development representative will contact you after review."}'::jsonb),
+  ('payment_settings', '{"accepted_payment_methods":"Cash, Online Transfer","bank_name":"","account_name":"","account_number":"","payment_instructions":"","manual_receipt_book_required":true,"receipt_number_instructions":"Record the physical receipt book number after payment is received."}'::jsonb),
+  ('lot_phase', '{"phase_name":"Phase 1","default_lot_size":"65 x 101 or 75 x 101 ft","default_lot_price":25000,"public_availability_display":true}'::jsonb)
+on conflict (key) do nothing;
+
+insert into public.installment_plans (name, description, reservation_fee, final_purchase_price, term_months, monthly_payment, is_active, sort_order)
+values
+  ('Installment Plan - 36 months', '$2,500 reservation fee, $625.00 monthly', 2500, 25000, 36, 625, true, 10),
+  ('Installment Plan - 48 months', '$2,500 reservation fee, $470.00 monthly', 2500, 25000, 48, 470, true, 20),
+  ('Installment Plan - 60 months', '$2,500 reservation fee, $375.00 monthly', 2500, 25000, 60, 375, true, 30),
+  ('Paid in Full', '$2,500 reservation fee, remaining balance due at purchase agreement', 2500, 25000, 1, 0, true, 40),
+  ('Other Agreement / Custom Terms', 'Use custom deposit, price, and term', 0, 0, 1, 0, true, 50)
+on conflict (name) do nothing;
 
 -- -----------------------------------------------------------------------------
 -- Support table: Community fee settings
@@ -275,6 +383,21 @@ for each row execute function public.set_updated_at();
 drop trigger if exists trg_receipt_jobs_updated_at on public.receipt_jobs;
 create trigger trg_receipt_jobs_updated_at
 before update on public.receipt_jobs
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_payment_requests_updated_at on public.payment_requests;
+create trigger trg_payment_requests_updated_at
+before update on public.payment_requests
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_business_settings_updated_at on public.business_settings;
+create trigger trg_business_settings_updated_at
+before update on public.business_settings
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_installment_plans_updated_at on public.installment_plans;
+create trigger trg_installment_plans_updated_at
+before update on public.installment_plans
 for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_community_fee_settings_updated_at on public.community_fee_settings;
@@ -715,7 +838,9 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values
   ('contracts', 'contracts', false, 10485760, array['application/pdf']),
   ('receipts', 'receipts', false, 10485760, array['application/pdf']),
-  ('application-documents', 'application-documents', false, 10485760, array['application/pdf','image/jpeg','image/png'])
+  ('application-documents', 'application-documents', false, 10485760, array['application/pdf','image/jpeg','image/png']),
+  ('payment-documents', 'payment-documents', false, 10485760, array['application/pdf','image/jpeg','image/png','image/webp']),
+  ('business-assets', 'business-assets', true, 5242880, array['image/png','image/jpeg','image/webp','image/svg+xml'])
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -727,6 +852,10 @@ alter table public.applications enable row level security;
 alter table public.customers enable row level security;
 alter table public.contracts enable row level security;
 alter table public.transactions enable row level security;
+alter table public.payment_documents enable row level security;
+alter table public.payment_requests enable row level security;
+alter table public.business_settings enable row level security;
+alter table public.installment_plans enable row level security;
 alter table public.community_fee_settings enable row level security;
 alter table public.receipt_jobs enable row level security;
 
@@ -855,6 +984,119 @@ for delete
 to authenticated
 using (public.is_admin_user());
 
+-- Payment documents
+drop policy if exists "Payment documents readable by internal users" on public.payment_documents;
+create policy "Payment documents readable by internal users"
+on public.payment_documents
+for select
+to authenticated
+using (public.is_internal_user());
+
+drop policy if exists "Payment documents writable by admin staff" on public.payment_documents;
+create policy "Payment documents writable by admin staff"
+on public.payment_documents
+for insert
+to authenticated
+with check (public.can_write_admin_data());
+
+drop policy if exists "Payment documents updateable by admins" on public.payment_documents;
+create policy "Payment documents updateable by admins"
+on public.payment_documents
+for update
+to authenticated
+using (public.is_admin_user())
+with check (public.is_admin_user());
+
+drop policy if exists "Payment documents deletable by admins" on public.payment_documents;
+create policy "Payment documents deletable by admins"
+on public.payment_documents
+for delete
+to authenticated
+using (public.is_admin_user());
+
+-- Payment requests
+drop policy if exists "Payment requests readable by internal users" on public.payment_requests;
+create policy "Payment requests readable by internal users"
+on public.payment_requests
+for select
+to authenticated
+using (public.is_internal_user());
+
+drop policy if exists "Payment requests writable by admin staff" on public.payment_requests;
+create policy "Payment requests writable by admin staff"
+on public.payment_requests
+for insert
+to authenticated
+with check (public.can_write_admin_data());
+
+drop policy if exists "Payment requests updateable by admin staff" on public.payment_requests;
+create policy "Payment requests updateable by admin staff"
+on public.payment_requests
+for update
+to authenticated
+using (public.can_write_admin_data())
+with check (public.can_write_admin_data());
+
+drop policy if exists "Payment requests deletable by admins" on public.payment_requests;
+create policy "Payment requests deletable by admins"
+on public.payment_requests
+for delete
+to authenticated
+using (public.is_admin_user());
+
+-- Business settings
+drop policy if exists "Business settings readable by internal users" on public.business_settings;
+create policy "Business settings readable by internal users"
+on public.business_settings
+for select
+to authenticated
+using (public.is_internal_user());
+
+drop policy if exists "Public business settings readable by anon" on public.business_settings;
+create policy "Public business settings readable by anon"
+on public.business_settings
+for select
+to anon
+using (key in ('company_profile', 'public_application', 'lot_phase'));
+
+drop policy if exists "Business settings insertable by admins" on public.business_settings;
+create policy "Business settings insertable by admins"
+on public.business_settings
+for insert
+to authenticated
+with check (public.is_admin_user());
+
+drop policy if exists "Business settings updateable by admins" on public.business_settings;
+create policy "Business settings updateable by admins"
+on public.business_settings
+for update
+to authenticated
+using (public.is_admin_user())
+with check (public.is_admin_user());
+
+-- Installment plans
+drop policy if exists "Installment plans readable by internal users" on public.installment_plans;
+create policy "Installment plans readable by internal users"
+on public.installment_plans
+for select
+to authenticated
+using (public.is_internal_user());
+
+drop policy if exists "Active installment plans readable by anon" on public.installment_plans;
+create policy "Active installment plans readable by anon"
+on public.installment_plans
+for select
+to anon
+using (is_active = true);
+
+drop policy if exists "Installment plans writable by admins" on public.installment_plans;
+create policy "Installment plans writable by admins"
+on public.installment_plans
+for all
+to authenticated
+using (public.is_admin_user())
+with check (public.is_admin_user());
+
 -- Community fee settings
 drop policy if exists "Community fee settings readable by internal users" on public.community_fee_settings;
 create policy "Community fee settings readable by internal users"
@@ -894,7 +1136,7 @@ on storage.objects
 for select
 to authenticated
 using (
-  bucket_id in ('contracts', 'receipts', 'application-documents')
+  bucket_id in ('contracts', 'receipts', 'application-documents', 'payment-documents')
   and public.is_internal_user()
 );
 
@@ -904,7 +1146,7 @@ on storage.objects
 for insert
 to authenticated
 with check (
-  bucket_id in ('contracts', 'receipts', 'application-documents')
+  bucket_id in ('contracts', 'receipts', 'application-documents', 'payment-documents')
   and public.can_write_admin_data()
 );
 
@@ -914,11 +1156,11 @@ on storage.objects
 for update
 to authenticated
 using (
-  bucket_id in ('contracts', 'receipts', 'application-documents')
+  bucket_id in ('contracts', 'receipts', 'application-documents', 'payment-documents')
   and public.is_admin_user()
 )
 with check (
-  bucket_id in ('contracts', 'receipts', 'application-documents')
+  bucket_id in ('contracts', 'receipts', 'application-documents', 'payment-documents')
   and public.is_admin_user()
 );
 
@@ -928,9 +1170,24 @@ on storage.objects
 for delete
 to authenticated
 using (
-  bucket_id in ('contracts', 'receipts', 'application-documents')
+  bucket_id in ('contracts', 'receipts', 'application-documents', 'payment-documents')
   and public.is_admin_user()
 );
+
+drop policy if exists "Business assets readable publicly" on storage.objects;
+create policy "Business assets readable publicly"
+on storage.objects
+for select
+to public
+using (bucket_id = 'business-assets');
+
+drop policy if exists "Business assets managed by admins" on storage.objects;
+create policy "Business assets managed by admins"
+on storage.objects
+for all
+to authenticated
+using (bucket_id = 'business-assets' and public.is_admin_user())
+with check (bucket_id = 'business-assets' and public.is_admin_user());
 
 -- -----------------------------------------------------------------------------
 -- Grants for Supabase API roles
@@ -952,6 +1209,12 @@ grant select, insert, update, delete on public.applications to authenticated;
 grant select, insert, update, delete on public.customers to authenticated;
 grant select, insert, update, delete on public.contracts to authenticated;
 grant select, insert, update, delete on public.transactions to authenticated;
+grant select, insert, update, delete on public.payment_documents to authenticated;
+grant select, insert, update, delete on public.payment_requests to authenticated;
+grant select, insert, update on public.business_settings to authenticated;
+grant select on public.business_settings to anon;
+grant select, insert, update, delete on public.installment_plans to authenticated;
+grant select on public.installment_plans to anon;
 grant select, insert, update, delete on public.community_fee_settings to authenticated;
 grant select, insert, update, delete on public.receipt_jobs to authenticated;
 

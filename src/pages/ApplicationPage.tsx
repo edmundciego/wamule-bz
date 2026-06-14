@@ -13,6 +13,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { applicationSchema } from "../lib/schemas";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
+import type { BusinessSetting, InstallmentPlan } from "../types/database";
 
 type ApplicationValues = z.infer<typeof applicationSchema>;
 
@@ -25,10 +26,50 @@ const intendedUseOptions = [
   "Other",
 ] as const;
 
+const defaultCompany = {
+  company_name: "Wamuale Development",
+  logo_url: "/favicon/android-chrome-192x192.png",
+  contact_email: "",
+  phone_number: "",
+  website: "",
+  location_address: "Mile 3 on the Hummingbird Highway in Dangriga Town, Belize",
+  short_description: "Private subdivision land development in Dangriga Town, Belize.",
+};
+
+const defaultApplicationSettings = {
+  applications_open: true,
+  public_notice_text:
+    "Submission of this application is solely a request to be considered for the purchase of a lot within Wamuale Development. Submission or acceptance of this application does not create any legal right to purchase land, does not reserve a lot, and does not guarantee that any lot will be sold or transferred to the applicant.",
+  application_acknowledgment_text:
+    "By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by Wamuale Development; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.",
+  show_lot_prices_publicly: true,
+  show_available_lot_count_publicly: true,
+  default_confirmation_message: "Application submitted. A Wamuale Development representative will contact you after review.",
+};
+
+const defaultLotPhase = {
+  phase_name: "Phase 1",
+  default_lot_size: "65 x 101 or 75 x 101 ft",
+  default_lot_price: 25000,
+  public_availability_display: true,
+};
+
 export function ApplicationPage() {
   const location = useLocation();
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: publicSettings } = useQuery({
+    queryKey: ["public-business-settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("business_settings")
+        .select("*")
+        .in("key", ["company_profile", "public_application", "lot_phase"]);
+      if (error) throw error;
+      return data as BusinessSetting[];
+    },
+    enabled: hasSupabaseConfig,
+  });
   const { data: parcels, isLoading } = useQuery({
     queryKey: ["public-parcel-options"],
     queryFn: async () => {
@@ -38,6 +79,19 @@ export function ApplicationPage() {
         .order("lot_number");
       if (error) throw error;
       return data;
+    },
+    enabled: hasSupabaseConfig,
+  });
+  const { data: installmentPlans } = useQuery({
+    queryKey: ["public-installment-plans"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("installment_plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return data as InstallmentPlan[];
     },
     enabled: hasSupabaseConfig,
   });
@@ -71,6 +125,10 @@ export function ApplicationPage() {
 
   async function onSubmit(values: ApplicationValues) {
     setSubmitError(null);
+    if (!applicationSettings.applications_open) {
+      setSubmitError("Applications are currently closed.");
+      return;
+    }
     const { first_name, last_name } = splitApplicantName(values.applicant_full_name);
     const { error } = await supabase.from("applications").insert({
       first_name,
@@ -107,7 +165,14 @@ export function ApplicationPage() {
     });
   }
 
+  const company = { ...defaultCompany, ...settingValue<typeof defaultCompany>(publicSettings, "company_profile") };
+  const applicationSettings = {
+    ...defaultApplicationSettings,
+    ...settingValue<typeof defaultApplicationSettings>(publicSettings, "public_application"),
+  };
+  const lotPhase = { ...defaultLotPhase, ...settingValue<typeof defaultLotPhase>(publicSettings, "lot_phase") };
   const availableLots = parcels?.length ?? 0;
+  const visiblePlans = installmentPlans?.length ? installmentPlans : fallbackApplicationPlans();
 
   return (
     <main className="min-h-screen bg-background">
@@ -115,12 +180,12 @@ export function ApplicationPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <a href="/" className="flex items-center gap-3">
             <img
-              src="/favicon/android-chrome-192x192.png"
-              alt="Wamuale Development"
+              src={company.logo_url || "/favicon/android-chrome-192x192.png"}
+              alt={company.company_name}
               className="h-12 w-12 rounded-md border border-copper/30 bg-ivory object-cover shadow-sm"
             />
             <div>
-              <p className="font-display text-xl font-semibold leading-tight text-primary">Wamuale</p>
+              <p className="font-display text-xl font-semibold leading-tight text-primary">{company.company_name.replace(/\s+Development$/i, "")}</p>
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-copper">Development</p>
             </div>
           </a>
@@ -143,18 +208,20 @@ export function ApplicationPage() {
 
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
         <div>
-          <Badge tone="green">Phase 1 applications open</Badge>
+          <Badge tone={applicationSettings.applications_open ? "green" : "amber"}>
+            {lotPhase.phase_name} applications {applicationSettings.applications_open ? "open" : "closed"}
+          </Badge>
           <h1 className="mt-5 max-w-3xl font-display text-5xl font-semibold tracking-normal text-primary sm:text-6xl">
-            Wamuale Development Land Application
+            {company.company_name} Land Application
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-            Apply to be considered for property within Wamuale Development, a private subdivision located at Mile 3 on the Hummingbird Highway in Dangriga Town, Belize.
+            {company.short_description || `Apply to be considered for property within ${company.company_name}.`}
           </p>
           <div className="wave-rule mt-6 h-3 w-56" />
           <div className="mt-7 grid gap-3 sm:grid-cols-3">
-            <InfoTile label="Starting price" value="$25,000 BZD" />
-            <InfoTile label="Lot sizes" value="65 x 101 or 75 x 101 ft" />
-            <InfoTile label="Phase 1" value="24 lots" />
+            <InfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office"} />
+            <InfoTile label="Lot sizes" value={lotPhase.default_lot_size} />
+            <InfoTile label={lotPhase.phase_name} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
           </div>
           <div className="mt-7 flex flex-wrap gap-3">
             <a className="inline-flex h-11 items-center gap-2 rounded-md bg-copper px-5 text-sm font-medium text-white shadow-sm hover:bg-copper/90" href="#application">
@@ -169,28 +236,32 @@ export function ApplicationPage() {
         <div id="lots" className="overflow-hidden rounded-lg border bg-card shadow-sm shadow-primary/5">
           <div className="brand-pattern h-4 border-b" />
           <div className="p-4">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <p className="font-display text-xl font-semibold text-primary">Available Lot Preferences</p>
-              <p className="text-sm text-muted-foreground">Select preferred lots in the application below.</p>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="font-display text-xl font-semibold text-primary">Available Lot Preferences</p>
+                <p className="text-sm text-muted-foreground">Select preferred lots in the application below.</p>
+              </div>
+              {lotPhase.public_availability_display && applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null}
             </div>
-            <Badge tone="green">{availableLots} available</Badge>
-          </div>
-          {isLoading ? (
-            <LoadingState label="Loading lot availability" />
-          ) : (
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-              {parcels?.slice(0, 24).map((parcel) => (
-                <div key={parcel.id} className="aspect-[1.25] rounded-md border border-sage/30 bg-sage/10 p-2 text-xs">
-                  <strong className="block">Lot {parcel.lot_number}</strong>
-                  <span className="mt-1 block text-copper">{money(parcel.base_price)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="mt-4 text-xs text-muted-foreground">
-            Preference selections do not reserve a lot. Staff will confirm availability and terms after review.
-          </p>
+            {!lotPhase.public_availability_display ? (
+              <div className="rounded-md border border-dashed bg-ivory/40 p-5 text-sm text-muted-foreground">
+                Lot availability is confirmed by Wamuale Development staff during application review.
+              </div>
+            ) : isLoading ? (
+              <LoadingState label="Loading lot availability" />
+            ) : (
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {parcels?.slice(0, 24).map((parcel) => (
+                  <div key={parcel.id} className="aspect-[1.25] rounded-md border border-sage/30 bg-sage/10 p-2 text-xs">
+                    <strong className="block">Lot {parcel.lot_number}</strong>
+                    {applicationSettings.show_lot_prices_publicly ? <span className="mt-1 block text-copper">{money(parcel.base_price)}</span> : null}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-4 text-xs text-muted-foreground">
+              Preference selections do not reserve a lot. Staff will confirm availability and terms after review.
+            </p>
           </div>
         </div>
       </section>
@@ -202,18 +273,11 @@ export function ApplicationPage() {
               <ShieldCheck className="h-5 w-5 text-copper" />
             </div>
             <h2 className="brand-rule font-display text-2xl font-semibold text-primary">Important Notice</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Owner/Developer: P. Ciego and Family</p>
+            <p className="mt-2 text-sm text-muted-foreground">Owner/Developer: {company.company_name}</p>
           </div>
           <div className="grid gap-4 text-sm leading-6 text-muted-foreground">
-            <p>
-              Submission of this application is solely a request to be considered for the purchase of a lot within Wamuale Development.
-            </p>
-            <p>
-              Submission or acceptance of this application does not create any legal right to purchase land, does not reserve a lot, and does not guarantee that any lot will be sold or transferred to the applicant.
-            </p>
-            <p>
-              Wamuale Development reserves the absolute right, in its sole discretion, to approve or decline any application, to determine lot availability, and to establish the terms and conditions under which lots may be offered for sale. Once the application is complete you will be contacted by a representative.
-            </p>
+            <p>{applicationSettings.public_notice_text}</p>
+            {company.location_address ? <p>Location: {company.location_address}</p> : null}
           </div>
         </div>
       </section>
@@ -238,7 +302,11 @@ export function ApplicationPage() {
             {!hasSupabaseConfig ? <ErrorState message="Supabase environment variables are missing." /> : null}
             {submitted ? (
               <div className="rounded-md border border-sage/35 bg-sage/15 p-4 text-sm text-primary">
-                Application submitted. A Wamuale Development representative will contact you after review.
+                {applicationSettings.default_confirmation_message}
+              </div>
+            ) : !applicationSettings.applications_open ? (
+              <div className="rounded-md border border-copper/30 bg-copper/10 p-4 text-sm text-copper">
+                Applications are currently closed. {applicationSettings.public_notice_text}
               </div>
             ) : (
               <form className="grid gap-7" onSubmit={form.handleSubmit(onSubmit)}>
@@ -305,7 +373,7 @@ export function ApplicationPage() {
                                 <input className="sr-only" type="checkbox" value={parcel.id} {...form.register("preferred_parcel_ids")} />
                                 <span className="block font-semibold">Lot {parcel.lot_number}</span>
                                 <span className="block text-xs text-muted-foreground">{parcel.dimensions}</span>
-                                <span className="mt-2 block text-xs">{money(parcel.base_price)}</span>
+                                {applicationSettings.show_lot_prices_publicly ? <span className="mt-2 block text-xs">{money(parcel.base_price)}</span> : null}
                               </label>
                             );
                           })}
@@ -322,16 +390,9 @@ export function ApplicationPage() {
                 <FormSection title="Payment Option">
                   <Field label="Select one" error={form.formState.errors.payment_option?.message}>
                     <div className="grid gap-3 lg:grid-cols-2">
-                      <PaymentChoice
-                        label="Installment Plan"
-                        details={["Reservation Fee: $2,500.00 per lot", "$625.00 - 36 months", "$470.00 - 48 months", "$375.00 - 60 months"]}
-                        register={form.register("payment_option")}
-                      />
-                      <PaymentChoice
-                        label="Paid in Full"
-                        details={["Reservation: $2,500.00 per lot", "Land Purchase Price: $22,500.00"]}
-                        register={form.register("payment_option")}
-                      />
+                      {visiblePlans.map((plan) => (
+                        <PaymentChoice key={plan.id} plan={plan} register={form.register("payment_option")} />
+                      ))}
                     </div>
                   </Field>
                   <Field label="Additional notes">
@@ -352,7 +413,7 @@ export function ApplicationPage() {
                   <div className="rounded-md border bg-white p-4 text-sm leading-6 shadow-sm shadow-primary/5">
                     <p className="font-semibold">Applicant Acknowledgement</p>
                     <p className="mt-2 text-muted-foreground">
-                      By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by Wamuale Development; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.
+                      {applicationSettings.application_acknowledgment_text}
                     </p>
                     <div className="mt-4">
                       <Field label="Type your full name as acknowledgement" error={form.formState.errors.applicant_acknowledgement_signature?.message}>
@@ -393,19 +454,23 @@ function FormSection({ title, children }: { title: string; children: React.React
 }
 
 function PaymentChoice({
-  label,
-  details,
+  plan,
   register,
 }: {
-  label: "Installment Plan" | "Paid in Full";
-  details: string[];
+  plan: InstallmentPlan;
   register: ReturnType<typeof useForm<ApplicationValues>>["register"] extends (...args: never[]) => infer R ? R : never;
 }) {
+  const details = [
+    plan.description,
+    `Reservation fee: ${money(Number(plan.reservation_fee))}`,
+    Number(plan.monthly_payment) > 0 ? `${money(Number(plan.monthly_payment))} - ${plan.term_months} months` : `Purchase price: ${money(Number(plan.final_purchase_price))}`,
+  ].filter(Boolean);
+
   return (
     <label className="grid gap-2 rounded-md border bg-white p-4 text-sm font-normal shadow-sm shadow-primary/5">
       <span className="flex items-center gap-2 font-semibold">
-        <input type="radio" value={label} {...register} />
-        {label}
+        <input type="radio" value={plan.name} {...register} />
+        {plan.name}
       </span>
       {details.map((detail) => (
         <span key={detail} className="text-muted-foreground">
@@ -414,4 +479,39 @@ function PaymentChoice({
       ))}
     </label>
   );
+}
+
+function settingValue<T>(settings: BusinessSetting[] | undefined, key: string) {
+  return (settings?.find((setting) => setting.key === key)?.value ?? {}) as Partial<T>;
+}
+
+function fallbackApplicationPlans(): InstallmentPlan[] {
+  return [
+    {
+      id: -1,
+      name: "Installment Plan - 60 months",
+      description: "$2,500 reservation fee, $375.00 monthly",
+      reservation_fee: 2500,
+      final_purchase_price: 25000,
+      term_months: 60,
+      monthly_payment: 375,
+      is_active: true,
+      sort_order: 30,
+      created_at: "",
+      updated_at: "",
+    },
+    {
+      id: -2,
+      name: "Paid in Full",
+      description: "$2,500 reservation fee, remaining balance due at purchase agreement",
+      reservation_fee: 2500,
+      final_purchase_price: 25000,
+      term_months: 1,
+      monthly_payment: 0,
+      is_active: true,
+      sort_order: 40,
+      created_at: "",
+      updated_at: "",
+    },
+  ];
 }

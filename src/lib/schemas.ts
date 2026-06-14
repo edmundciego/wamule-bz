@@ -12,9 +12,7 @@ export const applicationSchema = z.object({
   parcel_count: z.coerce.number().int().min(1, "Enter the number of parcels"),
   preferred_parcel_ids: z.array(z.coerce.number()).min(1, "Select at least one preferred lot"),
   alternate_lot_preference: z.string().min(1, "Alternative lot option is required"),
-  payment_option: z.enum(["Installment Plan", "Paid in Full"], {
-    required_error: "Select a payment option",
-  }),
+  payment_option: z.string().min(1, "Select a payment option"),
   applicant_acknowledgement_signature: z.string().min(1, "Type your name to acknowledge"),
   legal_notice_acknowledged: z.boolean().refine((value) => value, "Important Notice acknowledgement is required"),
   notes: z.string().optional(),
@@ -49,6 +47,11 @@ export const paymentSchema = z
     amount: z.coerce.number().positive("Amount must be greater than 0"),
     collection_method: z.enum(["Cash", "Online Transfer"]),
     bank_reference: z.string().optional(),
+    manual_receipt_number: z.string().optional(),
+    receipt_date: z.string().optional(),
+    receipt_issued_by: z.string().optional(),
+    receipt_notes: z.string().optional(),
+    document_type: z.enum(["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"]).optional(),
     notes: z.string().optional(),
   })
   .superRefine((data, ctx) => {
@@ -67,3 +70,13 @@ export const paymentSchema = z
       });
     }
   });
+
+export const paymentRequestSchema = z.object({
+  customer_id: z.coerce.number().min(1, "Customer is required"),
+  contract_id: z.coerce.number().optional().or(z.literal("")),
+  amount_due: z.coerce.number().positive("Amount due must be greater than 0"),
+  due_date: z.string().min(1, "Due date is required"),
+  reason: z.string().min(1, "Reason is required"),
+  notes: z.string().optional(),
+  status: z.enum(["Draft", "Sent", "Paid", "Cancelled"]).default("Draft"),
+});

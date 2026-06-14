@@ -8,10 +8,21 @@ export type TransactionType =
   | "Garbage Fee"
   | "Road Maintenance";
 export type CollectionMethod = "Cash" | "Online Transfer";
+export type PaymentDocumentType =
+  | "Bank Transfer Proof"
+  | "Manual Receipt Photo"
+  | "Signed Payment Note"
+  | "Other";
+export type PaymentRequestStatus = "Draft" | "Sent" | "Paid" | "Cancelled";
+export type BusinessSettingKey =
+  | "company_profile"
+  | "public_application"
+  | "payment_settings"
+  | "lot_phase";
 
 export type AdminProfile = {
-  id: number;
   user_id: string;
+  email: string | null;
   full_name: string | null;
   role: AppRole;
   created_at: string;
@@ -85,8 +96,59 @@ export type Transaction = {
   bank_reference: string | null;
   authorized_by: string;
   receipt_file_path: string | null;
+  manual_receipt_number: string | null;
+  receipt_date: string | null;
+  receipt_issued_by: string | null;
+  receipt_notes: string | null;
   notes: string | null;
   created_at: string;
+};
+
+export type PaymentDocument = {
+  id: number;
+  transaction_id: number | null;
+  customer_id: number;
+  document_type: PaymentDocumentType;
+  file_path: string;
+  original_file_name: string;
+  uploaded_by: string;
+  created_at: string;
+};
+
+export type PaymentRequest = {
+  id: number;
+  customer_id: number;
+  contract_id: number | null;
+  amount_due: number;
+  due_date: string;
+  reason: string;
+  notes: string | null;
+  status: PaymentRequestStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BusinessSetting = {
+  key: BusinessSettingKey;
+  value: Record<string, unknown>;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InstallmentPlan = {
+  id: number;
+  name: string;
+  description: string | null;
+  reservation_fee: number;
+  final_purchase_price: number;
+  term_months: number;
+  monthly_payment: number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Database = {
@@ -94,8 +156,8 @@ export type Database = {
     Tables: {
       admin_profiles: {
         Row: AdminProfile;
-        Insert: Omit<AdminProfile, "id" | "created_at" | "updated_at">;
-        Update: Partial<Omit<AdminProfile, "id" | "created_at" | "updated_at">>;
+        Insert: Omit<AdminProfile, "created_at" | "updated_at">;
+        Update: Partial<Omit<AdminProfile, "created_at" | "updated_at">>;
       };
       parcels: {
         Row: Parcel;
@@ -132,6 +194,26 @@ export type Database = {
         Row: Transaction;
         Insert: Omit<Transaction, "id" | "receipt_number" | "receipt_file_path" | "created_at">;
         Update: Partial<Omit<Transaction, "id" | "receipt_number" | "created_at">>;
+      };
+      payment_documents: {
+        Row: PaymentDocument;
+        Insert: Omit<PaymentDocument, "id" | "created_at">;
+        Update: Partial<Omit<PaymentDocument, "id" | "created_at">>;
+      };
+      payment_requests: {
+        Row: PaymentRequest;
+        Insert: Omit<PaymentRequest, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<PaymentRequest, "id" | "created_at" | "updated_at">>;
+      };
+      business_settings: {
+        Row: BusinessSetting;
+        Insert: Pick<BusinessSetting, "key" | "value"> & Partial<Pick<BusinessSetting, "updated_by">>;
+        Update: Partial<Pick<BusinessSetting, "value" | "updated_by">>;
+      };
+      installment_plans: {
+        Row: InstallmentPlan;
+        Insert: Omit<InstallmentPlan, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<InstallmentPlan, "id" | "created_at" | "updated_at">>;
       };
     };
     Views: {

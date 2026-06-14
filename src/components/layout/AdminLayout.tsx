@@ -4,6 +4,7 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
+  HandCoins,
   LayoutDashboard,
   LogOut,
   Map,
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/contracts", label: "Contracts", icon: FileText },
   { href: "/payments", label: "Payments", icon: CreditCard },
+  { href: "/collections", label: "Collections", icon: HandCoins },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

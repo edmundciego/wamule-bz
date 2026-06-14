@@ -1,68 +1,53 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
 import { contractSchema } from "../../lib/schemas";
 import { supabase } from "../../lib/supabase";
+import { prepareUploadFile, type PreparedUploadFile } from "../../lib/uploads";
 import { money } from "../../lib/utils";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Field, Input, Select } from "../ui/Field";
 import { ErrorState } from "../ui/State";
+import type { InstallmentPlan } from "../../types/database";
+import { UploadFileSummary } from "../uploads/UploadFileSummary";
 
 type ContractValues = z.infer<typeof contractSchema>;
 
-type PaymentPlanId = "installment_36" | "installment_48" | "installment_60" | "other";
-
-const reservationFee = 2500;
 const standardPurchasePrice = 25000;
-const paymentPlans: Record<
-  PaymentPlanId,
+const reservationFee = 2500;
+const fallbackPlans: InstallmentPlan[] = [
   {
-    label: string;
-    description: string;
-    finalPurchasePrice?: number;
-    initialDeposit?: number;
-    termMonths?: number;
-    quotedMonthly?: number;
-  }
-> = {
-  installment_36: {
-    label: "Installment Plan - 36 months",
-    description: "$2,500 reservation fee, $625.00 monthly",
-    finalPurchasePrice: standardPurchasePrice,
-    initialDeposit: reservationFee,
-    termMonths: 36,
-    quotedMonthly: 625,
-  },
-  installment_48: {
-    label: "Installment Plan - 48 months",
-    description: "$2,500 reservation fee, $470.00 monthly",
-    finalPurchasePrice: standardPurchasePrice,
-    initialDeposit: reservationFee,
-    termMonths: 48,
-    quotedMonthly: 470,
-  },
-  installment_60: {
-    label: "Installment Plan - 60 months",
+    id: -1,
+    name: "Installment Plan - 60 months",
     description: "$2,500 reservation fee, $375.00 monthly",
-    finalPurchasePrice: standardPurchasePrice,
-    initialDeposit: reservationFee,
-    termMonths: 60,
-    quotedMonthly: 375,
+    reservation_fee: reservationFee,
+    final_purchase_price: standardPurchasePrice,
+    term_months: 60,
+    monthly_payment: 375,
+    is_active: true,
+    sort_order: 30,
+    created_at: "",
+    updated_at: "",
   },
-  other: {
-    label: "Other agreement",
-    description: "Use custom deposit, price, and term",
-  },
-};
+];
 
-export function ContractForm({ customerId }: { customerId?: number }) {
+export function ContractForm({
+  customerId,
+  embedded = false,
+  onSuccess,
+}: {
+  customerId?: number;
+  embedded?: boolean;
+  onSuccess?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanId>("installment_60");
+  const [file, setFile] = useState<PreparedUploadFile | null>(null);
+  const [fileStatus, setFileStatus] = useState<string | null>(null);
+  const [paymentPlanId, setPaymentPlanId] = useState<number | null>(null);
   const form = useForm<ContractValues>({
     resolver: zodResolver(contractSchema),
     defaultValues: {
@@ -78,8 +63,33 @@ export function ContractForm({ customerId }: { customerId?: number }) {
   const deposit = Number(form.watch("initial_deposit") || 0);
   const term = Number(form.watch("term_months") || 1);
   const monthly = term > 0 ? (finalPrice - deposit) / term : 0;
-  const selectedPlan = paymentPlans[paymentPlan];
-  const isCustomAgreement = paymentPlan === "other";
+  const { data: configuredPlans } = useQuery({
+    queryKey: ["active-installment-plans-contract"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("installment_plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as InstallmentPlan[];
+    },
+  });
+  const paymentPlans = configuredPlans?.length ? configuredPlans : fallbackPlans;
+  const selectedPlan = paymentPlans.find((plan) => plan.id === paymentPlanId) ?? paymentPlans[0];
+  const isCustomAgreement = /other|custom/i.test(selectedPlan?.name ?? "");
+
+  useEffect(() => {
+    if (!selectedPlan) return;
+    if (paymentPlanId === null) {
+      setPaymentPlanId(selectedPlan.id);
+      if (!/other|custom/i.test(selectedPlan.name)) {
+        form.setValue("final_purchase_price", Number(selectedPlan.final_purchase_price), { shouldDirty: true, shouldValidate: true });
+        form.setValue("initial_deposit", Number(selectedPlan.reservation_fee), { shouldDirty: true, shouldValidate: true });
+        form.setValue("term_months", Number(selectedPlan.term_months), { shouldDirty: true, shouldValidate: true });
+      }
+    }
+  }, [form, paymentPlanId, selectedPlan]);
 
   const { data: customers } = useQuery({
     queryKey: ["customers-options"],
@@ -102,21 +112,27 @@ export function ContractForm({ customerId }: { customerId?: number }) {
     },
   });
 
-  function handlePaymentPlanChange(planId: PaymentPlanId) {
-    setPaymentPlan(planId);
-    const plan = paymentPlans[planId];
-    if (!plan.finalPurchasePrice || !plan.initialDeposit || !plan.termMonths) return;
-    form.setValue("final_purchase_price", plan.finalPurchasePrice, { shouldDirty: true, shouldValidate: true });
-    form.setValue("initial_deposit", plan.initialDeposit, { shouldDirty: true, shouldValidate: true });
-    form.setValue("term_months", plan.termMonths, { shouldDirty: true, shouldValidate: true });
+  function applyPaymentPlan(plan: InstallmentPlan) {
+    if (/other|custom/i.test(plan.name)) return;
+    form.setValue("final_purchase_price", Number(plan.final_purchase_price), { shouldDirty: true, shouldValidate: true });
+    form.setValue("initial_deposit", Number(plan.reservation_fee), { shouldDirty: true, shouldValidate: true });
+    form.setValue("term_months", Number(plan.term_months), { shouldDirty: true, shouldValidate: true });
+  }
+
+  function handlePaymentPlanChange(nextPlanId: number) {
+    setPaymentPlanId(nextPlanId);
+    const plan = paymentPlans.find((option) => option.id === nextPlanId);
+    if (plan) applyPaymentPlan(plan);
   }
 
   async function onSubmit(values: ContractValues) {
     setError(null);
     let signed_contract_file_path: string | null = null;
     if (file) {
-      const path = `${values.customer_id}/${Date.now()}-${file.name}`;
-      const { error: uploadError } = await supabase.storage.from("contracts").upload(path, file);
+      setFileStatus("Uploading signed contract...");
+      const safeName = file.uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${values.customer_id}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("contracts").upload(path, file.uploadFile);
       if (uploadError) {
         setError(uploadError.message);
         return;
@@ -140,18 +156,29 @@ export function ContractForm({ customerId }: { customerId?: number }) {
       payment_due_day: 1,
       initial_deposit: reservationFee,
     });
-    setPaymentPlan("installment_60");
+    setPaymentPlanId(paymentPlans[0]?.id ?? null);
     setFile(null);
+    setFileStatus(null);
     await queryClient.invalidateQueries();
+    onSuccess?.();
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create Contract</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+  async function handleContractFileChange(selectedFile: File | undefined) {
+    setFile(null);
+    setFileStatus(null);
+    if (!selectedFile) return;
+    setFileStatus("Preparing file...");
+    try {
+      const prepared = await prepareUploadFile(selectedFile, "signed-contract");
+      setFile(prepared);
+      setFileStatus(prepared.wasCompressed ? "Image compressed and ready to upload." : "File ready to upload.");
+    } catch (fileError) {
+      setFileStatus((fileError as Error).message);
+    }
+  }
+
+  const formContent = (
+    <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
           {error ? <ErrorState message={error} /> : null}
           <Field label="Customer" error={form.formState.errors.customer_id?.message}>
             <Select {...form.register("customer_id")} disabled={Boolean(customerId)}>
@@ -174,19 +201,19 @@ export function ContractForm({ customerId }: { customerId?: number }) {
             </Select>
           </Field>
           <Field label="Payment plan">
-            <Select value={paymentPlan} onChange={(event) => handlePaymentPlanChange(event.target.value as PaymentPlanId)}>
-              {Object.entries(paymentPlans).map(([value, plan]) => (
-                <option key={value} value={value}>
-                  {plan.label}
+            <Select value={paymentPlanId ?? ""} onChange={(event) => handlePaymentPlanChange(Number(event.target.value))}>
+              {paymentPlans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}
                 </option>
               ))}
             </Select>
           </Field>
           <div className="rounded-md border bg-sage/10 p-3 text-sm text-muted-foreground">
-            <p className="font-medium text-primary">{selectedPlan.description}</p>
+            <p className="font-medium text-primary">{selectedPlan?.description ?? "Use configured payment terms."}</p>
             {!isCustomAgreement ? (
               <p className="mt-1">
-                Standard plans use a {money(reservationFee)} reservation fee per lot. Choose Other agreement for custom terms.
+                This plan uses a {money(Number(selectedPlan?.reservation_fee ?? 0))} reservation fee and a listed monthly payment of {money(Number(selectedPlan?.monthly_payment ?? 0))}.
               </p>
             ) : null}
           </div>
@@ -210,18 +237,37 @@ export function ContractForm({ customerId }: { customerId?: number }) {
             </Field>
           </div>
           <Field label="Signed contract upload">
-            <Input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            <div className="grid gap-2 rounded-md border bg-ivory/40 p-3">
+              <Input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => void handleContractFileChange(event.target.files?.[0])} />
+              <p className="text-xs font-normal text-muted-foreground">
+                PDFs must be 20 MB or smaller. Images are compressed before upload.
+              </p>
+              <UploadFileSummary file={file} status={fileStatus} />
+            </div>
           </Field>
           <div className="rounded-md border bg-muted/40 p-3 text-sm">
             Calculated monthly payment: <strong>{money(monthly)}</strong>
-            {!isCustomAgreement && selectedPlan.quotedMonthly && Math.abs(monthly - selectedPlan.quotedMonthly) >= 0.01 ? (
+            {!isCustomAgreement && selectedPlan?.monthly_payment && Math.abs(monthly - Number(selectedPlan.monthly_payment)) >= 0.01 ? (
               <span className="mt-1 block text-muted-foreground">
-                Listed plan amount: {money(selectedPlan.quotedMonthly)} monthly.
+                Listed plan amount: {money(Number(selectedPlan.monthly_payment))} monthly.
               </span>
             ) : null}
           </div>
-          <Button disabled={form.formState.isSubmitting}>Create contract</Button>
-        </form>
+      <Button disabled={form.formState.isSubmitting}>Create contract</Button>
+    </form>
+  );
+
+  if (embedded) {
+    return formContent;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Create Contract</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {formContent}
       </CardContent>
     </Card>
   );
