@@ -23,6 +23,7 @@ export default function App() {
       <Route path="/apply" element={<ApplicationPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/logout" element={<LogoutPage />} />
+      <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
       <Route
         path="/documents/:kind/:id"
         element={
