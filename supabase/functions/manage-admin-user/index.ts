@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type AppRole = "Admin" | "Staff" | "Read Only";
+type AppRole = "Super Admin" | "Admin" | "Staff" | "Read Only";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -45,8 +45,8 @@ Deno.serve(async (request) => {
     return json({ error: profileError.message }, 500);
   }
 
-  if (currentProfile?.role !== "Admin") {
-    return json({ error: "Only Admin users can manage users." }, 403);
+  if (currentProfile?.role !== "Super Admin") {
+    return json({ error: "Only Super Admin users can manage users." }, 403);
   }
 
   const body = await request.json().catch(() => null) as {
@@ -61,7 +61,7 @@ Deno.serve(async (request) => {
   const role = body?.role;
   const password = body?.password;
 
-  if (!email || !role || !["Admin", "Staff", "Read Only"].includes(role)) {
+  if (!email || !role || !["Super Admin", "Admin", "Staff", "Read Only"].includes(role)) {
     return json({ error: "Email and valid role are required." }, 400);
   }
 

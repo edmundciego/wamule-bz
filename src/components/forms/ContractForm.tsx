@@ -24,6 +24,7 @@ const fallbackPlans: InstallmentPlan[] = [
     name: "Installment Plan - 60 months",
     description: "$2,500 reservation fee, $375.00 monthly",
     reservation_fee: reservationFee,
+    initial_deposit: reservationFee,
     final_purchase_price: standardPurchasePrice,
     term_months: 60,
     monthly_payment: 375,
@@ -85,7 +86,7 @@ export function ContractForm({
       setPaymentPlanId(selectedPlan.id);
       if (!/other|custom/i.test(selectedPlan.name)) {
         form.setValue("final_purchase_price", Number(selectedPlan.final_purchase_price), { shouldDirty: true, shouldValidate: true });
-        form.setValue("initial_deposit", Number(selectedPlan.reservation_fee), { shouldDirty: true, shouldValidate: true });
+        form.setValue("initial_deposit", Number(selectedPlan.initial_deposit || selectedPlan.reservation_fee), { shouldDirty: true, shouldValidate: true });
         form.setValue("term_months", Number(selectedPlan.term_months), { shouldDirty: true, shouldValidate: true });
       }
     }
@@ -115,7 +116,7 @@ export function ContractForm({
   function applyPaymentPlan(plan: InstallmentPlan) {
     if (/other|custom/i.test(plan.name)) return;
     form.setValue("final_purchase_price", Number(plan.final_purchase_price), { shouldDirty: true, shouldValidate: true });
-    form.setValue("initial_deposit", Number(plan.reservation_fee), { shouldDirty: true, shouldValidate: true });
+    form.setValue("initial_deposit", Number(plan.initial_deposit || plan.reservation_fee), { shouldDirty: true, shouldValidate: true });
     form.setValue("term_months", Number(plan.term_months), { shouldDirty: true, shouldValidate: true });
   }
 

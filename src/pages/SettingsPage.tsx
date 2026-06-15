@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
@@ -10,20 +11,29 @@ import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, money } from "../lib/utils";
-import type { AppRole, BusinessSetting, BusinessSettingKey, InstallmentPlan } from "../types/database";
+import type {
+  AiSetting,
+  AppRole,
+  BusinessSetting,
+  BusinessSettingKey,
+  FeeFrequency,
+  FeeType,
+  InstallmentPlan,
+  LotSize,
+  PaymentMethod,
+  PaymentMethodType,
+} from "../types/database";
 
-const roles: AppRole[] = ["Admin", "Staff", "Read Only"];
-const settingsSections = [
-  "Company",
-  "Application",
-  "Payments",
-  "Installments",
-  "Lots",
-  "Users",
-  "Fees",
-] as const;
+const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
+const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
+const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
+const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "AI Settings", "Users & Roles"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
+type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
+type DraftInstallmentPlan = InstallmentPlan & { isNew?: boolean };
+type DraftLotSize = LotSize & { isNew?: boolean };
+type DraftFeeType = FeeType & { isNew?: boolean };
 
 type CompanyProfileSettings = {
   company_name: string;
@@ -42,23 +52,6 @@ type PublicApplicationSettings = {
   show_lot_prices_publicly: boolean;
   show_available_lot_count_publicly: boolean;
   default_confirmation_message: string;
-};
-
-type PaymentSettings = {
-  accepted_payment_methods: string;
-  bank_name: string;
-  account_name: string;
-  account_number: string;
-  payment_instructions: string;
-  manual_receipt_book_required: boolean;
-  receipt_number_instructions: string;
-};
-
-type LotPhaseSettings = {
-  phase_name: string;
-  default_lot_size: string;
-  default_lot_price: number;
-  public_availability_display: boolean;
 };
 
 const defaultCompany: CompanyProfileSettings = {
@@ -82,47 +75,29 @@ const defaultApplication: PublicApplicationSettings = {
   default_confirmation_message: "Application submitted. A Wamuale Development representative will contact you after review.",
 };
 
-const defaultPayment: PaymentSettings = {
-  accepted_payment_methods: "Cash, Online Transfer",
-  bank_name: "",
-  account_name: "",
-  account_number: "",
-  payment_instructions: "",
-  manual_receipt_book_required: true,
-  receipt_number_instructions: "Record the physical receipt book number after payment is received.",
-};
-
-const defaultLotPhase: LotPhaseSettings = {
-  phase_name: "Phase 1",
-  default_lot_size: "65 x 101 or 75 x 101 ft",
-  default_lot_price: 25000,
-  public_availability_display: true,
-};
-
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("Company");
+  const [activeSection, setActiveSection] = useState<SettingsSection>("Company Profile");
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingSection, setSavingSection] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyProfileSettings>(defaultCompany);
   const [application, setApplication] = useState<PublicApplicationSettings>(defaultApplication);
-  const [payment, setPayment] = useState<PaymentSettings>(defaultPayment);
-  const [lotPhase, setLotPhase] = useState<LotPhaseSettings>(defaultLotPhase);
   const [logoFile, setLogoFile] = useState<PreparedUploadFile | null>(null);
   const [logoStatus, setLogoStatus] = useState<string | null>(null);
-  const [savingSection, setSavingSection] = useState<string | null>(null);
-
-  const [feeError, setFeeError] = useState<string | null>(null);
-  const [userError, setUserError] = useState<string | null>(null);
-  const [userMessage, setUserMessage] = useState<string | null>(null);
-  const [garbage, setGarbage] = useState("");
-  const [road, setRoad] = useState("");
+  const [paymentMethodsDraft, setPaymentMethodsDraft] = useState<DraftPaymentMethod[]>([]);
+  const [plansDraft, setPlansDraft] = useState<DraftInstallmentPlan[]>([]);
+  const [lotSizesDraft, setLotSizesDraft] = useState<DraftLotSize[]>([]);
+  const [feeTypesDraft, setFeeTypesDraft] = useState<DraftFeeType[]>([]);
+  const [aiDraft, setAiDraft] = useState<AiSetting | null>(null);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<AppRole>("Staff");
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [creatingUser, setCreatingUser] = useState(false);
-  const [draftPlans, setDraftPlans] = useState<InstallmentPlan[]>([]);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [userMessage, setUserMessage] = useState<string | null>(null);
 
   const { data: sessionData } = useQuery({
     queryKey: ["settings-session"],
@@ -146,7 +121,11 @@ export function SettingsPage() {
     enabled: Boolean(sessionData?.user.id),
   });
 
-  const isAdmin = currentProfile?.role === "Admin";
+  const isSuperAdmin = currentProfile?.role === "Super Admin";
+  const isAdmin = currentProfile?.role === "Super Admin" || currentProfile?.role === "Admin";
+  const canManageConfig = isAdmin;
+  const canManageUsers = isSuperAdmin;
+  const canManageAi = isSuperAdmin;
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ["business-settings"],
@@ -157,34 +136,55 @@ export function SettingsPage() {
     },
   });
 
+  const { data: paymentMethods, isLoading: paymentMethodsLoading } = useQuery({
+    queryKey: ["payment-methods-admin"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase.from("payment_methods").select("*").order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as PaymentMethod[];
+    },
+  });
+
   const { data: plans, isLoading: plansLoading } = useQuery({
     queryKey: ["installment-plans-admin"],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase
-        .from("installment_plans")
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const { data, error: queryError } = await supabase.from("installment_plans").select("*").order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as InstallmentPlan[];
     },
   });
 
-  const { data: feeSettings, isLoading: feesLoading } = useQuery({
-    queryKey: ["fee-settings"],
+  const { data: lotSizes, isLoading: lotSizesLoading } = useQuery({
+    queryKey: ["lot-sizes-admin"],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("community_fee_settings").select("*").eq("is_active", true).maybeSingle();
+      const { data, error: queryError } = await supabase.from("lot_sizes").select("*").order("sort_order", { ascending: true });
       if (queryError) throw queryError;
-      return data;
+      return data as LotSize[];
+    },
+  });
+
+  const { data: feeTypes, isLoading: feeTypesLoading } = useQuery({
+    queryKey: ["fee-types-admin"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase.from("fee_types").select("*").order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as FeeType[];
+    },
+  });
+
+  const { data: aiSettings, isLoading: aiLoading } = useQuery({
+    queryKey: ["ai-settings-admin"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase.from("ai_settings").select("*").order("id", { ascending: true }).limit(1).maybeSingle();
+      if (queryError) throw queryError;
+      return data as AiSetting | null;
     },
   });
 
   const { data: users, isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase
-        .from("admin_profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error: queryError } = await supabase.from("admin_profiles").select("*").order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data;
     },
@@ -194,13 +194,27 @@ export function SettingsPage() {
     if (!settings) return;
     setCompany({ ...defaultCompany, ...settingValue<CompanyProfileSettings>(settings, "company_profile") });
     setApplication({ ...defaultApplication, ...settingValue<PublicApplicationSettings>(settings, "public_application") });
-    setPayment({ ...defaultPayment, ...settingValue<PaymentSettings>(settings, "payment_settings") });
-    setLotPhase({ ...defaultLotPhase, ...settingValue<LotPhaseSettings>(settings, "lot_phase") });
   }, [settings]);
 
   useEffect(() => {
-    if (plans) setDraftPlans(plans);
+    if (paymentMethods) setPaymentMethodsDraft(paymentMethods);
+  }, [paymentMethods]);
+
+  useEffect(() => {
+    if (plans) setPlansDraft(plans);
   }, [plans]);
+
+  useEffect(() => {
+    if (lotSizes) setLotSizesDraft(lotSizes);
+  }, [lotSizes]);
+
+  useEffect(() => {
+    if (feeTypes) setFeeTypesDraft(feeTypes);
+  }, [feeTypes]);
+
+  useEffect(() => {
+    if (aiSettings) setAiDraft(aiSettings);
+  }, [aiSettings]);
 
   async function saveBusinessSetting<T extends Record<string, unknown>>(key: BusinessSettingKey, value: T, label: string) {
     setError(null);
@@ -213,10 +227,7 @@ export function SettingsPage() {
       updated_by: session.session?.user.id ?? null,
     });
     setSavingSection(null);
-    if (upsertError) {
-      setError(upsertError.message);
-      return;
-    }
+    if (upsertError) return setError(upsertError.message);
     setToast(`${label} saved.`);
     await queryClient.invalidateQueries({ queryKey: ["business-settings"] });
   }
@@ -231,8 +242,7 @@ export function SettingsPage() {
     const { error: uploadError } = await supabase.storage.from("business-assets").upload(filePath, logoFile.uploadFile, { upsert: false });
     if (uploadError) {
       setSavingSection(null);
-      setError(uploadError.message);
-      return;
+      return setError(uploadError.message);
     }
     const { data } = supabase.storage.from("business-assets").getPublicUrl(filePath);
     const nextCompany = { ...company, logo_url: data.publicUrl };
@@ -256,52 +266,72 @@ export function SettingsPage() {
     }
   }
 
-  async function savePlans() {
-    setError(null);
-    setToast(null);
-    setSavingSection("Installment plans");
-    const { error: upsertError } = await supabase.from("installment_plans").upsert(
-      draftPlans.map((plan) => ({
-        id: plan.id,
-        name: plan.name,
-        description: plan.description,
-        reservation_fee: Number(plan.reservation_fee),
-        final_purchase_price: Number(plan.final_purchase_price),
-        term_months: Number(plan.term_months),
-        monthly_payment: Number(plan.monthly_payment),
-        is_active: plan.is_active,
-        sort_order: Number(plan.sort_order),
-      })),
-    );
-    setSavingSection(null);
-    if (upsertError) {
-      setError(upsertError.message);
-      return;
-    }
-    setToast("Installment plans saved.");
-    await queryClient.invalidateQueries({ queryKey: ["installment-plans-admin"] });
+  async function savePaymentMethods() {
+    await saveRows("Payment methods", "payment_methods", paymentMethodsDraft.map(cleanPaymentMethod), ["payment-methods-admin", "active-payment-methods-form"]);
   }
 
-  async function saveFees() {
-    setFeeError(null);
+  async function savePlans() {
+    await saveRows("Installment plans", "installment_plans", plansDraft.map(cleanPlan), ["installment-plans-admin", "active-installment-plans-contract", "public-installment-plans"]);
+  }
+
+  async function saveLotSizes() {
+    await saveRows("Lot sizes", "lot_sizes", lotSizesDraft.map(cleanLotSize), ["lot-sizes-admin", "public-parcel-options", "lot-board"]);
+  }
+
+  async function saveFeeTypes() {
+    await saveRows("Fee types", "fee_types", feeTypesDraft.map(cleanFeeType), ["fee-types-admin", "active-fee-types-form"]);
+  }
+
+  async function saveAiSettings() {
+    if (!aiDraft) return;
+    setError(null);
     setToast(null);
-    const garbageAmount = Number(garbage || feeSettings?.garbage_fee_amount || 0);
-    const roadAmount = Number(road || feeSettings?.road_maintenance_fee_amount || 0);
+    setSavingSection("AI settings");
     const { error: updateError } = await supabase
-      .from("community_fee_settings")
+      .from("ai_settings")
       .update({
-        garbage_fee_amount: garbageAmount,
-        road_maintenance_fee_amount: roadAmount,
-        effective_date: new Date().toISOString().slice(0, 10),
-        is_active: true,
+        provider: aiDraft.provider,
+        model: aiDraft.model,
+        is_enabled: aiDraft.is_enabled,
+        daily_brief_enabled: aiDraft.daily_brief_enabled,
+        application_summary_enabled: aiDraft.application_summary_enabled,
+        collections_assistant_enabled: aiDraft.collections_assistant_enabled,
+        notes: aiDraft.notes,
       })
-      .eq("is_active", true);
-    if (updateError) {
-      setFeeError(updateError.message);
+      .eq("id", aiDraft.id);
+    setSavingSection(null);
+    if (updateError) return setError(updateError.message);
+    setToast("AI settings saved.");
+    await queryClient.invalidateQueries({ queryKey: ["ai-settings-admin"] });
+  }
+
+  async function saveRows(label: string, table: "payment_methods" | "installment_plans" | "lot_sizes" | "fee_types", rows: Record<string, unknown>[], queryKeys: string[]) {
+    setError(null);
+    setToast(null);
+    setSavingSection(label);
+    const { error: upsertError } = await supabase.from(table).upsert(rows);
+    setSavingSection(null);
+    if (upsertError) return setError(upsertError.message);
+    setToast(`${label} saved.`);
+    await Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] })));
+  }
+
+  async function checkAiProvider() {
+    setAiStatus("Checking AI provider...");
+    const { data, error: functionError } = await supabase.functions.invoke("ai-provider-health-check", { body: {} });
+    if (functionError) {
+      setAiStatus(functionError.message);
       return;
     }
-    setToast("Community fees saved.");
-    await queryClient.invalidateQueries({ queryKey: ["fee-settings"] });
+    setAiStatus(String(data?.message ?? "AI status checked."));
+  }
+
+  function handleAssistantClick() {
+    if (!aiDraft?.is_enabled) {
+      setAiStatus("AI must be enabled and connected before the assistant can be used.");
+      return;
+    }
+    setAiStatus("Wamule AI Assistant foundation is ready. Full assistant behavior is not built yet.");
   }
 
   async function createUser(event: FormEvent) {
@@ -310,29 +340,12 @@ export function SettingsPage() {
     setUserMessage(null);
     setCreatingUser(true);
     const { data: result, error: functionError } = await supabase.functions.invoke("manage-admin-user", {
-      body: {
-        email,
-        full_name: fullName,
-        role,
-        password: temporaryPassword || undefined,
-      },
+      body: { email, full_name: fullName, role, password: temporaryPassword || undefined },
     });
     setCreatingUser(false);
-    if (functionError) {
-      setUserError(functionError.message);
-      return;
-    }
-    if (result?.error) {
-      setUserError(String(result.error));
-      return;
-    }
-    setUserMessage(
-      result?.mode === "invited"
-        ? "User invited and role saved."
-        : result?.mode === "existing"
-          ? "Existing user role updated."
-          : "User created and role saved.",
-    );
+    if (functionError) return setUserError(functionError.message);
+    if (result?.error) return setUserError(String(result.error));
+    setUserMessage(result?.mode === "invited" ? "User invited and role saved." : result?.mode === "existing" ? "Existing user role updated." : "User created and role saved.");
     setEmail("");
     setFullName("");
     setRole("Staff");
@@ -343,32 +356,22 @@ export function SettingsPage() {
   async function updateRole(userId: string, nextRole: AppRole) {
     setUserError(null);
     setUserMessage(null);
-    const { error: updateError } = await supabase
-      .from("admin_profiles")
-      .update({ role: nextRole })
-      .eq("user_id", userId);
-    if (updateError) {
-      setUserError(updateError.message);
-      return;
-    }
+    const { error: updateError } = await supabase.from("admin_profiles").update({ role: nextRole }).eq("user_id", userId);
+    if (updateError) return setUserError(updateError.message);
+    setUserMessage("Role updated.");
     await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
   }
 
   return (
     <>
-      <PageHeader title="Settings" description="Business configuration, user management, payment settings, and installment plans." />
+      <PageHeader title="Settings" description="Business configuration, payment options, role management, and AI foundation." />
       <div className="grid gap-6">
         {settingsLoading ? <LoadingState label="Loading settings" /> : null}
         {error ? <ErrorState message={error} /> : null}
-        {toast ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sage/35 bg-sage/15 px-4 py-3 text-sm text-primary">
-            <span>{toast}</span>
-            <button type="button" className="font-medium" onClick={() => setToast(null)}>Dismiss</button>
-          </div>
-        ) : null}
-        {!isAdmin ? (
+        {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
+        {!canManageConfig ? (
           <div className="rounded-md border border-copper/30 bg-copper/10 p-3 text-sm text-copper">
-            Settings are viewable here, but only Admin users can save changes.
+            Settings are viewable here. Your role can view records and reports, but cannot edit configuration.
           </div>
         ) : null}
 
@@ -390,212 +393,251 @@ export function SettingsPage() {
           </div>
         </div>
 
-        {activeSection === "Company" ? (
-          <Card>
-            <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-start">
-                <div className="grid gap-2">
+        {activeSection === "Company Profile" ? (
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-start">
                   <img src={company.logo_url || "/favicon/android-chrome-192x192.png"} alt={company.company_name} className="h-24 w-24 rounded-md border bg-ivory object-cover" />
-                </div>
-                <div className="grid gap-4">
                   <Field label="Upload logo">
                     <div className="grid gap-2 rounded-md border bg-ivory/40 p-3">
-                      <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogoChange(event.target.files?.[0])} disabled={!isAdmin} />
+                      <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogoChange(event.target.files?.[0])} disabled={!canManageConfig} />
                       <UploadFileSummary file={logoFile} status={logoStatus} />
-                      <Button type="button" variant="secondary" disabled={!isAdmin || !logoFile || savingSection === "Logo"} onClick={() => void uploadLogo()}>
+                      <Button type="button" variant="secondary" disabled={!canManageConfig || !logoFile || savingSection === "Logo"} onClick={() => void uploadLogo()}>
                         {savingSection === "Logo" ? "Uploading..." : "Upload logo"}
                       </Button>
                     </div>
                   </Field>
                 </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Company name">
-                  <Input value={company.company_name} onChange={(event) => setCompany({ ...company, company_name: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Contact email">
-                  <Input type="email" value={company.contact_email} onChange={(event) => setCompany({ ...company, contact_email: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Phone number">
-                  <Input value={company.phone_number} onChange={(event) => setCompany({ ...company, phone_number: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Website">
-                  <Input value={company.website} onChange={(event) => setCompany({ ...company, website: event.target.value })} disabled={!isAdmin} />
-                </Field>
-              </div>
-              <Field label="Location / address">
-                <Textarea value={company.location_address} onChange={(event) => setCompany({ ...company, location_address: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <Field label="Public-facing short description">
-                <Textarea value={company.short_description} onChange={(event) => setCompany({ ...company, short_description: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <SectionSaveButton disabled={!isAdmin} saving={savingSection === "Company profile"} onClick={() => void saveBusinessSetting("company_profile", company, "Company profile")} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeSection === "Application" ? (
-          <Card>
-            <CardHeader><CardTitle>Public Application Settings</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              <ToggleField label="Applications open" checked={application.applications_open} disabled={!isAdmin} onChange={(checked) => setApplication({ ...application, applications_open: checked })} />
-              <ToggleField label="Show lot prices publicly" checked={application.show_lot_prices_publicly} disabled={!isAdmin} onChange={(checked) => setApplication({ ...application, show_lot_prices_publicly: checked })} />
-              <ToggleField label="Show available lot count publicly" checked={application.show_available_lot_count_publicly} disabled={!isAdmin} onChange={(checked) => setApplication({ ...application, show_available_lot_count_publicly: checked })} />
-              <Field label="Public notice text">
-                <Textarea value={application.public_notice_text} onChange={(event) => setApplication({ ...application, public_notice_text: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <Field label="Application acknowledgment text">
-                <Textarea value={application.application_acknowledgment_text} onChange={(event) => setApplication({ ...application, application_acknowledgment_text: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <Field label="Default application confirmation message">
-                <Textarea value={application.default_confirmation_message} onChange={(event) => setApplication({ ...application, default_confirmation_message: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <SectionSaveButton disabled={!isAdmin} saving={savingSection === "Application settings"} onClick={() => void saveBusinessSetting("public_application", application, "Application settings")} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeSection === "Payments" ? (
-          <Card>
-            <CardHeader><CardTitle>Payment Settings</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              <Field label="Accepted payment methods">
-                <Input value={payment.accepted_payment_methods} onChange={(event) => setPayment({ ...payment, accepted_payment_methods: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="Bank name">
-                  <Input value={payment.bank_name} onChange={(event) => setPayment({ ...payment, bank_name: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Account name">
-                  <Input value={payment.account_name} onChange={(event) => setPayment({ ...payment, account_name: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Account number">
-                  <Input value={payment.account_number} onChange={(event) => setPayment({ ...payment, account_number: event.target.value })} disabled={!isAdmin} />
-                </Field>
-              </div>
-              <Field label="Payment instructions">
-                <Textarea value={payment.payment_instructions} onChange={(event) => setPayment({ ...payment, payment_instructions: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <ToggleField label="Manual receipt book required" checked={payment.manual_receipt_book_required} disabled={!isAdmin} onChange={(checked) => setPayment({ ...payment, manual_receipt_book_required: checked })} />
-              <Field label="Receipt number label / instructions">
-                <Textarea value={payment.receipt_number_instructions} onChange={(event) => setPayment({ ...payment, receipt_number_instructions: event.target.value })} disabled={!isAdmin} />
-              </Field>
-              <SectionSaveButton disabled={!isAdmin} saving={savingSection === "Payment settings"} onClick={() => void saveBusinessSetting("payment_settings", payment, "Payment settings")} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeSection === "Installments" ? (
-          <Card>
-            <CardHeader><CardTitle>Installment Plan Settings</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              {plansLoading ? <LoadingState label="Loading installment plans" /> : null}
-              {draftPlans.length === 0 ? <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No installment plans found.</p> : null}
-              {draftPlans.map((plan, index) => (
-                <div key={plan.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-medium text-primary">{plan.name}</p>
-                    <Badge tone={plan.is_active ? "green" : "gray"}>{plan.is_active ? "Active" : "Inactive"}</Badge>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Name">
-                      <Input value={plan.name} onChange={(event) => updateDraftPlan(index, { name: event.target.value })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Description">
-                      <Input value={plan.description ?? ""} onChange={(event) => updateDraftPlan(index, { description: event.target.value })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Reservation fee">
-                      <Input type="number" min="0" step="0.01" value={plan.reservation_fee} onChange={(event) => updateDraftPlan(index, { reservation_fee: Number(event.target.value) })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Final purchase price">
-                      <Input type="number" min="0" step="0.01" value={plan.final_purchase_price} onChange={(event) => updateDraftPlan(index, { final_purchase_price: Number(event.target.value) })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Term months">
-                      <Input type="number" min="1" value={plan.term_months} onChange={(event) => updateDraftPlan(index, { term_months: Number(event.target.value) })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Monthly payment">
-                      <Input type="number" min="0" step="0.01" value={plan.monthly_payment} onChange={(event) => updateDraftPlan(index, { monthly_payment: Number(event.target.value) })} disabled={!isAdmin} />
-                    </Field>
-                    <Field label="Sort order">
-                      <Input type="number" value={plan.sort_order} onChange={(event) => updateDraftPlan(index, { sort_order: Number(event.target.value) })} disabled={!isAdmin} />
-                    </Field>
-                    <ToggleField label="Plan active" checked={plan.is_active} disabled={!isAdmin} onChange={(checked) => updateDraftPlan(index, { is_active: checked })} />
-                  </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <TextInput label="Company name" value={company.company_name} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, company_name: value })} />
+                  <TextInput label="Contact email" type="email" value={company.contact_email} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, contact_email: value })} />
+                  <TextInput label="Phone number" value={company.phone_number} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, phone_number: value })} />
+                  <TextInput label="Website" value={company.website} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, website: value })} />
                 </div>
-              ))}
-              <SectionSaveButton disabled={!isAdmin} saving={savingSection === "Installment plans"} onClick={() => void savePlans()} />
-            </CardContent>
-          </Card>
+                <Field label="Location / address">
+                  <Textarea value={company.location_address} onChange={(event) => setCompany({ ...company, location_address: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <Field label="Public-facing short description">
+                  <Textarea value={company.short_description} onChange={(event) => setCompany({ ...company, short_description: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <SectionSaveButton disabled={!canManageConfig} saving={savingSection === "Company profile"} onClick={() => void saveBusinessSetting("company_profile", company, "Company profile")} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>Public Application Settings</CardTitle></CardHeader>
+              <CardContent className="grid gap-4">
+                <ToggleField label="Applications open" checked={application.applications_open} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, applications_open: checked })} />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <ToggleField label="Show lot prices publicly" checked={application.show_lot_prices_publicly} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, show_lot_prices_publicly: checked })} />
+                  <ToggleField label="Show available lot count publicly" checked={application.show_available_lot_count_publicly} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, show_available_lot_count_publicly: checked })} />
+                </div>
+                <Field label="Public notice text">
+                  <Textarea value={application.public_notice_text} onChange={(event) => setApplication({ ...application, public_notice_text: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <Field label="Application acknowledgment text">
+                  <Textarea value={application.application_acknowledgment_text} onChange={(event) => setApplication({ ...application, application_acknowledgment_text: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <Field label="Default application confirmation message">
+                  <Textarea value={application.default_confirmation_message} onChange={(event) => setApplication({ ...application, default_confirmation_message: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <SectionSaveButton disabled={!canManageConfig} saving={savingSection === "Application settings"} onClick={() => void saveBusinessSetting("public_application", application, "Application settings")} />
+              </CardContent>
+            </Card>
+          </div>
         ) : null}
 
-        {activeSection === "Lots" ? (
-          <Card>
-            <CardHeader><CardTitle>Lot / Phase Settings</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="Phase name">
-                  <Input value={lotPhase.phase_name} onChange={(event) => setLotPhase({ ...lotPhase, phase_name: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Default lot size">
-                  <Input value={lotPhase.default_lot_size} onChange={(event) => setLotPhase({ ...lotPhase, default_lot_size: event.target.value })} disabled={!isAdmin} />
-                </Field>
-                <Field label="Default lot price">
-                  <Input type="number" min="0" step="0.01" value={lotPhase.default_lot_price} onChange={(event) => setLotPhase({ ...lotPhase, default_lot_price: Number(event.target.value) })} disabled={!isAdmin} />
+        {activeSection === "Payment Methods" ? (
+          <ConfigList
+            title="Payment Methods and Bank Accounts"
+            loading={paymentMethodsLoading}
+            canEdit={canManageConfig}
+            saving={savingSection === "Payment methods"}
+            onAdd={() => setPaymentMethodsDraft((rows) => [...rows, newPaymentMethod(rows.length)])}
+            onSave={() => void savePaymentMethods()}
+          >
+            {paymentMethodsDraft.length === 0 ? <EmptyState label="No payment methods configured." /> : null}
+            {paymentMethodsDraft.map((method, index) => (
+              <div key={method.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+                <RowHeader title={method.name || "New payment method"} active={method.is_active} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <TextInput label="Name" value={method.name} disabled={!canManageConfig} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { name: value })} />
+                  <Field label="Method type">
+                    <Select value={method.method_type} disabled={!canManageConfig} onChange={(event) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { method_type: event.target.value as PaymentMethodType })}>
+                      {paymentMethodTypes.map((type) => <option key={type}>{type}</option>)}
+                    </Select>
+                  </Field>
+                  <TextInput label="Currency" value={method.currency} disabled={!canManageConfig} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { currency: value })} />
+                  <TextInput label="Bank name" value={method.bank_name ?? ""} disabled={!canManageConfig || method.method_type === "Cash"} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { bank_name: value })} />
+                  <TextInput label="Account name" value={method.account_name ?? ""} disabled={!canManageConfig || method.method_type === "Cash"} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { account_name: value })} />
+                  <TextInput label="Account number" value={method.account_number ?? ""} disabled={!canManageConfig || method.method_type === "Cash"} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { account_number: value })} />
+                  <NumberInput label="Sort order" value={method.sort_order} disabled={!canManageConfig} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { sort_order: value })} />
+                  <ToggleField label="Active" checked={method.is_active} disabled={!canManageConfig} onChange={(checked) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { is_active: checked })} />
+                  <ToggleField label="Public" checked={method.is_public} disabled={!canManageConfig} onChange={(checked) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { is_public: checked })} />
+                </div>
+                <Field label="Instructions">
+                  <Textarea value={method.instructions ?? ""} onChange={(event) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { instructions: event.target.value })} disabled={!canManageConfig} />
                 </Field>
               </div>
-              <ToggleField label="Public availability display" checked={lotPhase.public_availability_display} disabled={!isAdmin} onChange={(checked) => setLotPhase({ ...lotPhase, public_availability_display: checked })} />
-              <p className="text-sm text-muted-foreground">Default public price: {money(Number(lotPhase.default_lot_price || 0))}</p>
-              <SectionSaveButton disabled={!isAdmin} saving={savingSection === "Lot / phase settings"} onClick={() => void saveBusinessSetting("lot_phase", lotPhase, "Lot / phase settings")} />
+            ))}
+          </ConfigList>
+        ) : null}
+
+        {activeSection === "Installment Plans" ? (
+          <ConfigList title="Installment Plans" loading={plansLoading} canEdit={canManageConfig} saving={savingSection === "Installment plans"} onAdd={() => setPlansDraft((rows) => [...rows, newPlan(rows.length)])} onSave={() => void savePlans()}>
+            {plansDraft.length === 0 ? <EmptyState label="No installment plans configured." /> : null}
+            {plansDraft.map((plan, index) => (
+              <div key={plan.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+                <RowHeader title={plan.name || "New installment plan"} active={plan.is_active} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <TextInput label="Name" value={plan.name} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { name: value })} />
+                  <NumberInput label="Reservation fee" value={plan.reservation_fee} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { reservation_fee: value })} />
+                  <NumberInput label="Initial deposit" value={plan.initial_deposit} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { initial_deposit: value })} />
+                  <NumberInput label="Final purchase price" value={plan.final_purchase_price} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { final_purchase_price: value })} />
+                  <NumberInput label="Term months" value={plan.term_months} min={1} max={60} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { term_months: value })} />
+                  <NumberInput label="Monthly payment" value={plan.monthly_payment} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { monthly_payment: value })} />
+                  <NumberInput label="Sort order" value={plan.sort_order} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { sort_order: value })} />
+                  <ToggleField label="Active" checked={plan.is_active} disabled={!canManageConfig} onChange={(checked) => updateDraft(plansDraft, setPlansDraft, index, { is_active: checked })} />
+                </div>
+                <Field label="Description">
+                  <Textarea value={plan.description ?? ""} onChange={(event) => updateDraft(plansDraft, setPlansDraft, index, { description: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <p className="text-sm text-muted-foreground">Displayed payment: {money(Number(plan.monthly_payment || 0))} over {plan.term_months || 0} months.</p>
+              </div>
+            ))}
+          </ConfigList>
+        ) : null}
+
+        {activeSection === "Lot Sizes" ? (
+          <ConfigList title="Lot Sizes" loading={lotSizesLoading} canEdit={canManageConfig} saving={savingSection === "Lot sizes"} onAdd={() => setLotSizesDraft((rows) => [...rows, newLotSize(rows.length)])} onSave={() => void saveLotSizes()}>
+            {lotSizesDraft.length === 0 ? <EmptyState label="No lot sizes configured." /> : null}
+            {lotSizesDraft.map((lotSize, index) => (
+              <div key={lotSize.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+                <RowHeader title={lotSize.name || "New lot size"} active={lotSize.is_active} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <TextInput label="Name" value={lotSize.name} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { name: value })} />
+                  <TextInput label="Dimensions" value={lotSize.dimensions} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { dimensions: value })} />
+                  <NumberInput label="Default price" value={lotSize.default_price} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { default_price: value })} />
+                  <NumberInput label="Sort order" value={lotSize.sort_order} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { sort_order: value })} />
+                  <ToggleField label="Active" checked={lotSize.is_active} disabled={!canManageConfig} onChange={(checked) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { is_active: checked })} />
+                </div>
+                <Field label="Description">
+                  <Textarea value={lotSize.description ?? ""} onChange={(event) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { description: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+              </div>
+            ))}
+          </ConfigList>
+        ) : null}
+
+        {activeSection === "Fee Types" ? (
+          <ConfigList title="Fee Types" loading={feeTypesLoading} canEdit={canManageConfig} saving={savingSection === "Fee types"} onAdd={() => setFeeTypesDraft((rows) => [...rows, newFeeType(rows.length)])} onSave={() => void saveFeeTypes()}>
+            {feeTypesDraft.length === 0 ? <EmptyState label="No fee types configured." /> : null}
+            {feeTypesDraft.map((feeType, index) => (
+              <div key={feeType.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+                <RowHeader title={feeType.name || "New fee type"} active={feeType.is_active} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <TextInput label="Name" value={feeType.name} disabled={!canManageConfig} onChange={(value) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { name: value })} />
+                  <NumberInput label="Default amount" value={feeType.default_amount} disabled={!canManageConfig} onChange={(value) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { default_amount: value })} />
+                  <Field label="Frequency">
+                    <Select value={feeType.frequency} disabled={!canManageConfig} onChange={(event) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { frequency: event.target.value as FeeFrequency })}>
+                      {feeFrequencies.map((frequency) => <option key={frequency}>{frequency}</option>)}
+                    </Select>
+                  </Field>
+                  <NumberInput label="Sort order" value={feeType.sort_order} disabled={!canManageConfig} onChange={(value) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { sort_order: value })} />
+                  <ToggleField label="Required" checked={feeType.is_required} disabled={!canManageConfig} onChange={(checked) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { is_required: checked })} />
+                  <ToggleField label="Active" checked={feeType.is_active} disabled={!canManageConfig} onChange={(checked) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { is_active: checked })} />
+                </div>
+                <Field label="Description">
+                  <Textarea value={feeType.description ?? ""} onChange={(event) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { description: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+              </div>
+            ))}
+          </ConfigList>
+        ) : null}
+
+        {activeSection === "AI Settings" ? (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>AI Settings</CardTitle>
+                <Badge tone={aiDraft?.is_enabled ? "green" : "gray"}>{aiDraft?.is_enabled ? "Enabled" : "Disabled"}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              {aiLoading ? <LoadingState label="Loading AI settings" /> : null}
+              <div className="rounded-md border bg-ivory/40 p-4 text-sm text-muted-foreground">
+                Gemini keys are not stored in browser code. Configure `GEMINI_API_KEY` or `GOOGLE_API_KEY` as a Supabase Edge Function secret, then use the health check.
+              </div>
+              {aiDraft ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <TextInput label="Provider" value={aiDraft.provider} disabled onChange={() => undefined} />
+                    <TextInput label="Model" value={aiDraft.model} disabled={!canManageAi} onChange={(value) => setAiDraft({ ...aiDraft, model: value })} />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ToggleField label="AI enabled" checked={aiDraft.is_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, is_enabled: checked })} />
+                    <ToggleField label="Daily brief enabled" checked={aiDraft.daily_brief_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, daily_brief_enabled: checked })} />
+                    <ToggleField label="Application summary enabled" checked={aiDraft.application_summary_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, application_summary_enabled: checked })} />
+                    <ToggleField label="Collections assistant enabled" checked={aiDraft.collections_assistant_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, collections_assistant_enabled: checked })} />
+                  </div>
+                  <Field label="Notes">
+                    <Textarea value={aiDraft.notes ?? ""} disabled={!canManageAi} onChange={(event) => setAiDraft({ ...aiDraft, notes: event.target.value })} />
+                  </Field>
+                  {aiStatus ? <div className="rounded-md border bg-white p-3 text-sm text-muted-foreground">{aiStatus}</div> : null}
+                  <div className="flex flex-wrap justify-end gap-3">
+                    <Button type="button" variant="secondary" onClick={() => void checkAiProvider()}>
+                      <RefreshCw className="h-4 w-4" /> Check provider
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={handleAssistantClick}>
+                      <Bot className="h-4 w-4" /> Wamule AI Assistant
+                    </Button>
+                    <Button type="button" disabled={!canManageAi || savingSection === "AI settings"} onClick={() => void saveAiSettings()}>
+                      {savingSection === "AI settings" ? "Saving..." : "Save AI settings"}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <EmptyState label="AI settings have not been seeded yet. Apply the latest migration first." />
+              )}
             </CardContent>
           </Card>
         ) : null}
 
-        {activeSection === "Users" ? (
+        {activeSection === "Users & Roles" ? (
           <Card>
-            <CardHeader><CardTitle>User Management</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Users & Roles</CardTitle></CardHeader>
             <CardContent className="grid gap-5">
               {usersLoading ? <LoadingState label="Loading users" /> : null}
               {userError ? <ErrorState message={userError} /> : null}
-              {userMessage ? <div className="rounded-md border border-sage/35 bg-sage/15 p-3 text-sm text-primary">{userMessage}</div> : null}
+              {userMessage ? <Toast message={userMessage} onDismiss={() => setUserMessage(null)} /> : null}
+              {!canManageUsers ? <div className="rounded-md border border-copper/30 bg-copper/10 p-3 text-sm text-copper">Only Super Admin users can create users or change roles.</div> : null}
               <form className="grid gap-4 rounded-md border bg-ivory/40 p-4" onSubmit={createUser}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Email">
-                    <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={!isAdmin} />
-                  </Field>
-                  <Field label="Full name">
-                    <Input value={fullName} onChange={(event) => setFullName(event.target.value)} disabled={!isAdmin} />
-                  </Field>
+                  <TextInput label="Email" type="email" value={email} disabled={!canManageUsers} onChange={setEmail} />
+                  <TextInput label="Full name" value={fullName} disabled={!canManageUsers} onChange={setFullName} />
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Role">
-                    <Select value={role} onChange={(event) => setRole(event.target.value as AppRole)} disabled={!isAdmin}>
+                    <Select value={role} onChange={(event) => setRole(event.target.value as AppRole)} disabled={!canManageUsers}>
                       {roles.map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Temporary password">
-                    <Input
-                      type="password"
-                      minLength={8}
-                      placeholder="Leave blank to send invite"
-                      value={temporaryPassword}
-                      onChange={(event) => setTemporaryPassword(event.target.value)}
-                      disabled={!isAdmin}
-                    />
-                  </Field>
+                  <TextInput label="Temporary password" type="password" value={temporaryPassword} disabled={!canManageUsers} onChange={setTemporaryPassword} />
                 </div>
-                <Button disabled={!isAdmin || creatingUser}>{creatingUser ? "Saving user..." : "Create / invite user"}</Button>
+                <Button disabled={!canManageUsers || creatingUser}>{creatingUser ? "Saving user..." : "Create / invite user"}</Button>
               </form>
               <div className="grid gap-3">
                 {users?.map((user) => (
-                  <div key={user.user_id} className="grid gap-3 rounded-md border p-3 text-sm md:grid-cols-[1fr_180px] md:items-center">
+                  <div key={user.user_id} className="grid gap-3 rounded-md border p-3 text-sm md:grid-cols-[1fr_220px] md:items-center">
                     <div>
                       <p className="font-medium">{user.full_name || user.email || user.user_id}</p>
                       <p className="text-muted-foreground">{user.email ?? "No email stored"}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge tone={user.role === "Admin" ? "green" : user.role === "Staff" ? "blue" : "gray"}>{user.role}</Badge>
-                      <Select value={user.role} onChange={(event) => void updateRole(user.user_id, event.target.value as AppRole)} disabled={!isAdmin}>
+                      <Badge tone={user.role === "Super Admin" ? "amber" : user.role === "Admin" ? "green" : user.role === "Staff" ? "blue" : "gray"}>{user.role}</Badge>
+                      <Select value={user.role} onChange={(event) => void updateRole(user.user_id, event.target.value as AppRole)} disabled={!canManageUsers}>
                         {roles.map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
                       </Select>
                     </div>
@@ -605,41 +647,57 @@ export function SettingsPage() {
             </CardContent>
           </Card>
         ) : null}
-
-        {activeSection === "Fees" ? (
-          <Card>
-            <CardHeader><CardTitle>Community Fees</CardTitle></CardHeader>
-            <CardContent className="grid gap-4">
-              {feesLoading ? <LoadingState /> : null}
-              {feeError ? <ErrorState message={feeError} /> : null}
-              <Field label="Garbage fee amount">
-                <Input type="number" min="0" step="0.01" placeholder={String(feeSettings?.garbage_fee_amount ?? 0)} value={garbage} onChange={(event) => setGarbage(event.target.value)} disabled={!isAdmin} />
-              </Field>
-              <Field label="Road maintenance fee amount">
-                <Input type="number" min="0" step="0.01" placeholder={String(feeSettings?.road_maintenance_fee_amount ?? 0)} value={road} onChange={(event) => setRoad(event.target.value)} disabled={!isAdmin} />
-              </Field>
-              <Button type="button" disabled={!isAdmin} onClick={() => void saveFees()}>Save fees</Button>
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
     </>
   );
-
-  function updateDraftPlan(index: number, updates: Partial<InstallmentPlan>) {
-    setDraftPlans((current) => current.map((plan, planIndex) => (planIndex === index ? { ...plan, ...updates } : plan)));
-  }
 }
 
-function SectionSaveButton({
-  disabled,
+function ConfigList({
+  title,
+  loading,
+  canEdit,
   saving,
-  onClick,
+  onAdd,
+  onSave,
+  children,
 }: {
-  disabled: boolean;
+  title: string;
+  loading: boolean;
+  canEdit: boolean;
   saving: boolean;
-  onClick: () => void;
+  onAdd: () => void;
+  onSave: () => void;
+  children: React.ReactNode;
 }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>{title}</CardTitle>
+          <Button type="button" variant="secondary" disabled={!canEdit} onClick={onAdd}>
+            <Plus className="h-4 w-4" /> Add
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {loading ? <LoadingState label={`Loading ${title.toLowerCase()}`} /> : null}
+        {children}
+        <SectionSaveButton disabled={!canEdit} saving={saving} onClick={onSave} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function RowHeader({ title, active }: { title: string; active: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="font-medium text-primary">{title}</p>
+      <Badge tone={active ? "green" : "gray"}>{active ? "Active" : "Inactive"}</Badge>
+    </div>
+  );
+}
+
+function SectionSaveButton({ disabled, saving, onClick }: { disabled: boolean; saving: boolean; onClick: () => void }) {
   return (
     <div className="flex justify-end">
       <Button type="button" disabled={disabled || saving} onClick={onClick}>
@@ -649,29 +707,175 @@ function SectionSaveButton({
   );
 }
 
-function ToggleField({
-  label,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
+function ToggleField({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-4 rounded-md border bg-ivory/35 p-3 text-sm font-medium text-primary">
+    <label className="flex min-h-11 items-center justify-between gap-4 rounded-md border bg-ivory/35 p-3 text-sm font-medium text-primary">
       <span>{label}</span>
-      <input
-        type="checkbox"
-        className="h-4 w-4 accent-copper"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
+      <input className="h-4 w-4 accent-copper" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
+}
+
+function TextInput({ label, value, type = "text", disabled, onChange }: { label: string; value: string; type?: string; disabled: boolean; onChange: (value: string) => void }) {
+  return (
+    <Field label={label}>
+      <Input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    </Field>
+  );
+}
+
+function NumberInput({ label, value, disabled, min = 0, max, onChange }: { label: string; value: number; disabled: boolean; min?: number; max?: number; onChange: (value: number) => void }) {
+  return (
+    <Field label={label}>
+      <Input type="number" min={min} max={max} step="0.01" value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))} />
+    </Field>
+  );
+}
+
+function EmptyState({ label }: { label: string }) {
+  return <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{label}</p>;
+}
+
+function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sage/35 bg-sage/15 px-4 py-3 text-sm text-primary">
+      <span>{message}</span>
+      <button type="button" className="font-medium" onClick={onDismiss}>Dismiss</button>
+    </div>
+  );
+}
+
+function updateDraft<T>(rows: T[], setRows: (rows: T[]) => void, index: number, updates: Partial<T>) {
+  setRows(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...updates } : row)));
+}
+
+function cleanPaymentMethod(method: DraftPaymentMethod) {
+  return stripNewId({
+    id: method.id,
+    name: method.name,
+    method_type: method.method_type,
+    bank_name: method.method_type === "Cash" ? null : method.bank_name || null,
+    account_name: method.method_type === "Cash" ? null : method.account_name || null,
+    account_number: method.method_type === "Cash" ? null : method.account_number || null,
+    currency: method.currency || "BZD",
+    instructions: method.instructions || null,
+    is_active: method.is_active,
+    is_public: method.is_public,
+    sort_order: Number(method.sort_order || 0),
+  }, method.isNew);
+}
+
+function cleanPlan(plan: DraftInstallmentPlan) {
+  return stripNewId({
+    id: plan.id,
+    name: plan.name,
+    description: plan.description || null,
+    reservation_fee: Number(plan.reservation_fee || 0),
+    initial_deposit: Number(plan.initial_deposit || 0),
+    final_purchase_price: Number(plan.final_purchase_price || 0),
+    term_months: Math.min(60, Math.max(1, Number(plan.term_months || 1))),
+    monthly_payment: Number(plan.monthly_payment || 0),
+    is_active: plan.is_active,
+    sort_order: Number(plan.sort_order || 0),
+  }, plan.isNew);
+}
+
+function cleanLotSize(lotSize: DraftLotSize) {
+  return stripNewId({
+    id: lotSize.id,
+    name: lotSize.name,
+    dimensions: lotSize.dimensions,
+    default_price: Number(lotSize.default_price || 0),
+    description: lotSize.description || null,
+    is_active: lotSize.is_active,
+    sort_order: Number(lotSize.sort_order || 0),
+  }, lotSize.isNew);
+}
+
+function cleanFeeType(feeType: DraftFeeType) {
+  return stripNewId({
+    id: feeType.id,
+    name: feeType.name,
+    description: feeType.description || null,
+    default_amount: Number(feeType.default_amount || 0),
+    frequency: feeType.frequency,
+    is_required: feeType.is_required,
+    is_active: feeType.is_active,
+    sort_order: Number(feeType.sort_order || 0),
+  }, feeType.isNew);
+}
+
+function stripNewId<T extends { id: number }>(row: T, isNew?: boolean) {
+  if (!isNew) return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key !== "id"));
+}
+
+function newPaymentMethod(index: number): DraftPaymentMethod {
+  return {
+    id: -Date.now(),
+    isNew: true,
+    name: "New Payment Method",
+    method_type: "Bank Transfer",
+    bank_name: "",
+    account_name: "",
+    account_number: "",
+    currency: "BZD",
+    instructions: "",
+    is_active: true,
+    is_public: false,
+    sort_order: (index + 1) * 10,
+    created_at: "",
+    updated_at: "",
+  };
+}
+
+function newPlan(index: number): DraftInstallmentPlan {
+  return {
+    id: -Date.now(),
+    isNew: true,
+    name: "New Installment Plan",
+    description: "",
+    reservation_fee: 2500,
+    initial_deposit: 2500,
+    final_purchase_price: 25000,
+    term_months: 60,
+    monthly_payment: 375,
+    is_active: true,
+    sort_order: (index + 1) * 10,
+    created_at: "",
+    updated_at: "",
+  };
+}
+
+function newLotSize(index: number): DraftLotSize {
+  return {
+    id: -Date.now(),
+    isNew: true,
+    name: "New Lot Size",
+    dimensions: "",
+    default_price: 25000,
+    description: "",
+    is_active: true,
+    sort_order: (index + 1) * 10,
+    created_at: "",
+    updated_at: "",
+  };
+}
+
+function newFeeType(index: number): DraftFeeType {
+  return {
+    id: -Date.now(),
+    isNew: true,
+    name: "New Fee Type",
+    description: "",
+    default_amount: 0,
+    frequency: "Monthly",
+    is_required: false,
+    is_active: true,
+    sort_order: (index + 1) * 10,
+    created_at: "",
+    updated_at: "",
+  };
 }
 
 function settingValue<T>(settings: BusinessSetting[], key: BusinessSettingKey) {

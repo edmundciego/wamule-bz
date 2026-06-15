@@ -44,6 +44,7 @@ export function LotsPage() {
             >
               <div className="flex h-full flex-col justify-between">
                 <strong>Lot {lot.lot_number}</strong>
+                <span className="text-xs">{lot.dimensions}</span>
                 <span>{lot.status}</span>
               </div>
             </div>

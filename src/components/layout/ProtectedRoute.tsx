@@ -25,7 +25,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!data.profile) {
     return (
       <main className="mx-auto max-w-2xl p-6">
-        <ErrorState message="Your login does not have an admin profile. Ask an Admin to add your user ID to admin_profiles." />
+        <ErrorState message="Your login does not have an admin profile. Ask a Super Admin to add your user ID to admin_profiles." />
       </main>
     );
   }

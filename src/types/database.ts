@@ -1,4 +1,4 @@
-export type AppRole = "Admin" | "Staff" | "Read Only";
+export type AppRole = "Super Admin" | "Admin" | "Staff" | "Read Only";
 export type ParcelStatus = "Available" | "Reserved" | "Sold";
 export type ParcelZoning = "Residential" | "Commercial" | "Green Space";
 export type ApplicationStatus = "Pending Review" | "Approved" | "Declined";
@@ -14,6 +14,9 @@ export type PaymentDocumentType =
   | "Signed Payment Note"
   | "Other";
 export type PaymentRequestStatus = "Draft" | "Sent" | "Paid" | "Cancelled";
+export type ApplicationAiCompletenessStatus = "Complete" | "Needs Review" | "Missing Information" | "Lot Conflict";
+export type PaymentMethodType = "Cash" | "Bank Transfer" | "Other";
+export type FeeFrequency = "One-Time" | "Monthly" | "Yearly" | "As Needed";
 export type BusinessSettingKey =
   | "company_profile"
   | "public_application"
@@ -33,6 +36,8 @@ export type Parcel = {
   id: number;
   lot_number: string;
   dimensions: string;
+  lot_size_id: number | null;
+  lot_size_name?: string | null;
   zoning: ParcelZoning;
   status: ParcelStatus;
   base_price: number;
@@ -44,9 +49,21 @@ export type Application = {
   id: number;
   first_name: string;
   last_name: string;
+  applicant_full_name: string | null;
+  applicant_address: string | null;
+  nationality: string | null;
+  occupation: string | null;
   phone: string;
   email: string | null;
   parcel_id: number | null;
+  intended_use: string | null;
+  intended_use_other: string | null;
+  parcel_count: number | null;
+  preferred_parcel_ids: number[] | null;
+  alternate_lot_preference: string | null;
+  payment_option: string | null;
+  legal_notice_acknowledged: boolean;
+  applicant_acknowledgement_signature: string | null;
   cultural_preservation_review: string | null;
   sustainability_terms_verified: boolean;
   status: ApplicationStatus;
@@ -142,11 +159,80 @@ export type InstallmentPlan = {
   name: string;
   description: string | null;
   reservation_fee: number;
+  initial_deposit: number;
   final_purchase_price: number;
   term_months: number;
   monthly_payment: number;
   is_active: boolean;
   sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PaymentMethod = {
+  id: number;
+  name: string;
+  method_type: PaymentMethodType;
+  bank_name: string | null;
+  account_name: string | null;
+  account_number: string | null;
+  currency: string;
+  instructions: string | null;
+  is_active: boolean;
+  is_public: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LotSize = {
+  id: number;
+  name: string;
+  dimensions: string;
+  default_price: number;
+  description: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FeeType = {
+  id: number;
+  name: string;
+  description: string | null;
+  default_amount: number;
+  frequency: FeeFrequency;
+  is_required: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AiSetting = {
+  id: number;
+  provider: "Gemini";
+  model: string;
+  is_enabled: boolean;
+  daily_brief_enabled: boolean;
+  application_summary_enabled: boolean;
+  collections_assistant_enabled: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApplicationAiReview = {
+  id: number;
+  application_id: number;
+  summary: string;
+  completeness_status: ApplicationAiCompletenessStatus;
+  missing_fields: string[];
+  risk_flags: string[];
+  recommended_admin_actions: string[];
+  model: string;
+  generated_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -175,7 +261,23 @@ export type Database = {
           Partial<
             Pick<
               Application,
-              "email" | "parcel_id" | "cultural_preservation_review" | "status" | "notes"
+              | "email"
+              | "parcel_id"
+              | "applicant_full_name"
+              | "applicant_address"
+              | "nationality"
+              | "occupation"
+              | "intended_use"
+              | "intended_use_other"
+              | "parcel_count"
+              | "preferred_parcel_ids"
+              | "alternate_lot_preference"
+              | "payment_option"
+              | "legal_notice_acknowledged"
+              | "applicant_acknowledgement_signature"
+              | "cultural_preservation_review"
+              | "status"
+              | "notes"
             >
           >;
         Update: Partial<Omit<Application, "id" | "created_at" | "updated_at" | "parcels">>;
@@ -215,9 +317,39 @@ export type Database = {
         Insert: Omit<InstallmentPlan, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<InstallmentPlan, "id" | "created_at" | "updated_at">>;
       };
+      payment_methods: {
+        Row: PaymentMethod;
+        Insert: Omit<PaymentMethod, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<PaymentMethod, "id" | "created_at" | "updated_at">>;
+      };
+      lot_sizes: {
+        Row: LotSize;
+        Insert: Omit<LotSize, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<LotSize, "id" | "created_at" | "updated_at">>;
+      };
+      fee_types: {
+        Row: FeeType;
+        Insert: Omit<FeeType, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<FeeType, "id" | "created_at" | "updated_at">>;
+      };
+      ai_settings: {
+        Row: AiSetting;
+        Insert: Omit<AiSetting, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<AiSetting, "id" | "created_at" | "updated_at">>;
+      };
+      application_ai_reviews: {
+        Row: ApplicationAiReview;
+        Insert: Omit<ApplicationAiReview, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ApplicationAiReview, "id" | "created_at" | "updated_at">>;
+      };
     };
     Views: {
-      parcel_board_view: { Row: Parcel & { customer_name: string | null; contract_id: number | null } };
+      parcel_board_view: { Row: Parcel & { customer_name: string | null; contract_id: number | null; customer_id: number | null } };
+      public_parcel_options: {
+        Row: Pick<Parcel, "id" | "lot_number" | "dimensions" | "zoning" | "status" | "base_price" | "lot_size_id"> & {
+          lot_size_name: string | null;
+        };
+      };
       customer_balance_view: {
         Row: {
           customer_id: number;
@@ -230,7 +362,7 @@ export type Database = {
     };
     Functions: {
       approve_application: {
-        Args: { p_application_id: number };
+        Args: { p_application_id: number; p_parcel_id: number };
         Returns: void;
       };
     };

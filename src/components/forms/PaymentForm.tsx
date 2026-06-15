@@ -12,10 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Field, Input, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
 import { UploadFileSummary } from "../uploads/UploadFileSummary";
+import type { CollectionMethod, FeeType, PaymentMethod } from "../../types/database";
 
 type PaymentValues = z.infer<typeof paymentSchema>;
 
 const documentTypes = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"] as const;
+const landTransactionTypes = ["Down Payment", "Land Installment"] as const;
+const compatibleFeeTypes = ["Garbage Fee", "Road Maintenance"] as const;
 
 export function PaymentForm({
   customerId,
@@ -62,6 +65,33 @@ export function PaymentForm({
     },
     enabled: Boolean(form.watch("customer_id")),
   });
+  const { data: paymentMethods } = useQuery({
+    queryKey: ["active-payment-methods-form"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("payment_methods")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as PaymentMethod[];
+    },
+  });
+  const { data: feeTypes } = useQuery({
+    queryKey: ["active-fee-types-form"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("fee_types")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as FeeType[];
+    },
+  });
+  const collectionOptions = buildCollectionOptions(paymentMethods);
+  const transactionOptions = buildTransactionOptions(feeTypes);
+  const selectedPaymentMethod = collectionOptions.find((option) => option.value === form.watch("collection_method"));
 
   async function onSubmit(values: PaymentValues) {
     setError(null);
@@ -178,10 +208,9 @@ export function PaymentForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Transaction type" error={form.formState.errors.transaction_type?.message}>
               <Select {...form.register("transaction_type")}>
-                <option>Down Payment</option>
-                <option>Land Installment</option>
-                <option>Garbage Fee</option>
-                <option>Road Maintenance</option>
+                {transactionOptions.map((transactionType) => (
+                  <option key={transactionType}>{transactionType}</option>
+                ))}
               </Select>
             </Field>
             <Field label="Contract" error={form.formState.errors.contract_id?.message}>
@@ -201,11 +230,19 @@ export function PaymentForm({
             </Field>
             <Field label="Collection method" error={form.formState.errors.collection_method?.message}>
               <Select {...form.register("collection_method")}>
-                <option>Cash</option>
-                <option>Online Transfer</option>
+                {collectionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
+          {selectedPaymentMethod?.description ? (
+            <div className="rounded-md border bg-sage/10 p-3 text-xs text-muted-foreground">
+              {selectedPaymentMethod.description}
+            </div>
+          ) : null}
           <Field label="Bank reference" error={form.formState.errors.bank_reference?.message}>
             <Input {...form.register("bank_reference")} />
           </Field>
@@ -264,4 +301,33 @@ export function PaymentForm({
       </CardContent>
     </Card>
   );
+}
+
+function buildCollectionOptions(methods: PaymentMethod[] | undefined): Array<{ value: CollectionMethod; label: string; description: string | null }> {
+  if (!methods?.length) {
+    return [
+      { value: "Cash", label: "Cash", description: null },
+      { value: "Online Transfer", label: "Online Transfer", description: null },
+    ];
+  }
+
+  const options = new Map<CollectionMethod, { value: CollectionMethod; label: string; description: string | null }>();
+  methods.forEach((method) => {
+    const value: CollectionMethod = method.method_type === "Cash" ? "Cash" : "Online Transfer";
+    if (options.has(value)) return;
+    const bankDetails = [method.bank_name, method.account_name, method.account_number].filter(Boolean).join(" / ");
+    options.set(value, {
+      value,
+      label: method.method_type === "Cash" ? method.name : method.name || "Bank Transfer",
+      description: [bankDetails, method.instructions].filter(Boolean).join(" - ") || null,
+    });
+  });
+  return Array.from(options.values());
+}
+
+function buildTransactionOptions(feeTypes: FeeType[] | undefined) {
+  const feeNames = feeTypes
+    ?.map((feeType) => feeType.name)
+    .filter((name): name is (typeof compatibleFeeTypes)[number] => compatibleFeeTypes.includes(name as (typeof compatibleFeeTypes)[number])) ?? compatibleFeeTypes;
+  return [...landTransactionTypes, ...feeNames];
 }

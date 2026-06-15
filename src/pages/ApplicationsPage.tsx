@@ -6,10 +6,10 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
-import { updateApplicationStatus } from "../lib/data";
+import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
-import type { ApplicationStatus } from "../types/database";
+import type { ApplicationAiReview, ApplicationStatus, AppRole } from "../types/database";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
 
@@ -17,15 +17,33 @@ export function ApplicationsPage() {
   const queryClient = useQueryClient();
   const [selectedLots, setSelectedLots] = useState<Record<number, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  const [generatingReviewId, setGeneratingReviewId] = useState<number | null>(null);
+  const { data: sessionProfile } = useQuery({
+    queryKey: ["session-profile"],
+    queryFn: getSessionAndProfile,
+  });
   const { data, isLoading, error } = useQuery({
     queryKey: ["applications-kanban"],
     queryFn: async () => {
       const { data: applications, error: queryError } = await supabase
         .from("applications")
-        .select("*, parcels(id, lot_number, status)")
+        .select("*, parcels(id, lot_number, status), application_ai_reviews(*)")
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return applications;
+    },
+  });
+  const { data: aiSettings } = useQuery({
+    queryKey: ["application-ai-settings"],
+    queryFn: async () => {
+      const { data: settings, error: queryError } = await supabase
+        .from("ai_settings")
+        .select("is_enabled, application_summary_enabled")
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (queryError) throw queryError;
+      return settings;
     },
   });
   const { data: lotOptions } = useQuery({
@@ -53,6 +71,24 @@ export function ApplicationsPage() {
     }
   }
 
+  async function generateReview(applicationId: number) {
+    setActionError(null);
+    setGeneratingReviewId(applicationId);
+    const { data: result, error: functionError } = await supabase.functions.invoke("generate-application-review", {
+      body: { application_id: applicationId },
+    });
+    setGeneratingReviewId(null);
+    if (functionError) {
+      setActionError(functionError.message);
+      return;
+    }
+    if (result?.error) {
+      setActionError(String(result.error));
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["applications-kanban"] });
+  }
+
   function preferredLotText(preferredParcelIds: unknown) {
     if (!Array.isArray(preferredParcelIds) || !lotOptions) return "None listed";
     const labels = preferredParcelIds
@@ -60,6 +96,10 @@ export function ApplicationsPage() {
       .map((lotNumber) => `Lot ${lotNumber}`);
     return labels.length > 0 ? labels.join(", ") : "None listed";
   }
+
+  const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
+  const canGenerateAiReview = currentRole === "Super Admin" || currentRole === "Admin";
+  const aiReviewEnabled = Boolean(aiSettings?.is_enabled && aiSettings.application_summary_enabled);
 
   return (
     <>
@@ -95,6 +135,13 @@ export function ApplicationsPage() {
                         <p>Created: {formatDate(application.created_at)}</p>
                         <p>{application.legal_notice_acknowledged ? "Legal notice acknowledged" : "Missing legal acknowledgement"}</p>
                       </div>
+                      <ApplicationAiReviewSection
+                        review={firstReview(application.application_ai_reviews)}
+                        canGenerate={canGenerateAiReview}
+                        aiReviewEnabled={aiReviewEnabled}
+                        generating={generatingReviewId === application.id}
+                        onGenerate={() => void generateReview(application.id)}
+                      />
                       {status !== "Approved" ? (
                         <Select
                           value={selectedLots[application.id] ?? ""}
@@ -128,4 +175,86 @@ export function ApplicationsPage() {
       </div>
     </>
   );
+}
+
+function ApplicationAiReviewSection({
+  review,
+  canGenerate,
+  aiReviewEnabled,
+  generating,
+  onGenerate,
+}: {
+  review: ApplicationAiReview | null;
+  canGenerate: boolean;
+  aiReviewEnabled: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-md border border-primary/10 bg-ivory/45 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-medium text-primary">AI Application Review</p>
+          <p className="text-xs text-muted-foreground">Assistant-generated review guidance only. Admin remains responsible for final decisions.</p>
+        </div>
+        {review ? <Badge tone={reviewTone(review.completeness_status)}>{review.completeness_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
+      </div>
+
+      {!aiReviewEnabled ? (
+        <p className="rounded-md border border-copper/25 bg-copper/10 p-2 text-xs text-copper">
+          AI Application Review is not enabled. Enable it in Settings.
+        </p>
+      ) : null}
+
+      {review ? (
+        <div className="grid gap-2">
+          <p>{review.summary}</p>
+          <ReviewList title="Missing fields" items={review.missing_fields} emptyLabel="No missing fields flagged." />
+          <ReviewList title="Risk flags" items={review.risk_flags} emptyLabel="No risk flags listed." />
+          <ReviewList title="Recommended admin actions" items={review.recommended_admin_actions} emptyLabel="No extra actions listed." />
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            <span>Model: {review.model}</span>
+            <span>Generated: {formatDate(review.updated_at || review.created_at)}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No assistant review has been generated for this application yet.</p>
+      )}
+
+      {canGenerate ? (
+        <div className="flex justify-end">
+          <Button type="button" variant="secondary" disabled={generating} onClick={onGenerate}>
+            {generating ? "Generating..." : review ? "Regenerate Review" : "Generate AI Review"}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewList({ title, items, emptyLabel }: { title: string; items: string[]; emptyLabel: string }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">{title}</p>
+      {items.length ? (
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+          {items.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
+function firstReview(value: unknown): ApplicationAiReview | null {
+  if (Array.isArray(value)) return (value[0] as ApplicationAiReview | undefined) ?? null;
+  return (value as ApplicationAiReview | null) ?? null;
+}
+
+function reviewTone(status: ApplicationAiReview["completeness_status"]) {
+  if (status === "Complete") return "green";
+  if (status === "Lot Conflict") return "red";
+  if (status === "Missing Information") return "amber";
+  return "blue";
 }

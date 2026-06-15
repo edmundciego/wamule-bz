@@ -13,7 +13,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { applicationSchema } from "../lib/schemas";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
-import type { BusinessSetting, InstallmentPlan } from "../types/database";
+import type { BusinessSetting, InstallmentPlan, PaymentMethod } from "../types/database";
 
 type ApplicationValues = z.infer<typeof applicationSchema>;
 
@@ -92,6 +92,20 @@ export function ApplicationPage() {
         .order("sort_order", { ascending: true });
       if (error) throw error;
       return data as InstallmentPlan[];
+    },
+    enabled: hasSupabaseConfig,
+  });
+  const { data: paymentMethods } = useQuery({
+    queryKey: ["public-payment-methods"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payment_methods")
+        .select("*")
+        .eq("is_active", true)
+        .eq("is_public", true)
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return data as PaymentMethod[];
     },
     enabled: hasSupabaseConfig,
   });
@@ -395,6 +409,22 @@ export function ApplicationPage() {
                       ))}
                     </div>
                   </Field>
+                  {paymentMethods?.length ? (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {paymentMethods.map((method) => (
+                        <div key={method.id} className="rounded-md border bg-white p-4 text-sm shadow-sm shadow-primary/5">
+                          <p className="font-semibold text-primary">{method.name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{method.method_type}</p>
+                          {[method.bank_name, method.account_name, method.account_number].filter(Boolean).length ? (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {[method.bank_name, method.account_name, method.account_number].filter(Boolean).join(" / ")}
+                            </p>
+                          ) : null}
+                          {method.instructions ? <p className="mt-2 text-xs text-muted-foreground">{method.instructions}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <Field label="Additional notes">
                     <Textarea {...form.register("notes")} />
                   </Field>
@@ -492,6 +522,7 @@ function fallbackApplicationPlans(): InstallmentPlan[] {
       name: "Installment Plan - 60 months",
       description: "$2,500 reservation fee, $375.00 monthly",
       reservation_fee: 2500,
+      initial_deposit: 2500,
       final_purchase_price: 25000,
       term_months: 60,
       monthly_payment: 375,
@@ -505,6 +536,7 @@ function fallbackApplicationPlans(): InstallmentPlan[] {
       name: "Paid in Full",
       description: "$2,500 reservation fee, remaining balance due at purchase agreement",
       reservation_fee: 2500,
+      initial_deposit: 2500,
       final_purchase_price: 25000,
       term_months: 1,
       monthly_payment: 0,
