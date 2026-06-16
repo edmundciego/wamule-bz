@@ -5,6 +5,7 @@ import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { accountDueDate, startOfDay } from "../lib/accountDates";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
 
@@ -77,7 +78,7 @@ export function CollectionsPage() {
     return {
       dueToday: withDue.filter((row) => isSameDay(row.dueDate, today)),
       dueThisWeek: withDue.filter((row) => row.dueDate > today && row.dueDate <= weekEnd),
-      overdue: withDue.filter((row) => row.dueDate < today),
+      overdue: withDue.filter((row) => row.dueDate < today && outstandingBalance(row.contract) > 0),
       missingSigned: rows.filter((contract) => !contract.signed_contract_file_path),
       outstanding: rows.reduce((sum, contract) => sum + outstandingBalance(contract), 0),
     };
@@ -206,19 +207,7 @@ function outstandingBalance(contract: ContractCollectionRow) {
 }
 
 function dueDateForCurrentCycle(contract: ContractCollectionRow, today: Date) {
-  const due = new Date(today.getFullYear(), today.getMonth(), contract.payment_due_day);
-  if (due < today && outstandingBalance(contract) <= 0) {
-    due.setMonth(due.getMonth() + 1);
-  }
-  return due;
-}
-
-function customerName(customer?: { first_name: string; last_name: string } | null) {
-  return `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Unknown customer";
-}
-
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return accountDueDate(contract, today);
 }
 
 function addDays(date: Date, days: number) {
@@ -229,4 +218,8 @@ function addDays(date: Date, days: number) {
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function customerName(customer?: { first_name: string; last_name: string } | null) {
+  return `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Unknown customer";
 }

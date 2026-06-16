@@ -213,7 +213,7 @@ function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
   const overdueRequests = openRequests.filter((request) => startOfDay(new Date(String(request.due_date))) < startOfDay(new Date()));
   const dueDate = contract ? dueDateForCurrentCycle(contract, new Date()) : null;
   const dueSoon = dueDate ? daysBetween(startOfDay(new Date()), dueDate) >= 0 && daysBetween(startOfDay(new Date()), dueDate) <= 7 : false;
-  const overdue = dueDate ? dueDate < startOfDay(new Date()) && remainingBalance > 0 : false;
+  const overdue = contract && dueDate ? dueDate < startOfDay(new Date()) && remainingBalance > 0 && !expectedPaymentSatisfied(contract, totalPaid, dueDate) : false;
   const noRecentPayment = contract && remainingBalance > 0 && (!lastPayment || daysBetween(new Date(String(lastPayment.created_at)), new Date()) > 45);
   const lot = contract?.parcels as Record<string, unknown> | null | undefined;
 
@@ -292,6 +292,10 @@ async function generateGeminiSummary({
     "Return only valid JSON with keys: summary, account_status, balance_summary, payment_summary, collections_flags, missing_items, recommended_actions, draft_follow_up_message.",
     "account_status must be one of: Good Standing, Due Soon, Overdue, Needs Review, Missing Documents, No Active Contract.",
     "Tone must be professional, clear, practical, respectful, Belize/Caribbean business-friendly, and collections-aware.",
+    "Do not use legal threats, final notices, or aggressive language.",
+    "Avoid saying: Thank you for your prompt attention to this matter.",
+    "Use this preferred closing once at the end of the draft message: Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.",
+    "If the account is Due Soon or Missing Documents, do not imply that the customer is overdue or in default.",
     "",
     `Deterministic baseline: ${JSON.stringify(deterministic)}`,
     `Customer account data: ${JSON.stringify(data)}`,
@@ -327,13 +331,13 @@ async function generateGeminiSummary({
 function sanitizeSummary(value: Partial<CustomerSummaryOutput>, fallback: CustomerSummaryOutput): CustomerSummaryOutput {
   return {
     summary: cleanText(value.summary, fallback.summary),
-    account_status: normalizeStatus(value.account_status, fallback.account_status),
+    account_status: fallback.account_status,
     balance_summary: cleanText(value.balance_summary, fallback.balance_summary),
     payment_summary: cleanText(value.payment_summary, fallback.payment_summary),
     collections_flags: cleanArray(value.collections_flags, fallback.collections_flags),
     missing_items: cleanArray(value.missing_items, fallback.missing_items),
     recommended_actions: cleanArray(value.recommended_actions, fallback.recommended_actions),
-    draft_follow_up_message: cleanText(value.draft_follow_up_message, fallback.draft_follow_up_message),
+    draft_follow_up_message: cleanFollowUpMessage(value.draft_follow_up_message, fallback.draft_follow_up_message),
   };
 }
 
@@ -411,28 +415,34 @@ function chooseStatus({
 
 function buildFollowUpMessage(name: string, status: AccountStatus, balance: number, dueDate: Date | null, openRequests: number) {
   const firstName = name.split(" ")[0] || name;
+  const closing = "Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.";
   if (status === "Overdue") {
-    return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records show a balance of ${money(balance)} and a payment item that may need follow-up. Please contact us when convenient so we can confirm the payment status or make any needed updates to your account.`;
+    return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records show a balance of ${money(balance)} and a payment item that may need follow-up. ${closing}`;
   }
   if (status === "Due Soon") {
-    return `Good morning ${firstName}, this is a friendly update from Wamule Development. Our records show your next payment date is coming up${dueDate ? ` around ${formatDate(dueDate.toISOString())}` : ""}. Please let us know if you would like us to confirm your account details.`;
+    return `Good morning ${firstName}, this is a friendly update from Wamule Development. Our records show your next payment date is coming up${dueDate ? ` around ${formatDate(dueDate.toISOString())}` : ""}. ${closing}`;
+  }
+  if (status === "Missing Documents") {
+    return `Good morning ${firstName}, this is a quick note from Wamule Development. We are reviewing account documents and may need to confirm or update one item on file. ${closing}`;
   }
   if (openRequests > 0) {
-    return `Good morning ${firstName}, this is a quick follow-up from Wamule Development. Our records show an open payment request on your account. Please contact us when convenient so we can confirm the status.`;
+    return `Good morning ${firstName}, this is a quick follow-up from Wamule Development. Our records show an open payment request on your account. ${closing}`;
   }
-  return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records are available for review, and you may contact us if you would like to confirm any payment or document details.`;
-}
-
-function normalizeStatus(value: unknown, fallback: AccountStatus): AccountStatus {
-  const status = String(value ?? "");
-  return ["Good Standing", "Due Soon", "Overdue", "Needs Review", "Missing Documents", "No Active Contract"].includes(status)
-    ? status as AccountStatus
-    : fallback;
+  return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records are available for review. ${closing}`;
 }
 
 function cleanText(value: unknown, fallback: string) {
   const text = String(value ?? "").trim();
   return text ? text.slice(0, 5000) : fallback;
+}
+
+function cleanFollowUpMessage(value: unknown, fallback: string) {
+  const preferredClosing = "Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.";
+  const text = cleanText(value, fallback)
+    .replace(/Thank you for your prompt attention to this matter\.?/gi, "Thank you.")
+    .replace(/Please contact us when convenient if you have any questions\.\s*Thank you, and please let us know if you have any questions\./gi, preferredClosing)
+    .replace(/Please let us know if you would like us to confirm your account details\.\s*Thank you, and please let us know if you have any questions\./gi, preferredClosing);
+  return text.slice(0, 5000);
 }
 
 function cleanArray(value: unknown, fallback: CustomerSummaryOutput["collections_flags"]) {
@@ -470,10 +480,40 @@ function assignedApplicationLot(application: Record<string, unknown> | null) {
 }
 
 function dueDateForCurrentCycle(contract: Record<string, unknown>, today: Date) {
-  const day = Number(contract.payment_due_day ?? 1);
-  const due = new Date(today.getFullYear(), today.getMonth(), Math.max(1, Math.min(31, day)));
-  if (due < startOfDay(today)) return due;
-  return due;
+  const current = startOfDay(today);
+  const start = startOfDay(new Date(String(contract.start_date)));
+  const dueDay = Math.max(1, Math.min(31, Number(contract.payment_due_day ?? 1)));
+  const firstDue = dueDateForMonth(start.getFullYear(), start.getMonth(), dueDay);
+
+  if (firstDue < start) firstDue.setMonth(firstDue.getMonth() + 1);
+  if (current <= firstDue) return firstDue;
+
+  const cycleDue = dueDateForMonth(current.getFullYear(), current.getMonth(), dueDay);
+  if (cycleDue < firstDue) return firstDue;
+  return cycleDue;
+}
+
+function expectedPaymentSatisfied(contract: Record<string, unknown>, totalPaid: number, dueDate: Date) {
+  const start = startOfDay(new Date(String(contract.start_date)));
+  const dueDay = Math.max(1, Math.min(31, Number(contract.payment_due_day ?? 1)));
+  const firstDue = dueDateForMonth(start.getFullYear(), start.getMonth(), dueDay);
+  if (firstDue < start) firstDue.setMonth(firstDue.getMonth() + 1);
+
+  const dueCycles = monthsBetween(firstDue, dueDate) + 1;
+  const expected = Math.min(
+    Number(contract.final_purchase_price ?? 0),
+    Number(contract.initial_deposit ?? 0) + Math.max(0, dueCycles) * Number(contract.monthly_payment ?? 0),
+  );
+  return totalPaid >= expected;
+}
+
+function dueDateForMonth(year: number, month: number, dueDay: number) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return new Date(year, month, Math.min(dueDay, lastDay));
+}
+
+function monthsBetween(start: Date, end: Date) {
+  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
 }
 
 function startOfDay(date: Date) {
