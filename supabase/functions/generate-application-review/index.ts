@@ -145,20 +145,29 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
   const riskFlags: string[] = [];
   const actions: string[] = [];
   const assignedLot = application.parcels as Record<string, unknown> | null;
-  const lotIssues = preferredLots
-    .filter((lot) => lot.status !== "Available")
-    .map((lot) => `Preferred Lot ${lot.lot_number} is ${lot.status}.`);
+  const unavailablePreferredLots = preferredLots.filter((lot) => lot.status !== "Available");
+  const availablePreferredLots = preferredLots.filter((lot) => lot.status === "Available");
+  const assignedLotConflict = Boolean(assignedLot?.status && assignedLot.status !== "Available");
+  const noAvailablePreferredLot = preferredLots.length > 0 && availablePreferredLots.length === 0;
+  const hasLotConflict = assignedLotConflict || noAvailablePreferredLot;
+  const lotIssues = unavailablePreferredLots.map((lot) => `Preferred Lot ${lot.lot_number} is ${lot.status}.`);
 
   if (!preferredLots.length) {
     riskFlags.push("No preferred lot selected.");
     actions.push("Ask applicant to identify preferred lot options before approval review.");
   }
 
-  if (assignedLot?.status && assignedLot.status !== "Available") {
+  if (assignedLotConflict) {
     riskFlags.push(`Assigned Lot ${assignedLot.lot_number} is currently ${assignedLot.status}.`);
   }
 
-  riskFlags.push(...lotIssues);
+  if (noAvailablePreferredLot) {
+    riskFlags.push(...lotIssues);
+  } else if (unavailablePreferredLots.length) {
+    riskFlags.push(
+      `${unavailablePreferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ")} unavailable; available preferred option remains: ${availablePreferredLots.map((lot) => `Lot ${lot.lot_number}`).join(", ")}.`,
+    );
+  }
 
   if (String(application.intended_use || "") === "Other" && !String(application.intended_use_other || "").trim()) {
     riskFlags.push("Intended use is Other without a description.");
@@ -176,15 +185,17 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
     actions.push(`Request missing information: ${missingFields.join(", ")}.`);
   }
 
-  if (lotIssues.length) {
+  if (noAvailablePreferredLot) {
     actions.push("Review preferred lot availability and ask applicant for alternate options.");
+  } else if (unavailablePreferredLots.length) {
+    actions.push("Confirm which available preferred lot the applicant wants to proceed with before final manual approval.");
   }
 
   if (!actions.length) {
     actions.push("Admin should verify details, confirm lot availability, and proceed with normal manual review.");
   }
 
-  const completenessStatus = chooseStatus(missingFields, riskFlags);
+  const completenessStatus = chooseStatus(missingFields, riskFlags, hasLotConflict);
 
   return {
     summary: `${name} applied for ${intendedUse} with ${paymentOption}. Preferred lots: ${preferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ") || "none listed"}.`,
@@ -217,8 +228,8 @@ function requiredMissingFields(application: Record<string, unknown>) {
     .map(([label]) => label);
 }
 
-function chooseStatus(missingFields: string[], riskFlags: string[]): CompletenessStatus {
-  if (riskFlags.some((flag) => /lot .* (Reserved|Sold)|is Reserved|is Sold/i.test(flag))) return "Lot Conflict";
+function chooseStatus(missingFields: string[], riskFlags: string[], hasLotConflict: boolean): CompletenessStatus {
+  if (hasLotConflict) return "Lot Conflict";
   if (missingFields.length >= 3) return "Missing Information";
   if (missingFields.length > 0 || riskFlags.length > 0) return "Needs Review";
   return "Complete";
@@ -242,6 +253,8 @@ async function generateGeminiReview({
     "You must not approve, decline, edit, reserve lots, create customers, or make final decisions.",
     "Return only JSON with: summary, completeness_status, missing_fields, risk_flags, recommended_admin_actions.",
     "completeness_status must be one of: Complete, Needs Review, Missing Information, Lot Conflict.",
+    "Use Lot Conflict only when the application has no available preferred lot option, or when an assigned lot is already Reserved/Sold/unavailable.",
+    "If one preferred lot is Sold/Reserved but another preferred lot is Available, do not call it Lot Conflict; describe it as an availability note and ask admin to confirm the available option manually.",
     "Keep recommended_admin_actions advisory and manual.",
     "",
     `Deterministic checks: ${JSON.stringify(deterministic)}`,
