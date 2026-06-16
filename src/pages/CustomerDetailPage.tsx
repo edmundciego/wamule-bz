@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { Clipboard, RefreshCw } from "lucide-react";
 import { ContractForm } from "../components/forms/ContractForm";
 import { PaymentForm } from "../components/forms/PaymentForm";
 import { PageHeader } from "../components/layout/PageHeader";
@@ -11,11 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
+import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
   Contract,
+  CustomerAiSummary,
   PaymentDocument,
   PaymentDocumentType,
   PaymentRequest,
@@ -23,7 +26,7 @@ import type {
   Transaction,
 } from "../types/database";
 
-const customerSections = ["Overview", "Contract", "Payments", "Documents", "Requests", "Statement"] as const;
+const customerSections = ["Overview", "Contract", "Payments", "Documents", "Requests", "Statement", "AI Summary"] as const;
 const requestStatuses: PaymentRequestStatus[] = ["Draft", "Sent", "Paid", "Cancelled"];
 const documentTypes: PaymentDocumentType[] = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"];
 
@@ -46,6 +49,7 @@ type CustomerDetail = {
   transactions?: CustomerTransaction[] | null;
   payment_documents?: PaymentDocumentWithTransaction[] | null;
   payment_requests?: PaymentRequest[] | null;
+  customer_ai_summaries?: CustomerAiSummary[] | null;
 };
 
 export function CustomerDetailPage() {
@@ -55,13 +59,32 @@ export function CustomerDetailPage() {
   const [activeSection, setActiveSection] = useState<CustomerSection>("Overview");
   const [activeAction, setActiveAction] = useState<ActionModalKind>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+  const { data: sessionProfile } = useQuery({
+    queryKey: ["session-profile"],
+    queryFn: getSessionAndProfile,
+  });
+  const { data: aiSettings } = useQuery({
+    queryKey: ["customer-ai-settings"],
+    queryFn: async () => {
+      const { data: settings, error: queryError } = await supabase
+        .from("ai_settings")
+        .select("is_enabled, collections_assistant_enabled")
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (queryError) throw queryError;
+      return settings;
+    },
+  });
   const { data, isLoading, error } = useQuery({
     queryKey: ["customer-detail", customerId],
     queryFn: async () => {
       const { data: customer, error: queryError } = await supabase
         .from("customers")
         .select(
-          "*, applications(*, parcels(*)), contracts(*, parcels(*)), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*)",
+          "*, applications(*, parcels(*)), contracts(*, parcels(*)), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*), customer_ai_summaries(*)",
         )
         .eq("id", customerId)
         .single();
@@ -75,6 +98,10 @@ export function CustomerDetailPage() {
     data?.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
   const communityPayments =
     data?.transactions?.filter((item) => ["Garbage Fee", "Road Maintenance"].includes(item.transaction_type)) ?? [];
+  const currentRole = sessionProfile?.profile?.role;
+  const canGenerateAiSummary = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
+  const collectionsAiEnabled = Boolean(aiSettings?.is_enabled && aiSettings.collections_assistant_enabled);
+  const latestAiSummary = latestSummary(data?.customer_ai_summaries ?? []);
 
   function refreshCustomer() {
     void queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
@@ -84,6 +111,37 @@ export function CustomerDetailPage() {
     setActiveAction(null);
     setToast(message);
     refreshCustomer();
+  }
+
+  async function generateAiSummary() {
+    setActionError(null);
+    setToast(null);
+    setGeneratingSummary(true);
+    const { data: result, error: functionError } = await supabase.functions.invoke("generate-customer-summary", {
+      body: { customer_id: customerId },
+    });
+    setGeneratingSummary(false);
+    if (functionError) {
+      setActionError(functionError.message);
+      return;
+    }
+    if (result?.error) {
+      setActionError(String(result.error));
+      return;
+    }
+    setToast(String(result?.message ?? "Customer AI summary generated."));
+    await queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
+  }
+
+  async function copyFollowUpMessage(message: string) {
+    setActionError(null);
+    setToast(null);
+    try {
+      await navigator.clipboard.writeText(message);
+      setToast("Follow-up message copied.");
+    } catch {
+      setActionError("Clipboard copy failed in this browser.");
+    }
   }
 
   function showStatement() {
@@ -109,6 +167,7 @@ export function CustomerDetailPage() {
               </button>
             </div>
           ) : null}
+          {actionError ? <ErrorState message={actionError} /> : null}
 
           <CustomerAccountHeader customer={data} landPayments={landPayments} />
 
@@ -153,6 +212,16 @@ export function CustomerDetailPage() {
               ) : null}
               {activeSection === "Statement" ? (
                 <BalanceStatementSection customer={data} landPayments={landPayments} />
+              ) : null}
+              {activeSection === "AI Summary" ? (
+                <AiSummarySection
+                  summary={latestAiSummary}
+                  canGenerate={canGenerateAiSummary}
+                  aiEnabled={collectionsAiEnabled}
+                  generating={generatingSummary}
+                  onGenerate={() => void generateAiSummary()}
+                  onCopy={(message) => void copyFollowUpMessage(message)}
+                />
               ) : null}
             </div>
 
@@ -729,6 +798,127 @@ function BalanceStatementSection({
   );
 }
 
+function AiSummarySection({
+  summary,
+  canGenerate,
+  aiEnabled,
+  generating,
+  onGenerate,
+  onCopy,
+}: {
+  summary: CustomerAiSummary | null;
+  canGenerate: boolean;
+  aiEnabled: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+  onCopy: (message: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>AI Summary</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Assistant-generated guidance only. Review the account records before contacting the customer.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canGenerate ? (
+              <Button type="button" disabled={generating} onClick={onGenerate}>
+                <RefreshCw className={cn("h-4 w-4", generating && "animate-spin")} />
+                {generating ? "Generating..." : summary ? "Regenerate Summary" : "Generate AI Summary"}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!summary?.draft_follow_up_message}
+              onClick={() => summary?.draft_follow_up_message ? onCopy(summary.draft_follow_up_message) : undefined}
+            >
+              <Clipboard className="h-4 w-4" />
+              Copy Follow-Up Message
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        {!aiEnabled ? (
+          <p className="rounded-md border border-copper/25 bg-copper/10 p-3 text-sm text-copper">
+            AI Collections Assistant is not enabled. Enable it in Settings. Deterministic fallback generation is still available for permitted roles.
+          </p>
+        ) : null}
+        {!canGenerate ? (
+          <p className="rounded-md border border-primary/15 bg-primary/10 p-3 text-sm text-primary">
+            Your role can view AI summaries but cannot generate new summaries.
+          </p>
+        ) : null}
+        {!summary ? (
+          <EmptyState message="No AI customer account summary has been generated yet." />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-ivory/40 p-4">
+              <div>
+                <p className="text-sm font-semibold text-primary">Account status</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Model: {summary.model} | Generated: {formatDate(summary.updated_at || summary.created_at)} | Generated by: {summary.generated_by ?? "Not recorded"}
+                </p>
+              </div>
+              <Badge tone={accountStatusTone(summary.account_status)}>{summary.account_status}</Badge>
+            </div>
+
+            <SummaryBlock title="Account Summary" content={summary.summary} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SummaryBlock title="Balance Summary" content={summary.balance_summary} />
+              <SummaryBlock title="Payment Summary" content={summary.payment_summary} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <SummaryList title="Collections Flags" items={summary.collections_flags} emptyLabel="No collections flags listed." />
+              <SummaryList title="Missing Items" items={summary.missing_items} emptyLabel="No missing items listed." />
+              <SummaryList title="Recommended Actions" items={summary.recommended_actions} emptyLabel="No recommended actions listed." />
+            </div>
+
+            <div className="rounded-md border bg-white p-4">
+              <p className="text-sm font-semibold text-primary">Draft Follow-Up Message</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{summary.draft_follow_up_message || "No draft message generated."}</p>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SummaryBlock({ title, content }: { title: string; content: string }) {
+  return (
+    <div className="rounded-md border bg-white p-4">
+      <p className="text-sm font-semibold text-primary">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-foreground">{content || "No summary provided."}</p>
+    </div>
+  );
+}
+
+function SummaryList({ title, items, emptyLabel }: { title: string; items: unknown[]; emptyLabel: string }) {
+  return (
+    <div className="rounded-md border bg-white p-4">
+      <p className="text-sm font-semibold text-primary">{title}</p>
+      {items.length ? (
+        <div className="mt-3 grid gap-2">
+          {items.map((item, index) => (
+            <div key={index} className="rounded-md border border-primary/10 bg-ivory/35 p-3 text-sm">
+              <p className="font-medium text-primary">{summaryItemTitle(item)}</p>
+              {summaryItemDetail(item) ? <p className="mt-1 text-muted-foreground">{summaryItemDetail(item)}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
 function StatementMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border bg-ivory/40 p-3">
@@ -784,6 +974,33 @@ function ActionModal({
 function assignedLot(customer: CustomerDetail) {
   const contract = activeContract(customer.contracts ?? []);
   return contract?.parcels?.lot_number ?? customer.applications?.parcels?.lot_number ?? null;
+}
+
+function latestSummary(summaries: CustomerAiSummary[]) {
+  return [...summaries].sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())[0] ?? null;
+}
+
+function accountStatusTone(status: CustomerAiSummary["account_status"]) {
+  if (status === "Good Standing") return "green";
+  if (status === "Due Soon") return "amber";
+  if (status === "Overdue") return "red";
+  if (status === "Missing Documents") return "amber";
+  if (status === "No Active Contract") return "gray";
+  return "blue";
+}
+
+function summaryItemRecord(item: unknown) {
+  return item && typeof item === "object" ? item as Record<string, unknown> : null;
+}
+
+function summaryItemTitle(item: unknown) {
+  const record = summaryItemRecord(item);
+  return String(record?.title ?? record?.label ?? (typeof item === "string" ? item : "Item"));
+}
+
+function summaryItemDetail(item: unknown) {
+  const record = summaryItemRecord(item);
+  return String(record?.detail ?? record?.description ?? "");
 }
 
 function totalAmount(rows: Array<{ amount: number }>) {

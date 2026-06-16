@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
   BarChart3,
+  Bot,
   ClipboardList,
   CreditCard,
   FileText,
@@ -15,6 +16,7 @@ import { cn } from "../../lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/briefs", label: "Daily Brief", icon: Bot },
   { href: "/lots", label: "Lots", icon: Map },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },

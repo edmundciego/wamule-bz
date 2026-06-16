@@ -2,13 +2,94 @@
 
 ## Core Workflows
 
-1. **Public Intake:** User submits `/apply` -> Creates record in `applications`.
-2. **Admin Review:** Admin views `/applications` (Kanban).
-3. **Approval/Customer Creation:** Admin approves -> Creates `customer` record -> Reserves `lot` (via `parcels`).
-4. **Contract Creation:** Admin creates `contract` (enforces max 60-month term).
-5. **Payment Logging:** Admin logs payment -> Creates `transaction`.
-6. **Receipt Processing:**
-   - Admin logs payment -> Creates job in `receipt_jobs`.
-   - Edge Function `generate-receipts` executes.
-   - Transaction updated with `receipt_path`.
-7. **Reports:** System queries `transactions` and `contracts` for revenue/delinquency.
+1. **Public Intake**
+   - Public user submits `/apply`.
+   - System creates an `applications` record.
+
+2. **Admin Review**
+   - Internal user views `/applications`.
+   - Admin reviews applicant information, preferred lots, acknowledgements, and status.
+   - Super Admin/Admin can generate a read-only AI Application Review.
+
+3. **AI Application Review**
+   - `/applications` invokes `generate-application-review`.
+   - Edge Function reads the application, preferred lots, related lot availability, and `ai_settings`.
+   - Gemini is used only when AI is enabled, application review is enabled, provider settings allow it, and a server-side key exists.
+   - Deterministic fallback produces review output when Gemini cannot be used.
+   - Output is stored in `application_ai_reviews`: summary, completeness status, missing fields, risk flags, recommended admin actions, model, generated_by.
+   - Review content is guidance only and does not approve, decline, reserve, or update operational records.
+
+4. **Approval and Customer Creation**
+   - Admin selects an available lot and approves manually.
+   - Database approval logic creates/links customer records and reserves the lot.
+   - Declines and approvals remain human/admin actions, not AI actions.
+
+5. **Contract Creation**
+   - Admin creates `contracts` for customers and lots.
+   - Contract records track final purchase price, initial deposit, term, monthly payment, start date, due day, active status, and signed contract upload path.
+
+6. **Payment Logging**
+   - Admin logs `transactions`.
+   - Payments can include manual receipt number metadata, bank reference, receipt notes, and uploaded proof through `payment_documents`.
+   - Duplicate/missing bank references, missing receipt numbers, and missing proof are surfaced in reports, collections, and Daily Briefs.
+
+7. **Receipt Processing**
+   - `generate-receipts` handles receipt document generation.
+   - Generated receipt metadata is associated back to payment/transaction records according to the current receipt implementation.
+
+8. **Collections**
+   - `/collections` reads active contracts, transactions, payment documents, and payment requests.
+   - It identifies customers due today, due this week, overdue accounts, outstanding land balance, missing signed contracts, missing receipt numbers, and missing transfer proof.
+
+9. **Reports and Exports**
+   - `/reports` reads payments, balances, applications, lots, and missing item queues.
+   - CSV export is client-side from the displayed report rows.
+
+10. **Settings and Role Management**
+   - `/settings` controls Company Profile, Payment Methods, Installment Plans, Lot Sizes, Fee Types, AI Settings, and Users & Roles.
+   - Super Admin can manage users and high-trust configuration.
+   - Admin/Staff/Read Only boundaries are enforced through UI gating, Edge Function role checks, and RLS.
+
+11. **AI Daily Brief**
+   - Super Admin/Admin opens `/briefs` and generates today or custom-period brief.
+   - `generate-daily-brief` reads applications, lots, payments, contracts, collections, payment requests, and AI settings.
+   - Function generates structured sections for Applications, Lots, Payments, Contracts, Collections, Alerts, and Recommended Actions.
+   - Gemini can generate the final structured JSON when enabled and healthy enough.
+   - Deterministic fallback inserts a complete brief when AI is disabled or unavailable.
+   - Output is stored in `ai_daily_briefs`.
+   - Page displays latest brief, previous briefs, alerts, recommended actions checklist, copy brief, and a disabled Email Brief placeholder.
+
+12. **AI Customer Account Summary / Collections Assistant**
+   - Internal user opens `/customers/:id` and selects AI Summary.
+   - Super Admin/Admin/Staff can generate or regenerate when existing operational write rules allow; Read Only can view only.
+   - `generate-customer-summary` reads customer, originating application, parcel/lot, contract, payments, payment documents, payment requests, payment methods, fee types, and AI settings.
+   - Function calculates account status, balance summary, payment summary, collections flags, missing items, recommended actions, and draft follow-up message.
+   - Gemini can produce structured JSON when AI is enabled, Collections Assistant is enabled, provider is Gemini, and the server-side key exists.
+   - Deterministic fallback produces a usable summary when Gemini is disabled, unavailable, or invalid.
+   - Output is upserted into `customer_ai_summaries`.
+   - Customer AI Summary tab displays account status badge, summary, balance/payment summaries, collections flags, missing items, recommended actions, draft follow-up message, model, generated date, generated_by, and Copy Follow-Up Message.
+
+## AI Safety Rules
+
+AI features may only:
+- summarize records
+- flag issues
+- recommend actions for humans
+- draft follow-up text for admin review
+- insert AI review records into `application_ai_reviews`
+- insert AI brief records into `ai_daily_briefs`
+- insert/update customer summary records into `customer_ai_summaries`
+
+AI features must not:
+- approve applications
+- decline applications
+- reserve lots
+- mark lots sold
+- create customers
+- create contracts
+- log payments
+- edit balances
+- edit receipt numbers
+- mark payment requests paid
+- send emails automatically
+- delete records

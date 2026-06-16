@@ -15,6 +15,14 @@ export type PaymentDocumentType =
   | "Other";
 export type PaymentRequestStatus = "Draft" | "Sent" | "Paid" | "Cancelled";
 export type ApplicationAiCompletenessStatus = "Complete" | "Needs Review" | "Missing Information" | "Lot Conflict";
+export type AiDailyBriefStatus = "Draft" | "Generated" | "Sent" | "Failed";
+export type CustomerAiAccountStatus =
+  | "Good Standing"
+  | "Due Soon"
+  | "Overdue"
+  | "Needs Review"
+  | "Missing Documents"
+  | "No Active Contract";
 export type PaymentMethodType = "Cash" | "Bank Transfer" | "Other";
 export type FeeFrequency = "One-Time" | "Monthly" | "Yearly" | "As Needed";
 export type BusinessSettingKey =
@@ -237,6 +245,45 @@ export type ApplicationAiReview = {
   updated_at: string;
 };
 
+export type AiDailyBrief = {
+  id: number;
+  brief_date: string;
+  period_start: string;
+  period_end: string;
+  summary: string;
+  applications_summary: string;
+  lots_summary: string;
+  payments_summary: string;
+  contracts_summary: string;
+  collections_summary: string;
+  alerts: unknown[];
+  recommended_actions: unknown[];
+  model: string;
+  status: AiDailyBriefStatus;
+  generated_by: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+  admin_profiles?: Pick<AdminProfile, "full_name" | "email"> | null;
+};
+
+export type CustomerAiSummary = {
+  id: number;
+  customer_id: number;
+  summary: string;
+  account_status: CustomerAiAccountStatus;
+  balance_summary: string;
+  payment_summary: string;
+  collections_flags: unknown[];
+  missing_items: unknown[];
+  recommended_actions: unknown[];
+  draft_follow_up_message: string;
+  model: string;
+  generated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -341,6 +388,16 @@ export type Database = {
         Row: ApplicationAiReview;
         Insert: Omit<ApplicationAiReview, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<ApplicationAiReview, "id" | "created_at" | "updated_at">>;
+      };
+      ai_daily_briefs: {
+        Row: AiDailyBrief;
+        Insert: Omit<AiDailyBrief, "id" | "created_at" | "updated_at" | "admin_profiles">;
+        Update: Partial<Omit<AiDailyBrief, "id" | "created_at" | "updated_at" | "admin_profiles">>;
+      };
+      customer_ai_summaries: {
+        Row: CustomerAiSummary;
+        Insert: Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">>;
       };
     };
     Views: {

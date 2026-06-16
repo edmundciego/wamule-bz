@@ -7,6 +7,7 @@ import { ContractsPage } from "./pages/ContractsPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { CustomerDetailPage } from "./pages/CustomerDetailPage";
 import { CustomersPage } from "./pages/CustomersPage";
+import { DailyBriefsPage } from "./pages/DailyBriefsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -40,6 +41,7 @@ export default function App() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/briefs" element={<DailyBriefsPage />} />
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
