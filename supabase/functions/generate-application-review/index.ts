@@ -112,7 +112,7 @@ Deno.serve(async (request) => {
       apiKey,
       model: String(settings?.model ?? "gemini-3.1-flash-lite"),
     });
-    if (geminiReview) review = geminiReview;
+    if (geminiReview) review = normalizeReviewForWorkflow(geminiReview, deterministic, application);
   }
 
   const { data: savedReview, error: saveError } = await supabase
@@ -145,16 +145,27 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
   const riskFlags: string[] = [];
   const actions: string[] = [];
   const assignedLot = application.parcels as Record<string, unknown> | null;
-  const unavailablePreferredLots = preferredLots.filter((lot) => lot.status !== "Available");
+  const applicationStatus = String(application.status ?? "Pending Review");
+  const isApproved = applicationStatus === "Approved";
+  const assignedLotId = Number(assignedLot?.id ?? application.parcel_id ?? 0);
+  const unavailablePreferredLots = preferredLots.filter((lot) =>
+    lot.status !== "Available" && !(isApproved && Number(lot.id) === assignedLotId)
+  );
   const availablePreferredLots = preferredLots.filter((lot) => lot.status === "Available");
-  const assignedLotConflict = Boolean(assignedLot?.status && assignedLot.status !== "Available");
-  const noAvailablePreferredLot = preferredLots.length > 0 && availablePreferredLots.length === 0;
+  const assignedLotConflict = Boolean(!isApproved && assignedLot?.status && assignedLot.status !== "Available");
+  const noAvailablePreferredLot = !isApproved && preferredLots.length > 0 && availablePreferredLots.length === 0;
+  const approvedWithoutAssignedLot = isApproved && !assignedLot;
   const hasLotConflict = assignedLotConflict || noAvailablePreferredLot;
   const lotIssues = unavailablePreferredLots.map((lot) => `Preferred Lot ${lot.lot_number} is ${lot.status}.`);
 
   if (!preferredLots.length) {
     riskFlags.push("No preferred lot selected.");
-    actions.push("Ask applicant to identify preferred lot options before approval review.");
+    actions.push(isApproved ? "Confirm the approved lot record is linked correctly." : "Ask applicant to identify preferred lot options before approval review.");
+  }
+
+  if (approvedWithoutAssignedLot) {
+    riskFlags.push("Application is approved but no assigned lot is linked.");
+    actions.push("Review the approved application and confirm the customer lot assignment record.");
   }
 
   if (assignedLotConflict) {
@@ -188,22 +199,45 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
   if (noAvailablePreferredLot) {
     actions.push("Review preferred lot availability and ask applicant for alternate options.");
   } else if (unavailablePreferredLots.length) {
-    actions.push("Confirm which available preferred lot the applicant wants to proceed with before final manual approval.");
+    actions.push(isApproved
+      ? "Review preferred lot history only if the approved lot assignment looks inconsistent."
+      : "Confirm which available preferred lot the applicant wants to proceed with before final manual approval.");
   }
 
   if (!actions.length) {
-    actions.push("Admin should verify details, confirm lot availability, and proceed with normal manual review.");
+    actions.push(isApproved
+      ? "No AI follow-up required unless the approved customer or lot record looks inconsistent."
+      : "Admin should verify details, confirm lot availability, and proceed with normal manual review.");
   }
 
   const completenessStatus = chooseStatus(missingFields, riskFlags, hasLotConflict);
 
   return {
-    summary: `${name} applied for ${intendedUse} with ${paymentOption}. Preferred lots: ${preferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ") || "none listed"}.`,
+    summary: `${name} ${isApproved ? "has an approved application" : "applied"} for ${intendedUse} with ${paymentOption}. Preferred lots: ${preferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ") || "none listed"}.`,
     completeness_status: completenessStatus,
     missing_fields: missingFields,
     risk_flags: riskFlags,
     recommended_admin_actions: actions,
     model: "deterministic-fallback",
+  };
+}
+
+function normalizeReviewForWorkflow(review: ReviewPayload, deterministic: ReviewPayload, application: Record<string, unknown>): ReviewPayload {
+  const isApproved = application.status === "Approved";
+  if (isApproved && deterministic.completeness_status === "Complete") {
+    return deterministic;
+  }
+
+  if (!isApproved) return review;
+
+  return {
+    ...review,
+    recommended_admin_actions: review.recommended_admin_actions.map((action) =>
+      action
+        .replace(/before proceeding with (manual )?approval/gi, "when reviewing the approved record")
+        .replace(/before final manual approval/gi, "when reviewing the approved record")
+        .replace(/proceed with approval/gi, "review the approved record"),
+    ),
   };
 }
 
@@ -255,6 +289,9 @@ async function generateGeminiReview({
     "completeness_status must be one of: Complete, Needs Review, Missing Information, Lot Conflict.",
     "Use Lot Conflict only when the application has no available preferred lot option, or when an assigned lot is already Reserved/Sold/unavailable.",
     "If one preferred lot is Sold/Reserved but another preferred lot is Available, do not call it Lot Conflict; describe it as an availability note and ask admin to confirm the available option manually.",
+    "If application.status is Approved, do not use pre-approval language such as before proceeding with approval.",
+    "For Approved applications, a Sold/Reserved assigned lot can be expected after approval or purchase and must not be treated as a conflict by itself.",
+    "For Approved applications, focus on record consistency and only recommend cleanup if source records are inconsistent.",
     "Keep recommended_admin_actions advisory and manual.",
     "",
     `Deterministic checks: ${JSON.stringify(deterministic)}`,
