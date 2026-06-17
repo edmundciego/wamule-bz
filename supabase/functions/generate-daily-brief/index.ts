@@ -170,8 +170,11 @@ Deno.serve(async (request) => {
     return json({ error: saveError.message }, 500);
   }
 
+  const actionItems = await syncBriefActionItems(supabase, savedBrief, brief.recommended_actions);
+
   return json({
     brief: savedBrief,
+    action_items: actionItems,
     fallback: usedModel === "deterministic-fallback",
     message: usedModel === "deterministic-fallback"
       ? "Daily brief generated with deterministic fallback."
@@ -503,4 +506,129 @@ function json(body: Record<string, unknown>, status = 200) {
     status,
     headers: corsHeaders,
   });
+}
+
+async function syncBriefActionItems(
+  supabase: ReturnType<typeof createClient>,
+  brief: Record<string, unknown>,
+  recommendedActions: BriefOutput["recommended_actions"],
+) {
+  const seenDate = String(brief.brief_date ?? isoDate(new Date()));
+  const normalized = recommendedActions
+    .map((item, index) => actionItemFromRecommendation(item, brief, seenDate, index))
+    .filter(Boolean) as Record<string, unknown>[];
+
+  const saved: Record<string, unknown>[] = [];
+  for (const item of normalized) {
+    const { data: existing } = await supabase
+      .from("brief_action_items")
+      .select("*")
+      .eq("source_key", item.source_key)
+      .in("status", ["Open", "In Progress"])
+      .maybeSingle();
+
+    if (existing?.id) {
+      const { data } = await supabase
+        .from("brief_action_items")
+        .update({
+          brief_id: brief.id,
+          title: item.title,
+          details: item.details,
+          severity: item.severity,
+          source_type: item.source_type,
+          related_table: item.related_table,
+          related_record_id: item.related_record_id,
+          last_seen_on: seenDate,
+        })
+        .eq("id", existing.id)
+        .select("*")
+        .single();
+      if (data) saved.push(data);
+      continue;
+    }
+
+    const { data } = await supabase
+      .from("brief_action_items")
+      .insert(item)
+      .select("*")
+      .single();
+    if (data) saved.push(data);
+  }
+  return saved;
+}
+
+function actionItemFromRecommendation(
+  item: Record<string, unknown> | string,
+  brief: Record<string, unknown>,
+  seenDate: string,
+  index: number,
+) {
+  const record = typeof item === "object" && item ? item as Record<string, unknown> : {};
+  const title = cleanText(record.title ?? record.label ?? (typeof item === "string" ? item : ""), "Recommended action");
+  const details = cleanText(record.detail ?? record.description ?? "", "");
+  if (title === "Monitor operations") return null;
+
+  const relatedTable = relatedTableFor(record.record_type ?? record.related_table ?? record.type);
+  const relatedRecordId = record.record_id ?? record.related_record_id ?? null;
+  const sourceType = sourceTypeFor(title, relatedTable);
+  const sourceKey = buildSourceKey(sourceType, relatedTable, relatedRecordId, title, details, index);
+
+  return {
+    brief_id: brief.id,
+    source_type: sourceType,
+    source_key: sourceKey,
+    title,
+    details,
+    severity: severityFor(title, details),
+    status: "Open",
+    related_table: relatedTable,
+    related_record_id: relatedRecordId == null ? null : String(relatedRecordId),
+    first_seen_on: seenDate,
+    last_seen_on: seenDate,
+  };
+}
+
+function relatedTableFor(value: unknown) {
+  const type = String(value ?? "").toLowerCase();
+  if (type.includes("payment")) return "transactions";
+  if (type.includes("contract")) return "contracts";
+  if (type.includes("application")) return "applications";
+  if (type.includes("customer")) return "customers";
+  if (type.includes("parcel") || type.includes("lot")) return "parcels";
+  return null;
+}
+
+function sourceTypeFor(title: string, relatedTable: string | null) {
+  const text = title.toLowerCase();
+  if (text.includes("receipt")) return "Missing receipt numbers";
+  if (text.includes("proof") || text.includes("transfer")) return "Missing transfer proof";
+  if (text.includes("signed contract")) return "Missing signed contracts";
+  if (text.includes("lot conflict") || text.includes("preferred lot")) return "Lot conflicts";
+  if (text.includes("overdue")) return "Overdue accounts";
+  if (relatedTable === "applications") return "Applications";
+  if (relatedTable === "contracts") return "Contracts";
+  if (relatedTable === "transactions") return "Payments";
+  return "Other";
+}
+
+function severityFor(title: string, details: string) {
+  const text = `${title} ${details}`.toLowerCase();
+  if (text.includes("overdue") || text.includes("unavailable") || text.includes("conflict")) return "Red";
+  if (text.includes("missing") || text.includes("proof") || text.includes("receipt") || text.includes("review")) return "Amber";
+  return "Info";
+}
+
+function buildSourceKey(sourceType: string, relatedTable: string | null, relatedRecordId: unknown, title: string, details: string, index: number) {
+  const id = relatedRecordId == null ? "" : String(relatedRecordId);
+  if (sourceType === "Missing receipt numbers" && id) return `missing-receipt-number:${id}`;
+  if (sourceType === "Missing transfer proof" && id) return `missing-proof:${id}`;
+  if (sourceType === "Missing signed contracts" && id) return `missing-signed-contract:${id}`;
+  if (sourceType === "Lot conflicts" && id) return `lot-conflict:${id}`;
+  if (sourceType === "Overdue accounts" && id) return `overdue-account:${id}`;
+  if (relatedTable && id) return `${slug(sourceType)}:${relatedTable}:${id}`;
+  return `${slug(sourceType)}:${slug(title)}:${slug(details).slice(0, 40)}:${index}`;
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
 }

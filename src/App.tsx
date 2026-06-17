@@ -10,6 +10,7 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { DailyBriefsPage } from "./pages/DailyBriefsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentPage } from "./pages/DocumentPage";
+import { EmailsPage } from "./pages/EmailsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { LotsPage } from "./pages/LotsPage";
 import { LogoutPage } from "./pages/LogoutPage";
@@ -42,6 +43,7 @@ export default function App() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/briefs" element={<DailyBriefsPage />} />
+        <Route path="/emails" element={<EmailsPage />} />
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/customers" element={<CustomersPage />} />

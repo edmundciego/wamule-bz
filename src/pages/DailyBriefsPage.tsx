@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Clipboard, Mail, RefreshCw } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clipboard, ExternalLink, Mail, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -10,7 +10,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate } from "../lib/utils";
-import type { AiDailyBrief, AppRole } from "../types/database";
+import type { AiDailyBrief, AppRole, BriefActionItem, BriefActionItemStatus } from "../types/database";
 
 export function DailyBriefsPage() {
   const queryClient = useQueryClient();
@@ -40,6 +40,19 @@ export function DailyBriefsPage() {
     },
   });
 
+  const { data: actionItems } = useQuery({
+    queryKey: ["brief-action-items"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("brief_action_items")
+        .select("*")
+        .order("last_seen_on", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (queryError) throw queryError;
+      return data as BriefActionItem[];
+    },
+  });
+
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
   const canGenerateBrief = currentRole === "Super Admin" || currentRole === "Admin";
   const selectedBrief = useMemo(
@@ -64,6 +77,22 @@ export function DailyBriefsPage() {
     setActionMessage(String(data?.message ?? "Daily brief generated."));
     setSelectedBriefId(Number(data?.brief?.id ?? 0) || null);
     await queryClient.invalidateQueries({ queryKey: ["daily-briefs"] });
+    await queryClient.invalidateQueries({ queryKey: ["brief-action-items"] });
+  }
+
+  async function updateActionItem(id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) {
+    setActionError(null);
+    setActionMessage(null);
+    const patch = status === "Done"
+      ? { status, resolved_at: new Date().toISOString(), dismissed_at: null }
+      : { status, dismissed_at: new Date().toISOString(), resolved_at: null };
+    const { error: updateError } = await supabase.from("brief_action_items").update(patch).eq("id", id);
+    if (updateError) {
+      setActionError(updateError.message);
+      return;
+    }
+    setActionMessage(status === "Done" ? "Action item marked done." : "Action item dismissed.");
+    await queryClient.invalidateQueries({ queryKey: ["brief-action-items"] });
   }
 
   async function copyBrief() {
@@ -137,6 +166,8 @@ export function DailyBriefsPage() {
         {selectedBrief ? (
           <>
             <LatestBriefCard brief={selectedBrief} />
+            <BriefComparison brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
+            <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} canManage={canGenerateBrief} onUpdate={updateActionItem} />
             <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
           </>
         ) : !isLoading ? (
@@ -148,6 +179,111 @@ export function DailyBriefsPage() {
         <PreviousBriefs briefs={briefs ?? []} selectedBriefId={selectedBrief?.id ?? null} onSelect={setSelectedBriefId} />
       </div>
     </>
+  );
+}
+
+function BriefComparison({
+  brief,
+  previousBrief,
+  actionItems,
+}: {
+  brief: AiDailyBrief;
+  previousBrief: AiDailyBrief | null;
+  actionItems: BriefActionItem[];
+}) {
+  const currentAlerts = brief.alerts.map((item) => normalizeAlertKey(item));
+  const previousAlerts = previousBrief?.alerts.map((item) => normalizeAlertKey(item)) ?? [];
+  const newAlerts = currentAlerts.filter((item) => !previousAlerts.includes(item));
+  const repeatedAlerts = currentAlerts.filter((item) => previousAlerts.includes(item));
+  const resolvedAlerts = previousAlerts.filter((item) => !currentAlerts.includes(item));
+  const currentPayments = currencyValue(brief.payments_summary);
+  const previousPayments = previousBrief ? currencyValue(previousBrief.payments_summary) : null;
+  const currentOutstanding = currencyValue(brief.collections_summary);
+  const previousOutstanding = previousBrief ? currencyValue(previousBrief.collections_summary) : null;
+  const currentLotCounts = lotCounts(brief.lots_summary);
+  const previousLotCounts = previousBrief ? lotCounts(previousBrief.lots_summary) : null;
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Compared to Previous Brief</CardTitle></CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-3">
+        <ComparisonList title="New alerts" items={newAlerts} empty="No new alerts." />
+        <ComparisonList title="Repeated alerts" items={repeatedAlerts} empty="No repeated alerts." />
+        <ComparisonList title="Resolved or no longer appearing" items={resolvedAlerts} empty="No resolved alerts detected." />
+        <ComparisonMetric label="Payment total change" value={changeLabel(currentPayments, previousPayments)} />
+        <ComparisonMetric label="Outstanding balance change" value={changeLabel(currentOutstanding, previousOutstanding)} />
+        <ComparisonMetric label="Lot status change" value={lotChangeLabel(currentLotCounts, previousLotCounts)} />
+        <div className="lg:col-span-3 rounded-md border border-primary/10 bg-ivory/50 p-3 text-sm text-muted-foreground">
+          {actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length} open carryover items are being tracked from generated brief recommendations.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OpenActionItems({
+  items,
+  canManage,
+  onUpdate,
+}: {
+  items: BriefActionItem[];
+  canManage: boolean;
+  onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
+}) {
+  const groups = groupActionItems(items);
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Open Items / Carryover</CardTitle></CardHeader>
+      <CardContent className="grid gap-5">
+        {items.length ? Object.entries(groups).map(([group, groupItems]) => (
+          <div key={group} className="grid gap-3">
+            <h3 className="text-sm font-semibold text-primary">{group}</h3>
+            <div className="grid gap-3 md:grid-cols-2">
+              {groupItems.map((item) => (
+                <div key={item.id} className="rounded-md border p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{item.title}</p>
+                      <p className="mt-1 text-muted-foreground">{item.details || "No extra details."}</p>
+                    </div>
+                    <Badge tone={severityTone(item.severity)}>{item.severity}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                    <span>First seen: {formatDate(item.first_seen_on)}</span>
+                    <span>Last seen: {formatDate(item.last_seen_on)}</span>
+                    <span>Status: {item.status}</span>
+                    <span>{item.related_table ? `Related: ${item.related_table} #${item.related_record_id ?? "N/A"}` : "Related: Not linked"}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {relatedHref(item) ? (
+                      <a href={relatedHref(item) ?? undefined}>
+                        <Button type="button" variant="secondary" className="h-9">
+                          <ExternalLink className="h-4 w-4" />
+                          View Related Record
+                        </Button>
+                      </a>
+                    ) : null}
+                    {canManage ? (
+                      <>
+                        <Button type="button" variant="secondary" className="h-9" onClick={() => void onUpdate(item.id, "Done")}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Mark Done
+                        </Button>
+                        <Button type="button" variant="ghost" className="h-9" onClick={() => void onUpdate(item.id, "Dismissed")}>
+                          <XCircle className="h-4 w-4" />
+                          Dismiss
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )) : <p className="text-sm text-muted-foreground">No open carryover action items.</p>}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -292,6 +428,26 @@ function PreviousBriefs({
   );
 }
 
+function ComparisonList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return (
+    <div className="rounded-md border p-3">
+      <p className="text-sm font-semibold text-primary">{title}</p>
+      <div className="mt-2 grid gap-2">
+        {items.length ? items.map((item) => <Badge key={item} tone="amber">{item}</Badge>) : <p className="text-sm text-muted-foreground">{empty}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ComparisonMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border p-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm font-medium text-foreground">{value}</p>
+    </div>
+  );
+}
+
 function AlertItem({ item }: { item: unknown }) {
   return (
     <div className="rounded-md border p-3 text-sm">
@@ -339,6 +495,39 @@ function alertTone(item: unknown) {
   return "amber";
 }
 
+function severityTone(severity: BriefActionItem["severity"]) {
+  if (severity === "Red") return "red";
+  if (severity === "Amber") return "amber";
+  return "blue";
+}
+
+function groupActionItems(items: BriefActionItem[]) {
+  const orderedGroups = [
+    "Missing receipt numbers",
+    "Missing transfer proof",
+    "Missing signed contracts",
+    "Lot conflicts",
+    "Overdue accounts",
+    "Other",
+  ];
+  return items.reduce<Record<string, BriefActionItem[]>>((groups, item) => {
+    const group = orderedGroups.includes(item.source_type) ? item.source_type : "Other";
+    groups[group] = groups[group] ?? [];
+    groups[group].push(item);
+    return groups;
+  }, {});
+}
+
+function relatedHref(item: BriefActionItem) {
+  if (!item.related_table || !item.related_record_id) return null;
+  if (item.related_table === "customers") return `/customers/${item.related_record_id}`;
+  if (item.related_table === "contracts") return `/contracts/${item.related_record_id}`;
+  if (item.related_table === "applications") return "/applications";
+  if (item.related_table === "transactions") return "/payments";
+  if (item.related_table === "parcels") return "/lots";
+  return null;
+}
+
 function statusTone(status: AiDailyBrief["status"]) {
   if (status === "Generated") return "green";
   if (status === "Sent") return "blue";
@@ -379,6 +568,52 @@ function formatBriefForClipboard(brief: AiDailyBrief) {
     "Recommended Actions",
     brief.recommended_actions.map((item) => `- ${itemTitle(item)}${itemDetail(item) ? `: ${itemDetail(item)}` : ""}`).join("\n") || "- None",
   ].join("\n");
+}
+
+function previousBrief(briefs: AiDailyBrief[], selectedBriefId: number) {
+  const index = briefs.findIndex((brief) => brief.id === selectedBriefId);
+  return index >= 0 ? briefs[index + 1] ?? null : null;
+}
+
+function normalizeAlertKey(item: unknown) {
+  return itemTitle(item).trim() || "Alert";
+}
+
+function currencyValue(text: string) {
+  const match = text.match(/\$[\d,]+(?:\.\d{2})?/);
+  return match ? Number(match[0].replace(/[$,]/g, "")) : null;
+}
+
+function changeLabel(current: number | null, previous: number | null) {
+  if (current == null || previous == null) return "Not enough comparable data.";
+  const difference = current - previous;
+  if (difference === 0) return "No change detected.";
+  const formatted = new Intl.NumberFormat("en-BZ", { style: "currency", currency: "BZD" }).format(Math.abs(difference));
+  return difference > 0 ? `Up ${formatted}` : `Down ${formatted}`;
+}
+
+function lotCounts(summary: string) {
+  const available = /(\d+)\s+available/i.exec(summary)?.[1];
+  const reserved = /(\d+)\s+reserved/i.exec(summary)?.[1];
+  const sold = /(\d+)\s+sold/i.exec(summary)?.[1];
+  return {
+    available: available ? Number(available) : null,
+    reserved: reserved ? Number(reserved) : null,
+    sold: sold ? Number(sold) : null,
+  };
+}
+
+function lotChangeLabel(
+  current: ReturnType<typeof lotCounts>,
+  previous: ReturnType<typeof lotCounts> | null,
+) {
+  if (!previous) return "No previous brief selected for comparison.";
+  const parts = (["available", "reserved", "sold"] as const).flatMap((key) => {
+    if (current[key] == null || previous[key] == null || current[key] === previous[key]) return [];
+    const diff = Number(current[key]) - Number(previous[key]);
+    return `${key}: ${diff > 0 ? "+" : ""}${diff}`;
+  });
+  return parts.length ? parts.join(", ") : "No lot count change detected.";
 }
 
 function todayInputValue() {

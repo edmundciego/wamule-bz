@@ -16,6 +16,21 @@ export type PaymentDocumentType =
 export type PaymentRequestStatus = "Draft" | "Sent" | "Paid" | "Cancelled";
 export type ApplicationAiCompletenessStatus = "Complete" | "Needs Review" | "Missing Information" | "Lot Conflict";
 export type AiDailyBriefStatus = "Draft" | "Generated" | "Sent" | "Failed";
+export type BriefActionItemStatus = "Open" | "In Progress" | "Done" | "Dismissed";
+export type BriefActionItemSeverity = "Info" | "Amber" | "Red";
+export type EmailNotificationStatus = "Pending" | "Sent" | "Failed" | "Cancelled";
+export type EmailNotificationType =
+  | "New Application"
+  | "Application Confirmation"
+  | "Payment Request"
+  | "Payment Received"
+  | "Balance Statement"
+  | "Daily Brief"
+  | "Developer Feedback"
+  | "Test Email";
+export type DeveloperFeedbackType = "Bug" | "Question" | "Feature Request" | "Data Issue" | "Other";
+export type DeveloperFeedbackPriority = "Low" | "Normal" | "High" | "Urgent";
+export type DeveloperFeedbackStatus = "New" | "Reviewing" | "Resolved" | "Closed";
 export type CustomerAiAccountStatus =
   | "Good Standing"
   | "Due Soon"
@@ -284,6 +299,68 @@ export type CustomerAiSummary = {
   updated_at: string;
 };
 
+export type BriefActionItem = {
+  id: number;
+  brief_id: number | null;
+  source_type: string;
+  source_key: string;
+  title: string;
+  details: string;
+  severity: BriefActionItemSeverity;
+  status: BriefActionItemStatus;
+  related_table: string | null;
+  related_record_id: string | null;
+  first_seen_on: string;
+  last_seen_on: string;
+  resolved_at: string | null;
+  dismissed_at: string | null;
+  assigned_to: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmailNotification = {
+  id: number;
+  recipient_email: string;
+  recipient_name: string | null;
+  subject: string;
+  body: string;
+  notification_type: EmailNotificationType;
+  related_table: string | null;
+  related_record_id: string | null;
+  status: EmailNotificationStatus;
+  error_message: string | null;
+  sent_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NotificationSetting = {
+  id: number;
+  notification_type: EmailNotificationType;
+  send_to_admin: boolean;
+  send_to_customer: boolean;
+  admin_email: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeveloperFeedback = {
+  id: number;
+  submitted_by: string | null;
+  submitted_by_email: string | null;
+  feedback_type: DeveloperFeedbackType;
+  priority: DeveloperFeedbackPriority;
+  page_url: string | null;
+  message: string;
+  status: DeveloperFeedbackStatus;
+  developer_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -398,6 +475,26 @@ export type Database = {
         Row: CustomerAiSummary;
         Insert: Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">>;
+      };
+      brief_action_items: {
+        Row: BriefActionItem;
+        Insert: Omit<BriefActionItem, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<BriefActionItem, "id" | "created_at" | "updated_at">>;
+      };
+      email_notifications: {
+        Row: EmailNotification;
+        Insert: Omit<EmailNotification, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<EmailNotification, "id" | "created_at" | "updated_at">>;
+      };
+      notification_settings: {
+        Row: NotificationSetting;
+        Insert: Omit<NotificationSetting, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<NotificationSetting, "id" | "created_at" | "updated_at">>;
+      };
+      developer_feedback: {
+        Row: DeveloperFeedback;
+        Insert: Omit<DeveloperFeedback, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<DeveloperFeedback, "id" | "created_at" | "updated_at">>;
       };
     };
     Views: {
