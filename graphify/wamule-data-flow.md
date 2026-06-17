@@ -41,9 +41,22 @@ Workflow: `Application -> Generate AI Review -> Edge Function -> Gemini or fallb
 6. Function summarizes applications, lots, payments, contracts, collections, alerts, and recommended actions.
 7. If configured AI is available, Gemini can refine the structured JSON brief.
 8. If AI is disabled or unavailable, deterministic fallback generates the brief.
-9. Function inserts a new `ai_daily_briefs` row and returns it to the page.
+9. Function inserts a new `ai_daily_briefs` row.
+10. Function converts recommended actions into `brief_action_items`.
+11. If an open item with the same stable `source_key` exists, `last_seen_on` and related fields are updated instead of creating a duplicate.
+12. Brief and action items return to the page.
 
-Workflow: `System records -> Daily Brief Edge Function -> Gemini or fallback -> ai_daily_briefs -> Daily Brief UI`.
+Workflow: `System records -> Daily Brief Edge Function -> Gemini or fallback -> ai_daily_briefs + brief_action_items -> Daily Brief UI`.
+
+## Daily Brief Action Center Flow
+1. `/briefs` reads `ai_daily_briefs` and `brief_action_items`.
+2. The latest selected brief is compared with the previous brief.
+3. UI displays new alerts, repeated alerts, resolved/no-longer-appearing alerts, payment total change, outstanding balance change, and lot count change when comparable values are available.
+4. Open action items are grouped as Missing receipt numbers, Missing transfer proof, Missing signed contracts, Lot conflicts, Overdue accounts, and Other.
+5. Super Admin/Admin users can manually mark action items Done or Dismissed.
+6. Action Center mutations update only `brief_action_items`; payments, contracts, applications, lots, customers, balances, and emails are not changed.
+
+Workflow: `Daily Brief recommended_actions -> stable source_key -> brief_action_items -> Open Items / Carryover -> manual Done or Dismissed`.
 
 ## Customer Account Summary Flow
 1. Admin opens `/customers/:id` and selects the AI Summary tab.
@@ -66,6 +79,33 @@ Workflow: `Customer + contract + payments + requests + documents -> Generate Cus
 5. Gemini credentials stay server-side in `GEMINI_API_KEY` or `GOOGLE_API_KEY`; the browser never receives the key.
 6. Frontend AI actions call Edge Functions; Edge Functions use the Supabase service role only to read needed records and write approved AI tables (`application_ai_reviews`, `ai_daily_briefs`, `customer_ai_summaries`).
 
+## Email Center / Notification Outbox Flow
+1. Super Admin/Admin opens `/emails`.
+2. Email Center reads `email_notifications` and groups by Pending, Sent, Failed, and Cancelled.
+3. Admin can queue a Test Email, preview a selected notification, send one pending email, process pending emails, or retry a failed email.
+4. Frontend invokes `send-notification-email`.
+5. Edge Function validates Super Admin/Admin role and reads server-side secrets:
+   - `RESEND_API_KEY`
+   - `EMAIL_FROM_ADDRESS`
+   - `EMAIL_FROM_NAME`
+   - optional `EMAIL_REPLY_TO`
+   - optional `NOTIFICATION_ADMIN_EMAIL`
+6. Edge Function sends through Resend and updates only `email_notifications` status, `sent_at`, and `error_message`.
+7. No Resend API key or email provider credential is exposed to frontend code.
+
+Workflow: `Email Center -> email_notifications -> send-notification-email -> Resend -> Sent/Failed status`.
+
+## Developer Feedback Flow
+1. Internal user clicks Send Feedback in the admin layout.
+2. Modal captures feedback type, priority, message, and current page URL.
+3. Frontend invokes `submit-developer-feedback`.
+4. Edge Function validates internal admin profile and inserts `developer_feedback`.
+5. Function checks `DEVELOPER_FEEDBACK_EMAIL` first, then `notification_settings` for Developer Feedback.
+6. If a recipient is configured, the function queues an `email_notifications` row with status Pending.
+7. The queued email is not sent until Super Admin/Admin processes it from Email Center.
+
+Workflow: `Admin layout feedback modal -> submit-developer-feedback -> developer_feedback -> optional email_notifications -> Email Center manual send`.
+
 ## Payment and Document Flow
 1. Admin logs payments into `transactions`.
 2. Manual receipt metadata is stored on `transactions`.
@@ -77,4 +117,4 @@ Workflow: `Customer + contract + payments + requests + documents -> Generate Cus
 - `src/lib/supabase.ts`: Centralized frontend Supabase client.
 - `src/types/database.ts`: TypeScript schema definitions.
 - Supabase RLS helper functions: `is_super_admin_user()`, `is_admin_user()`, `is_internal_user()`, `can_write_admin_data()`.
-- Server-side Edge Function secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
+- Server-side Edge Function secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, optional `EMAIL_REPLY_TO`, optional `NOTIFICATION_ADMIN_EMAIL`, optional `DEVELOPER_FEEDBACK_EMAIL`.

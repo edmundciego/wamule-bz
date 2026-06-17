@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile } from "../lib/data";
+import { edgeFunctionErrorMessage } from "../lib/functions";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
 import type { AppRole, EmailNotification, EmailNotificationStatus } from "../types/database";
@@ -76,7 +77,7 @@ export function EmailsPage() {
     const { data, error: functionError } = await supabase.functions.invoke("send-notification-email", { body });
     setSending(false);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(edgeFunctionErrorMessage(functionError));
       return;
     }
     if (data?.error) {

@@ -10,14 +10,17 @@ Wamule Development is an admin-first land development platform for public applic
 
 ## Primary Modules
 - **Public Intake:** `/` and `/apply` expose the public land application form.
-- **Admin Shell:** Auth-protected app layout with Dashboard, Daily Brief, Lots, Applications, Customers, Contracts, Payments, Collections, Reports, and Settings.
+- **Admin Shell:** Auth-protected app layout with Dashboard, Daily Brief, Email Center, Lots, Applications, Customers, Contracts, Payments, Collections, Reports, Settings, and a sidebar Developer Feedback modal.
 - **Configuration:** Settings tabs manage Company Profile, Payment Methods, Installment Plans, Lot Sizes, Fee Types, AI Settings, and Users & Roles. Payment methods, installment plans, lot sizes, and fee types are configurable records rather than hardcoded options.
 - **AI Guidance:** Applications can receive read-only AI completeness reviews. Admins can generate read-only Daily Briefs and customer account summaries for collections preparation.
+- **Action Center:** Daily Brief recommendations are converted into `brief_action_items` so admins can track carryover work, compare brief-to-brief changes, and manually mark items Done or Dismissed.
+- **Email Center:** Admin-controlled notification outbox at `/emails` stores, previews, and manually sends `email_notifications` through Resend. It is not a full inbox and does not send automatically.
+- **Developer Feedback:** Internal users can submit bugs, questions, feature requests, data issues, and other feedback from the admin layout. Feedback is stored and can queue a developer notification email.
 - **Reports and Collections:** Operational reporting, missing-item queues, due accounts, outstanding balances, and CSV exports.
 
 ## Roles and Boundaries
 - **Super Admin:** Added to `app_role`. Can manage users, settings, AI configuration, payment methods, installment plans, lot sizes, and fee types.
-- **Admin:** Can perform admin operations and generate/manage AI guidance records where policies/functions allow, but does not manage Super Admin-only user controls.
+- **Admin:** Can perform admin operations, generate/manage AI guidance records where policies/functions allow, manage Daily Brief action items, and process Email Center notifications.
 - **Staff:** Internal operational role with write access where existing `can_write_admin_data()` policies allow.
 - **Read Only:** Internal view role where `is_internal_user()` policies allow reads.
 - **Public users:** Can submit public applications only. They cannot access protected admin routes or AI records.
@@ -30,7 +33,8 @@ Wamule Development is an admin-first land development platform for public applic
 - **Payments and documents:** `transactions`, `payment_documents`, storage buckets for receipts/contracts/payment documents/application documents
 - **Collections:** `payment_requests`, `customer_balance_view`, `customer_ai_summaries`
 - **Configuration:** `business_settings`, `payment_methods`, `installment_plans`, `fee_types`, `ai_settings`
-- **AI briefs:** `ai_daily_briefs`
+- **AI briefs and action tracking:** `ai_daily_briefs`, `brief_action_items`
+- **Notifications and feedback:** `email_notifications`, `notification_settings`, `developer_feedback`
 
 ## AI Foundation
 - **`ai_settings`:** Stores provider, model, global AI enablement, and feature flags for Application Review, Daily Brief, and Collections Assistant behavior.
@@ -46,6 +50,11 @@ Wamule Development is an admin-first land development platform for public applic
 - **`generate-application-review`:** Super Admin/Admin protected application review generator with deterministic fallback.
 - **`generate-daily-brief`:** Super Admin/Admin protected daily operational brief generator with deterministic fallback.
 - **`generate-customer-summary`:** Internal admin collections summary generator with Gemini or deterministic fallback, writing only to `customer_ai_summaries`.
+- **`send-notification-email`:** Super Admin/Admin protected Resend sender for pending `email_notifications`. Uses server-side email secrets only.
+- **`submit-developer-feedback`:** Internal-user feedback submission helper. Writes `developer_feedback` and queues an `email_notifications` row if a developer recipient is configured.
 
 ## AI Safety Model
-AI features are read-only operational guidance. They may summarize records, flag issues, recommend human actions, draft follow-up text, and insert/update AI review, daily brief, and customer summary records. They must not approve or decline applications, reserve lots, mark lots sold, create customers, create contracts, log payments, edit balances, edit receipt numbers, mark payment requests paid, send emails automatically, delete records, or otherwise mutate business records.
+AI features are read-only operational guidance. They may summarize records, flag issues, recommend human actions, draft follow-up text, insert/update AI review, daily brief, customer summary records, and create/update Daily Brief action tracking records. They must not approve or decline applications, reserve lots, mark lots sold, create customers, create contracts, log payments, edit balances, edit receipt numbers, mark payment requests paid, send emails automatically, delete records, or otherwise mutate business records.
+
+## Notification Safety Model
+The Email Center is an outbox foundation, not an inbox or automated campaign tool. It may create, preview, send, retry, cancel, and status-track `email_notifications` through explicit Super Admin/Admin action. Resend API keys and sender configuration stay in Supabase Edge Function secrets. No frontend code receives `RESEND_API_KEY`, and no cron or automatic Daily Brief delivery is built.

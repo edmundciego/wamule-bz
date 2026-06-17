@@ -20,6 +20,7 @@ import { Button } from "../ui/Button";
 import { Field, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
 import { getSessionAndProfile } from "../../lib/data";
+import { edgeFunctionErrorMessage } from "../../lib/functions";
 import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
 import type { AppRole, DeveloperFeedbackPriority, DeveloperFeedbackType } from "../../types/database";
@@ -71,7 +72,7 @@ export function AdminLayout() {
     });
     setSubmitting(false);
     if (error) {
-      setFeedbackError(error.message);
+      setFeedbackError(edgeFunctionErrorMessage(error));
       return;
     }
     if (data?.error) {

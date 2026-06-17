@@ -57,7 +57,9 @@
    - Gemini can generate the final structured JSON when enabled and healthy enough.
    - Deterministic fallback inserts a complete brief when AI is disabled or unavailable.
    - Output is stored in `ai_daily_briefs`.
-   - Page displays latest brief, previous briefs, alerts, recommended actions checklist, copy brief, and a disabled Email Brief placeholder.
+   - Recommended actions are converted into `brief_action_items` using stable `source_key` values when possible.
+   - Repeated open actions update `last_seen_on` instead of creating duplicate carryover work.
+   - Page displays latest brief, comparison to previous brief, open carryover action items, previous briefs, alerts, recommended actions checklist, copy brief, and a disabled Email Brief placeholder.
 
 12. **AI Customer Account Summary / Collections Assistant**
    - Internal user opens `/customers/:id` and selects AI Summary.
@@ -69,6 +71,27 @@
    - Output is upserted into `customer_ai_summaries`.
    - Customer AI Summary tab displays account status badge, summary, balance/payment summaries, collections flags, missing items, recommended actions, draft follow-up message, model, generated date, generated_by, and Copy Follow-Up Message.
 
+13. **Daily Brief Action Center**
+   - `/briefs` compares the selected brief with the previous brief.
+   - UI shows new alerts, repeated alerts, resolved/no-longer-appearing alerts, outstanding balance change, payment total change, and lot count change where values are detectable.
+   - Open `brief_action_items` are grouped by missing receipt numbers, missing transfer proof, missing signed contracts, lot conflicts, overdue accounts, and other items.
+   - Super Admin/Admin users can manually mark items Done or Dismissed.
+   - Action Center updates only `brief_action_items`; it does not update payments, contracts, applications, lots, customer balances, or send emails.
+
+14. **Email Center / Notification Outbox**
+   - Super Admin/Admin opens `/emails`.
+   - Page reads `email_notifications` and filters by Pending, Sent, Failed, and Cancelled.
+   - Admin can create a Test Email, preview an email, send selected pending email, process pending emails, or retry failed email.
+   - `send-notification-email` validates Super Admin/Admin role, reads Resend and sender secrets server-side, sends through Resend, and marks `email_notifications` Sent or Failed.
+   - No automatic cron, inbox, reply handling, campaign client, or customer-facing preferences are built.
+
+15. **Developer Feedback**
+   - Internal user clicks Send Feedback in the admin sidebar area.
+   - Modal captures feedback type, priority, message, and current page URL.
+   - `submit-developer-feedback` validates internal admin access and inserts `developer_feedback`.
+   - If `DEVELOPER_FEEDBACK_EMAIL` or Developer Feedback `notification_settings.admin_email` is configured, the function queues an `email_notifications` row.
+   - Developer feedback email is not sent automatically; Super Admin/Admin must process it from Email Center.
+
 ## AI Safety Rules
 
 AI features may only:
@@ -79,6 +102,7 @@ AI features may only:
 - insert AI review records into `application_ai_reviews`
 - insert AI brief records into `ai_daily_briefs`
 - insert/update customer summary records into `customer_ai_summaries`
+- insert/update Daily Brief action tracking records in `brief_action_items`
 
 AI features must not:
 - approve applications
@@ -93,3 +117,18 @@ AI features must not:
 - mark payment requests paid
 - send emails automatically
 - delete records
+
+## Notification Safety Rules
+
+Notification features may:
+- create and preview `email_notifications`
+- send selected or pending email notifications only after explicit Super Admin/Admin action
+- mark email notifications `Sent` or `Failed`
+- store developer feedback and queue developer feedback notifications
+
+Notification features must not:
+- expose Resend API keys in frontend code
+- send emails automatically from AI generation
+- run cron/scheduled delivery
+- handle replies or behave like a full inbox/client
+- mutate operational records when sending notifications
