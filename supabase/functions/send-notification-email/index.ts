@@ -19,6 +19,13 @@ type EmailNotification = {
   status: string;
 };
 
+type EmailBranding = {
+  companyName: string;
+  logoUrl: string;
+  contactEmail: string;
+  locationAddress: string;
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -77,9 +84,10 @@ Deno.serve(async (request) => {
   if (emailError) return json({ error: emailError.message }, 500);
   if (!emails?.length) return json({ sent: 0, failed: 0, results: [] });
 
+  const branding = await loadEmailBranding(supabase, { fromName, fromAddress });
   const results = [];
   for (const email of emails as EmailNotification[]) {
-    const result = await sendEmail(email, { resendApiKey, fromAddress, fromName, replyTo });
+    const result = await sendEmail(email, { resendApiKey, fromAddress, fromName, replyTo, branding });
     results.push(result);
     if (result.ok) {
       await supabase
@@ -103,7 +111,7 @@ Deno.serve(async (request) => {
 
 async function sendEmail(
   email: EmailNotification,
-  config: { resendApiKey: string; fromAddress: string; fromName: string; replyTo: string },
+  config: { resendApiKey: string; fromAddress: string; fromName: string; replyTo: string; branding: EmailBranding },
 ) {
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -117,6 +125,7 @@ async function sendEmail(
         to: [formatRecipient(email.recipient_name, email.recipient_email)],
         subject: email.subject,
         text: email.body,
+        html: renderEmailHtml(email, config.branding),
         reply_to: config.replyTo || undefined,
       }),
     });
@@ -130,6 +139,113 @@ async function sendEmail(
   } catch (error) {
     return { id: email.id, ok: false, error: error instanceof Error ? error.message : "Unknown email send error." };
   }
+}
+
+async function loadEmailBranding(
+  supabase: ReturnType<typeof createClient>,
+  fallback: { fromName: string; fromAddress: string },
+): Promise<EmailBranding> {
+  const { data } = await supabase
+    .from("business_settings")
+    .select("value")
+    .eq("key", "company_profile")
+    .maybeSingle();
+  const value = data?.value && typeof data.value === "object" ? data.value as Record<string, unknown> : {};
+  return {
+    companyName: cleanText(value.company_name, fallback.fromName),
+    logoUrl: absoluteLogoUrl(cleanText(value.logo_url, "")),
+    contactEmail: cleanText(value.contact_email, fallback.fromAddress),
+    locationAddress: cleanText(value.location_address, "Dangriga Town, Belize"),
+  };
+}
+
+function renderEmailHtml(email: EmailNotification, branding: EmailBranding) {
+  const preheader = email.body.split(/\r?\n/).find((line) => line.trim())?.slice(0, 140) ?? email.subject;
+  const accentLabel = notificationAccentLabel(email.notification_type);
+  const bodyHtml = email.body
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p style="margin:0 0 16px; line-height:1.65;">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(email.subject)}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f5f2ea; color:#1f2a24; font-family:Arial, Helvetica, sans-serif;">
+    <span style="display:none!important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden;">${escapeHtml(preheader)}</span>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f2ea; padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px; background:#ffffff; border:1px solid #e4ddcf; border-radius:10px; overflow:hidden;">
+            <tr>
+              <td style="background:#18362b; padding:24px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      ${branding.logoUrl ? `<img src="${escapeHtml(branding.logoUrl)}" width="56" height="56" alt="${escapeHtml(branding.companyName)}" style="display:block; width:56px; height:56px; border-radius:8px; object-fit:cover; background:#fff;">` : ""}
+                    </td>
+                    <td style="vertical-align:middle; padding-left:${branding.logoUrl ? "14px" : "0"};">
+                      <div style="font-size:20px; line-height:1.2; font-weight:700; color:#ffffff;">${escapeHtml(branding.companyName)}</div>
+                      <div style="margin-top:6px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#d8b36a;">${escapeHtml(accentLabel)}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px;">
+                <h1 style="margin:0 0 18px; color:#18362b; font-size:22px; line-height:1.3;">${escapeHtml(email.subject)}</h1>
+                <div style="font-size:15px; line-height:1.65; color:#2c332f;">
+                  ${bodyHtml || "<p style=\"margin:0;\">No message body provided.</p>"}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px; background:#fbfaf6; border-top:1px solid #eee7da;">
+                <p style="margin:0; color:#637067; font-size:12px; line-height:1.5;">This message was sent by ${escapeHtml(branding.companyName)}. Please reply to this email if you need assistance.</p>
+                <p style="margin:8px 0 0; color:#637067; font-size:12px; line-height:1.5;">${escapeHtml(branding.locationAddress)}${branding.contactEmail ? ` · ${escapeHtml(branding.contactEmail)}` : ""}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function notificationAccentLabel(type: string) {
+  if (type === "Developer Feedback") return "Developer Feedback";
+  if (type === "Test Email") return "Email Center Test";
+  if (type === "Daily Brief") return "Daily Brief";
+  if (type.includes("Payment")) return "Payment Notification";
+  if (type.includes("Application")) return "Application Update";
+  return "Notification";
+}
+
+function absoluteLogoUrl(value: string) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = Deno.env.get("PUBLIC_SITE_URL") ?? Deno.env.get("SITE_URL") ?? "";
+  if (!base) return "";
+  return `${base.replace(/\/$/, "")}/${value.replace(/^\//, "")}`;
+}
+
+function cleanText(value: unknown, fallback: string) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function formatRecipient(name: string | null, email: string) {

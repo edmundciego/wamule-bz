@@ -14,6 +14,18 @@ import { formatDate } from "../lib/utils";
 import type { AppRole, EmailNotification, EmailNotificationStatus } from "../types/database";
 
 const statuses: EmailNotificationStatus[] = ["Pending", "Sent", "Failed", "Cancelled"];
+const emailTemplates = {
+  test: {
+    label: "Simple Test",
+    subject: "Wamule Development test email",
+    body: "Good day,\n\nThis is a manual test email from the Wamule Development Email Center.\n\nPlease reply to confirm that the message was received correctly.\n\nThank you,\nWamule Development",
+  },
+  update: {
+    label: "Customer Update",
+    subject: "Wamule Development account update",
+    body: "Good day,\n\nThis is a quick update from Wamule Development regarding your account file. Our team is reviewing the latest records and will contact you if any additional information is needed.\n\nPlease contact us when convenient if you have any questions or need us to confirm your account details.\n\nThank you,\nWamule Development",
+  },
+} as const;
 
 export function EmailsPage() {
   const queryClient = useQueryClient();
@@ -23,6 +35,7 @@ export function EmailsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [testEmail, setTestEmail] = useState("");
+  const [testTemplate, setTestTemplate] = useState<keyof typeof emailTemplates>("test");
 
   const { data: sessionProfile, isLoading: profileLoading } = useQuery({
     queryKey: ["email-center-session"],
@@ -97,13 +110,14 @@ export function EmailsPage() {
       setActionError("Enter a recipient email for the test notification.");
       return;
     }
+    const template = emailTemplates[testTemplate];
     const { data, error: insertError } = await supabase
       .from("email_notifications")
       .insert({
         recipient_email: recipient,
         recipient_name: "Test Recipient",
-        subject: "Wamule Development test email",
-        body: "This is a manual test email from the Wamule Development Email Center.",
+        subject: template.subject,
+        body: template.body,
         notification_type: "Test Email",
         related_table: null,
         related_record_id: null,
@@ -154,9 +168,20 @@ export function EmailsPage() {
         <Card>
           <CardHeader><CardTitle>Send Test Email</CardTitle></CardHeader>
           <CardContent>
-            <form className="grid gap-3 md:grid-cols-[1fr_auto]" onSubmit={(event) => void createTestEmail(event)}>
+            <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={(event) => void createTestEmail(event)}>
               <Field label="Recipient email">
                 <Input type="email" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} placeholder="admin@example.com" />
+              </Field>
+              <Field label="Message style">
+                <select
+                  className="focus-ring h-10 rounded-md border bg-white px-3 text-sm shadow-sm shadow-primary/5"
+                  value={testTemplate}
+                  onChange={(event) => setTestTemplate(event.target.value as keyof typeof emailTemplates)}
+                >
+                  {Object.entries(emailTemplates).map(([key, template]) => (
+                    <option key={key} value={key}>{template.label}</option>
+                  ))}
+                </select>
               </Field>
               <Button type="submit" disabled={!canSend} className="self-end">
                 <TestTube2 className="h-4 w-4" />
@@ -247,6 +272,9 @@ function EmailPreview({
               <Meta label="Status" value={email.status} />
               <Meta label="Sent" value={email.sent_at ? formatDate(email.sent_at) : "Not sent"} />
               {email.error_message ? <Meta label="Error" value={email.error_message} /> : null}
+            </div>
+            <div className="rounded-md border border-primary/10 bg-ivory/50 p-3 text-xs leading-5 text-muted-foreground">
+              Sent emails use the branded HTML wrapper with the company logo from Settings when the logo URL is public. This preview shows the editable plain-text body stored in the outbox.
             </div>
             <Textarea readOnly value={email.body} className="min-h-64" />
             {canSend ? (
