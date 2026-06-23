@@ -82,7 +82,7 @@ Workflow: `Customer + contract + payments + requests + documents -> Generate Cus
 ## Email Center / Notification Outbox Flow
 1. Super Admin/Admin opens `/emails`.
 2. Email Center reads `email_notifications` and groups by Pending, Sent, Failed, and Cancelled.
-3. Admin can queue a Test Email, preview a selected notification, send one pending email, process pending emails, or retry a failed email.
+3. Admin can queue a Test Email using starter styles such as Simple Test or Customer Update, preview a selected notification, send one pending email, process pending emails, or retry a failed email.
 4. Frontend invokes `send-notification-email`.
 5. Edge Function validates Super Admin/Admin role and reads server-side secrets:
    - `RESEND_API_KEY`
@@ -90,10 +90,15 @@ Workflow: `Customer + contract + payments + requests + documents -> Generate Cus
    - `EMAIL_FROM_NAME`
    - optional `EMAIL_REPLY_TO`
    - optional `NOTIFICATION_ADMIN_EMAIL`
-6. Edge Function sends through Resend and updates only `email_notifications` status, `sent_at`, and `error_message`.
-7. No Resend API key or email provider credential is exposed to frontend code.
+   - optional `PUBLIC_SITE_URL` or `SITE_URL` for resolving relative logo URLs in HTML emails
+6. Edge Function reads Company Profile branding from `business_settings`.
+7. Edge Function sends through Resend with:
+   - `text`: the editable plain-text outbox body
+   - `html`: a branded HTML wrapper with company name, optional logo, subject, message body, and footer
+8. Edge Function updates only `email_notifications` status, `sent_at`, and `error_message`.
+9. No Resend API key or email provider credential is exposed to frontend code.
 
-Workflow: `Email Center -> email_notifications -> send-notification-email -> Resend -> Sent/Failed status`.
+Workflow: `Email Center -> email_notifications -> send-notification-email -> business_settings branding -> Resend text/html email -> Sent/Failed status`.
 
 ## Developer Feedback Flow
 1. Internal user clicks Send Feedback in the admin layout.
@@ -117,4 +122,4 @@ Workflow: `Admin layout feedback modal -> submit-developer-feedback -> developer
 - `src/lib/supabase.ts`: Centralized frontend Supabase client.
 - `src/types/database.ts`: TypeScript schema definitions.
 - Supabase RLS helper functions: `is_super_admin_user()`, `is_admin_user()`, `is_internal_user()`, `can_write_admin_data()`.
-- Server-side Edge Function secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, optional `EMAIL_REPLY_TO`, optional `NOTIFICATION_ADMIN_EMAIL`, optional `DEVELOPER_FEEDBACK_EMAIL`.
+- Server-side Edge Function secrets: `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, optional `EMAIL_REPLY_TO`, optional `NOTIFICATION_ADMIN_EMAIL`, optional `DEVELOPER_FEEDBACK_EMAIL`, optional `PUBLIC_SITE_URL` or `SITE_URL`.

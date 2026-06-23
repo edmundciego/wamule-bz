@@ -10,7 +10,7 @@
 | `/admin` | Redirect | Yes | Internal admin profile | Redirects to `/dashboard`. |
 | `/dashboard` | `DashboardPage` | Yes | Internal admin profile | Admin overview. |
 | `/briefs` | `DailyBriefsPage` | Yes | Internal can view; Super Admin/Admin can generate and manage action items | AI Daily Brief page with latest brief, comparison to previous brief, open/carryover action items, alerts, recommended actions, previous briefs, copy action, and disabled email placeholder. |
-| `/emails` | `EmailsPage` | Yes | Super Admin/Admin only | Email Center notification outbox with pending/sent/failed/cancelled views, preview, send selected, process pending, retry failed, and queue test email. |
+| `/emails` | `EmailsPage` | Yes | Super Admin/Admin only | Email Center notification outbox with pending/sent/failed/cancelled views, preview, send selected, process pending, retry failed, and queue test email with Simple Test or Customer Update starter styles. |
 | `/lots` | `LotsPage` | Yes | Internal; writes follow existing policies | Lot board and lot management. |
 | `/applications` | `ApplicationsPage` | Yes | Internal; Super Admin/Admin generate AI review | Intake kanban, approval controls, and AI Application Review section. |
 | `/customers` | `CustomersPage` | Yes | Internal | Customer list. |
@@ -41,6 +41,6 @@ Payment methods, installment plans, lot sizes, and fee types are configurable da
 - **Users & Roles:** Located inside `/settings`; Super Admin-only user and role management area.
 
 ## Notification and Feedback Areas
-- **Email Center:** Located at `/emails`; Super Admin/Admin only. Stores and previews `email_notifications`, then sends manually through `send-notification-email`.
+- **Email Center:** Located at `/emails`; Super Admin/Admin only. Stores and previews editable plain-text `email_notifications`, then sends manually through `send-notification-email`, which applies the branded HTML wrapper and optional Company Profile logo at send time.
 - **Daily Brief Action Center:** Located inside `/briefs`; shows brief-to-brief comparison and open carryover items from `brief_action_items`. Super Admin/Admin can mark items Done or Dismissed.
 - **Developer Feedback:** Global Send Feedback button in `AdminLayout`; available to internal admin users. Submits through `submit-developer-feedback`, stores `developer_feedback`, and optionally queues a Developer Feedback email notification.

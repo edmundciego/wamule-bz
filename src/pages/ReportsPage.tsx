@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
-import { Badge } from "../components/ui/Badge";
+import { Badge, statusBadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select } from "../components/ui/Field";
@@ -215,15 +215,15 @@ export function ReportsPage() {
       {isLoading ? <LoadingState label="Loading reports" /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
 
-      <div className="mb-6 overflow-x-auto rounded-md border bg-white">
-        <div className="flex min-w-max gap-1 p-1 sm:min-w-0 sm:flex-wrap">
+      <div className="crm-tabs mb-6">
+        <div className="crm-tab-list">
           {tabs.map((tab) => (
             <button
               key={tab}
               type="button"
               className={cn(
-                "h-10 rounded-md px-4 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-primary",
-                activeTab === tab ? "bg-primary text-white shadow-sm hover:bg-primary hover:text-white" : "",
+                "crm-tab",
+                activeTab === tab ? "crm-tab-active" : "",
               )}
               onClick={() => setActiveTab(tab)}
             >
@@ -464,7 +464,7 @@ function ApplicationsReport({ rows, parcelNameById }: { rows: ApplicationReportR
           preferredLots(row) || "N/A",
           row.intended_use ?? "N/A",
           row.payment_option ?? "N/A",
-          <Badge key={row.id} tone={row.status === "Approved" ? "green" : row.status === "Declined" ? "red" : "amber"}>{row.status}</Badge>,
+          <Badge key={row.id} tone={statusBadgeTone(row.status)}>{row.status}</Badge>,
           formatDate(row.created_at),
         ])}
       />
@@ -505,7 +505,7 @@ function LotsReport({ rows }: { rows: LotReportRow[] }) {
           row.lot_number,
           row.dimensions,
           money(row.base_price),
-          <Badge key={row.id} tone={row.status === "Available" ? "green" : row.status === "Sold" ? "blue" : "amber"}>{row.status}</Badge>,
+          <Badge key={row.id} tone={statusBadgeTone(row.status)}>{row.status}</Badge>,
           row.customer_name ?? "N/A",
           row.contract_id ? `Contract #${row.contract_id}` : "N/A",
         ])}
@@ -568,7 +568,7 @@ function ReportSummary({ title, description, onExport }: { title: string; descri
     <Card>
       <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
         <div>
-          <p className="font-display text-2xl font-semibold text-primary">{title}</p>
+          <p className="font-display text-2xl font-semibold text-foreground">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
         <Button type="button" onClick={onExport}>
@@ -588,19 +588,19 @@ function ReportTable({ headers, rows, emptyMessage }: { headers: string[]; rows:
           <div className="p-6 text-sm text-muted-foreground">{emptyMessage}</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-sm">
-              <thead className="bg-primary text-white">
+            <table className="crm-table min-w-[900px]">
+              <thead>
                 <tr>
                   {headers.map((header) => (
-                    <th key={header} className="whitespace-nowrap px-3 py-3 text-left font-semibold">{header}</th>
+                    <th key={header}>{header}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="border-b bg-white last:border-b-0 odd:bg-ivory/35">
+                  <tr key={rowIndex}>
                     {row.map((cell, cellIndex) => (
-                      <td key={cellIndex} className="max-w-[260px] px-3 py-3 align-top text-slate">
+                      <td key={cellIndex} className="max-w-[260px]">
                         {cell}
                       </td>
                     ))}
@@ -617,7 +617,7 @@ function ReportTable({ headers, rows, emptyMessage }: { headers: string[]; rows:
 
 function CleanupMetric({ title, value }: { title: string; value: number }) {
   return (
-    <div className="rounded-md border bg-ivory/35 p-3">
+    <div className="crm-subpanel">
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
       <p className="mt-2 text-2xl font-semibold text-primary">{value}</p>
     </div>
@@ -631,7 +631,7 @@ function MissingList({ title, rows }: { title: string; rows: string[] }) {
       <CardContent className="grid gap-2">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No items found.</p> : null}
         {rows.map((row) => (
-          <div key={row} className="rounded-md border bg-white p-3 text-sm text-slate">{row}</div>
+          <div key={row} className="rounded-md border border-border bg-card p-3 text-sm text-slate shadow-sm shadow-primary/5">{row}</div>
         ))}
       </CardContent>
     </Card>

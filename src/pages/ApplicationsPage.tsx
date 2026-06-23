@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader } from "../components/layout/PageHeader";
-import { Badge } from "../components/ui/Badge";
+import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Field";
@@ -9,7 +9,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
-import type { ApplicationAiReview, ApplicationStatus, AppRole } from "../types/database";
+import type { ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation } from "../types/database";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
 
@@ -57,6 +57,28 @@ export function ApplicationsPage() {
       return parcels;
     },
   });
+  const { data: linkedLeads } = useQuery({
+    queryKey: ["application-linked-leads"],
+    queryFn: async () => {
+      const { data: leads, error: queryError } = await supabase
+        .from("leads")
+        .select("id, application_id, pipeline_stage, full_name")
+        .not("application_id", "is", null);
+      if (queryError) throw queryError;
+      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name">[];
+    },
+  });
+  const { data: linkedReservations } = useQuery({
+    queryKey: ["application-linked-reservations"],
+    queryFn: async () => {
+      const { data: reservations, error: queryError } = await supabase
+        .from("lot_reservations")
+        .select("*")
+        .or("application_id.not.is.null,lead_id.not.is.null");
+      if (queryError) throw queryError;
+      return reservations as LotReservation[];
+    },
+  });
 
   async function setStatus(id: number, status: ApplicationStatus) {
     setActionError(null);
@@ -89,6 +111,106 @@ export function ApplicationsPage() {
     await queryClient.invalidateQueries({ queryKey: ["applications-kanban"] });
   }
 
+  async function createLeadFromApplication(application: {
+    id: number;
+    applicant_full_name: string | null;
+    first_name: string;
+    last_name: string;
+    phone: string;
+    email: string | null;
+    parcel_id: number | null;
+    intended_use: string | null;
+    payment_option: string | null;
+  }) {
+    setActionError(null);
+    const existingLead = linkedLeads?.find((lead) => lead.application_id === application.id);
+    if (existingLead) return;
+    const leadName = (application.applicant_full_name ?? `${application.first_name} ${application.last_name}`).trim();
+    const { data: insertedLead, error: insertError } = await supabase
+      .from("leads")
+      .insert({
+        full_name: leadName || `Application #${application.id}`,
+        phone: application.phone,
+        email: application.email,
+        parcel_id: application.parcel_id,
+        application_id: application.id,
+        source: "Public Application",
+        pipeline_stage: "application_started",
+        buyer_journey_stage: "Application submitted",
+        preferred_contact_method: "Phone",
+        next_action: "Review application and confirm buyer readiness",
+        notes: [application.intended_use, application.payment_option].filter(Boolean).join(" | ") || null,
+      })
+      .select("id")
+      .single();
+    if (insertError) {
+      setActionError(insertError.code === "23505" ? "A lead is already linked to this application." : insertError.message);
+      return;
+    }
+    const { error: activityError } = await supabase.from("lead_activities").insert({
+      lead_id: insertedLead.id,
+      activity_type: "application_linked",
+      title: "Lead created from application",
+      description: `Application #${application.id} linked for sales follow-up.`,
+      metadata: null,
+    });
+    if (activityError) {
+      setActionError(activityError.message);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["application-linked-leads"] });
+    await queryClient.invalidateQueries({ queryKey: ["sales-leads"] });
+  }
+
+  async function createReservationFromApplication(application: {
+    id: number;
+    parcel_id: number | null;
+    applicant_full_name: string | null;
+    first_name: string;
+    last_name: string;
+  }) {
+    setActionError(null);
+    const linkedLead = linkedLeads?.find((lead) => lead.application_id === application.id) ?? null;
+    const selectedParcelId = application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null);
+    const existingReservation = linkedReservations?.find((reservation) =>
+      reservation.application_id === application.id ||
+      (linkedLead?.id && reservation.lead_id === linkedLead.id) ||
+      (selectedParcelId && reservation.parcel_id === selectedParcelId && activeReservationStatuses.has(reservation.status))
+    );
+    if (existingReservation) return;
+    const { data: reservation, error: insertError } = await supabase
+      .from("lot_reservations")
+      .insert({
+        lead_id: linkedLead?.id ?? null,
+        application_id: application.id,
+        parcel_id: selectedParcelId,
+        status: "draft",
+        deposit_status: "not_requested",
+        reserved_at: new Date().toISOString(),
+        notes: `Created from application for ${(application.applicant_full_name ?? `${application.first_name} ${application.last_name}`).trim() || `Application #${application.id}`}.`,
+      })
+      .select("id")
+      .single();
+    if (insertError) {
+      setActionError(insertError.code === "23505" ? "This lot already has an active reservation hold." : insertError.message);
+      return;
+    }
+    const { error: activityError } = await supabase.from("reservation_activities").insert({
+      reservation_id: reservation.id,
+      activity_type: "application_linked",
+      title: "Reservation linked to application",
+      description: `Application #${application.id} linked for deposit readiness tracking.`,
+      metadata: null,
+    });
+    if (activityError) {
+      setActionError(activityError.message);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["application-linked-reservations"] });
+    await queryClient.invalidateQueries({ queryKey: ["sales-lot-reservations"] });
+    await queryClient.invalidateQueries({ queryKey: ["dashboard-lot-reservations"] });
+  }
+
   function preferredLotText(preferredParcelIds: unknown) {
     if (!Array.isArray(preferredParcelIds) || !lotOptions) return "None listed";
     const labels = preferredParcelIds
@@ -98,6 +220,7 @@ export function ApplicationsPage() {
   }
 
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
+  const canWriteSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const canGenerateAiReview = currentRole === "Super Admin" || currentRole === "Admin";
   const aiReviewEnabled = Boolean(aiSettings?.is_enabled && aiSettings.application_summary_enabled);
 
@@ -112,7 +235,7 @@ export function ApplicationsPage() {
           <section key={status} className="min-w-0">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">{status}</h2>
-              <Badge tone={status === "Approved" ? "green" : status === "Declined" ? "red" : "amber"}>
+              <Badge tone={statusBadgeTone(status)}>
                 {data?.filter((item) => item.status === status).length ?? 0}
               </Badge>
             </div>
@@ -135,6 +258,17 @@ export function ApplicationsPage() {
                         <p>Created: {formatDate(application.created_at)}</p>
                         <p>{application.legal_notice_acknowledged ? "Legal notice acknowledged" : "Missing legal acknowledgement"}</p>
                       </div>
+                      <ApplicationLeadLink
+                        lead={linkedLeads?.find((item) => item.application_id === application.id) ?? null}
+                        canWrite={canWriteSales}
+                        onCreate={() => void createLeadFromApplication(application)}
+                      />
+                      <ApplicationReservationLink
+                        reservation={applicationReservation(application.id, application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null), linkedLeads, linkedReservations)}
+                        canWrite={canWriteSales}
+                        hasLot={Boolean(application.parcel_id || selectedLots[application.id])}
+                        onCreate={() => void createReservationFromApplication(application)}
+                      />
                       <ApplicationAiReviewSection
                         review={firstReview(application.application_ai_reviews)}
                         canGenerate={canGenerateAiReview}
@@ -164,7 +298,7 @@ export function ApplicationsPage() {
                       ) : null}
                       <div className="flex flex-wrap gap-2">
                         {status !== "Approved" ? <Button type="button" onClick={() => void setStatus(application.id, "Approved")}>Approve</Button> : null}
-                        {status !== "Declined" ? <Button type="button" variant="secondary" onClick={() => void setStatus(application.id, "Declined")}>Decline</Button> : null}
+                        {status !== "Declined" ? <Button type="button" variant="outline" onClick={() => void setStatus(application.id, "Declined")}>Decline</Button> : null}
                       </div>
                     </CardContent>
                   </Card>
@@ -191,18 +325,18 @@ function ApplicationAiReviewSection({
   onGenerate: () => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-md border border-primary/10 bg-ivory/45 p-3 text-sm">
+    <div className="grid gap-3 rounded-md border border-primary/10 bg-primary-soft p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="font-medium text-primary">AI Application Review</p>
-          <p className="text-xs text-muted-foreground">Assistant-generated review guidance only. Admin remains responsible for final decisions.</p>
+          <p className="font-medium text-primary">Decision Support</p>
+          <p className="text-xs text-muted-foreground">Smart review guidance only. Admin remains responsible for final decisions.</p>
         </div>
         {review ? <Badge tone={reviewTone(review.completeness_status)}>{review.completeness_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
       </div>
 
       {!aiReviewEnabled ? (
-        <p className="rounded-md border border-copper/25 bg-copper/10 p-2 text-xs text-copper">
-          AI Application Review is not enabled. Enable it in Settings.
+        <p className="crm-warning-panel p-2 text-xs">
+          Application decision support is not enabled. Enable it in Settings.
         </p>
       ) : null}
 
@@ -218,15 +352,80 @@ function ApplicationAiReviewSection({
           </div>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">No assistant review has been generated for this application yet.</p>
+        <p className="text-xs text-muted-foreground">No smart review has been generated for this application yet.</p>
       )}
 
       {canGenerate ? (
         <div className="flex justify-end">
-          <Button type="button" variant="secondary" disabled={generating} onClick={onGenerate}>
-            {generating ? "Generating..." : review ? "Regenerate Review" : "Generate AI Review"}
+          <Button type="button" variant="outline" disabled={generating} onClick={onGenerate}>
+            {generating ? "Generating..." : review ? "Regenerate Review" : "Generate Review"}
           </Button>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ApplicationLeadLink({
+  lead,
+  canWrite,
+  onCreate,
+}: {
+  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name"> | null;
+  canWrite: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div>
+        <p className="font-medium text-primary">Sales Pipeline</p>
+        <p className="text-xs text-muted-foreground">
+          {lead ? `${lead.full_name} is linked for follow-up.` : "Create a lead when this application needs sales follow-up."}
+        </p>
+      </div>
+      {lead ? (
+        <Badge tone="blue">Lead linked</Badge>
+      ) : canWrite ? (
+        <Button type="button" variant="outline" className="h-9" onClick={onCreate}>
+          Create Lead
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ApplicationReservationLink({
+  reservation,
+  canWrite,
+  hasLot,
+  onCreate,
+}: {
+  reservation: LotReservation | null;
+  canWrite: boolean;
+  hasLot: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div>
+        <p className="font-medium text-primary">Reservation / Deposit Readiness</p>
+        <p className="text-xs text-muted-foreground">
+          {reservation
+            ? `Reservation is ${reservationLabel(reservation.status)} with deposit ${depositLabel(reservation.deposit_status)}.`
+            : hasLot
+              ? "Create a draft reservation to track hold and deposit readiness."
+              : "Assign or select a lot before creating a reservation hold."}
+        </p>
+      </div>
+      {reservation ? (
+        <div className="flex flex-wrap gap-2">
+          <Badge tone={reservationTone(reservation.status)}>{reservationLabel(reservation.status)}</Badge>
+          <Badge tone={depositTone(reservation.deposit_status)}>{depositLabel(reservation.deposit_status)}</Badge>
+        </div>
+      ) : canWrite && hasLot ? (
+        <Button type="button" variant="outline" className="h-9" onClick={onCreate}>
+          Create Reservation
+        </Button>
       ) : null}
     </div>
   );
@@ -257,4 +456,45 @@ function reviewTone(status: ApplicationAiReview["completeness_status"]) {
   if (status === "Lot Conflict") return "red";
   if (status === "Missing Information") return "amber";
   return "blue";
+}
+
+const activeReservationStatuses = new Set<LotReservation["status"]>(["draft", "reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"]);
+
+function applicationReservation(
+  applicationId: number,
+  parcelId: number | null,
+  leads: Pick<Lead, "id" | "application_id">[] | undefined,
+  reservations: LotReservation[] | undefined,
+) {
+  const lead = leads?.find((item) => item.application_id === applicationId);
+  return reservations?.find((reservation) =>
+    reservation.application_id === applicationId ||
+    (lead?.id && reservation.lead_id === lead.id) ||
+    (parcelId && reservation.parcel_id === parcelId && activeReservationStatuses.has(reservation.status))
+  ) ?? null;
+}
+
+function reservationLabel(status: LotReservation["status"]) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function depositLabel(status: LotReservation["deposit_status"]) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reservationTone(status: LotReservation["status"]): BadgeTone {
+  if (["deposit_confirmed", "converted_to_application", "converted_to_contract"].includes(status)) return "green";
+  if (["deposit_pending", "expired"].includes(status)) return "amber";
+  if (["reserved", "deposit_submitted"].includes(status)) return "blue";
+  if (status === "cancelled") return "red";
+  return "gray";
+}
+
+function depositTone(status: LotReservation["deposit_status"]): BadgeTone {
+  if (status === "confirmed") return "green";
+  if (status === "pending") return "amber";
+  if (status === "proof_submitted") return "blue";
+  if (status === "overdue") return "red";
+  if (status === "waived") return "brown";
+  return "gray";
 }

@@ -5,7 +5,7 @@ import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
-import { Field, Input, Textarea } from "../components/ui/Field";
+import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile } from "../lib/data";
 import { edgeFunctionErrorMessage } from "../lib/functions";
@@ -158,9 +158,9 @@ export function EmailsPage() {
         {isLoading ? <LoadingState label="Loading email notifications" /> : null}
         {error ? <ErrorState message={(error as Error).message} /> : null}
         {actionError ? <ErrorState message={actionError} /> : null}
-        {actionMessage ? <div className="rounded-md border border-sage/30 bg-sage/15 p-3 text-sm text-primary">{actionMessage}</div> : null}
+        {actionMessage ? <div className="crm-success-panel p-3 text-sm">{actionMessage}</div> : null}
         {!canSend ? (
-          <div className="rounded-md border border-copper/30 bg-copper/10 p-3 text-sm text-copper">
+          <div className="crm-warning-panel p-3 text-sm">
             Your role can view email notifications but cannot send them.
           </div>
         ) : null}
@@ -173,15 +173,14 @@ export function EmailsPage() {
                 <Input type="email" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} placeholder="admin@example.com" />
               </Field>
               <Field label="Message style">
-                <select
-                  className="focus-ring h-10 rounded-md border bg-white px-3 text-sm shadow-sm shadow-primary/5"
+                <Select
                   value={testTemplate}
                   onChange={(event) => setTestTemplate(event.target.value as keyof typeof emailTemplates)}
                 >
                   {Object.entries(emailTemplates).map(([key, template]) => (
                     <option key={key} value={key}>{template.label}</option>
                   ))}
-                </select>
+                </Select>
               </Field>
               <Button type="submit" disabled={!canSend} className="self-end">
                 <TestTube2 className="h-4 w-4" />
@@ -197,7 +196,7 @@ export function EmailsPage() {
               <CardTitle>Notification Outbox</CardTitle>
               <div className="flex flex-wrap gap-2">
                 {statuses.map((status) => (
-                  <Button key={status} type="button" variant={activeStatus === status ? "primary" : "secondary"} onClick={() => setActiveStatus(status)} className="h-9">
+                  <Button key={status} type="button" variant={activeStatus === status ? "primary" : "outline"} onClick={() => setActiveStatus(status)} className="h-9">
                     {status}
                   </Button>
                 ))}
@@ -206,27 +205,27 @@ export function EmailsPage() {
             <CardContent>
               {filtered.length ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[820px] text-left text-sm">
-                    <thead className="border-b text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                  <table className="crm-table min-w-[820px]">
+                    <thead>
                       <tr>
-                        <th className="py-2 pr-3">Recipient</th>
-                        <th className="py-2 pr-3">Type</th>
-                        <th className="py-2 pr-3">Subject</th>
-                        <th className="py-2 pr-3">Status</th>
-                        <th className="py-2 pr-3">Created</th>
-                        <th className="py-2 pr-3">Action</th>
+                        <th>Recipient</th>
+                        <th>Type</th>
+                        <th>Subject</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y">
+                    <tbody>
                       {filtered.map((email) => (
                         <tr key={email.id}>
-                          <td className="py-3 pr-3">{email.recipient_email}</td>
-                          <td className="py-3 pr-3">{email.notification_type}</td>
-                          <td className="py-3 pr-3">{email.subject}</td>
-                          <td className="py-3 pr-3"><Badge tone={emailStatusTone(email.status)}>{email.status}</Badge></td>
-                          <td className="py-3 pr-3">{formatDate(email.created_at)}</td>
-                          <td className="py-3 pr-3">
-                            <Button type="button" variant={selected?.id === email.id ? "primary" : "secondary"} onClick={() => setSelectedId(email.id)}>
+                          <td>{email.recipient_email}</td>
+                          <td>{email.notification_type}</td>
+                          <td>{email.subject}</td>
+                          <td><Badge tone={emailStatusTone(email.status)}>{email.status}</Badge></td>
+                          <td>{formatDate(email.created_at)}</td>
+                          <td>
+                            <Button type="button" variant={selected?.id === email.id ? "primary" : "outline"} onClick={() => setSelectedId(email.id)}>
                               Preview
                             </Button>
                           </td>
@@ -273,7 +272,7 @@ function EmailPreview({
               <Meta label="Sent" value={email.sent_at ? formatDate(email.sent_at) : "Not sent"} />
               {email.error_message ? <Meta label="Error" value={email.error_message} /> : null}
             </div>
-            <div className="rounded-md border border-primary/10 bg-ivory/50 p-3 text-xs leading-5 text-muted-foreground">
+            <div className="crm-info-panel p-3 text-xs leading-5">
               Sent emails use the branded HTML wrapper with the company logo from Settings when the logo URL is public. This preview shows the editable plain-text body stored in the outbox.
             </div>
             <Textarea readOnly value={email.body} className="min-h-64" />
@@ -289,14 +288,14 @@ function EmailPreview({
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   disabled={sending || email.status !== "Failed"}
                   onClick={() => void onSend({ email_notification_id: email.id, retry_failed: true })}
                 >
                   <RotateCcw className="h-4 w-4" />
                   Retry Failed Email
                 </Button>
-                <Button type="button" variant="secondary" disabled={sending} onClick={() => void onSend({ batch: true })}>
+                <Button type="button" variant="outline" disabled={sending} onClick={() => void onSend({ batch: true })}>
                   <RefreshCw className="h-4 w-4" />
                   Process Pending
                 </Button>
@@ -313,7 +312,7 @@ function EmailPreview({
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="crm-subpanel">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
       <p className="mt-1 break-words text-foreground">{value}</p>
     </div>

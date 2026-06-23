@@ -7,7 +7,7 @@ Planned extensions for a dedicated customer-facing portal remain future work. Cu
 2. **Customer Dashboard:** Let customers view personal contract status, lot allocation, balances, due dates, and payment history.
 3. **Customer payment proof upload:** Allow customers to submit payment references and upload proof, subject to admin verification.
 4. **Customer document downloads:** Let customers download receipts, signed contracts, and other approved documents.
-5. **Automated email/WhatsApp sending:** Future notification workflows for application, contract, payment, and collections events. The current Email Center is only an admin-controlled outbox with manual send.
+5. **Automated email/WhatsApp sending:** Future notification workflows for application, contract, payment, and collections events. The current Email Center is only an admin-controlled outbox with manual send, starter message styles, and a branded HTML wrapper.
 6. **Scheduled/cron daily brief emails:** Future automatic delivery of Daily Briefs. The current Daily Brief has manual generation, action tracking, and a disabled Email Brief placeholder.
 7. **Customer-facing notification preferences:** Future customer portal controls for email preferences, subscriptions, or opt-outs. Not currently built.
 
@@ -20,4 +20,4 @@ Planned extensions for a dedicated customer-facing portal remain future work. Cu
 - **Customer-facing email assistant:** Not built. Current notification work is an admin outbox foundation, not an AI email writer or automated customer messaging tool.
 
 ## Current Boundary
-The completed AI features are limited to admin Application Reviews, Daily Briefs, and Customer Account Summaries. They summarize, flag, recommend, draft follow-up text, and insert/update AI guidance records only. Daily Brief Action Center can track recommended work in `brief_action_items` but does not complete operational work automatically. Email Center can manually send queued notifications through explicit Super Admin/Admin action, but it does not communicate automatically with customers.
+The completed AI features are limited to admin Application Reviews, Daily Briefs, and Customer Account Summaries. They summarize, flag, recommend, draft follow-up text, and insert/update AI guidance records only. Daily Brief Action Center can track recommended work in `brief_action_items` but does not complete operational work automatically. Email Center can manually send queued notifications through explicit Super Admin/Admin action and applies company branding/logo to sent HTML emails, but it does not communicate automatically with customers.

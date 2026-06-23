@@ -81,8 +81,10 @@
 14. **Email Center / Notification Outbox**
    - Super Admin/Admin opens `/emails`.
    - Page reads `email_notifications` and filters by Pending, Sent, Failed, and Cancelled.
-   - Admin can create a Test Email, preview an email, send selected pending email, process pending emails, or retry failed email.
-   - `send-notification-email` validates Super Admin/Admin role, reads Resend and sender secrets server-side, sends through Resend, and marks `email_notifications` Sent or Failed.
+   - Admin can create a Test Email from Simple Test or Customer Update starter styles, preview an email, send selected pending email, process pending emails, or retry failed email.
+   - The outbox stores editable plain-text body copy. The UI preview shows that plain text.
+   - `send-notification-email` validates Super Admin/Admin role, reads Resend and sender secrets server-side, reads Company Profile branding from `business_settings`, sends plain text plus branded HTML through Resend, and marks `email_notifications` Sent or Failed.
+   - The branded HTML wrapper includes company name, optional logo, subject, body, and footer. Public/absolute logo URLs work directly; relative logo URLs require `PUBLIC_SITE_URL` or `SITE_URL` as an Edge Function secret.
    - No automatic cron, inbox, reply handling, campaign client, or customer-facing preferences are built.
 
 15. **Developer Feedback**
@@ -122,7 +124,9 @@ AI features must not:
 
 Notification features may:
 - create and preview `email_notifications`
+- queue starter notification copy for simple test and customer update messages
 - send selected or pending email notifications only after explicit Super Admin/Admin action
+- render branded HTML email wrappers from Company Profile settings
 - mark email notifications `Sent` or `Failed`
 - store developer feedback and queue developer feedback notifications
 

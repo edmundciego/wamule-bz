@@ -10,7 +10,7 @@ export function UploadFileSummary({
   if (!file && !status) return null;
 
   return (
-    <div className="grid gap-1 rounded-md border bg-white p-3 text-xs text-muted-foreground">
+    <div className="crm-subpanel grid gap-1 text-xs text-muted-foreground">
       {file ? (
         <>
           <p className="font-medium text-primary">{file.originalFile.name}</p>
@@ -25,7 +25,7 @@ export function UploadFileSummary({
           )}
         </>
       ) : null}
-      {status ? <p className={status.toLowerCase().includes("failed") || status.toLowerCase().includes("large") || status.toLowerCase().includes("unsupported") ? "text-red-700" : ""}>{status}</p> : null}
+      {status ? <p className={status.toLowerCase().includes("failed") || status.toLowerCase().includes("large") || status.toLowerCase().includes("unsupported") ? "text-danger" : ""}>{status}</p> : null}
     </div>
   );
 }

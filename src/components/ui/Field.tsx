@@ -11,10 +11,10 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium">
+    <label className="grid gap-2 text-sm font-medium text-foreground">
       <span>{label}</span>
       {children}
-      {error ? <span className="text-sm font-normal text-red-700">{error}</span> : null}
+      {error ? <span className="text-sm font-normal text-danger">{error}</span> : null}
     </label>
   );
 }
@@ -25,9 +25,9 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        "focus-ring rounded-md border bg-white text-sm shadow-sm shadow-primary/5 disabled:bg-muted",
+        "focus-ring rounded-md border border-input bg-card text-sm shadow-sm shadow-primary/5 transition-colors placeholder:text-muted-foreground disabled:bg-muted disabled:text-muted-foreground",
         isFileInput
-          ? "min-h-10 cursor-pointer p-1.5 text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-copper file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-copper/90"
+          ? "min-h-10 cursor-pointer p-1.5 text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-primary-hover"
           : "h-10 px-3",
         className,
       )}
@@ -39,7 +39,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={cn("focus-ring h-10 rounded-md border bg-white px-3 text-sm shadow-sm shadow-primary/5", className)}
+      className={cn("focus-ring h-10 rounded-md border border-input bg-card px-3 text-sm shadow-sm shadow-primary/5 transition-colors disabled:bg-muted disabled:text-muted-foreground", className)}
       {...props}
     />
   );
@@ -48,7 +48,7 @@ export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectE
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={cn("focus-ring min-h-24 rounded-md border bg-white px-3 py-2 text-sm shadow-sm shadow-primary/5", className)}
+      className={cn("focus-ring min-h-24 rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm shadow-primary/5 transition-colors placeholder:text-muted-foreground disabled:bg-muted disabled:text-muted-foreground", className)}
       {...props}
     />
   );

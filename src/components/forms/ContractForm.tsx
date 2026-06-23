@@ -210,7 +210,7 @@ export function ContractForm({
               ))}
             </Select>
           </Field>
-          <div className="rounded-md border bg-sage/10 p-3 text-sm text-muted-foreground">
+          <div className="crm-info-panel p-3 text-sm">
             <p className="font-medium text-primary">{selectedPlan?.description ?? "Use configured payment terms."}</p>
             {!isCustomAgreement ? (
               <p className="mt-1">
@@ -238,7 +238,7 @@ export function ContractForm({
             </Field>
           </div>
           <Field label="Signed contract upload">
-            <div className="grid gap-2 rounded-md border bg-ivory/40 p-3">
+            <div className="crm-subpanel grid gap-2">
               <Input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => void handleContractFileChange(event.target.files?.[0])} />
               <p className="text-xs font-normal text-muted-foreground">
                 PDFs must be 20 MB or smaller. Images are compressed before upload.
@@ -246,7 +246,7 @@ export function ContractForm({
               <UploadFileSummary file={file} status={fileStatus} />
             </div>
           </Field>
-          <div className="rounded-md border bg-muted/40 p-3 text-sm">
+          <div className="crm-subpanel text-sm">
             Calculated monthly payment: <strong>{money(monthly)}</strong>
             {!isCustomAgreement && selectedPlan?.monthly_payment && Math.abs(monthly - Number(selectedPlan.monthly_payment)) >= 0.01 ? (
               <span className="mt-1 block text-muted-foreground">

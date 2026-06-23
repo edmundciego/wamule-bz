@@ -14,7 +14,7 @@ Wamule Development is an admin-first land development platform for public applic
 - **Configuration:** Settings tabs manage Company Profile, Payment Methods, Installment Plans, Lot Sizes, Fee Types, AI Settings, and Users & Roles. Payment methods, installment plans, lot sizes, and fee types are configurable records rather than hardcoded options.
 - **AI Guidance:** Applications can receive read-only AI completeness reviews. Admins can generate read-only Daily Briefs and customer account summaries for collections preparation.
 - **Action Center:** Daily Brief recommendations are converted into `brief_action_items` so admins can track carryover work, compare brief-to-brief changes, and manually mark items Done or Dismissed.
-- **Email Center:** Admin-controlled notification outbox at `/emails` stores, previews, and manually sends `email_notifications` through Resend. It is not a full inbox and does not send automatically.
+- **Email Center:** Admin-controlled notification outbox at `/emails` stores, previews, and manually sends `email_notifications` through Resend. It includes starter message styles for test/customer-update emails, keeps outbox body text editable, and applies a branded HTML wrapper at send time. It is not a full inbox and does not send automatically.
 - **Developer Feedback:** Internal users can submit bugs, questions, feature requests, data issues, and other feedback from the admin layout. Feedback is stored and can queue a developer notification email.
 - **Reports and Collections:** Operational reporting, missing-item queues, due accounts, outstanding balances, and CSV exports.
 
@@ -50,7 +50,7 @@ Wamule Development is an admin-first land development platform for public applic
 - **`generate-application-review`:** Super Admin/Admin protected application review generator with deterministic fallback.
 - **`generate-daily-brief`:** Super Admin/Admin protected daily operational brief generator with deterministic fallback.
 - **`generate-customer-summary`:** Internal admin collections summary generator with Gemini or deterministic fallback, writing only to `customer_ai_summaries`.
-- **`send-notification-email`:** Super Admin/Admin protected Resend sender for pending `email_notifications`. Uses server-side email secrets only.
+- **`send-notification-email`:** Super Admin/Admin protected Resend sender for pending `email_notifications`. Uses server-side email secrets only, loads Company Profile branding from `business_settings`, sends both plain text and branded HTML, and can include the uploaded/public logo when the logo URL is absolute or resolvable through `PUBLIC_SITE_URL`/`SITE_URL`.
 - **`submit-developer-feedback`:** Internal-user feedback submission helper. Writes `developer_feedback` and queues an `email_notifications` row if a developer recipient is configured.
 
 ## AI Safety Model
@@ -58,3 +58,11 @@ AI features are read-only operational guidance. They may summarize records, flag
 
 ## Notification Safety Model
 The Email Center is an outbox foundation, not an inbox or automated campaign tool. It may create, preview, send, retry, cancel, and status-track `email_notifications` through explicit Super Admin/Admin action. Resend API keys and sender configuration stay in Supabase Edge Function secrets. No frontend code receives `RESEND_API_KEY`, and no cron or automatic Daily Brief delivery is built.
+
+## Email Branding Model
+- The outbox stores editable plain-text `email_notifications.body` content.
+- `EmailsPage` can queue starter styles such as Simple Test and Customer Update.
+- `send-notification-email` renders the sent email with a simple HTML shell: branded header, optional Company Profile logo, subject, message body, and footer.
+- Company name, logo URL, contact email, and address are read from the `company_profile` value in `business_settings`.
+- Public/absolute logo URLs are used directly. Relative logo URLs require `PUBLIC_SITE_URL` or `SITE_URL` as a Supabase secret so the Edge Function can render an absolute image URL.
+- The function also sends a plain-text fallback for email clients that do not render HTML.

@@ -40,10 +40,10 @@ export function PaymentDocumentLinks({ documents }: { documents?: PaymentDocumen
           </Button>
         </div>
       ))}
-      {error ? <p className="text-xs text-red-700">{error}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
       {preview ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-primary/70 p-4" role="dialog" aria-modal="true">
-          <div className="grid max-h-[90vh] w-full max-w-5xl gap-3 rounded-lg bg-white p-4 shadow-xl">
+          <div className="grid max-h-[90vh] w-full max-w-5xl gap-3 rounded-lg border border-border bg-card p-4 shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b pb-3">
               <div>
                 <p className="font-medium text-primary">{preview.document.original_file_name}</p>
@@ -51,14 +51,14 @@ export function PaymentDocumentLinks({ documents }: { documents?: PaymentDocumen
               </div>
               <div className="flex gap-2">
                 <a
-                  className="inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium text-primary hover:bg-muted"
+                  className="focus-ring inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-primary shadow-sm hover:bg-primary-soft"
                   href={preview.url}
                   target="_blank"
                   rel="noreferrer"
                 >
                   Open tab
                 </a>
-                <Button type="button" variant="secondary" onClick={() => setPreview(null)}>
+                <Button type="button" variant="outline" onClick={() => setPreview(null)}>
                   Close
                 </Button>
               </div>

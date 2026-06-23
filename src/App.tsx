@@ -13,6 +13,7 @@ import { DocumentPage } from "./pages/DocumentPage";
 import { EmailsPage } from "./pages/EmailsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { LotsPage } from "./pages/LotsPage";
+import { LeadsPage } from "./pages/LeadsPage";
 import { LogoutPage } from "./pages/LogoutPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/briefs" element={<DailyBriefsPage />} />
         <Route path="/emails" element={<EmailsPage />} />
+        <Route path="/leads" element={<LeadsPage />} />
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/customers" element={<CustomersPage />} />

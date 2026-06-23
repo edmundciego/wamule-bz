@@ -191,7 +191,7 @@ export function PaymentForm({
     <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
           {error ? <ErrorState message={error} /> : null}
           {successMessage ? (
-            <div className="rounded-md border border-sage/35 bg-sage/15 p-3 text-sm">
+            <div className="crm-success-panel p-3 text-sm">
               {successMessage}
             </div>
           ) : null}
@@ -239,7 +239,7 @@ export function PaymentForm({
             </Field>
           </div>
           {selectedPaymentMethod?.description ? (
-            <div className="rounded-md border bg-sage/10 p-3 text-xs text-muted-foreground">
+            <div className="crm-info-panel p-3 text-xs">
               {selectedPaymentMethod.description}
             </div>
           ) : null}
@@ -268,7 +268,7 @@ export function PaymentForm({
             </Select>
           </Field>
           <Field label="Optional payment document">
-            <div className="grid gap-2 rounded-md border bg-ivory/40 p-3">
+            <div className="crm-subpanel grid gap-2">
               <Input
                 type="file"
                 accept="application/pdf,image/jpeg,image/png,image/webp"

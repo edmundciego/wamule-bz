@@ -331,7 +331,7 @@ export function SettingsPage() {
       setAiStatus("AI must be enabled and connected before the assistant can be used.");
       return;
     }
-    setAiStatus("Wamule AI Assistant foundation is ready. Full assistant behavior is not built yet.");
+    setAiStatus("Wamule AI Helper foundation is ready. Full helper behavior is not built yet.");
   }
 
   async function createUser(event: FormEvent) {
@@ -364,26 +364,26 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Business configuration, payment options, role management, and AI foundation." />
+      <PageHeader title="Settings" description="Business configuration, payment options, role management, and smart helper foundation." />
       <div className="grid gap-6">
         {settingsLoading ? <LoadingState label="Loading settings" /> : null}
         {error ? <ErrorState message={error} /> : null}
         {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
         {!canManageConfig ? (
-          <div className="rounded-md border border-copper/30 bg-copper/10 p-3 text-sm text-copper">
+          <div className="crm-warning-panel p-3 text-sm">
             Settings are viewable here. Your role can view records and reports, but cannot edit configuration.
           </div>
         ) : null}
 
-        <div className="overflow-x-auto rounded-md border bg-white">
-          <div className="flex min-w-max gap-1 p-1 sm:min-w-0 sm:flex-wrap">
+        <div className="crm-tabs">
+          <div className="crm-tab-list">
             {settingsSections.map((section) => (
               <button
                 key={section}
                 type="button"
                 className={cn(
-                  "h-10 rounded-md px-4 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-primary",
-                  activeSection === section ? "bg-primary text-white shadow-sm hover:bg-primary hover:text-white" : "",
+                  "crm-tab",
+                  activeSection === section ? "crm-tab-active" : "",
                 )}
                 onClick={() => setActiveSection(section)}
               >
@@ -399,12 +399,12 @@ export function SettingsPage() {
               <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
               <CardContent className="grid gap-4">
                 <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-start">
-                  <img src={company.logo_url || "/favicon/android-chrome-192x192.png"} alt={company.company_name} className="h-24 w-24 rounded-md border bg-ivory object-cover" />
+                  <img src={company.logo_url || "/favicon/android-chrome-192x192.png"} alt={company.company_name} className="h-24 w-24 rounded-md border bg-muted object-cover" />
                   <Field label="Upload logo">
-                    <div className="grid gap-2 rounded-md border bg-ivory/40 p-3">
+                    <div className="crm-subpanel grid gap-2">
                       <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogoChange(event.target.files?.[0])} disabled={!canManageConfig} />
                       <UploadFileSummary file={logoFile} status={logoStatus} />
-                      <Button type="button" variant="secondary" disabled={!canManageConfig || !logoFile || savingSection === "Logo"} onClick={() => void uploadLogo()}>
+                      <Button type="button" variant="outline" disabled={!canManageConfig || !logoFile || savingSection === "Logo"} onClick={() => void uploadLogo()}>
                         {savingSection === "Logo" ? "Uploading..." : "Upload logo"}
                       </Button>
                     </div>
@@ -460,7 +460,7 @@ export function SettingsPage() {
           >
             {paymentMethodsDraft.length === 0 ? <EmptyState label="No payment methods configured." /> : null}
             {paymentMethodsDraft.map((method, index) => (
-              <div key={method.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+              <div key={method.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
                 <RowHeader title={method.name || "New payment method"} active={method.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={method.name} disabled={!canManageConfig} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { name: value })} />
@@ -489,7 +489,7 @@ export function SettingsPage() {
           <ConfigList title="Installment Plans" loading={plansLoading} canEdit={canManageConfig} saving={savingSection === "Installment plans"} onAdd={() => setPlansDraft((rows) => [...rows, newPlan(rows.length)])} onSave={() => void savePlans()}>
             {plansDraft.length === 0 ? <EmptyState label="No installment plans configured." /> : null}
             {plansDraft.map((plan, index) => (
-              <div key={plan.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+              <div key={plan.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
                 <RowHeader title={plan.name || "New installment plan"} active={plan.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={plan.name} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { name: value })} />
@@ -514,7 +514,7 @@ export function SettingsPage() {
           <ConfigList title="Lot Sizes" loading={lotSizesLoading} canEdit={canManageConfig} saving={savingSection === "Lot sizes"} onAdd={() => setLotSizesDraft((rows) => [...rows, newLotSize(rows.length)])} onSave={() => void saveLotSizes()}>
             {lotSizesDraft.length === 0 ? <EmptyState label="No lot sizes configured." /> : null}
             {lotSizesDraft.map((lotSize, index) => (
-              <div key={lotSize.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+              <div key={lotSize.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
                 <RowHeader title={lotSize.name || "New lot size"} active={lotSize.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={lotSize.name} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { name: value })} />
@@ -535,7 +535,7 @@ export function SettingsPage() {
           <ConfigList title="Fee Types" loading={feeTypesLoading} canEdit={canManageConfig} saving={savingSection === "Fee types"} onAdd={() => setFeeTypesDraft((rows) => [...rows, newFeeType(rows.length)])} onSave={() => void saveFeeTypes()}>
             {feeTypesDraft.length === 0 ? <EmptyState label="No fee types configured." /> : null}
             {feeTypesDraft.map((feeType, index) => (
-              <div key={feeType.id} className="grid gap-4 rounded-md border bg-ivory/35 p-4">
+              <div key={feeType.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
                 <RowHeader title={feeType.name || "New fee type"} active={feeType.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={feeType.name} disabled={!canManageConfig} onChange={(value) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { name: value })} />
@@ -567,7 +567,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="grid gap-4">
               {aiLoading ? <LoadingState label="Loading AI settings" /> : null}
-              <div className="rounded-md border bg-ivory/40 p-4 text-sm text-muted-foreground">
+              <div className="crm-info-panel p-4 text-sm">
                 Gemini keys are not stored in browser code. Configure `GEMINI_API_KEY` or `GOOGLE_API_KEY` as a Supabase Edge Function secret, then use the health check.
               </div>
               {aiDraft ? (
@@ -585,13 +585,13 @@ export function SettingsPage() {
                   <Field label="Notes">
                     <Textarea value={aiDraft.notes ?? ""} disabled={!canManageAi} onChange={(event) => setAiDraft({ ...aiDraft, notes: event.target.value })} />
                   </Field>
-                  {aiStatus ? <div className="rounded-md border bg-white p-3 text-sm text-muted-foreground">{aiStatus}</div> : null}
+                  {aiStatus ? <div className="crm-subpanel text-sm text-muted-foreground">{aiStatus}</div> : null}
                   <div className="flex flex-wrap justify-end gap-3">
-                    <Button type="button" variant="secondary" onClick={() => void checkAiProvider()}>
+                    <Button type="button" variant="outline" onClick={() => void checkAiProvider()}>
                       <RefreshCw className="h-4 w-4" /> Check provider
                     </Button>
-                    <Button type="button" variant="secondary" onClick={handleAssistantClick}>
-                      <Bot className="h-4 w-4" /> Wamule AI Assistant
+                    <Button type="button" variant="outline" onClick={handleAssistantClick}>
+                      <Bot className="h-4 w-4" /> Wamule AI Helper
                     </Button>
                     <Button type="button" disabled={!canManageAi || savingSection === "AI settings"} onClick={() => void saveAiSettings()}>
                       {savingSection === "AI settings" ? "Saving..." : "Save AI settings"}
@@ -612,8 +612,8 @@ export function SettingsPage() {
               {usersLoading ? <LoadingState label="Loading users" /> : null}
               {userError ? <ErrorState message={userError} /> : null}
               {userMessage ? <Toast message={userMessage} onDismiss={() => setUserMessage(null)} /> : null}
-              {!canManageUsers ? <div className="rounded-md border border-copper/30 bg-copper/10 p-3 text-sm text-copper">Only Super Admin users can create users or change roles.</div> : null}
-              <form className="grid gap-4 rounded-md border bg-ivory/40 p-4" onSubmit={createUser}>
+              {!canManageUsers ? <div className="crm-warning-panel p-3 text-sm">Only Super Admin users can create users or change roles.</div> : null}
+              <form className="crm-subpanel grid gap-4" onSubmit={createUser}>
                 <div className="grid gap-4 md:grid-cols-2">
                   <TextInput label="Email" type="email" value={email} disabled={!canManageUsers} onChange={setEmail} />
                   <TextInput label="Full name" value={fullName} disabled={!canManageUsers} onChange={setFullName} />
@@ -674,7 +674,7 @@ function ConfigList({
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>{title}</CardTitle>
-          <Button type="button" variant="secondary" disabled={!canEdit} onClick={onAdd}>
+          <Button type="button" variant="outline" disabled={!canEdit} onClick={onAdd}>
             <Plus className="h-4 w-4" /> Add
           </Button>
         </div>
@@ -709,9 +709,9 @@ function SectionSaveButton({ disabled, saving, onClick }: { disabled: boolean; s
 
 function ToggleField({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="flex min-h-11 items-center justify-between gap-4 rounded-md border bg-ivory/35 p-3 text-sm font-medium text-primary">
+    <label className="flex min-h-11 items-center justify-between gap-4 rounded-md border border-border bg-card p-3 text-sm font-medium text-foreground shadow-sm shadow-primary/5">
       <span>{label}</span>
-      <input className="h-4 w-4 accent-copper" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <input className="h-4 w-4 accent-primary disabled:opacity-50" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
 }
@@ -733,12 +733,12 @@ function NumberInput({ label, value, disabled, min = 0, max, onChange }: { label
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{label}</p>;
+  return <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">{label}</p>;
 }
 
 function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sage/35 bg-sage/15 px-4 py-3 text-sm text-primary">
+    <div className="crm-success-panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
       <span>{message}</span>
       <button type="button" className="font-medium" onClick={onDismiss}>Dismiss</button>
     </div>

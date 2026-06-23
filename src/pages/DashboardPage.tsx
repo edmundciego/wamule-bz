@@ -1,9 +1,11 @@
 import { useQueries } from "@tanstack/react-query";
 import { PageHeader } from "../components/layout/PageHeader";
+import { Badge } from "../components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
-import { money } from "../lib/utils";
+import { formatDate, money } from "../lib/utils";
+import type { FollowUpTask, Lead, LotReservation, SiteVisit } from "../types/database";
 
 export function DashboardPage() {
   const results = useQueries({
@@ -12,6 +14,10 @@ export function DashboardPage() {
       { queryKey: ["applications"], queryFn: async () => (await supabase.from("applications").select("*")).data ?? [] },
       { queryKey: ["transactions"], queryFn: async () => (await supabase.from("transactions").select("*")).data ?? [] },
       { queryKey: ["balances"], queryFn: async () => (await supabase.from("customer_balance_view").select("*")).data ?? [] },
+      { queryKey: ["dashboard-sales-leads"], queryFn: async () => (await supabase.from("leads").select("*").order("updated_at", { ascending: false })).data as Lead[] ?? [] },
+      { queryKey: ["dashboard-follow-ups"], queryFn: async () => (await supabase.from("follow_up_tasks").select("*").in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false })).data as FollowUpTask[] ?? [] },
+      { queryKey: ["dashboard-site-visits"], queryFn: async () => (await supabase.from("site_visits").select("*").in("status", ["scheduled", "rescheduled"]).order("scheduled_at", { ascending: true })).data as SiteVisit[] ?? [] },
+      { queryKey: ["dashboard-lot-reservations"], queryFn: async () => (await supabase.from("lot_reservations").select("*").order("updated_at", { ascending: false })).data as LotReservation[] ?? [] },
     ],
   });
   const isLoading = results.some((result) => result.isLoading);
@@ -20,37 +26,154 @@ export function DashboardPage() {
   const applications = results[1].data ?? [];
   const transactions = results[2].data ?? [];
   const balances = results[3].data ?? [];
+  const leads = results[4].data ?? [];
+  const followUps = results[5].data ?? [];
+  const siteVisits = results[6].data ?? [];
+  const reservations = results[7].data ?? [];
   const totalRevenue = transactions.reduce((sum, item) => sum + Number(item.amount), 0);
   const overdueBalance = balances.reduce((sum, item) => sum + Number(item.land_balance ?? 0), 0);
+  const salesSummary = salesDashboardSummary(leads, followUps, siteVisits);
+  const reservationSummary = reservationDashboardSummary(reservations);
 
   return (
     <>
-      <PageHeader title="Dashboard" description="Operational snapshot for Phase 1." />
+      <PageHeader title="Dashboard" description="Daily operating view for lots, applications, payments, and account follow-up." />
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric title="Total lots" value={parcels.length} />
-        <Metric title="Available lots" value={parcels.filter((lot) => lot.status === "Available").length} />
-        <Metric title="Reserved lots" value={parcels.filter((lot) => lot.status === "Reserved").length} />
-        <Metric title="Sold lots" value={parcels.filter((lot) => lot.status === "Sold").length} />
-        <Metric title="Pending applications" value={applications.filter((app) => app.status === "Pending Review").length} />
-        <Metric title="Revenue collected" value={money(totalRevenue)} />
-        <Metric title="Open land balances" value={money(overdueBalance)} />
-        <Metric title="Community delinquency" value={balances.filter((row) => Number(row.community_paid) <= 0).length} />
+        <Metric title="Total lots" value={parcels.length} meta="Inventory" />
+        <Metric title="Available lots" value={parcels.filter((lot) => lot.status === "Available").length} meta="Ready for buyers" />
+        <Metric title="Reserved lots" value={parcels.filter((lot) => lot.status === "Reserved").length} meta="Pending next action" />
+        <Metric title="Sold lots" value={parcels.filter((lot) => lot.status === "Sold").length} meta="Closed inventory" />
+        <Metric title="Pending applications" value={applications.filter((app) => app.status === "Pending Review").length} meta="Needs review" />
+        <Metric title="Revenue collected" value={money(totalRevenue)} meta="Recorded payments" />
+        <Metric title="Open land balances" value={money(overdueBalance)} meta="Collections view" />
+        <Metric title="Community delinquency" value={balances.filter((row) => Number(row.community_paid) <= 0).length} meta="Follow-up required" />
+      </div>
+      <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardHeader><CardTitle>Sales Pipeline</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SalesMetric title="Open follow-ups" value={salesSummary.openFollowUps} tone={salesSummary.overdueFollowUps > 0 ? "red" : "blue"} meta={`${salesSummary.overdueFollowUps} overdue, ${salesSummary.dueTodayFollowUps} due today`} />
+            <SalesMetric title="Upcoming visits" value={salesSummary.upcomingVisits} tone="blue" meta={salesSummary.nextVisit ? `Next ${formatDate(salesSummary.nextVisit.scheduled_at)}` : "No scheduled visits"} />
+            <SalesMetric title="Deposit pending" value={salesSummary.depositPending} tone="amber" meta="Sales stage only" />
+            <SalesMetric title="Family decision" value={salesSummary.familyDecision} tone="amber" meta="Needs buyer support" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Leads by Stage</CardTitle></CardHeader>
+          <CardContent className="grid gap-2">
+            {salesSummary.stageCounts.length ? salesSummary.stageCounts.map(([stage, count]) => (
+              <div key={stage} className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm">
+                <span className="font-medium text-primary">{leadStageLabel(stage)}</span>
+                <Badge tone={leadStageTone(stage)}>{count}</Badge>
+              </div>
+            )) : <p className="text-sm text-muted-foreground">No leads recorded yet.</p>}
+          </CardContent>
+        </Card>
+      </div>
+      <div className="mt-6">
+        <Card>
+          <CardHeader><CardTitle>Reservations & Deposit Readiness</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <SalesMetric title="Active reservations" value={reservationSummary.activeReservations} tone="blue" meta="Tracked holds only" />
+            <SalesMetric title="Expiring soon" value={reservationSummary.expiringSoon} tone={reservationSummary.expiringSoon > 0 ? "amber" : "blue"} meta="Next 3 days" />
+            <SalesMetric title="Deposit pending" value={reservationSummary.depositPending} tone="amber" meta={`${reservationSummary.depositOverdue} overdue`} />
+            <SalesMetric title="Deposit overdue" value={reservationSummary.depositOverdue} tone={reservationSummary.depositOverdue > 0 ? "red" : "blue"} meta="Needs follow-up" />
+            <SalesMetric title="Ready next step" value={reservationSummary.depositConfirmed} tone="blue" meta="Deposit confirmed" />
+          </CardContent>
+        </Card>
       </div>
     </>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string | number }) {
+function Metric({ title, value, meta }: { title: string; value: string | number; meta: string }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="transition-shadow hover:shadow-[var(--shadow-card-hover)]">
+      <CardHeader className="pb-3">
         <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="font-display text-3xl font-semibold text-primary">{value}</p>
+        <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{meta}</p>
       </CardContent>
     </Card>
   );
+}
+
+function SalesMetric({ title, value, meta, tone }: { title: string; value: number; meta: string; tone: "blue" | "amber" | "red" }) {
+  return (
+    <div className="crm-subpanel">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
+        <Badge tone={tone}>{value}</Badge>
+      </div>
+      <p className="text-sm text-muted-foreground">{meta}</p>
+    </div>
+  );
+}
+
+function salesDashboardSummary(leads: Lead[], followUps: FollowUpTask[], siteVisits: SiteVisit[]) {
+  const today = startOfToday();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const stageMap = new Map<Lead["pipeline_stage"], number>();
+  leads.forEach((lead) => stageMap.set(lead.pipeline_stage, (stageMap.get(lead.pipeline_stage) ?? 0) + 1));
+  return {
+    openFollowUps: followUps.length,
+    overdueFollowUps: followUps.filter((task) => task.due_at && new Date(task.due_at) < today).length,
+    dueTodayFollowUps: followUps.filter((task) => task.due_at && new Date(task.due_at) >= today && new Date(task.due_at) < tomorrow).length,
+    upcomingVisits: siteVisits.length,
+    nextVisit: siteVisits[0] ?? null,
+    depositPending: leads.filter((lead) => lead.pipeline_stage === "deposit_pending").length,
+    familyDecision: leads.filter((lead) => lead.pipeline_stage === "family_decision").length,
+    stageCounts: [...stageMap.entries()].sort((a, b) => b[1] - a[1]),
+  };
+}
+
+function reservationDashboardSummary(reservations: LotReservation[]) {
+  const today = startOfToday();
+  const expiringCutoff = new Date(today);
+  expiringCutoff.setDate(today.getDate() + 3);
+  const activeStatuses = new Set<LotReservation["status"]>(["draft", "reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"]);
+  const activeReservations = reservations.filter((reservation) => activeStatuses.has(reservation.status));
+  return {
+    activeReservations: activeReservations.length,
+    expiringSoon: activeReservations.filter((reservation) => reservation.expires_at && new Date(reservation.expires_at) >= today && new Date(reservation.expires_at) <= expiringCutoff).length,
+    depositPending: reservations.filter((reservation) => reservation.deposit_status === "pending" || reservation.status === "deposit_pending").length,
+    depositOverdue: reservations.filter((reservation) => reservation.deposit_status === "overdue" || (reservation.deposit_status === "pending" && reservation.deposit_due_at && new Date(reservation.deposit_due_at) < today)).length,
+    depositConfirmed: reservations.filter((reservation) => reservation.deposit_status === "confirmed" || reservation.status === "deposit_confirmed").length,
+  };
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function leadStageLabel(stage: Lead["pipeline_stage"]) {
+  const labels: Record<Lead["pipeline_stage"], string> = {
+    new_lead: "New Lead",
+    contacted: "Contacted",
+    interested: "Interested",
+    family_decision: "Family Decision",
+    payment_plan_review: "Payment Plan Review",
+    site_visit_scheduled: "Site Visit Scheduled",
+    deposit_pending: "Deposit Pending",
+    deposit_paid: "Deposit Paid",
+    application_started: "Application Started",
+    contract_started: "Contract Started",
+    closed_won: "Closed/Won",
+    lost_inactive: "Lost/Inactive",
+  };
+  return labels[stage] ?? stage;
+}
+
+function leadStageTone(stage: Lead["pipeline_stage"]) {
+  if (stage === "closed_won" || stage === "deposit_paid" || stage === "interested") return "green";
+  if (stage === "family_decision" || stage === "payment_plan_review" || stage === "deposit_pending") return "amber";
+  if (stage === "lost_inactive") return "gray";
+  return "blue";
 }

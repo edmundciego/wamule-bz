@@ -12,6 +12,7 @@ import {
   Mail,
   Map,
   MessageSquare,
+  UserRoundSearch,
   Settings,
   Users,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/briefs", label: "Daily Brief", icon: Bot },
   { href: "/emails", label: "Email Center", icon: Mail, adminOnly: true },
+  { href: "/leads", label: "Leads", icon: UserRoundSearch },
   { href: "/lots", label: "Lots", icon: Map },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },
@@ -90,7 +92,7 @@ export function AdminLayout() {
           <img
             src="/favicon/android-chrome-192x192.png"
             alt="Wamuale Development"
-            className="h-11 w-11 rounded-md border border-copper/60 bg-ivory object-cover shadow-sm"
+            className="h-11 w-11 rounded-md border border-secondary/40 bg-background object-cover shadow-sm"
           />
           <div>
             <p className="font-display text-xl font-semibold leading-tight">Wamuale</p>
@@ -105,7 +107,7 @@ export function AdminLayout() {
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition",
-                  isActive ? "bg-copper text-white" : "text-white/70 hover:bg-white/10 hover:text-white",
+                  isActive ? "bg-card text-primary shadow-sm" : "text-white/70 hover:bg-white/10 hover:text-white",
                 )
               }
             >
@@ -123,7 +125,7 @@ export function AdminLayout() {
       </aside>
       <div className="min-w-0">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur lg:px-6">
-          <p className="text-sm font-medium text-slate">Phase 1 lot management</p>
+          <p className="text-sm font-medium text-slate">Housing project operations CRM</p>
           <NavLink className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground" to="/logout">
             <LogOut className="h-4 w-4" />
             Logout
@@ -135,7 +137,7 @@ export function AdminLayout() {
       </div>
       {feedbackOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
-          <div className="w-full max-w-lg rounded-md border bg-card p-5 shadow-xl">
+          <div className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-display text-xl font-semibold text-primary">Send Feedback</h2>
@@ -147,7 +149,7 @@ export function AdminLayout() {
             </div>
             <form className="mt-5 grid gap-4" onSubmit={(event) => void submitFeedback(event)}>
               {feedbackError ? <ErrorState message={feedbackError} /> : null}
-              {feedbackMessage ? <div className="rounded-md border border-sage/30 bg-sage/15 p-3 text-sm text-primary">{feedbackMessage}</div> : null}
+              {feedbackMessage ? <div className="crm-success-panel p-3 text-sm">{feedbackMessage}</div> : null}
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Feedback type">
                   <Select value={feedbackType} onChange={(event) => setFeedbackType(event.target.value as DeveloperFeedbackType)}>
@@ -165,7 +167,7 @@ export function AdminLayout() {
               </Field>
               <p className="break-all text-xs text-muted-foreground">Page captured: {window.location.href}</p>
               <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="secondary" onClick={() => setFeedbackOpen(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={submitting || !message.trim()}>
                   <MessageSquare className="h-4 w-4" />
                   {submitting ? "Submitting..." : "Submit Feedback"}

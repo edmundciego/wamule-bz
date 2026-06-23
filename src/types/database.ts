@@ -45,6 +45,61 @@ export type BusinessSettingKey =
   | "public_application"
   | "payment_settings"
   | "lot_phase";
+export type LeadPipelineStage =
+  | "new_lead"
+  | "contacted"
+  | "interested"
+  | "family_decision"
+  | "payment_plan_review"
+  | "site_visit_scheduled"
+  | "deposit_pending"
+  | "deposit_paid"
+  | "application_started"
+  | "contract_started"
+  | "closed_won"
+  | "lost_inactive";
+export type LeadActivityType =
+  | "note"
+  | "call"
+  | "whatsapp"
+  | "email"
+  | "status_change"
+  | "site_visit"
+  | "follow_up"
+  | "application_linked"
+  | "customer_linked";
+export type FollowUpTaskStatus = "open" | "in_progress" | "completed" | "cancelled";
+export type FollowUpTaskPriority = "low" | "normal" | "high" | "urgent";
+export type SiteVisitStatus = "scheduled" | "completed" | "no_show" | "cancelled" | "rescheduled";
+export type ReservationStatus =
+  | "draft"
+  | "reserved"
+  | "deposit_pending"
+  | "deposit_submitted"
+  | "deposit_confirmed"
+  | "converted_to_application"
+  | "converted_to_contract"
+  | "expired"
+  | "cancelled"
+  | "released";
+export type DepositStatus =
+  | "not_requested"
+  | "pending"
+  | "proof_submitted"
+  | "confirmed"
+  | "overdue"
+  | "waived"
+  | "cancelled";
+export type ReservationActivityType =
+  | "note"
+  | "status_change"
+  | "deposit_status_change"
+  | "reservation_created"
+  | "reservation_released"
+  | "expiration_updated"
+  | "application_linked"
+  | "contract_linked"
+  | "payment_linked";
 
 export type AdminProfile = {
   user_id: string;
@@ -175,6 +230,115 @@ export type BusinessSetting = {
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type Lead = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  parcel_id: number | null;
+  application_id: number | null;
+  customer_id: number | null;
+  source: string | null;
+  pipeline_stage: LeadPipelineStage;
+  buyer_journey_stage: string | null;
+  decision_blocker: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  preferred_contact_method: string | null;
+  assigned_to: string | null;
+  next_action: string | null;
+  next_action_due_at: string | null;
+  notes: string | null;
+  lost_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeadActivity = {
+  id: string;
+  lead_id: string;
+  activity_type: LeadActivityType;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type FollowUpTask = {
+  id: string;
+  lead_id: string | null;
+  application_id: number | null;
+  customer_id: number | null;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: FollowUpTaskStatus;
+  priority: FollowUpTaskPriority;
+  assigned_to: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SiteVisit = {
+  id: string;
+  lead_id: string | null;
+  application_id: number | null;
+  customer_id: number | null;
+  parcel_id: number | null;
+  scheduled_at: string;
+  status: SiteVisitStatus;
+  visit_type: string | null;
+  location: string | null;
+  notes: string | null;
+  assigned_to: string | null;
+  completed_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LotReservation = {
+  id: string;
+  reservation_code: string | null;
+  lead_id: string | null;
+  application_id: number | null;
+  customer_id: number | null;
+  parcel_id: number | null;
+  status: ReservationStatus;
+  deposit_status: DepositStatus;
+  expected_deposit_amount: number | null;
+  deposit_due_at: string | null;
+  deposit_paid_at: string | null;
+  payment_id: number | null;
+  reserved_at: string | null;
+  expires_at: string | null;
+  released_at: string | null;
+  converted_application_id: number | null;
+  converted_contract_id: number | null;
+  assigned_to: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReservationActivity = {
+  id: string;
+  reservation_id: string;
+  activity_type: ReservationActivityType;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
 };
 
 export type InstallmentPlan = {
@@ -435,6 +599,41 @@ export type Database = {
         Row: BusinessSetting;
         Insert: Pick<BusinessSetting, "key" | "value"> & Partial<Pick<BusinessSetting, "updated_by">>;
         Update: Partial<Pick<BusinessSetting, "value" | "updated_by">>;
+      };
+      leads: {
+        Row: Lead;
+        Insert: Pick<Lead, "full_name"> &
+          Partial<Omit<Lead, "id" | "full_name" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<Lead, "id" | "created_at" | "updated_at">>;
+      };
+      lead_activities: {
+        Row: LeadActivity;
+        Insert: Pick<LeadActivity, "lead_id" | "activity_type" | "title"> &
+          Partial<Omit<LeadActivity, "id" | "lead_id" | "activity_type" | "title" | "created_at">>;
+        Update: Partial<Omit<LeadActivity, "id" | "created_at">>;
+      };
+      follow_up_tasks: {
+        Row: FollowUpTask;
+        Insert: Pick<FollowUpTask, "title"> &
+          Partial<Omit<FollowUpTask, "id" | "title" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<FollowUpTask, "id" | "created_at" | "updated_at">>;
+      };
+      site_visits: {
+        Row: SiteVisit;
+        Insert: Pick<SiteVisit, "scheduled_at"> &
+          Partial<Omit<SiteVisit, "id" | "scheduled_at" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<SiteVisit, "id" | "created_at" | "updated_at">>;
+      };
+      lot_reservations: {
+        Row: LotReservation;
+        Insert: Partial<Omit<LotReservation, "id" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<LotReservation, "id" | "created_at" | "updated_at">>;
+      };
+      reservation_activities: {
+        Row: ReservationActivity;
+        Insert: Pick<ReservationActivity, "reservation_id" | "activity_type" | "title"> &
+          Partial<Omit<ReservationActivity, "id" | "reservation_id" | "activity_type" | "title" | "created_at">>;
+        Update: Partial<Omit<ReservationActivity, "id" | "created_at">>;
       };
       installment_plans: {
         Row: InstallmentPlan;

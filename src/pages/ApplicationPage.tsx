@@ -196,11 +196,11 @@ export function ApplicationPage() {
             <img
               src={company.logo_url || "/favicon/android-chrome-192x192.png"}
               alt={company.company_name}
-              className="h-12 w-12 rounded-md border border-copper/30 bg-ivory object-cover shadow-sm"
+              className="h-12 w-12 rounded-md border border-secondary/30 bg-background object-cover shadow-sm"
             />
             <div>
               <p className="font-display text-xl font-semibold leading-tight text-primary">{company.company_name.replace(/\s+Development$/i, "")}</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-copper">Development</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-secondary">Development</p>
             </div>
           </a>
           <nav className="flex items-center gap-3 text-sm">
@@ -211,7 +211,7 @@ export function ApplicationPage() {
               Lots
             </a>
             <a
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-copper px-4 text-sm font-medium text-white shadow-sm hover:bg-copper/90"
+              className="focus-ring inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]"
               href="#application"
             >
               Apply <ArrowRight className="h-4 w-4" />
@@ -221,11 +221,11 @@ export function ApplicationPage() {
       </header>
 
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
-        <div>
+        <div className="min-w-0">
           <Badge tone={applicationSettings.applications_open ? "green" : "amber"}>
             {lotPhase.phase_name} applications {applicationSettings.applications_open ? "open" : "closed"}
           </Badge>
-          <h1 className="mt-5 max-w-3xl font-display text-5xl font-semibold tracking-normal text-primary sm:text-6xl">
+          <h1 className="mt-5 max-w-3xl break-words font-display text-4xl font-semibold tracking-normal text-primary sm:text-5xl">
             {company.company_name} Land Application
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
@@ -238,16 +238,16 @@ export function ApplicationPage() {
             <InfoTile label={lotPhase.phase_name} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
           </div>
           <div className="mt-7 flex flex-wrap gap-3">
-            <a className="inline-flex h-11 items-center gap-2 rounded-md bg-copper px-5 text-sm font-medium text-white shadow-sm hover:bg-copper/90" href="#application">
+            <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">
               Start application <ArrowRight className="h-4 w-4" />
             </a>
-            <a className="inline-flex h-11 items-center rounded-md border bg-card px-5 text-sm font-medium text-primary hover:bg-muted/60" href="#notice">
+            <a className="focus-ring inline-flex h-11 items-center rounded-md border border-border bg-card px-5 text-sm font-semibold text-primary shadow-sm transition hover:-translate-y-px hover:bg-primary-soft hover:shadow-[var(--shadow-button)]" href="#notice">
               Read important notice
             </a>
           </div>
         </div>
 
-        <div id="lots" className="overflow-hidden rounded-lg border bg-card shadow-sm shadow-primary/5">
+        <div id="lots" className="min-w-0 overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
           <div className="brand-pattern h-4 border-b" />
           <div className="p-4">
             <div className="mb-4 flex items-start justify-between gap-4">
@@ -258,7 +258,7 @@ export function ApplicationPage() {
               {lotPhase.public_availability_display && applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null}
             </div>
             {!lotPhase.public_availability_display ? (
-              <div className="rounded-md border border-dashed bg-ivory/40 p-5 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed bg-muted p-5 text-sm text-muted-foreground">
                 Lot availability is confirmed by Wamuale Development staff during application review.
               </div>
             ) : isLoading ? (
@@ -266,9 +266,9 @@ export function ApplicationPage() {
             ) : (
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                 {parcels?.slice(0, 24).map((parcel) => (
-                  <div key={parcel.id} className="aspect-[1.25] rounded-md border border-sage/30 bg-sage/10 p-2 text-xs">
+                  <div key={parcel.id} className="aspect-[1.25] rounded-md border border-success/20 bg-success/10 p-2 text-xs">
                     <strong className="block">Lot {parcel.lot_number}</strong>
-                    {applicationSettings.show_lot_prices_publicly ? <span className="mt-1 block text-copper">{money(parcel.base_price)}</span> : null}
+                    {applicationSettings.show_lot_prices_publicly ? <span className="mt-1 block text-success">{money(parcel.base_price)}</span> : null}
                   </div>
                 ))}
               </div>
@@ -283,8 +283,8 @@ export function ApplicationPage() {
       <section className="border-y border-primary/10 bg-card" id="notice">
         <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[280px_1fr]">
           <div>
-            <div className="mb-3 grid h-10 w-10 place-items-center rounded-md bg-copper/10">
-              <ShieldCheck className="h-5 w-5 text-copper" />
+            <div className="mb-3 grid h-10 w-10 place-items-center rounded-md bg-secondary-soft">
+              <ShieldCheck className="h-5 w-5 text-secondary" />
             </div>
             <h2 className="brand-rule font-display text-2xl font-semibold text-primary">Important Notice</h2>
             <p className="mt-2 text-sm text-muted-foreground">Owner/Developer: {company.company_name}</p>
@@ -299,15 +299,15 @@ export function ApplicationPage() {
       <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
         <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copper">Application</p>
-            <h2 className="mt-2 font-display text-4xl font-semibold tracking-normal text-primary">Request consideration for a lot</h2>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Application</p>
+            <h2 className="mt-2 break-words font-display text-3xl font-semibold tracking-normal text-primary sm:text-4xl">Request consideration for a lot</h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               Complete the form below. A representative will contact you after review.
             </p>
           </div>
-          <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm text-muted-foreground shadow-sm shadow-primary/5">
-            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-copper" />Applications are reviewed by Wamuale Development staff.</p>
-            <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-copper" />Preferred lots are requests only and do not reserve land.</p>
+          <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm text-muted-foreground shadow-[var(--shadow-card)]">
+            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-secondary" />Applications are reviewed by Wamuale Development staff.</p>
+            <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-secondary" />Preferred lots are requests only and do not reserve land.</p>
           </div>
         </div>
 
@@ -315,11 +315,11 @@ export function ApplicationPage() {
           <CardContent className="p-5 lg:p-6">
             {!hasSupabaseConfig ? <ErrorState message="Supabase environment variables are missing." /> : null}
             {submitted ? (
-              <div className="rounded-md border border-sage/35 bg-sage/15 p-4 text-sm text-primary">
+              <div className="crm-success-panel p-4 text-sm">
                 {applicationSettings.default_confirmation_message}
               </div>
             ) : !applicationSettings.applications_open ? (
-              <div className="rounded-md border border-copper/30 bg-copper/10 p-4 text-sm text-copper">
+              <div className="crm-warning-panel p-4 text-sm">
                 Applications are currently closed. {applicationSettings.public_notice_text}
               </div>
             ) : (
@@ -350,7 +350,7 @@ export function ApplicationPage() {
                   <Field label="The lot is intended for" error={form.formState.errors.intended_use?.message}>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {intendedUseOptions.map((option) => (
-                        <label key={option} className="flex items-center gap-2 rounded-md border bg-white p-3 text-sm font-normal shadow-sm shadow-primary/5">
+                        <label key={option} className="flex items-center gap-2 rounded-md border border-border bg-card p-3 text-sm font-normal shadow-sm shadow-primary/5 transition hover:border-primary/30 hover:bg-primary-soft">
                           <input type="radio" value={option} {...form.register("intended_use")} />
                           {option}
                         </label>
@@ -381,7 +381,7 @@ export function ApplicationPage() {
                                 key={parcel.id}
                                 className={cn(
                                   "cursor-pointer rounded-md border p-3 text-sm font-normal transition",
-                                  selected ? "border-copper bg-copper/10 ring-1 ring-copper" : "bg-white hover:border-copper/50",
+                                  selected ? "border-primary bg-primary-soft ring-1 ring-primary" : "bg-card hover:border-primary/40",
                                 )}
                               >
                                 <input className="sr-only" type="checkbox" value={parcel.id} {...form.register("preferred_parcel_ids")} />
@@ -412,7 +412,7 @@ export function ApplicationPage() {
                   {paymentMethods?.length ? (
                     <div className="grid gap-3 lg:grid-cols-2">
                       {paymentMethods.map((method) => (
-                        <div key={method.id} className="rounded-md border bg-white p-4 text-sm shadow-sm shadow-primary/5">
+                        <div key={method.id} className="rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5">
                           <p className="font-semibold text-primary">{method.name}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{method.method_type}</p>
                           {[method.bank_name, method.account_name, method.account_number].filter(Boolean).length ? (
@@ -431,16 +431,16 @@ export function ApplicationPage() {
                 </FormSection>
 
                 <FormSection title="Acknowledgements">
-                  <label className="flex gap-3 rounded-md border bg-sage/10 p-3 text-sm">
+                  <label className="flex gap-3 rounded-md border border-success/20 bg-success/10 p-3 text-sm">
                     <input type="checkbox" className="mt-1" {...form.register("legal_notice_acknowledged")} />
                     <span>
                       I acknowledge that submission of this application does not guarantee approval, reserve a lot, or create any legal right to purchase land.
                       {form.formState.errors.legal_notice_acknowledged ? (
-                        <span className="mt-1 block text-red-700">{form.formState.errors.legal_notice_acknowledged.message}</span>
+                        <span className="mt-1 block text-danger">{form.formState.errors.legal_notice_acknowledged.message}</span>
                       ) : null}
                     </span>
                   </label>
-                  <div className="rounded-md border bg-white p-4 text-sm leading-6 shadow-sm shadow-primary/5">
+                  <div className="rounded-md border border-border bg-card p-4 text-sm leading-6 shadow-sm shadow-primary/5">
                     <p className="font-semibold">Applicant Acknowledgement</p>
                     <p className="mt-2 text-muted-foreground">
                       {applicationSettings.application_acknowledgment_text}
@@ -467,8 +467,8 @@ export function ApplicationPage() {
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm shadow-primary/5">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-copper">{label}</p>
+    <div className="rounded-lg border bg-card p-4 shadow-[var(--shadow-card)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">{label}</p>
       <p className="mt-1 font-display text-xl font-semibold text-primary">{value}</p>
     </div>
   );
@@ -476,7 +476,7 @@ function InfoTile({ label, value }: { label: string; value: string }) {
 
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="grid gap-4 border-b pb-7 last:border-b-0 last:pb-0">
+    <section className="grid gap-4 border-b border-border pb-7 last:border-b-0 last:pb-0">
       <h3 className="font-display text-xl font-semibold text-primary">{title}</h3>
       <div className="grid gap-4 lg:grid-cols-2">{children}</div>
     </section>
@@ -497,7 +497,7 @@ function PaymentChoice({
   ].filter(Boolean);
 
   return (
-    <label className="grid gap-2 rounded-md border bg-white p-4 text-sm font-normal shadow-sm shadow-primary/5">
+    <label className="grid gap-2 rounded-md border border-border bg-card p-4 text-sm font-normal shadow-sm shadow-primary/5 transition hover:border-primary/30 hover:bg-primary-soft">
       <span className="flex items-center gap-2 font-semibold">
         <input type="radio" value={plan.name} {...register} />
         {plan.name}

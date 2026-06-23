@@ -60,18 +60,18 @@ export function PaymentsPage() {
             <Card key={payment.id}>
               <CardContent className="grid gap-2 p-4 text-sm">
                 <div className="flex flex-wrap justify-between gap-3">
-                  <p className="font-medium">{payment.customers?.first_name} {payment.customers?.last_name}</p>
+                  <p className="font-medium text-foreground">{payment.customers?.first_name} {payment.customers?.last_name}</p>
                   <Badge tone={["Down Payment", "Land Installment"].includes(payment.transaction_type) ? "blue" : "amber"}>{payment.transaction_type}</Badge>
                 </div>
-                <p>
+                <p className="text-muted-foreground">
                   Lot {payment.contracts?.parcels?.lot_number ?? "N/A"} | {money(payment.amount)} by {payment.collection_method} on {formatDate(payment.created_at)}
                 </p>
-                <p>Reference: {payment.bank_reference ?? "Cash"}</p>
+                <p className="text-muted-foreground">Reference: {payment.bank_reference ?? "Cash"}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <span>Manual receipt: {payment.manual_receipt_number ?? "Missing"}</span>
                   {payment.manual_receipt_number ? <Badge tone="green">Recorded</Badge> : <Badge tone="amber">Missing receipt #</Badge>}
                 </div>
-                <p>Receipt date: {payment.receipt_date ? formatDate(payment.receipt_date) : "Not recorded"}</p>
+                <p className="text-muted-foreground">Receipt date: {payment.receipt_date ? formatDate(payment.receipt_date) : "Not recorded"}</p>
                 <PaymentDocumentLinks documents={payment.payment_documents} />
                 <ExistingPaymentDocumentUpload
                   payment={{
@@ -181,7 +181,7 @@ function ExistingPaymentDocumentUpload({
   }
 
   return (
-    <details className="rounded-md border bg-ivory/40 p-3">
+    <details className="crm-subpanel">
       <summary className="cursor-pointer text-sm font-medium text-primary">Upload document to this payment</summary>
       <div className="mt-3 grid gap-3">
         <Field label="Document type">
@@ -269,7 +269,7 @@ function PaymentEditor({
   }
 
   return (
-    <details className="rounded-md border bg-ivory/40 p-3">
+    <details className="crm-subpanel">
       <summary className="cursor-pointer text-sm font-medium text-primary">Edit payment details</summary>
       <div className="mt-3 grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -309,7 +309,7 @@ function PaymentEditor({
         <Field label="Payment notes">
           <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
         </Field>
-        {status ? <p className="text-xs text-muted-foreground">{status}</p> : null}
+        {status ? <p className="crm-info-panel p-3 text-xs">{status}</p> : null}
         <div>
           <Button type="button" disabled={saving} onClick={() => void saveReceiptDetails()}>
             {saving ? "Saving..." : "Save payment details"}
