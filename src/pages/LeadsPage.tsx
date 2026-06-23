@@ -1,14 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, CheckCircle2, ClipboardList, Edit3, Plus, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardList, Edit3, Plus, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
+import { SmartInsightList, SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { getSessionAndProfile } from "../lib/data";
+import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
@@ -20,6 +22,7 @@ import type {
   FollowUpTaskPriority,
   FollowUpTaskStatus,
   Lead,
+  LeadAiSummary,
   LeadActivity,
   LeadActivityType,
   LeadPipelineStage,
@@ -108,6 +111,7 @@ export function LeadsPage() {
   const [creatingLead, setCreatingLead] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
 
   const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
   const { data: adminProfiles } = useQuery({
@@ -116,6 +120,19 @@ export function LeadsPage() {
       const { data, error } = await supabase.from("admin_profiles").select("*").order("full_name");
       if (error) throw error;
       return data as AdminProfile[];
+    },
+  });
+  const { data: aiSettings } = useQuery({
+    queryKey: ["lead-ai-settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ai_settings")
+        .select("is_enabled")
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { is_enabled: boolean } | null;
     },
   });
   const { data: leads, isLoading, error } = useQuery({
@@ -175,6 +192,17 @@ export function LeadsPage() {
       return data as ReservationActivity[];
     },
   });
+  const { data: leadAiSummaries } = useQuery({
+    queryKey: ["lead-ai-summaries"],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("lead_ai_summaries")
+        .select("*")
+        .order("generated_at", { ascending: false });
+      if (queryError) throw queryError;
+      return data as LeadAiSummary[];
+    },
+  });
   const { data: applications } = useQuery({
     queryKey: ["sales-application-options"],
     queryFn: async () => {
@@ -228,6 +256,7 @@ export function LeadsPage() {
   const selectedReservationActivities = reservationActivities?.filter((activity) =>
     selectedReservations.some((reservation) => reservation.id === activity.reservation_id),
   ) ?? [];
+  const selectedLeadSummary = leadAiSummaries?.find((summary) => summary.lead_id === selectedLead?.id) ?? null;
 
   function clearNotices() {
     setActionError(null);
@@ -245,6 +274,26 @@ export function LeadsPage() {
     await queryClient.invalidateQueries({ queryKey: ["dashboard-follow-ups"] });
     await queryClient.invalidateQueries({ queryKey: ["dashboard-site-visits"] });
     await queryClient.invalidateQueries({ queryKey: ["dashboard-lot-reservations"] });
+    await queryClient.invalidateQueries({ queryKey: ["lot-board-active-reservations"] });
+  }
+
+  async function generateLeadSummary(leadId: string) {
+    clearNotices();
+    setGeneratingSummaryId(leadId);
+    const { data: result, error: functionError } = await supabase.functions.invoke("generate-lead-summary", {
+      body: { lead_id: leadId },
+    });
+    setGeneratingSummaryId(null);
+    if (functionError) {
+      setActionError(functionError.message);
+      return;
+    }
+    if (result?.error) {
+      setActionError(String(result.error));
+      return;
+    }
+    setMessage(String(result?.message ?? "Lead Smart Summary generated."));
+    await queryClient.invalidateQueries({ queryKey: ["lead-ai-summaries"] });
   }
 
   async function saveLead(values: LeadFormValues, lead?: LeadWithRelations) {
@@ -286,7 +335,7 @@ export function LeadsPage() {
       description: description?.trim() || null,
       metadata: null,
     });
-    if (error) throw error;
+    if (error) console.warn("Reservation activity was not recorded", error);
   }
 
   async function createTask(values: TaskFormValues) {
@@ -618,8 +667,16 @@ export function LeadsPage() {
                 onEdit={() => { setEditingLead(selectedLead); setCreatingLead(false); }}
               />
               <BuyerInsights lead={selectedLead} tasks={selectedTasks} visits={selectedVisits} reservations={selectedReservations} />
+              <LeadSmartSummaryPanel
+                summary={selectedLeadSummary}
+                aiEnabled={Boolean(aiSettings?.is_enabled)}
+                canGenerate={canWrite}
+                generating={generatingSummaryId === selectedLead.id}
+                onGenerate={() => void generateLeadSummary(selectedLead.id)}
+              />
               <ReservationsCard
                 reservations={selectedReservations}
+                tasks={selectedTasks}
                 activities={selectedReservationActivities}
                 canWrite={canWrite}
                 onSave={(reservation, values) => reservation ? void updateReservation(reservation, values) : void createReservation(values)}
@@ -825,21 +882,111 @@ function LeadDetailCard({
 }
 
 function BuyerInsights({ lead, tasks, visits, reservations }: { lead: LeadWithRelations; tasks: FollowUpTask[]; visits: SiteVisit[]; reservations: LotReservation[] }) {
-  const insights = buyerInsights(lead, tasks, visits, reservations);
+  return (
+    <SmartInsightsPanel
+      title="Buyer Insights"
+      description="Rule-based guidance from lead, follow-up, visit, and reservation records."
+      insights={leadSmartInsights(lead, tasks, visits, reservations)}
+    />
+  );
+}
+
+function LeadSmartSummaryPanel({
+  summary,
+  aiEnabled,
+  canGenerate,
+  generating,
+  onGenerate,
+}: {
+  summary: LeadAiSummary | null;
+  aiEnabled: boolean;
+  canGenerate: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  const risks = stringList(summary?.key_risks);
+  const missing = stringList(summary?.missing_information);
+  const actions = stringList(summary?.recommended_actions);
+  const summaryText = safeString(summary?.summary, "No summary text recorded.");
+
   return (
     <Card>
-      <CardHeader><CardTitle>Buyer Insights</CardTitle></CardHeader>
-      <CardContent className="grid gap-2 text-sm">
-        {insights.map((insight) => (
-          <div key={insight} className="crm-info-panel p-3">{insight}</div>
-        ))}
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Lead Smart Summary</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This summary is generated from Wamule CRM data to support staff review. Staff should verify details before making decisions.
+          </p>
+        </div>
+        {summary?.readiness_status ? <Badge tone={readinessTone(summary.readiness_status)}>{readinessLabel(summary.readiness_status)}</Badge> : <Badge tone="gray">Not generated</Badge>}
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {summary ? (
+          <>
+            <div className="crm-info-panel break-words p-3 text-sm leading-6">
+              {summaryText}
+            </div>
+            <SummaryList title="Risk Flags" items={risks} empty="No risk flags listed." tone="red" />
+            <SummaryList title="Missing Information" items={missing} empty="No missing information listed." tone="amber" />
+            <SummaryList title="Recommended Actions" items={actions} empty="No recommended actions listed." tone="blue" />
+            {summary.next_best_action ? (
+              <div className="crm-subpanel text-sm">
+                <p className="font-semibold text-primary">Next Best Action</p>
+                <p className="mt-1 break-words text-muted-foreground">{summary.next_best_action}</p>
+              </div>
+            ) : null}
+            {summary.confidence_notes ? (
+              <div className="crm-subpanel text-sm">
+                <p className="font-semibold text-primary">Confidence Notes</p>
+                <p className="mt-1 break-words text-muted-foreground">{summary.confidence_notes}</p>
+              </div>
+            ) : null}
+            <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+              <span className="break-words">Generated: {safeFormatDate(summary.generated_at)}</span>
+              <span className="break-words">Provider: {safeString(summary.provider, "Not recorded")}</span>
+              <span className="break-words">Model: {safeString(summary.model, "Not recorded")}</span>
+            </div>
+          </>
+        ) : (
+          <div className="crm-subpanel text-sm text-muted-foreground">
+            No Lead Smart Summary has been generated for this buyer yet. Rule-based Buyer Insights remain available above.
+          </div>
+        )}
+        {!aiEnabled ? (
+          <div className="crm-warning-panel p-3 text-sm">
+            AI provider access is disabled. Staff can still generate a deterministic fallback summary from current CRM data.
+          </div>
+        ) : null}
+        {canGenerate ? (
+          <Button type="button" variant={summary ? "outline" : "primary"} disabled={generating} onClick={onGenerate}>
+            <RefreshCw className={cn("h-4 w-4", generating && "animate-spin")} />
+            {generating ? "Generating..." : summary ? "Regenerate Summary" : "Generate Summary"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">You can view summaries but do not have permission to generate them.</p>
+        )}
       </CardContent>
     </Card>
   );
 }
 
+function SummaryList({ title, items, empty, tone }: { title: string; items: string[]; empty: string; tone: BadgeTone }) {
+  return (
+    <div className="grid gap-2 text-sm">
+      <p className="font-semibold text-primary">{title}</p>
+      {items.length ? items.map((item) => (
+        <div key={item} className="flex items-start gap-2 rounded-md border border-border bg-card p-2 shadow-sm shadow-primary/5">
+          <Badge tone={tone}>{title === "Recommended Actions" ? "Action" : "Note"}</Badge>
+          <span className="min-w-0 break-words text-muted-foreground">{item}</span>
+        </div>
+      )) : <p className="text-muted-foreground">{empty}</p>}
+    </div>
+  );
+}
+
 function ReservationsCard({
   reservations,
+  tasks,
   activities,
   canWrite,
   onSave,
@@ -849,6 +996,7 @@ function ReservationsCard({
   lead,
 }: {
   reservations: ReservationWithRelations[];
+  tasks: FollowUpTask[];
   activities: ReservationActivity[];
   canWrite: boolean;
   onSave: (reservation: ReservationWithRelations | null, values: ReservationFormValues) => void;
@@ -905,13 +1053,13 @@ function ReservationsCard({
               <span>Assigned: {adminLabelById(adminProfiles, reservation.assigned_to)}</span>
             </div>
             {reservation.notes ? <p className="break-words text-muted-foreground">{reservation.notes}</p> : null}
-            <ReservationInsights reservation={reservation} />
+            <ReservationInsights reservation={reservation} tasks={tasks} />
             {canWrite ? (
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" className="h-9" onClick={() => setEditingId(editingId === reservation.id ? null : reservation.id)}>
                   {editingId === reservation.id ? "Close Edit" : "Edit"}
                 </Button>
-                {reservation.deposit_status !== "confirmed" ? (
+                {activeReservationStatuses.has(reservation.status) && reservation.deposit_status !== "confirmed" ? (
                   <Button type="button" variant="outline" className="h-9" onClick={() => onQuickUpdate(reservation, "deposit_confirmed", "confirmed")}>
                     Confirm Deposit
                   </Button>
@@ -1016,13 +1164,10 @@ function ReservationForm({
   );
 }
 
-function ReservationInsights({ reservation }: { reservation: LotReservation }) {
-  const insights = reservationInsights(reservation);
-  if (!insights.length) return null;
+function ReservationInsights({ reservation, tasks }: { reservation: LotReservation; tasks: FollowUpTask[] }) {
+  const hasOpenFollowUp = tasks.some((task) => task.status === "open" || task.status === "in_progress");
   return (
-    <div className="grid gap-2">
-      {insights.map((insight) => <p key={insight} className="crm-info-panel p-2 text-xs">{insight}</p>)}
-    </div>
+    <SmartInsightList insights={reservationReadinessInsights(reservation, hasOpenFollowUp)} compact />
   );
 }
 
@@ -1295,23 +1440,6 @@ function leadToFormValues(lead: LeadWithRelations | null): LeadFormValues {
   };
 }
 
-function buyerInsights(lead: Lead, tasks: FollowUpTask[], visits: SiteVisit[], reservations: LotReservation[]) {
-  const insights: string[] = [];
-  const activeReservation = reservations.find((reservation) => activeReservationStatuses.has(reservation.status));
-  if (!lead.assigned_to) insights.push("Assign a team member so this buyer has a clear owner.");
-  if (isOverdue(lead.next_action_due_at, new Date())) insights.push("Follow-up overdue. Review the next action and contact the buyer.");
-  if (lead.pipeline_stage === "family_decision") insights.push("Buyer may need decision support from family or other stakeholders.");
-  if (lead.pipeline_stage === "deposit_pending") insights.push("Deposit is pending. Keep payment readiness separate from the official payment ledger until finance records payment.");
-  if (activeReservation) insights.push("Active reservation exists. Track expiry and deposit readiness before application or contract next steps.");
-  const upcomingVisit = visits.find((visit) => visit.status === "scheduled" || visit.status === "rescheduled");
-  if (upcomingVisit) insights.push(`Next site visit is scheduled for ${formatDate(upcomingVisit.scheduled_at)}.`);
-  if (!lead.phone && !lead.email && !lead.whatsapp) insights.push("Missing contact details. Capture phone, WhatsApp, or email before the next follow-up.");
-  if (!tasks.some((task) => task.status === "open" || task.status === "in_progress")) insights.push(activeReservation ? "No open follow-up task for this active reservation. Consider adding one." : "No open follow-up task. Add a next action to keep the buyer journey moving.");
-  return insights.length ? insights : ["Buyer record is active. Keep notes, follow-ups, and site visits current as the sales conversation progresses."];
-}
-
-const activeReservationStatuses = new Set<ReservationStatus>(["draft", "reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"]);
-
 function normalizeReservationValues(values: ReservationFormValues) {
   return {
     reservation_code: values.reservation_code.trim() || null,
@@ -1337,25 +1465,11 @@ function reservationToFormValues(reservation: LotReservation | null, lead: Lead)
     expected_deposit_amount: reservation?.expected_deposit_amount ? String(reservation.expected_deposit_amount) : "",
     deposit_due_at: toDateTimeLocal(reservation?.deposit_due_at),
     deposit_paid_at: toDateTimeLocal(reservation?.deposit_paid_at),
-    reserved_at: toDateTimeLocal(reservation?.reserved_at ?? new Date().toISOString()),
+    reserved_at: toDateTimeLocal(reservation ? reservation.reserved_at : new Date().toISOString()),
     expires_at: toDateTimeLocal(reservation?.expires_at),
     assigned_to: reservation?.assigned_to ?? lead.assigned_to ?? "",
     notes: reservation?.notes ?? "",
   };
-}
-
-function reservationInsights(reservation: LotReservation) {
-  const insights: string[] = [];
-  const now = new Date();
-  if (reservation.expires_at) {
-    const expiresAt = new Date(reservation.expires_at);
-    const daysUntilExpiry = (expiresAt.getTime() - now.getTime()) / 86_400_000;
-    if (daysUntilExpiry < 0 && activeReservationStatuses.has(reservation.status)) insights.push("Reservation needs review or release.");
-    else if (daysUntilExpiry <= 3 && activeReservationStatuses.has(reservation.status)) insights.push("Reservation expires soon.");
-  }
-  if (reservation.deposit_status === "pending" && reservation.deposit_due_at && new Date(reservation.deposit_due_at) < now) insights.push("Deposit is overdue.");
-  if (reservation.deposit_status === "confirmed") insights.push("Ready for application or contract next step.");
-  return insights;
 }
 
 function ReservationBadge({ status }: { status: ReservationStatus }) {
@@ -1393,6 +1507,34 @@ function depositStatusTone(status: DepositStatus): BadgeTone {
   if (status === "overdue") return "red";
   if (status === "waived") return "brown";
   return "gray";
+}
+
+function readinessLabel(status: string) {
+  return safeString(status, "Unknown").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readinessTone(status: string): BadgeTone {
+  if (["closed", "contract_ready", "application_ready"].includes(status)) return "green";
+  if (["blocked"].includes(status)) return "red";
+  if (["needs_follow_up", "deposit_readiness", "gathering_information"].includes(status)) return "amber";
+  if (["inactive", "unknown"].includes(status)) return "gray";
+  return "blue";
+}
+
+function stringList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function safeString(value: unknown, fallback: string) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function safeFormatDate(value: unknown) {
+  const date = new Date(String(value ?? ""));
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+  return formatDate(date.toISOString());
 }
 
 function adminLabel(profile: AdminProfile) {

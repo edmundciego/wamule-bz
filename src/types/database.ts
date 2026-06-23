@@ -100,6 +100,38 @@ export type ReservationActivityType =
   | "application_linked"
   | "contract_linked"
   | "payment_linked";
+export type PostSalesTaskType =
+  | "document"
+  | "agreement"
+  | "payment_setup"
+  | "customer_contact"
+  | "collections_handoff"
+  | "internal_review"
+  | "general";
+export type PostSalesTaskStatus = "open" | "in_progress" | "completed" | "cancelled" | "blocked";
+export type PostSalesTaskPriority = "low" | "normal" | "high" | "urgent";
+export type PostSalesChecklistStatus = "not_started" | "in_progress" | "blocked" | "completed" | "cancelled";
+export type PostSalesAgreementStatus =
+  | "not_started"
+  | "drafting"
+  | "ready_for_review"
+  | "sent_for_signature"
+  | "signed"
+  | "blocked";
+export type PostSalesDocumentStatus = "not_started" | "missing_documents" | "pending_review" | "complete" | "blocked";
+export type PostSalesHandoffStatus = "not_started" | "ready" | "handed_off" | "blocked";
+export type PostSalesPaymentSetupStatus = "not_started" | "pending" | "ready" | "active" | "blocked";
+export type PostSalesActivityType =
+  | "note"
+  | "task_created"
+  | "task_completed"
+  | "status_change"
+  | "document_status_change"
+  | "agreement_status_change"
+  | "collections_handoff"
+  | "payment_setup_status_change"
+  | "blocked"
+  | "unblocked";
 
 export type AdminProfile = {
   user_id: string;
@@ -341,6 +373,63 @@ export type ReservationActivity = {
   created_at: string;
 };
 
+export type PostSalesChecklist = {
+  id: string;
+  customer_id: number | null;
+  application_id: number | null;
+  contract_id: number | null;
+  lead_id: string | null;
+  reservation_id: string | null;
+  status: PostSalesChecklistStatus;
+  agreement_status: PostSalesAgreementStatus;
+  document_status: PostSalesDocumentStatus;
+  collections_handoff_status: PostSalesHandoffStatus;
+  payment_setup_status: PostSalesPaymentSetupStatus;
+  assigned_to: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PostSalesTask = {
+  id: string;
+  customer_id: number | null;
+  application_id: number | null;
+  contract_id: number | null;
+  lead_id: string | null;
+  reservation_id: string | null;
+  title: string;
+  description: string | null;
+  task_type: PostSalesTaskType;
+  status: PostSalesTaskStatus;
+  priority: PostSalesTaskPriority;
+  due_at: string | null;
+  assigned_to: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PostSalesActivity = {
+  id: string;
+  checklist_id: string | null;
+  task_id: string | null;
+  customer_id: number | null;
+  application_id: number | null;
+  contract_id: number | null;
+  activity_type: PostSalesActivityType;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type InstallmentPlan = {
   id: number;
   name: string;
@@ -459,6 +548,25 @@ export type CustomerAiSummary = {
   draft_follow_up_message: string;
   model: string;
   generated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeadAiSummary = {
+  id: string;
+  lead_id: string;
+  summary: string;
+  readiness_status: string | null;
+  key_risks: unknown[];
+  missing_information: unknown[];
+  recommended_actions: unknown[];
+  next_best_action: string | null;
+  confidence_notes: string | null;
+  source_snapshot: Record<string, unknown> | null;
+  model: string | null;
+  provider: string | null;
+  generated_by: string | null;
+  generated_at: string;
   created_at: string;
   updated_at: string;
 };
@@ -635,6 +743,23 @@ export type Database = {
           Partial<Omit<ReservationActivity, "id" | "reservation_id" | "activity_type" | "title" | "created_at">>;
         Update: Partial<Omit<ReservationActivity, "id" | "created_at">>;
       };
+      post_sales_checklists: {
+        Row: PostSalesChecklist;
+        Insert: Partial<Omit<PostSalesChecklist, "id" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<PostSalesChecklist, "id" | "created_at" | "updated_at">>;
+      };
+      post_sales_tasks: {
+        Row: PostSalesTask;
+        Insert: Pick<PostSalesTask, "title"> &
+          Partial<Omit<PostSalesTask, "id" | "title" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<PostSalesTask, "id" | "created_at" | "updated_at">>;
+      };
+      post_sales_activities: {
+        Row: PostSalesActivity;
+        Insert: Pick<PostSalesActivity, "activity_type" | "title"> &
+          Partial<Omit<PostSalesActivity, "id" | "activity_type" | "title" | "created_at">>;
+        Update: Partial<Omit<PostSalesActivity, "id" | "created_at">>;
+      };
       installment_plans: {
         Row: InstallmentPlan;
         Insert: Omit<InstallmentPlan, "id" | "created_at" | "updated_at">;
@@ -674,6 +799,11 @@ export type Database = {
         Row: CustomerAiSummary;
         Insert: Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<CustomerAiSummary, "id" | "created_at" | "updated_at">>;
+      };
+      lead_ai_summaries: {
+        Row: LeadAiSummary;
+        Insert: Omit<LeadAiSummary, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<LeadAiSummary, "id" | "created_at" | "updated_at">>;
       };
       brief_action_items: {
         Row: BriefActionItem;

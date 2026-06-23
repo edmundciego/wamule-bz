@@ -2,10 +2,12 @@ import { useQueries } from "@tanstack/react-query";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
+import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { dashboardOperationsInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
-import type { FollowUpTask, Lead, LotReservation, SiteVisit } from "../types/database";
+import type { FollowUpTask, Lead, LotReservation, PostSalesChecklist, PostSalesTask, SiteVisit } from "../types/database";
 
 export function DashboardPage() {
   const results = useQueries({
@@ -18,6 +20,8 @@ export function DashboardPage() {
       { queryKey: ["dashboard-follow-ups"], queryFn: async () => (await supabase.from("follow_up_tasks").select("*").in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false })).data as FollowUpTask[] ?? [] },
       { queryKey: ["dashboard-site-visits"], queryFn: async () => (await supabase.from("site_visits").select("*").in("status", ["scheduled", "rescheduled"]).order("scheduled_at", { ascending: true })).data as SiteVisit[] ?? [] },
       { queryKey: ["dashboard-lot-reservations"], queryFn: async () => (await supabase.from("lot_reservations").select("*").order("updated_at", { ascending: false })).data as LotReservation[] ?? [] },
+      { queryKey: ["dashboard-post-sales-tasks"], queryFn: async () => (await supabase.from("post_sales_tasks").select("*").in("status", ["open", "in_progress", "blocked"]).order("due_at", { ascending: true, nullsFirst: false })).data as PostSalesTask[] ?? [] },
+      { queryKey: ["dashboard-post-sales-checklists"], queryFn: async () => (await supabase.from("post_sales_checklists").select("*").order("updated_at", { ascending: false })).data as PostSalesChecklist[] ?? [] },
     ],
   });
   const isLoading = results.some((result) => result.isLoading);
@@ -30,10 +34,23 @@ export function DashboardPage() {
   const followUps = results[5].data ?? [];
   const siteVisits = results[6].data ?? [];
   const reservations = results[7].data ?? [];
+  const postSalesTasks = results[8].data ?? [];
+  const postSalesChecklists = results[9].data ?? [];
   const totalRevenue = transactions.reduce((sum, item) => sum + Number(item.amount), 0);
   const overdueBalance = balances.reduce((sum, item) => sum + Number(item.land_balance ?? 0), 0);
   const salesSummary = salesDashboardSummary(leads, followUps, siteVisits);
   const reservationSummary = reservationDashboardSummary(reservations);
+  const postSalesSummary = postSalesDashboardSummary(postSalesTasks, postSalesChecklists);
+  const operationsInsights = dashboardOperationsInsights({
+    overdueFollowUps: salesSummary.overdueFollowUps,
+    siteVisitsToday: salesSummary.siteVisitsToday,
+    upcomingSiteVisits: salesSummary.upcomingVisits,
+    reservationsExpiringSoon: reservationSummary.expiringSoon,
+    depositsOverdue: reservationSummary.depositOverdue,
+    postSalesTasksOverdue: postSalesSummary.overdueTasks,
+    documentsPendingReview: postSalesSummary.documentsPendingReview,
+    collectionsHandoffReady: postSalesSummary.handoffReady,
+  });
 
   return (
     <>
@@ -49,6 +66,13 @@ export function DashboardPage() {
         <Metric title="Revenue collected" value={money(totalRevenue)} meta="Recorded payments" />
         <Metric title="Open land balances" value={money(overdueBalance)} meta="Collections view" />
         <Metric title="Community delinquency" value={balances.filter((row) => Number(row.community_paid) <= 0).length} meta="Follow-up required" />
+      </div>
+      <div className="mt-6">
+        <SmartInsightsPanel
+          title="Operations Insights"
+          description="Concise rule-based flags from live CRM records."
+          insights={operationsInsights}
+        />
       </div>
       <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
@@ -84,6 +108,19 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      <div className="mt-6">
+        <Card>
+          <CardHeader><CardTitle>Post-Sales Automation</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <SalesMetric title="Open tasks" value={postSalesSummary.openTasks} tone={postSalesSummary.overdueTasks > 0 ? "amber" : "blue"} meta={`${postSalesSummary.overdueTasks} overdue`} />
+            <SalesMetric title="Blocked customers" value={postSalesSummary.blockedCustomers} tone={postSalesSummary.blockedCustomers > 0 ? "red" : "blue"} meta="Checklist blocked" />
+            <SalesMetric title="Agreements ready" value={postSalesSummary.agreementsReady} tone="amber" meta="Review or signature" />
+            <SalesMetric title="Documents pending" value={postSalesSummary.documentsPending} tone="amber" meta="Missing/review" />
+            <SalesMetric title="Handoff ready" value={postSalesSummary.handoffReady} tone="amber" meta="Ready for collections" />
+            <SalesMetric title="Payment setup" value={postSalesSummary.paymentSetupPending} tone="amber" meta="Pending details" />
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }
@@ -114,18 +151,37 @@ function SalesMetric({ title, value, meta, tone }: { title: string; value: numbe
   );
 }
 
+function postSalesDashboardSummary(tasks: PostSalesTask[], checklists: PostSalesChecklist[]) {
+  const today = startOfToday();
+  return {
+    openTasks: tasks.filter((task) => task.status === "open" || task.status === "in_progress" || task.status === "blocked").length,
+    overdueTasks: tasks.filter((task) => !["completed", "cancelled"].includes(task.status) && isBefore(task.due_at, today)).length,
+    blockedCustomers: checklists.filter((checklist) => checklist.status === "blocked").length,
+    agreementsReady: checklists.filter((checklist) => checklist.agreement_status === "ready_for_review" || checklist.agreement_status === "sent_for_signature").length,
+    documentsPending: checklists.filter((checklist) => checklist.document_status === "missing_documents" || checklist.document_status === "pending_review").length,
+    documentsPendingReview: checklists.filter((checklist) => checklist.document_status === "pending_review").length,
+    handoffReady: checklists.filter((checklist) => checklist.collections_handoff_status === "ready").length,
+    paymentSetupPending: checklists.filter((checklist) => checklist.payment_setup_status === "pending").length,
+  };
+}
+
 function salesDashboardSummary(leads: Lead[], followUps: FollowUpTask[], siteVisits: SiteVisit[]) {
   const today = startOfToday();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
   const stageMap = new Map<Lead["pipeline_stage"], number>();
   leads.forEach((lead) => stageMap.set(lead.pipeline_stage, (stageMap.get(lead.pipeline_stage) ?? 0) + 1));
+  const upcomingSiteVisits = siteVisits.filter((visit) => {
+    const scheduledAt = parseDate(visit.scheduled_at);
+    return scheduledAt ? scheduledAt >= today : false;
+  });
   return {
     openFollowUps: followUps.length,
-    overdueFollowUps: followUps.filter((task) => task.due_at && new Date(task.due_at) < today).length,
-    dueTodayFollowUps: followUps.filter((task) => task.due_at && new Date(task.due_at) >= today && new Date(task.due_at) < tomorrow).length,
-    upcomingVisits: siteVisits.length,
-    nextVisit: siteVisits[0] ?? null,
+    overdueFollowUps: followUps.filter((task) => isBefore(task.due_at, today)).length,
+    dueTodayFollowUps: followUps.filter((task) => isWithin(task.due_at, today, tomorrow)).length,
+    siteVisitsToday: upcomingSiteVisits.filter((visit) => isWithin(visit.scheduled_at, today, tomorrow)).length,
+    upcomingVisits: upcomingSiteVisits.length,
+    nextVisit: upcomingSiteVisits[0] ?? null,
     depositPending: leads.filter((lead) => lead.pipeline_stage === "deposit_pending").length,
     familyDecision: leads.filter((lead) => lead.pipeline_stage === "family_decision").length,
     stageCounts: [...stageMap.entries()].sort((a, b) => b[1] - a[1]),
@@ -140,10 +196,10 @@ function reservationDashboardSummary(reservations: LotReservation[]) {
   const activeReservations = reservations.filter((reservation) => activeStatuses.has(reservation.status));
   return {
     activeReservations: activeReservations.length,
-    expiringSoon: activeReservations.filter((reservation) => reservation.expires_at && new Date(reservation.expires_at) >= today && new Date(reservation.expires_at) <= expiringCutoff).length,
-    depositPending: reservations.filter((reservation) => reservation.deposit_status === "pending" || reservation.status === "deposit_pending").length,
-    depositOverdue: reservations.filter((reservation) => reservation.deposit_status === "overdue" || (reservation.deposit_status === "pending" && reservation.deposit_due_at && new Date(reservation.deposit_due_at) < today)).length,
-    depositConfirmed: reservations.filter((reservation) => reservation.deposit_status === "confirmed" || reservation.status === "deposit_confirmed").length,
+    expiringSoon: activeReservations.filter((reservation) => isWithinInclusive(reservation.expires_at, today, expiringCutoff)).length,
+    depositPending: activeReservations.filter((reservation) => reservation.deposit_status === "pending" || reservation.status === "deposit_pending").length,
+    depositOverdue: activeReservations.filter((reservation) => reservation.deposit_status === "overdue" || (reservation.deposit_status === "pending" && isBefore(reservation.deposit_due_at, today))).length,
+    depositConfirmed: activeReservations.filter((reservation) => reservation.deposit_status === "confirmed" || reservation.status === "deposit_confirmed").length,
   };
 }
 
@@ -151,6 +207,27 @@ function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
+}
+
+function parseDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isBefore(value: string | null | undefined, date: Date) {
+  const parsed = parseDate(value);
+  return parsed ? parsed < date : false;
+}
+
+function isWithin(value: string | null | undefined, start: Date, end: Date) {
+  const parsed = parseDate(value);
+  return parsed ? parsed >= start && parsed < end : false;
+}
+
+function isWithinInclusive(value: string | null | undefined, start: Date, end: Date) {
+  const parsed = parseDate(value);
+  return parsed ? parsed >= start && parsed <= end : false;
 }
 
 function leadStageLabel(stage: Lead["pipeline_stage"]) {

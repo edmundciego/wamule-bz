@@ -4,8 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
+import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { accountDueDate, startOfDay } from "../lib/accountDates";
+import { collectionsOperationsInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
 
@@ -94,6 +96,12 @@ export function CollectionsPage() {
 
   const isLoading = contractsLoading || paymentsLoading;
   const error = contractsError || paymentsError;
+  const operationsInsights = collectionsOperationsInsights({
+    overdueCustomers: contractGroups.overdue.length,
+    missingSignedContracts: contractGroups.missingSigned.length,
+    missingReceipts: paymentGroups.missingReceipts.length,
+    missingProofs: paymentGroups.missingProof.length,
+  });
 
   return (
     <>
@@ -105,6 +113,13 @@ export function CollectionsPage() {
         <Metric title="Due today" value={contractGroups.dueToday.length} />
         <Metric title="Due this week" value={contractGroups.dueThisWeek.length} />
         <Metric title="Overdue" value={contractGroups.overdue.length} />
+      </div>
+      <div className="mt-6">
+        <SmartInsightsPanel
+          title="Operations Insights"
+          description="Display-only collections flags from existing contracts and payment records."
+          insights={operationsInsights}
+        />
       </div>
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <ContractQueue title="Customers due today" rows={contractGroups.dueToday} tone="blue" />

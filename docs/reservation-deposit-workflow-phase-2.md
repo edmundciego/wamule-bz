@@ -117,9 +117,49 @@ The Leads workspace displays these events inside each reservation card.
 
 - Reservations do not auto-expire; staff must mark expired/released/cancelled manually.
 - Deposit proof is tracked by status only unless staff links an existing payment record later.
-- Applications can create a draft reservation only when a lot is already linked to the application record.
+- Applications can create a draft reservation when a lot is already linked to the application record or selected in the admin application review card.
 - Customer Detail currently shows reservations directly linked by `customer_id`; reservations linked only through a lead are managed in the Leads workspace.
 - Authenticated protected-route browser/mobile QA is still pending until valid admin credentials are available.
+
+## Phase 2 QA Note
+
+Stabilization review verified:
+
+- Reservation tables follow the existing private-internal RLS pattern.
+- Anonymous/public users do not receive reservation table access.
+- Read-only internal users can read reservation records but cannot create, update, or delete them.
+- Super Admin/Admin/Staff write access uses the existing `can_write_admin_data()` helper.
+- Delete access is restricted to `is_admin_user()`.
+- Nullable links to leads, applications, customers, parcels, payments, and contracts use `on delete set null` where appropriate.
+- Active duplicate prevention is limited to active parcel holds and does not block historical released, cancelled, expired, or converted reservations.
+- Lead-created reservations do not update parcel status, payment records, contract records, application approval, or customer creation.
+- Application-created reservations are admin/staff initiated and do not change public submission or approval behavior.
+- Customer Detail hides the reservation panel when no linked reservation exists.
+- Lots page displays active reservation tracking separately from core parcel status.
+- Dashboard reservation/deposit widgets handle empty reservation data and count active reservation statuses only.
+- Reservation and deposit status badges cover all Phase 2 statuses.
+- Deposit due/overdue logic is display-only and does not mutate payment data.
+- Release/cancel actions update reservation tracking only and do not alter parcel status or payments.
+- Reservation activity writes are non-blocking: if a timeline note fails after the reservation save, the reservation remains saved and the UI refreshes the source of truth.
+
+Deposit tracking boundaries:
+
+- Phase 2 can track expected deposit amount, due date, paid/confirmed date, deposit status, and an optional existing payment link.
+- Phase 2 does not create payment records, alter balances, generate receipts, confirm proof automatically, or replace the payment ledger.
+
+Required manual setup:
+
+- Apply `20260618000100_sales_foundation_phase_1.sql` before Phase 2.
+- Apply `20260619000100_reservation_deposit_workflow_phase_2.sql`.
+- Regenerate remote Supabase types after applying migrations if the team uses CLI-generated types in deployment.
+- Complete authenticated protected-route browser/mobile QA once valid admin credentials are available.
+
+Remaining risks before Phase 3:
+
+- Reservation release/cancel is manual and depends on staff process discipline.
+- Customer Detail only shows reservations directly linked to `customer_id`; lead-only reservations remain in the Leads workspace.
+- There is no duplicate buyer matching by phone/email yet.
+- There is no automated handoff from confirmed deposit to application, contract, or collections workflows.
 
 ## Phase 3 Recommendations
 

@@ -5,11 +5,13 @@ import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Field";
+import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
+import { applicationSmartInsights, activeReservationStatuses } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
-import type { ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation } from "../types/database";
+import type { ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation, PostSalesChecklist } from "../types/database";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
 
@@ -62,10 +64,10 @@ export function ApplicationsPage() {
     queryFn: async () => {
       const { data: leads, error: queryError } = await supabase
         .from("leads")
-        .select("id, application_id, pipeline_stage, full_name")
+        .select("id, application_id, pipeline_stage, full_name, next_action")
         .not("application_id", "is", null);
       if (queryError) throw queryError;
-      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name">[];
+      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "next_action">[];
     },
   });
   const { data: linkedReservations } = useQuery({
@@ -77,6 +79,17 @@ export function ApplicationsPage() {
         .or("application_id.not.is.null,lead_id.not.is.null");
       if (queryError) throw queryError;
       return reservations as LotReservation[];
+    },
+  });
+  const { data: postSalesChecklists } = useQuery({
+    queryKey: ["application-post-sales-checklists"],
+    queryFn: async () => {
+      const { data: checklists, error: queryError } = await supabase
+        .from("post_sales_checklists")
+        .select("*")
+        .not("application_id", "is", null);
+      if (queryError) throw queryError;
+      return checklists as PostSalesChecklist[];
     },
   });
 
@@ -203,12 +216,12 @@ export function ApplicationsPage() {
       metadata: null,
     });
     if (activityError) {
-      setActionError(activityError.message);
-      return;
+      console.warn("Reservation activity was not recorded", activityError);
     }
     await queryClient.invalidateQueries({ queryKey: ["application-linked-reservations"] });
     await queryClient.invalidateQueries({ queryKey: ["sales-lot-reservations"] });
     await queryClient.invalidateQueries({ queryKey: ["dashboard-lot-reservations"] });
+    await queryClient.invalidateQueries({ queryKey: ["lot-board-active-reservations"] });
   }
 
   function preferredLotText(preferredParcelIds: unknown) {
@@ -242,7 +255,14 @@ export function ApplicationsPage() {
             <div className="grid gap-3">
               {data
                 ?.filter((item) => item.status === status)
-                .map((application) => (
+                .map((application) => {
+                  const linkedLead = linkedLeads?.find((item) => item.application_id === application.id) ?? null;
+                  const selectedParcelId = application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null);
+                  const linkedReservation = applicationReservation(application.id, selectedParcelId, linkedLeads, linkedReservations);
+                  const postSalesChecklist = postSalesChecklists?.find((checklist) => checklist.application_id === application.id) ?? null;
+                  const selectedLotStatus = lotOptions?.find((lot) => lot.id === selectedParcelId)?.status ?? application.parcels?.status ?? null;
+
+                  return (
                   <Card key={application.id}>
                     <CardContent className="grid gap-3 p-4">
                       <div>
@@ -259,15 +279,30 @@ export function ApplicationsPage() {
                         <p>{application.legal_notice_acknowledged ? "Legal notice acknowledged" : "Missing legal acknowledgement"}</p>
                       </div>
                       <ApplicationLeadLink
-                        lead={linkedLeads?.find((item) => item.application_id === application.id) ?? null}
+                        lead={linkedLead}
                         canWrite={canWriteSales}
                         onCreate={() => void createLeadFromApplication(application)}
                       />
                       <ApplicationReservationLink
-                        reservation={applicationReservation(application.id, application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null), linkedLeads, linkedReservations)}
+                        reservation={linkedReservation}
                         canWrite={canWriteSales}
                         hasLot={Boolean(application.parcel_id || selectedLots[application.id])}
                         onCreate={() => void createReservationFromApplication(application)}
+                      />
+                      <ApplicationPostSalesLink
+                        checklist={postSalesChecklist}
+                        applicationStatus={application.status}
+                      />
+                      <SmartInsightsPanel
+                        title="Missing Information"
+                        description="Rule-based application guidance. Approval remains manual."
+                        insights={applicationSmartInsights({
+                          application,
+                          selectedLotStatus,
+                          linkedLead,
+                          postSalesChecklist,
+                        })}
+                        compact
                       />
                       <ApplicationAiReviewSection
                         review={firstReview(application.application_ai_reviews)}
@@ -302,7 +337,8 @@ export function ApplicationsPage() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
             </div>
           </section>
         ))}
@@ -431,6 +467,36 @@ function ApplicationReservationLink({
   );
 }
 
+function ApplicationPostSalesLink({
+  checklist,
+  applicationStatus,
+}: {
+  checklist: PostSalesChecklist | null;
+  applicationStatus: ApplicationStatus;
+}) {
+  if (applicationStatus !== "Approved" && !checklist) return null;
+  return (
+    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div>
+        <p className="font-medium text-primary">Post-Sales Checklist</p>
+        <p className="text-xs text-muted-foreground">
+          {checklist
+            ? `Checklist is ${statusLabel(checklist.status)}. Agreement ${statusLabel(checklist.agreement_status)}, documents ${statusLabel(checklist.document_status)}.`
+            : "Start the post-sales checklist from Customer Detail after approval."}
+        </p>
+      </div>
+      {checklist ? (
+        <div className="flex flex-wrap gap-2">
+          <Badge tone={postSalesTone(checklist.status)}>{statusLabel(checklist.status)}</Badge>
+          <Badge tone={agreementTone(checklist.agreement_status)}>{statusLabel(checklist.agreement_status)}</Badge>
+        </div>
+      ) : (
+        <Badge tone="gray">Not Started</Badge>
+      )}
+    </div>
+  );
+}
+
 function ReviewList({ title, items, emptyLabel }: { title: string; items: string[]; emptyLabel: string }) {
   return (
     <div>
@@ -457,8 +523,6 @@ function reviewTone(status: ApplicationAiReview["completeness_status"]) {
   if (status === "Missing Information") return "amber";
   return "blue";
 }
-
-const activeReservationStatuses = new Set<LotReservation["status"]>(["draft", "reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"]);
 
 function applicationReservation(
   applicationId: number,
@@ -496,5 +560,24 @@ function depositTone(status: LotReservation["deposit_status"]): BadgeTone {
   if (status === "proof_submitted") return "blue";
   if (status === "overdue") return "red";
   if (status === "waived") return "brown";
+  return "gray";
+}
+
+function statusLabel(status: string) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function postSalesTone(status: PostSalesChecklist["status"]): BadgeTone {
+  if (status === "completed") return "green";
+  if (status === "blocked") return "red";
+  if (status === "in_progress") return "blue";
+  return "gray";
+}
+
+function agreementTone(status: PostSalesChecklist["agreement_status"]): BadgeTone {
+  if (status === "signed") return "green";
+  if (status === "blocked") return "red";
+  if (status === "ready_for_review") return "amber";
+  if (status === "drafting" || status === "sent_for_signature") return "blue";
   return "gray";
 }

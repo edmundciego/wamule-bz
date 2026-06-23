@@ -10,10 +10,12 @@ import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
+import { SmartInsightList, SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { accountDueDate } from "../lib/accountDates";
 import { getSessionAndProfile } from "../lib/data";
+import { customerOperationsInsights, postSalesRecommendedInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, formatDate, money } from "../lib/utils";
@@ -26,12 +28,32 @@ import type {
   PaymentDocumentType,
   PaymentRequest,
   PaymentRequestStatus,
+  PostSalesActivity,
+  PostSalesActivityType,
+  PostSalesAgreementStatus,
+  PostSalesChecklist,
+  PostSalesChecklistStatus,
+  PostSalesDocumentStatus,
+  PostSalesHandoffStatus,
+  PostSalesPaymentSetupStatus,
+  PostSalesTask,
+  PostSalesTaskPriority,
+  PostSalesTaskStatus,
+  PostSalesTaskType,
+  SiteVisit,
   Transaction,
 } from "../types/database";
 
-const customerSections = ["Overview", "Contract", "Payments", "Documents", "Requests", "Statement", "Smart Summary"] as const;
+const customerSections = ["Overview", "Post-Sales", "Contract", "Payments", "Documents", "Requests", "Statement", "Smart Summary"] as const;
 const requestStatuses: PaymentRequestStatus[] = ["Draft", "Sent", "Paid", "Cancelled"];
 const documentTypes: PaymentDocumentType[] = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"];
+const postSalesTaskTypes: PostSalesTaskType[] = ["document", "agreement", "payment_setup", "customer_contact", "collections_handoff", "internal_review", "general"];
+const postSalesTaskPriorities: PostSalesTaskPriority[] = ["low", "normal", "high", "urgent"];
+const checklistStatuses: PostSalesChecklistStatus[] = ["not_started", "in_progress", "blocked", "completed", "cancelled"];
+const agreementStatuses: PostSalesAgreementStatus[] = ["not_started", "drafting", "ready_for_review", "sent_for_signature", "signed", "blocked"];
+const documentStatuses: PostSalesDocumentStatus[] = ["not_started", "missing_documents", "pending_review", "complete", "blocked"];
+const handoffStatuses: PostSalesHandoffStatus[] = ["not_started", "ready", "handed_off", "blocked"];
+const paymentSetupStatuses: PostSalesPaymentSetupStatus[] = ["not_started", "pending", "ready", "active", "blocked"];
 
 type CustomerSection = (typeof customerSections)[number];
 type ActionModalKind = "payment" | "contract" | "request" | "document" | null;
@@ -42,17 +64,38 @@ type PaymentDocumentWithTransaction = PaymentDocument & {
 };
 type CustomerDetail = {
   id: number;
+  application_id: number;
   first_name: string;
   last_name: string;
   phone: string;
   email: string | null;
   address: string | null;
+  created_at: string;
   applications?: { parcels?: { lot_number: string | null; status?: string | null } | null } | null;
   contracts?: CustomerContract[] | null;
   transactions?: CustomerTransaction[] | null;
   payment_documents?: PaymentDocumentWithTransaction[] | null;
   payment_requests?: PaymentRequest[] | null;
   customer_ai_summaries?: CustomerAiSummary[] | null;
+};
+
+type PostSalesChecklistFormValues = {
+  status: PostSalesChecklistStatus;
+  agreement_status: PostSalesAgreementStatus;
+  document_status: PostSalesDocumentStatus;
+  collections_handoff_status: PostSalesHandoffStatus;
+  payment_setup_status: PostSalesPaymentSetupStatus;
+  assigned_to: string;
+  notes: string;
+};
+
+type PostSalesTaskFormValues = {
+  title: string;
+  description: string;
+  task_type: PostSalesTaskType;
+  priority: PostSalesTaskPriority;
+  due_at: string;
+  assigned_to: string;
 };
 
 export function CustomerDetailPage() {
@@ -132,21 +175,87 @@ export function CustomerDetailPage() {
     },
     enabled: Number.isFinite(customerId),
   });
+  const { data: relatedSiteVisits } = useQuery({
+    queryKey: ["customer-related-site-visits", customerId],
+    queryFn: async () => {
+      const { data: visits, error: queryError } = await supabase
+        .from("site_visits")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("scheduled_at", { ascending: true });
+      if (queryError) throw queryError;
+      return visits as SiteVisit[];
+    },
+    enabled: Number.isFinite(customerId),
+  });
+  const { data: postSalesChecklists } = useQuery({
+    queryKey: ["customer-post-sales-checklists", customerId],
+    queryFn: async () => {
+      const { data: checklists, error: queryError } = await supabase
+        .from("post_sales_checklists")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("updated_at", { ascending: false });
+      if (queryError) throw queryError;
+      return checklists as PostSalesChecklist[];
+    },
+    enabled: Number.isFinite(customerId),
+  });
+  const { data: postSalesTasks } = useQuery({
+    queryKey: ["customer-post-sales-tasks", customerId],
+    queryFn: async () => {
+      const { data: tasks, error: queryError } = await supabase
+        .from("post_sales_tasks")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("due_at", { ascending: true, nullsFirst: false });
+      if (queryError) throw queryError;
+      return tasks as PostSalesTask[];
+    },
+    enabled: Number.isFinite(customerId),
+  });
+  const { data: postSalesActivities } = useQuery({
+    queryKey: ["customer-post-sales-activities", customerId],
+    queryFn: async () => {
+      const { data: activities, error: queryError } = await supabase
+        .from("post_sales_activities")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false });
+      if (queryError) throw queryError;
+      return activities as PostSalesActivity[];
+    },
+    enabled: Number.isFinite(customerId),
+  });
 
   const landPayments =
     data?.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
   const communityPayments =
     data?.transactions?.filter((item) => ["Garbage Fee", "Road Maintenance"].includes(item.transaction_type)) ?? [];
   const currentRole = sessionProfile?.profile?.role;
+  const canWritePostSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const canGenerateAiSummary = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const collectionsAiEnabled = Boolean(aiSettings?.is_enabled && aiSettings.collections_assistant_enabled);
   const latestAiSummary = latestSummary(data?.customer_ai_summaries ?? []);
+  const latestLead = relatedLeads?.[0] ?? null;
+  const latestReservation = relatedReservations?.[0] ?? null;
+  const activeCustomerContract = data ? activeContract(data.contracts ?? []) : null;
+  const latestPostSalesChecklist = postSalesChecklists?.[0] ?? null;
   const generatedByProfile = latestAiSummary?.generated_by
     ? adminProfiles?.find((profile) => profile.user_id === latestAiSummary.generated_by) ?? null
     : null;
 
   function refreshCustomer() {
     void queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
+  }
+
+  async function refreshPostSales() {
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-checklists", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-tasks", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-activities", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["dashboard-post-sales-checklists"] });
+    await queryClient.invalidateQueries({ queryKey: ["dashboard-post-sales-tasks"] });
+    await queryClient.invalidateQueries({ queryKey: ["application-post-sales-checklists"] });
   }
 
   function handleActionSuccess(message: string) {
@@ -184,6 +293,162 @@ export function CustomerDetailPage() {
     } catch {
       setActionError("Clipboard copy failed in this browser.");
     }
+  }
+
+  async function addPostSalesActivity(activity: {
+    checklist_id?: string | null;
+    task_id?: string | null;
+    activity_type: PostSalesActivityType;
+    title: string;
+    description?: string | null;
+  }) {
+    const { error } = await supabase.from("post_sales_activities").insert({
+      checklist_id: activity.checklist_id ?? latestPostSalesChecklist?.id ?? null,
+      task_id: activity.task_id ?? null,
+      customer_id: customerId,
+      application_id: data?.application_id ?? null,
+      contract_id: activeCustomerContract?.id ?? null,
+      activity_type: activity.activity_type,
+      title: activity.title,
+      description: activity.description?.trim() || null,
+      metadata: null,
+    });
+    if (error) console.warn("Post-sales activity was not recorded", error);
+  }
+
+  async function startPostSalesChecklist() {
+    if (!data) return;
+    setActionError(null);
+    setToast(null);
+    const nowIso = new Date().toISOString();
+    const { data: checklist, error } = await supabase
+      .from("post_sales_checklists")
+      .insert({
+        customer_id: customerId,
+        application_id: data.application_id,
+        contract_id: activeCustomerContract?.id ?? null,
+        lead_id: latestLead?.id ?? null,
+        reservation_id: latestReservation?.id ?? null,
+        status: "in_progress",
+        started_at: nowIso,
+        assigned_to: latestLead?.assigned_to ?? latestReservation?.assigned_to ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      setActionError(error.code === "23505" ? "A post-sales checklist is already active for this customer." : error.message);
+      return;
+    }
+    await addPostSalesActivity({
+      checklist_id: checklist.id,
+      activity_type: "status_change",
+      title: "Post-sales checklist started",
+      description: "Customer is now being tracked for agreement, document, payment setup, and collections handoff readiness.",
+    });
+    setToast("Post-sales checklist started.");
+    await refreshPostSales();
+  }
+
+  async function updatePostSalesChecklist(checklist: PostSalesChecklist, values: PostSalesChecklistFormValues) {
+    setActionError(null);
+    setToast(null);
+    const completed = values.status === "completed";
+    const { error } = await supabase.from("post_sales_checklists").update({
+      status: values.status,
+      agreement_status: values.agreement_status,
+      document_status: values.document_status,
+      collections_handoff_status: values.collections_handoff_status,
+      payment_setup_status: values.payment_setup_status,
+      assigned_to: values.assigned_to || null,
+      notes: values.notes.trim() || null,
+      completed_at: completed ? checklist.completed_at ?? new Date().toISOString() : null,
+      started_at: checklist.started_at ?? new Date().toISOString(),
+    }).eq("id", checklist.id);
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    const statusChanges = checklistStatusChanges(checklist, values);
+    for (const change of statusChanges) {
+      await addPostSalesActivity({
+        checklist_id: checklist.id,
+        activity_type: change.activityType,
+        title: change.title,
+        description: change.description,
+      });
+    }
+    setToast("Post-sales checklist updated.");
+    await refreshPostSales();
+  }
+
+  async function createPostSalesTask(values: PostSalesTaskFormValues) {
+    if (!data) return;
+    setActionError(null);
+    setToast(null);
+    const title = values.title.trim();
+    if (!title) {
+      setActionError("Task title is required.");
+      return;
+    }
+    const dueAt = values.due_at ? new Date(values.due_at) : null;
+    if (dueAt && Number.isNaN(dueAt.getTime())) {
+      setActionError("Choose a valid due date for the post-sales task.");
+      return;
+    }
+    const { data: task, error } = await supabase
+      .from("post_sales_tasks")
+      .insert({
+        customer_id: customerId,
+        application_id: data.application_id,
+        contract_id: activeCustomerContract?.id ?? null,
+        lead_id: latestLead?.id ?? null,
+        reservation_id: latestReservation?.id ?? null,
+        title,
+        description: values.description.trim() || null,
+        task_type: values.task_type,
+        priority: values.priority,
+        due_at: dueAt ? dueAt.toISOString() : null,
+        assigned_to: values.assigned_to || latestPostSalesChecklist?.assigned_to || null,
+        status: "open",
+      })
+      .select("id")
+      .single();
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    await addPostSalesActivity({
+      task_id: task.id,
+      activity_type: "task_created",
+      title: "Post-sales task created",
+      description: title,
+    });
+    setToast("Post-sales task created.");
+    await refreshPostSales();
+  }
+
+  async function updatePostSalesTaskStatus(task: PostSalesTask, status: PostSalesTaskStatus) {
+    setActionError(null);
+    setToast(null);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const completed = status === "completed";
+    const { error } = await supabase.from("post_sales_tasks").update({
+      status,
+      completed_at: completed ? new Date().toISOString() : null,
+      completed_by: completed ? sessionData.session?.user.id ?? null : null,
+    }).eq("id", task.id);
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    await addPostSalesActivity({
+      task_id: task.id,
+      activity_type: completed ? "task_completed" : status === "blocked" ? "blocked" : "status_change",
+      title: `Post-sales task marked ${statusLabel(status)}`,
+      description: task.title,
+    });
+    setToast("Post-sales task updated.");
+    await refreshPostSales();
   }
 
   function showStatement() {
@@ -233,7 +498,29 @@ export function CustomerDetailPage() {
                 </div>
               </div>
 
-              {activeSection === "Overview" ? <OverviewSection customer={data} leads={relatedLeads ?? []} reservations={relatedReservations ?? []} /> : null}
+              {activeSection === "Overview" ? (
+                <OverviewSection
+                  customer={data}
+                  leads={relatedLeads ?? []}
+                  reservations={relatedReservations ?? []}
+                  siteVisits={relatedSiteVisits ?? []}
+                  postSalesChecklist={latestPostSalesChecklist}
+                  postSalesTasks={postSalesTasks ?? []}
+                />
+              ) : null}
+              {activeSection === "Post-Sales" ? (
+                <PostSalesSection
+                  checklist={latestPostSalesChecklist}
+                  tasks={postSalesTasks ?? []}
+                  activities={postSalesActivities ?? []}
+                  adminProfiles={adminProfiles ?? []}
+                  canWrite={canWritePostSales}
+                  onStart={() => void startPostSalesChecklist()}
+                  onChecklistUpdate={(values) => latestPostSalesChecklist ? void updatePostSalesChecklist(latestPostSalesChecklist, values) : undefined}
+                  onTaskCreate={(values) => void createPostSalesTask(values)}
+                  onTaskUpdate={(task, status) => void updatePostSalesTaskStatus(task, status)}
+                />
+              ) : null}
               {activeSection === "Contract" ? <ContractSection contracts={data.contracts ?? []} /> : null}
               {activeSection === "Payments" ? (
                 <>
@@ -423,17 +710,43 @@ function OverviewSection({
   customer,
   leads,
   reservations,
+  siteVisits,
+  postSalesChecklist,
+  postSalesTasks,
 }: {
   customer: CustomerDetail;
   leads: Lead[];
   reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
+  siteVisits: SiteVisit[];
+  postSalesChecklist: PostSalesChecklist | null;
+  postSalesTasks: PostSalesTask[];
 }) {
   const openRequests = customer.payment_requests?.filter((request) => !["Paid", "Cancelled"].includes(request.status)).length ?? 0;
   const latestLead = leads[0] ?? null;
   const latestReservation = reservations[0] ?? null;
+  const contract = activeContract(customer.contracts ?? []);
+  const landPayments = customer.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
+  const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price) - totalAmount(landPayments), 0) : 0;
+  const operationsInsights = customerOperationsInsights({
+    activeContract: contract?.is_active ? contract : null,
+    transactions: customer.transactions ?? [],
+    paymentRequests: customer.payment_requests ?? [],
+    leads,
+    reservations,
+    siteVisits,
+    postSalesChecklist,
+    postSalesTasks,
+    expectedPaymentOverdue: Boolean(contract && remainingBalance > 0 && new Date(nextDueDate(contract)) < startOfToday()),
+    isNewCustomer: daysSince(customer.created_at) <= 30,
+  });
 
   return (
     <div className="grid gap-4">
+      <SmartInsightsPanel
+        title="Operations Insights"
+        description="Live account guidance from customer, contract, payment, reservation, and post-sales records."
+        insights={operationsInsights}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Overview</CardTitle>
@@ -481,6 +794,9 @@ function OverviewSection({
             <InfoItem label="Deposit due" value={latestReservation.deposit_due_at ? formatDate(latestReservation.deposit_due_at) : "No due date"} />
             <InfoItem label="Expires" value={latestReservation.expires_at ? formatDate(latestReservation.expires_at) : "No expiry"} />
             {latestReservation.notes ? <div className="md:col-span-2"><InfoItem label="Notes" value={latestReservation.notes} /></div> : null}
+            <div className="md:col-span-2">
+              <SmartInsightList insights={reservationReadinessInsights(latestReservation)} compact />
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -494,6 +810,283 @@ function InfoItem({ label, value }: { label: string; value: string }) {
       <p className="font-medium text-primary">{label}</p>
       <p className="mt-1 text-muted-foreground">{value}</p>
     </div>
+  );
+}
+
+function PostSalesSection({
+  checklist,
+  tasks,
+  activities,
+  adminProfiles,
+  canWrite,
+  onStart,
+  onChecklistUpdate,
+  onTaskCreate,
+  onTaskUpdate,
+}: {
+  checklist: PostSalesChecklist | null;
+  tasks: PostSalesTask[];
+  activities: PostSalesActivity[];
+  adminProfiles: Array<{ user_id: string; full_name: string | null; email: string | null }>;
+  canWrite: boolean;
+  onStart: () => void;
+  onChecklistUpdate: (values: PostSalesChecklistFormValues) => void;
+  onTaskCreate: (values: PostSalesTaskFormValues) => void;
+  onTaskUpdate: (task: PostSalesTask, status: PostSalesTaskStatus) => void;
+}) {
+  if (!checklist) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Post-Sales Automation</CardTitle>
+          <CardDescription className="mt-1 text-sm">
+            Track agreement readiness, missing documents, payment setup, collections handoff, and staff-owned tasks after approval or contract start.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="crm-info-panel p-4 text-sm">
+            No post-sales checklist has been started for this customer.
+          </div>
+          {canWrite ? <Button type="button" onClick={onStart}>Start Post-Sales Checklist</Button> : null}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Post-Sales Automation</CardTitle>
+            <CardDescription className="mt-1 text-sm">
+              Checklist visibility only. Contract, payment, document, and collections systems remain authoritative.
+            </CardDescription>
+          </div>
+          <Badge tone={postSalesStatusTone(checklist.status)}>{statusLabel(checklist.status)}</Badge>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <StatusMetric label="Agreement" value={statusLabel(checklist.agreement_status)} tone={agreementTone(checklist.agreement_status)} />
+            <StatusMetric label="Documents" value={statusLabel(checklist.document_status)} tone={documentTone(checklist.document_status)} />
+            <StatusMetric label="Payment setup" value={statusLabel(checklist.payment_setup_status)} tone={paymentSetupTone(checklist.payment_setup_status)} />
+            <StatusMetric label="Collections handoff" value={statusLabel(checklist.collections_handoff_status)} tone={handoffTone(checklist.collections_handoff_status)} />
+            <StatusMetric label="Assigned" value={adminProfileLabelById(adminProfiles, checklist.assigned_to)} tone="gray" />
+          </div>
+          <RecommendedActions checklist={checklist} tasks={tasks} />
+          {canWrite ? (
+            <PostSalesChecklistForm
+              checklist={checklist}
+              adminProfiles={adminProfiles}
+              onSubmit={onChecklistUpdate}
+            />
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {canWrite ? <PostSalesTaskForm adminProfiles={adminProfiles} checklist={checklist} onSubmit={onTaskCreate} /> : null}
+      <PostSalesTasksCard tasks={tasks} canWrite={canWrite} onUpdate={onTaskUpdate} />
+      <PostSalesTimeline activities={activities} />
+    </div>
+  );
+}
+
+function StatusMetric({ label, value, tone }: { label: string; value: string; tone: BadgeTone }) {
+  return (
+    <div className="crm-subpanel">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <div className="mt-2"><Badge tone={tone}>{value}</Badge></div>
+    </div>
+  );
+}
+
+function RecommendedActions({ checklist, tasks }: { checklist: PostSalesChecklist; tasks: PostSalesTask[] }) {
+  return (
+    <SmartInsightsPanel
+      title="Recommended Actions"
+      description="Rule-based post-sales guidance. No records are changed from this panel."
+      insights={postSalesRecommendedInsights(checklist, tasks)}
+      compact
+    />
+  );
+}
+
+function PostSalesChecklistForm({
+  checklist,
+  adminProfiles,
+  onSubmit,
+}: {
+  checklist: PostSalesChecklist;
+  adminProfiles: Array<{ user_id: string; full_name: string | null; email: string | null }>;
+  onSubmit: (values: PostSalesChecklistFormValues) => void;
+}) {
+  const [values, setValues] = useState<PostSalesChecklistFormValues>(() => checklistToFormValues(checklist));
+
+  function setField<K extends keyof PostSalesChecklistFormValues>(key: K, value: PostSalesChecklistFormValues[K]) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <form className="grid gap-4 rounded-md border border-primary/10 bg-primary-soft/40 p-4" onSubmit={(event) => { event.preventDefault(); onSubmit(values); }}>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Checklist status">
+          <Select value={values.status} onChange={(event) => setField("status", event.target.value as PostSalesChecklistStatus)}>
+            {checklistStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Agreement status">
+          <Select value={values.agreement_status} onChange={(event) => setField("agreement_status", event.target.value as PostSalesAgreementStatus)}>
+            {agreementStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Document status">
+          <Select value={values.document_status} onChange={(event) => setField("document_status", event.target.value as PostSalesDocumentStatus)}>
+            {documentStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Payment setup">
+          <Select value={values.payment_setup_status} onChange={(event) => setField("payment_setup_status", event.target.value as PostSalesPaymentSetupStatus)}>
+            {paymentSetupStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Collections handoff">
+          <Select value={values.collections_handoff_status} onChange={(event) => setField("collections_handoff_status", event.target.value as PostSalesHandoffStatus)}>
+            {handoffStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Assigned">
+          <Select value={values.assigned_to} onChange={(event) => setField("assigned_to", event.target.value)}>
+            <option value="">Unassigned</option>
+            {adminProfiles.map((profile) => <option key={profile.user_id} value={profile.user_id}>{adminProfileLabel(profile)}</option>)}
+          </Select>
+        </Field>
+      </div>
+      <Field label="Checklist notes">
+        <Textarea value={values.notes} onChange={(event) => setField("notes", event.target.value)} />
+      </Field>
+      <Button type="submit" variant="outline">Save Post-Sales Checklist</Button>
+    </form>
+  );
+}
+
+function PostSalesTaskForm({
+  adminProfiles,
+  checklist,
+  onSubmit,
+}: {
+  adminProfiles: Array<{ user_id: string; full_name: string | null; email: string | null }>;
+  checklist: PostSalesChecklist;
+  onSubmit: (values: PostSalesTaskFormValues) => void;
+}) {
+  const [values, setValues] = useState<PostSalesTaskFormValues>({
+    title: "",
+    description: "",
+    task_type: "general",
+    priority: "normal",
+    due_at: "",
+    assigned_to: checklist.assigned_to ?? "",
+  });
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSubmit(values);
+    setValues({ title: "", description: "", task_type: "general", priority: "normal", due_at: "", assigned_to: checklist.assigned_to ?? "" });
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>New Post-Sales Task</CardTitle></CardHeader>
+      <CardContent>
+        <form className="grid gap-3" onSubmit={submit}>
+          <Field label="Task title"><Input value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} required /></Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Task type">
+              <Select value={values.task_type} onChange={(event) => setValues({ ...values, task_type: event.target.value as PostSalesTaskType })}>
+                {postSalesTaskTypes.map((type) => <option key={type} value={type}>{statusLabel(type)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Priority">
+              <Select value={values.priority} onChange={(event) => setValues({ ...values, priority: event.target.value as PostSalesTaskPriority })}>
+                {postSalesTaskPriorities.map((priority) => <option key={priority} value={priority}>{statusLabel(priority)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Due">
+              <Input type="datetime-local" value={values.due_at} onChange={(event) => setValues({ ...values, due_at: event.target.value })} />
+            </Field>
+            <Field label="Assigned">
+              <Select value={values.assigned_to} onChange={(event) => setValues({ ...values, assigned_to: event.target.value })}>
+                <option value="">Unassigned</option>
+                {adminProfiles.map((profile) => <option key={profile.user_id} value={profile.user_id}>{adminProfileLabel(profile)}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <Field label="Description"><Textarea value={values.description} onChange={(event) => setValues({ ...values, description: event.target.value })} /></Field>
+          <Button type="submit">Create Post-Sales Task</Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PostSalesTasksCard({
+  tasks,
+  canWrite,
+  onUpdate,
+}: {
+  tasks: PostSalesTask[];
+  canWrite: boolean;
+  onUpdate: (task: PostSalesTask, status: PostSalesTaskStatus) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader><CardTitle>Post-Sales Tasks</CardTitle></CardHeader>
+      <CardContent className="grid gap-3">
+        {tasks.length === 0 ? <p className="text-sm text-muted-foreground">No post-sales tasks recorded.</p> : null}
+        {tasks.map((task) => (
+          <div key={task.id} className="grid gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="break-words font-medium text-primary">{task.title}</p>
+                <p className="text-muted-foreground">{statusLabel(task.task_type)} | {task.due_at ? formatDate(task.due_at) : "No due date"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge tone={taskStatusTone(task.status)}>{statusLabel(task.status)}</Badge>
+                <Badge tone={priorityTone(task.priority)}>{statusLabel(task.priority)}</Badge>
+              </div>
+            </div>
+            {task.description ? <p className="break-words text-muted-foreground">{task.description}</p> : null}
+            {canWrite && !["completed", "cancelled"].includes(task.status) ? (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" className="h-9" onClick={() => onUpdate(task, "completed")}>Complete</Button>
+                {task.status !== "blocked" ? <Button type="button" variant="outline" className="h-9" onClick={() => onUpdate(task, "blocked")}>Block</Button> : null}
+                <Button type="button" variant="ghost" className="h-9" onClick={() => onUpdate(task, "cancelled")}>Cancel</Button>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PostSalesTimeline({ activities }: { activities: PostSalesActivity[] }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle>Post-Sales Timeline</CardTitle></CardHeader>
+      <CardContent className="grid gap-3">
+        {activities.length === 0 ? <p className="text-sm text-muted-foreground">No post-sales activity has been recorded yet.</p> : null}
+        {activities.map((activity) => (
+          <div key={activity.id} className="rounded-md border-l-4 border-primary/30 bg-muted p-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="break-words font-medium text-primary">{activity.title}</p>
+              <Badge tone="gray">{statusLabel(activity.activity_type)}</Badge>
+            </div>
+            {activity.description ? <p className="mt-2 break-words text-muted-foreground">{activity.description}</p> : null}
+            <p className="mt-2 text-xs text-muted-foreground">{formatDate(activity.created_at)}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1142,6 +1735,133 @@ function leadTone(stage: Lead["pipeline_stage"]): BadgeTone {
 
 function statusLabel(status: string) {
   return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function checklistToFormValues(checklist: PostSalesChecklist): PostSalesChecklistFormValues {
+  return {
+    status: checklist.status,
+    agreement_status: checklist.agreement_status,
+    document_status: checklist.document_status,
+    collections_handoff_status: checklist.collections_handoff_status,
+    payment_setup_status: checklist.payment_setup_status,
+    assigned_to: checklist.assigned_to ?? "",
+    notes: checklist.notes ?? "",
+  };
+}
+
+function checklistStatusChanges(checklist: PostSalesChecklist, values: PostSalesChecklistFormValues) {
+  const changes: Array<{ activityType: PostSalesActivityType; title: string; description: string }> = [];
+  if (checklist.status !== values.status) {
+    changes.push({
+      activityType: values.status === "blocked" ? "blocked" : checklist.status === "blocked" ? "unblocked" : "status_change",
+      title: "Checklist status updated",
+      description: `${statusLabel(checklist.status)} to ${statusLabel(values.status)}`,
+    });
+  }
+  if (checklist.agreement_status !== values.agreement_status) {
+    changes.push({
+      activityType: "agreement_status_change",
+      title: "Agreement readiness updated",
+      description: `${statusLabel(checklist.agreement_status)} to ${statusLabel(values.agreement_status)}`,
+    });
+  }
+  if (checklist.document_status !== values.document_status) {
+    changes.push({
+      activityType: "document_status_change",
+      title: "Document readiness updated",
+      description: `${statusLabel(checklist.document_status)} to ${statusLabel(values.document_status)}`,
+    });
+  }
+  if (checklist.collections_handoff_status !== values.collections_handoff_status) {
+    changes.push({
+      activityType: "collections_handoff",
+      title: "Collections handoff updated",
+      description: `${statusLabel(checklist.collections_handoff_status)} to ${statusLabel(values.collections_handoff_status)}`,
+    });
+  }
+  if (checklist.payment_setup_status !== values.payment_setup_status) {
+    changes.push({
+      activityType: "payment_setup_status_change",
+      title: "Payment setup updated",
+      description: `${statusLabel(checklist.payment_setup_status)} to ${statusLabel(values.payment_setup_status)}`,
+    });
+  }
+  if (changes.length === 0 && checklist.notes !== (values.notes.trim() || null)) {
+    changes.push({
+      activityType: "note",
+      title: "Post-sales notes updated",
+      description: values.notes.trim() || "Notes cleared.",
+    });
+  }
+  return changes;
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function daysSince(value: string) {
+  return (Date.now() - new Date(value).getTime()) / 86_400_000;
+}
+
+function adminProfileLabelById(profiles: Array<{ user_id: string; full_name: string | null; email: string | null }>, id: string | null) {
+  if (!id) return "Unassigned";
+  return adminProfileLabel(profiles.find((profile) => profile.user_id === id) ?? { full_name: null, email: id });
+}
+
+function postSalesStatusTone(status: PostSalesChecklistStatus): BadgeTone {
+  if (status === "completed") return "green";
+  if (status === "blocked") return "red";
+  if (status === "in_progress") return "blue";
+  return "gray";
+}
+
+function agreementTone(status: PostSalesAgreementStatus): BadgeTone {
+  if (status === "signed") return "green";
+  if (status === "blocked") return "red";
+  if (status === "ready_for_review") return "amber";
+  if (status === "drafting" || status === "sent_for_signature") return "blue";
+  return "gray";
+}
+
+function documentTone(status: PostSalesDocumentStatus): BadgeTone {
+  if (status === "complete") return "green";
+  if (status === "blocked") return "red";
+  if (status === "missing_documents") return "amber";
+  if (status === "pending_review") return "blue";
+  return "gray";
+}
+
+function handoffTone(status: PostSalesHandoffStatus): BadgeTone {
+  if (status === "handed_off") return "green";
+  if (status === "blocked") return "red";
+  if (status === "ready") return "amber";
+  return "gray";
+}
+
+function paymentSetupTone(status: PostSalesPaymentSetupStatus): BadgeTone {
+  if (status === "active") return "green";
+  if (status === "blocked") return "red";
+  if (status === "pending") return "amber";
+  if (status === "ready") return "blue";
+  return "gray";
+}
+
+function taskStatusTone(status: PostSalesTaskStatus): BadgeTone {
+  if (status === "completed") return "green";
+  if (status === "blocked") return "red";
+  if (status === "in_progress") return "blue";
+  if (status === "cancelled") return "gray";
+  return "amber";
+}
+
+function priorityTone(priority: PostSalesTaskPriority): BadgeTone {
+  if (priority === "urgent") return "red";
+  if (priority === "high") return "amber";
+  if (priority === "low") return "gray";
+  return "blue";
 }
 
 function reservationTone(status: LotReservation["status"]): BadgeTone {
