@@ -121,6 +121,18 @@ export type PostSalesAgreementStatus =
 export type PostSalesDocumentStatus = "not_started" | "missing_documents" | "pending_review" | "complete" | "blocked";
 export type PostSalesHandoffStatus = "not_started" | "ready" | "handed_off" | "blocked";
 export type PostSalesPaymentSetupStatus = "not_started" | "pending" | "ready" | "active" | "blocked";
+export type PostSalesAiReadinessStatus =
+  | "not_started"
+  | "in_progress"
+  | "missing_documents"
+  | "agreement_review"
+  | "signature_pending"
+  | "payment_setup_pending"
+  | "collections_ready"
+  | "blocked"
+  | "ready"
+  | "completed"
+  | "unknown";
 export type PostSalesActivityType =
   | "note"
   | "task_created"
@@ -571,6 +583,30 @@ export type LeadAiSummary = {
   updated_at: string;
 };
 
+export type PostSalesAiSummary = {
+  id: string;
+  checklist_id: string;
+  customer_id: number | null;
+  application_id: number | null;
+  contract_id: number | null;
+  lead_id: string | null;
+  reservation_id: string | null;
+  summary: string;
+  readiness_status: PostSalesAiReadinessStatus | null;
+  key_blockers: unknown[];
+  missing_information: unknown[];
+  recommended_actions: unknown[];
+  next_best_action: string | null;
+  confidence_notes: string | null;
+  source_snapshot: Record<string, unknown> | null;
+  model: string | null;
+  provider: string | null;
+  generated_by: string | null;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type BriefActionItem = {
   id: number;
   brief_id: number | null;
@@ -804,6 +840,11 @@ export type Database = {
         Row: LeadAiSummary;
         Insert: Omit<LeadAiSummary, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<LeadAiSummary, "id" | "created_at" | "updated_at">>;
+      };
+      post_sales_ai_summaries: {
+        Row: PostSalesAiSummary;
+        Insert: Omit<PostSalesAiSummary, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<PostSalesAiSummary, "id" | "created_at" | "updated_at">>;
       };
       brief_action_items: {
         Row: BriefActionItem;

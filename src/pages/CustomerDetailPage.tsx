@@ -30,6 +30,8 @@ import type {
   PaymentRequestStatus,
   PostSalesActivity,
   PostSalesActivityType,
+  PostSalesAiReadinessStatus,
+  PostSalesAiSummary,
   PostSalesAgreementStatus,
   PostSalesChecklist,
   PostSalesChecklistStatus,
@@ -107,6 +109,7 @@ export function CustomerDetailPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [generatingPostSalesSummaryId, setGeneratingPostSalesSummaryId] = useState<string | null>(null);
   const { data: sessionProfile } = useQuery({
     queryKey: ["session-profile"],
     queryFn: getSessionAndProfile,
@@ -227,6 +230,19 @@ export function CustomerDetailPage() {
     },
     enabled: Number.isFinite(customerId),
   });
+  const { data: postSalesAiSummaries } = useQuery({
+    queryKey: ["customer-post-sales-ai-summaries", customerId],
+    queryFn: async () => {
+      const { data: summaries, error: queryError } = await supabase
+        .from("post_sales_ai_summaries")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("generated_at", { ascending: false });
+      if (queryError) throw queryError;
+      return summaries as PostSalesAiSummary[];
+    },
+    enabled: Number.isFinite(customerId),
+  });
 
   const landPayments =
     data?.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
@@ -241,6 +257,9 @@ export function CustomerDetailPage() {
   const latestReservation = relatedReservations?.[0] ?? null;
   const activeCustomerContract = data ? activeContract(data.contracts ?? []) : null;
   const latestPostSalesChecklist = postSalesChecklists?.[0] ?? null;
+  const latestPostSalesAiSummary = latestPostSalesChecklist
+    ? latestPostSalesSummary(postSalesAiSummaries ?? [], latestPostSalesChecklist.id)
+    : null;
   const generatedByProfile = latestAiSummary?.generated_by
     ? adminProfiles?.find((profile) => profile.user_id === latestAiSummary.generated_by) ?? null
     : null;
@@ -282,6 +301,26 @@ export function CustomerDetailPage() {
     }
     setToast(String(result?.message ?? "Customer AI summary generated."));
     await queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
+  }
+
+  async function generatePostSalesSummary(checklistId: string) {
+    setActionError(null);
+    setToast(null);
+    setGeneratingPostSalesSummaryId(checklistId);
+    const { data: result, error: functionError } = await supabase.functions.invoke("generate-post-sales-summary", {
+      body: { checklist_id: checklistId },
+    });
+    setGeneratingPostSalesSummaryId(null);
+    if (functionError) {
+      setActionError(functionError.message);
+      return;
+    }
+    if (result?.error) {
+      setActionError(String(result.error));
+      return;
+    }
+    setToast(String(result?.message ?? "Post-Sales Smart Summary generated."));
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-ai-summaries", customerId] });
   }
 
   async function copyFollowUpMessage(message: string) {
@@ -513,12 +552,17 @@ export function CustomerDetailPage() {
                   checklist={latestPostSalesChecklist}
                   tasks={postSalesTasks ?? []}
                   activities={postSalesActivities ?? []}
+                  summary={latestPostSalesAiSummary}
                   adminProfiles={adminProfiles ?? []}
                   canWrite={canWritePostSales}
+                  canGenerateSummary={canWritePostSales}
+                  aiEnabled={Boolean(aiSettings?.is_enabled)}
+                  generatingSummary={Boolean(latestPostSalesChecklist && generatingPostSalesSummaryId === latestPostSalesChecklist.id)}
                   onStart={() => void startPostSalesChecklist()}
                   onChecklistUpdate={(values) => latestPostSalesChecklist ? void updatePostSalesChecklist(latestPostSalesChecklist, values) : undefined}
                   onTaskCreate={(values) => void createPostSalesTask(values)}
                   onTaskUpdate={(task, status) => void updatePostSalesTaskStatus(task, status)}
+                  onGenerateSummary={(checklistId) => void generatePostSalesSummary(checklistId)}
                 />
               ) : null}
               {activeSection === "Contract" ? <ContractSection contracts={data.contracts ?? []} /> : null}
@@ -817,22 +861,32 @@ function PostSalesSection({
   checklist,
   tasks,
   activities,
+  summary,
   adminProfiles,
   canWrite,
+  canGenerateSummary,
+  aiEnabled,
+  generatingSummary,
   onStart,
   onChecklistUpdate,
   onTaskCreate,
   onTaskUpdate,
+  onGenerateSummary,
 }: {
   checklist: PostSalesChecklist | null;
   tasks: PostSalesTask[];
   activities: PostSalesActivity[];
+  summary: PostSalesAiSummary | null;
   adminProfiles: Array<{ user_id: string; full_name: string | null; email: string | null }>;
   canWrite: boolean;
+  canGenerateSummary: boolean;
+  aiEnabled: boolean;
+  generatingSummary: boolean;
   onStart: () => void;
   onChecklistUpdate: (values: PostSalesChecklistFormValues) => void;
   onTaskCreate: (values: PostSalesTaskFormValues) => void;
   onTaskUpdate: (task: PostSalesTask, status: PostSalesTaskStatus) => void;
+  onGenerateSummary: (checklistId: string) => void;
 }) {
   if (!checklist) {
     return (
@@ -855,6 +909,13 @@ function PostSalesSection({
 
   return (
     <div className="grid gap-4">
+      <PostSalesSmartSummaryPanel
+        summary={summary}
+        aiEnabled={aiEnabled}
+        canGenerate={canGenerateSummary}
+        generating={generatingSummary}
+        onGenerate={() => onGenerateSummary(checklist.id)}
+      />
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -887,6 +948,102 @@ function PostSalesSection({
       {canWrite ? <PostSalesTaskForm adminProfiles={adminProfiles} checklist={checklist} onSubmit={onTaskCreate} /> : null}
       <PostSalesTasksCard tasks={tasks} canWrite={canWrite} onUpdate={onTaskUpdate} />
       <PostSalesTimeline activities={activities} />
+    </div>
+  );
+}
+
+function PostSalesSmartSummaryPanel({
+  summary,
+  aiEnabled,
+  canGenerate,
+  generating,
+  onGenerate,
+}: {
+  summary: PostSalesAiSummary | null;
+  aiEnabled: boolean;
+  canGenerate: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  const blockers = stringList(summary?.key_blockers);
+  const missing = stringList(summary?.missing_information);
+  const actions = stringList(summary?.recommended_actions);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Post-Sales Smart Summary</CardTitle>
+          <CardDescription className="mt-1 text-xs">
+            This summary is generated from Wamule CRM data to support staff review. Staff should verify details before making decisions.
+          </CardDescription>
+        </div>
+        {summary?.readiness_status ? (
+          <Badge tone={postSalesAiReadinessTone(summary.readiness_status)}>{statusLabel(summary.readiness_status)}</Badge>
+        ) : (
+          <Badge tone="gray">Not generated</Badge>
+        )}
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {summary ? (
+          <>
+            <div className="crm-info-panel break-words p-3 text-sm leading-6">
+              {safeString(summary.summary, "No summary text recorded.")}
+            </div>
+            <PostSalesSummaryList title="Blockers" items={blockers} empty="No blockers listed." tone="red" />
+            <PostSalesSummaryList title="Missing Information" items={missing} empty="No missing information listed." tone="amber" />
+            <PostSalesSummaryList title="Recommended Actions" items={actions} empty="No recommended actions listed." tone="blue" />
+            {summary.next_best_action ? (
+              <div className="crm-subpanel text-sm">
+                <p className="font-semibold text-primary">Next Best Action</p>
+                <p className="mt-1 break-words text-muted-foreground">{summary.next_best_action}</p>
+              </div>
+            ) : null}
+            {summary.confidence_notes ? (
+              <div className="crm-subpanel text-sm">
+                <p className="font-semibold text-primary">Confidence Notes</p>
+                <p className="mt-1 break-words text-muted-foreground">{summary.confidence_notes}</p>
+              </div>
+            ) : null}
+            <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+              <span className="break-words">Generated: {safeFormatDate(summary.generated_at)}</span>
+              <span className="break-words">Provider: {safeString(summary.provider, "Not recorded")}</span>
+              <span className="break-words">Model: {safeString(summary.model, "Not recorded")}</span>
+            </div>
+          </>
+        ) : (
+          <div className="crm-subpanel text-sm text-muted-foreground">
+            No Post-Sales Smart Summary has been generated for this checklist yet. Rule-based recommended actions remain available below.
+          </div>
+        )}
+        {!aiEnabled ? (
+          <div className="crm-warning-panel p-3 text-sm">
+            AI provider access is disabled. Staff can still generate a deterministic fallback summary from current CRM data.
+          </div>
+        ) : null}
+        {canGenerate ? (
+          <Button type="button" variant={summary ? "outline" : "primary"} disabled={generating} onClick={onGenerate}>
+            <RefreshCw className={cn("h-4 w-4", generating && "animate-spin")} />
+            {generating ? "Generating..." : summary ? "Regenerate Summary" : "Generate Summary"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">You can view summaries but do not have permission to generate them.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PostSalesSummaryList({ title, items, empty, tone }: { title: string; items: string[]; empty: string; tone: BadgeTone }) {
+  return (
+    <div className="grid gap-2 text-sm">
+      <p className="font-semibold text-primary">{title}</p>
+      {items.length ? items.map((item) => (
+        <div key={item} className="flex items-start gap-2 rounded-md border border-border bg-card p-2 shadow-sm shadow-primary/5">
+          <Badge tone={tone}>{title === "Recommended Actions" ? "Action" : "Note"}</Badge>
+          <span className="min-w-0 break-words text-muted-foreground">{item}</span>
+        </div>
+      )) : <p className="text-muted-foreground">{empty}</p>}
     </div>
   );
 }
@@ -1668,6 +1825,12 @@ function latestSummary(summaries: CustomerAiSummary[]) {
   return [...summaries].sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())[0] ?? null;
 }
 
+function latestPostSalesSummary(summaries: PostSalesAiSummary[], checklistId: string) {
+  return summaries
+    .filter((summary) => summary.checklist_id === checklistId)
+    .sort((a, b) => safeDateTime(b.generated_at) - safeDateTime(a.generated_at))[0] ?? null;
+}
+
 function accountStatusTone(status: CustomerAiSummary["account_status"]) {
   if (status === "Good Standing") return "green";
   if (status === "Due Soon") return "amber";
@@ -1689,6 +1852,26 @@ function summaryItemTitle(item: unknown) {
 function summaryItemDetail(item: unknown) {
   const record = summaryItemRecord(item);
   return String(record?.detail ?? record?.description ?? "");
+}
+
+function stringList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function safeString(value: unknown, fallback: string) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function safeDateTime(value: unknown) {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function safeFormatDate(value: unknown) {
+  const time = safeDateTime(value);
+  return time ? formatDate(new Date(time).toISOString()) : "Not recorded";
 }
 
 function totalAmount(rows: Array<{ amount: number }>) {
@@ -1847,6 +2030,14 @@ function paymentSetupTone(status: PostSalesPaymentSetupStatus): BadgeTone {
   if (status === "pending") return "amber";
   if (status === "ready") return "blue";
   return "gray";
+}
+
+function postSalesAiReadinessTone(status: PostSalesAiReadinessStatus): BadgeTone {
+  if (["completed", "ready"].includes(status)) return "green";
+  if (status === "blocked") return "red";
+  if (["missing_documents", "agreement_review", "signature_pending", "payment_setup_pending", "collections_ready"].includes(status)) return "amber";
+  if (status === "not_started" || status === "unknown") return "gray";
+  return "blue";
 }
 
 function taskStatusTone(status: PostSalesTaskStatus): BadgeTone {
