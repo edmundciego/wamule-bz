@@ -791,6 +791,9 @@ function OverviewSection({
         description="Live account guidance from customer, contract, payment, reservation, and post-sales records."
         insights={operationsInsights}
       />
+      <div className="crm-info-panel p-4 text-sm">
+        Post-Sales tracks the operational steps after approval or contract start, including documents, agreement readiness, payment setup, and collections handoff.
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Overview</CardTitle>
@@ -825,7 +828,9 @@ function OverviewSection({
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>Reservation / Deposit Readiness</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">Linked lot hold tracking. Payment ledger remains separate.</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Deposit readiness is status tracking only. Payment records and balances are managed separately in Payments and Collections.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge tone={reservationTone(latestReservation.status)}>{statusLabel(latestReservation.status)}</Badge>
@@ -894,7 +899,7 @@ function PostSalesSection({
         <CardHeader>
           <CardTitle>Post-Sales Automation</CardTitle>
           <CardDescription className="mt-1 text-sm">
-            Track agreement readiness, missing documents, payment setup, collections handoff, and staff-owned tasks after approval or contract start.
+            Post-Sales tracks the operational steps after approval or contract start, including documents, agreement readiness, payment setup, collections handoff, and staff-owned tasks.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -921,7 +926,7 @@ function PostSalesSection({
           <div>
             <CardTitle>Post-Sales Automation</CardTitle>
             <CardDescription className="mt-1 text-sm">
-              Checklist visibility only. Contract, payment, document, and collections systems remain authoritative.
+              Post-Sales tracks operational readiness only. Contract, payment, document, and collections systems remain authoritative.
             </CardDescription>
           </div>
           <Badge tone={postSalesStatusTone(checklist.status)}>{statusLabel(checklist.status)}</Badge>

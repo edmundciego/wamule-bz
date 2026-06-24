@@ -34,6 +34,9 @@ export function LotsPage() {
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {!isLoading && data?.length === 0 ? <EmptyState title="No lots found" detail="Run the Supabase migration to seed the 24 Phase 1 lots." /> : null}
+      <div className="crm-info-panel mb-4 p-4 text-sm">
+        Active Reservation means there is an internal buyer-interest hold for this lot. This does not automatically change the lot's core status.
+      </div>
       <div className="mb-4 flex flex-wrap gap-2">
         <Badge tone="green">Available: {data?.filter((lot) => lot.status === "Available").length ?? 0}</Badge>
         <Badge tone="amber">Reserved: {data?.filter((lot) => lot.status === "Reserved").length ?? 0}</Badge>

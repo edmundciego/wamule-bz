@@ -437,6 +437,9 @@ export function ReportsPage() {
       <PageHeader title="Reports" description="Operational reports and CSV exports for payments, balances, applications, lots, and cleanup items." />
       {isLoading ? <LoadingState label="Loading reports" /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
+      <div className="crm-info-panel mb-6 p-4 text-sm">
+        Reports are read-only summaries for management review. They do not update records or trigger workflow changes.
+      </div>
 
       <div className="crm-tabs mb-6 overflow-x-auto">
         <div className="crm-tab-list">

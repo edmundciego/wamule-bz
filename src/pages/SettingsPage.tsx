@@ -27,7 +27,7 @@ import type {
 const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
 const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
 const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
-const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "AI Settings", "Users & Roles"] as const;
+const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "AI Settings", "Users & Roles"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
 type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
@@ -343,7 +343,7 @@ export function SettingsPage() {
       body: { email, full_name: fullName, role, password: temporaryPassword || undefined },
     });
     setCreatingUser(false);
-    if (functionError) return setUserError(functionError.message);
+    if (functionError) return setUserError(await edgeFunctionErrorMessage(functionError));
     if (result?.error) return setUserError(String(result.error));
     setUserMessage(result?.mode === "invited" ? "User invited and role saved." : result?.mode === "existing" ? "Existing user role updated." : "User created and role saved.");
     setEmail("");
@@ -557,6 +557,8 @@ export function SettingsPage() {
           </ConfigList>
         ) : null}
 
+        {activeSection === "CRM Workflow Guide" ? <WorkflowGuideSection /> : null}
+
         {activeSection === "AI Settings" ? (
           <Card>
             <CardHeader>
@@ -652,6 +654,106 @@ export function SettingsPage() {
   );
 }
 
+function WorkflowGuideSection() {
+  const terms = [
+    {
+      title: "Leads",
+      description: "A Lead is a person who has shown interest in a project or lot but may not yet be an applicant or customer.",
+    },
+    {
+      title: "Follow-ups",
+      description: "A Follow-up is an internal task reminding staff what action should happen next with a lead, applicant, or customer.",
+    },
+    {
+      title: "Site Visits",
+      description: "A Site Visit is an appointment for the buyer to view the project, land, or lot. Site Visits are not the same as reservations.",
+    },
+    {
+      title: "Reservations",
+      description: "A Reservation is an internal lot hold or buyer-interest hold while deposit, application, family decision, or contract next steps are being handled.",
+    },
+    {
+      title: "Deposit Readiness",
+      description: "Deposit Readiness tracks whether a deposit is pending, submitted, confirmed, waived, overdue, or cancelled. It is sales/readiness status only.",
+    },
+    {
+      title: "Applications",
+      description: "An Application is the formal buyer/application record submitted or reviewed by staff.",
+    },
+    {
+      title: "Customers",
+      description: "A Customer is a buyer who has been converted into an active account or contract relationship.",
+    },
+    {
+      title: "Post-Sales",
+      description: "The Post-Sales Checklist tracks operational steps after approval, contract start, or customer setup, including documents, agreement review, payment setup, and collections handoff.",
+    },
+    {
+      title: "Smart Summaries",
+      description: "Smart summaries and insights are staff review aids. They do not make decisions, approve applications, confirm deposits, change contracts, or send messages.",
+    },
+    {
+      title: "Reports",
+      description: "Reports are read-only summaries for management review. They do not update records or trigger workflow changes.",
+    },
+  ];
+  const deferredSettings = [
+    "Default reservation expiry days",
+    "Default deposit due days",
+    "Default expected deposit amount",
+    "Require deposit amount when creating a reservation",
+    "Require expiry date when creating a reservation",
+    "Block active duplicate reservations for the same lot",
+    "Default reservation status",
+    "Default deposit status",
+  ];
+
+  return (
+    <div className="grid gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>CRM Workflow Guide</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="crm-info-panel p-4 text-sm">
+            These terms explain how Wamule tracks the buyer journey. They are operational labels for staff review and do not automate approvals, payments, contracts, or parcel status changes.
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {terms.map((term) => (
+              <div key={term.title} className="crm-subpanel text-sm">
+                <p className="font-medium text-primary">{term.title}</p>
+                <p className="mt-1 text-muted-foreground">{term.description}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Reservation Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="crm-warning-panel p-4 text-sm">
+            Reservation settings are not active yet. A future settings migration should add these CRM workflow defaults before staff can edit them here.
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Reservation settings should control CRM workflow defaults only. They must not automate payments, approvals, contracts, parcel status changes, or deposit confirmation.
+          </p>
+          <div className="grid gap-2 md:grid-cols-2">
+            {deferredSettings.map((setting) => (
+              <div key={setting} className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+                <span className="text-foreground">{setting}</span>
+                <Badge tone="gray">Deferred</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function ConfigList({
   title,
   loading,
@@ -743,6 +845,18 @@ function Toast({ message, onDismiss }: { message: string; onDismiss: () => void 
       <button type="button" className="font-medium" onClick={onDismiss}>Dismiss</button>
     </div>
   );
+}
+
+async function edgeFunctionErrorMessage(error: unknown) {
+  const fallback = error instanceof Error ? error.message : "Edge Function request failed.";
+  const context = (error as { context?: Response | null })?.context;
+  if (!context) return fallback;
+  try {
+    const payload = await context.clone().json() as { error?: unknown; message?: unknown };
+    return String(payload.error ?? payload.message ?? fallback);
+  } catch {
+    return fallback;
+  }
 }
 
 function updateDraft<T>(rows: T[], setRows: (rows: T[]) => void, index: number, updates: Partial<T>) {

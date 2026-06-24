@@ -548,6 +548,9 @@ export function LeadsPage() {
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
       {message ? <div className="crm-success-panel mb-4 p-3 text-sm">{message}</div> : null}
+      <div className="crm-info-panel mb-4 p-4 text-sm">
+        Leads track interested buyers before or during the application and customer process. Follow-ups are internal reminders for the next staff action, and Site Visits are appointments to view a project or lot.
+      </div>
 
       {(creatingLead || editingLead) && canWrite ? (
         <Card className="mb-6">
@@ -572,7 +575,10 @@ export function LeadsPage() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="grid min-w-0 content-start gap-4">
           <Card>
-            <CardHeader><CardTitle>Sales Pipeline</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Sales Pipeline</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">A Lead is a person who has shown interest in a project or lot but may not yet be an applicant or customer.</p>
+            </CardHeader>
             <CardContent className="grid gap-4">
               <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px_180px]">
                 <Field label="Search">
@@ -1014,7 +1020,9 @@ function ReservationsCard({
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>Reservations</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">Lot hold and deposit readiness tracking only.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Reservations are internal lot holds or buyer-interest records. They help the team track serious interest in a specific lot while deposit, application, or contract next steps are handled.
+          </p>
         </div>
         {activeReservation ? <ReservationBadge status={activeReservation.status} /> : <Badge tone="gray">No active hold</Badge>}
       </CardHeader>
@@ -1114,6 +1122,9 @@ function ReservationForm({
 
   return (
     <form className="grid gap-3 rounded-md border border-primary/10 bg-primary-soft/40 p-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); }}>
+      <div className="crm-info-panel p-3 text-sm">
+        Deposit Readiness tracks whether a deposit is pending, submitted, confirmed, waived, overdue, or cancelled. It does not create payments, change balances, confirm proof, or replace the payment ledger.
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Reservation code">
           <Input value={values.reservation_code} onChange={(event) => setField("reservation_code", event.target.value)} placeholder="Optional" />
@@ -1205,7 +1216,10 @@ function TaskForm({ adminProfiles, lead, onSubmit }: { adminProfiles: AdminProfi
   const [values, setValues] = useState<TaskFormValues>({ title: lead.next_action ?? "", description: "", due_at: toDateTimeLocal(lead.next_action_due_at), priority: "normal", assigned_to: lead.assigned_to ?? "" });
   return (
     <Card>
-      <CardHeader><CardTitle>New Follow-up</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>New Follow-up</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">A Follow-up is an internal task reminding staff what action should happen next with a lead, applicant, or customer.</p>
+      </CardHeader>
       <CardContent>
         <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); setValues({ title: "", description: "", due_at: "", priority: "normal", assigned_to: lead.assigned_to ?? "" }); }}>
           <Field label="Title"><Input value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} required /></Field>
@@ -1243,7 +1257,10 @@ function VisitForm({ adminProfiles, lead, onSubmit }: { adminProfiles: AdminProf
   const [values, setValues] = useState<VisitFormValues>({ scheduled_at: "", visit_type: "Site Visit", location: "", notes: "", assigned_to: lead.assigned_to ?? "" });
   return (
     <Card>
-      <CardHeader><CardTitle>Schedule Site Visit</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Schedule Site Visit</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">Site Visits are appointments to view a project or lot. They are separate from reservations.</p>
+      </CardHeader>
       <CardContent>
         <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); setValues({ scheduled_at: "", visit_type: "Site Visit", location: "", notes: "", assigned_to: lead.assigned_to ?? "" }); }}>
           <Field label="Scheduled date/time"><Input type="datetime-local" value={values.scheduled_at} onChange={(event) => setValues({ ...values, scheduled_at: event.target.value })} required /></Field>
@@ -1329,7 +1346,10 @@ function TasksCard({ tasks, canWrite, onUpdate }: { tasks: FollowUpTask[]; canWr
 function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWrite: boolean; onUpdate: (visit: SiteVisit, status: SiteVisitStatus) => void }) {
   return (
     <Card>
-      <CardHeader><CardTitle>Site Visits</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Site Visits</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">Site Visits are viewing appointments and do not hold a lot or confirm buyer readiness.</p>
+      </CardHeader>
       <CardContent className="grid gap-3">
         {visits.length === 0 ? <p className="text-sm text-muted-foreground">No site visits scheduled.</p> : null}
         {visits.map((visit) => (

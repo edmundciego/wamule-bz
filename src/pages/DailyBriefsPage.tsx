@@ -142,6 +142,9 @@ export function DailyBriefsPage() {
             Your role can view daily briefs but cannot generate new briefs.
           </div>
         ) : null}
+        <div className="crm-info-panel p-4 text-sm">
+          The Daily Operations Brief summarizes sales, reservations, applications, post-sales, payments, and recommended priorities for staff review.
+        </div>
 
         {canGenerateBrief ? (
           <Card>

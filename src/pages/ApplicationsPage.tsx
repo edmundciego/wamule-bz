@@ -243,6 +243,9 @@ export function ApplicationsPage() {
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
+      <div className="crm-info-panel mb-4 p-4 text-sm">
+        Applications can be linked to a lead or reservation so staff can track the buyer journey from interest to application review.
+      </div>
       <div className="grid gap-4 lg:grid-cols-3">
         {statuses.map((status) => (
           <section key={status} className="min-w-0">
@@ -416,7 +419,7 @@ function ApplicationLeadLink({
       <div>
         <p className="font-medium text-primary">Sales Pipeline</p>
         <p className="text-xs text-muted-foreground">
-          {lead ? `${lead.full_name} is linked for follow-up.` : "Create a lead when this application needs sales follow-up."}
+          {lead ? `${lead.full_name} is linked for follow-up.` : "Create or link a lead when this application needs sales follow-up."}
         </p>
       </div>
       {lead ? (
@@ -449,7 +452,7 @@ function ApplicationReservationLink({
           {reservation
             ? `Reservation is ${reservationLabel(reservation.status)} with deposit ${depositLabel(reservation.deposit_status)}.`
             : hasLot
-              ? "Create a draft reservation to track hold and deposit readiness."
+              ? "Create a draft reservation to track an internal lot hold and deposit readiness."
               : "Assign or select a lot before creating a reservation hold."}
         </p>
       </div>
