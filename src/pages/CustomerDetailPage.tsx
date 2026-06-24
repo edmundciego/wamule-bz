@@ -108,6 +108,9 @@ export function CustomerDetailPage() {
   const [activeAction, setActiveAction] = useState<ActionModalKind>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [voidContractTarget, setVoidContractTarget] = useState<CustomerContract | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidingContractId, setVoidingContractId] = useState<number | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [generatingPostSalesSummaryId, setGeneratingPostSalesSummaryId] = useState<string | null>(null);
   const { data: sessionProfile } = useQuery({
@@ -251,6 +254,7 @@ export function CustomerDetailPage() {
   const currentRole = sessionProfile?.profile?.role;
   const canWritePostSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const canGenerateAiSummary = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
+  const canVoidContracts = currentRole === "Super Admin" || currentRole === "Admin";
   const collectionsAiEnabled = Boolean(aiSettings?.is_enabled && aiSettings.collections_assistant_enabled);
   const latestAiSummary = latestSummary(data?.customer_ai_summaries ?? []);
   const latestLead = relatedLeads?.[0] ?? null;
@@ -332,6 +336,34 @@ export function CustomerDetailPage() {
     } catch {
       setActionError("Clipboard copy failed in this browser.");
     }
+  }
+
+  async function voidContract() {
+    if (!voidContractTarget) return;
+    const reason = voidReason.trim();
+    if (!reason) {
+      setActionError("Void reason is required.");
+      return;
+    }
+
+    setActionError(null);
+    setToast(null);
+    setVoidingContractId(voidContractTarget.id);
+    const { error } = await supabase.rpc("void_contract", {
+      p_contract_id: voidContractTarget.id,
+      p_void_reason: reason,
+    });
+    setVoidingContractId(null);
+
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+
+    setVoidContractTarget(null);
+    setVoidReason("");
+    setToast("Contract voided and audit event recorded.");
+    await queryClient.invalidateQueries();
   }
 
   async function addPostSalesActivity(activity: {
@@ -565,7 +597,17 @@ export function CustomerDetailPage() {
                   onGenerateSummary={(checklistId) => void generatePostSalesSummary(checklistId)}
                 />
               ) : null}
-              {activeSection === "Contract" ? <ContractSection contracts={data.contracts ?? []} /> : null}
+              {activeSection === "Contract" ? (
+                <ContractSection
+                  contracts={data.contracts ?? []}
+                  canVoid={canVoidContracts}
+                  onVoidRequest={(contract) => {
+                    setActionError(null);
+                    setVoidReason("");
+                    setVoidContractTarget(contract);
+                  }}
+                />
+              ) : null}
               {activeSection === "Payments" ? (
                 <>
                   <Ledger title="Land Payment History" rows={landPayments} />
@@ -659,6 +701,71 @@ export function CustomerDetailPage() {
               onSuccess={() => handleActionSuccess("Payment document uploaded.")}
             />
           </ActionModal>
+
+          <ActionModal
+            title="Void Contract"
+            description="Void a contract that was created by mistake while keeping it visible in customer history."
+            open={Boolean(voidContractTarget)}
+            onClose={() => {
+              if (voidingContractId) return;
+              setVoidContractTarget(null);
+              setVoidReason("");
+            }}
+          >
+            {voidContractTarget ? (
+              <div className="grid gap-4">
+                <div className="crm-warning-panel p-4 text-sm">
+                  <p className="font-semibold text-warning">Review before voiding Contract #{voidContractTarget.id}</p>
+                  <p className="mt-2 leading-6">
+                    Voiding keeps the contract in history and marks it as inactive. It does not delete payments,
+                    receipts, documents, or collection records. Review linked payments and lot status separately if
+                    needed.
+                  </p>
+                  {voidContractTarget.parcels?.lot_number ? (
+                    <p className="mt-2 leading-6">
+                      This contract may have affected Lot {voidContractTarget.parcels.lot_number} status. Review the lot
+                      manually if this was created by mistake.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="grid gap-2 rounded-md border border-border bg-muted/30 p-4 text-sm">
+                  <p className="font-medium text-primary">Contract #{voidContractTarget.id}</p>
+                  <p className="text-muted-foreground">
+                    Lot {voidContractTarget.parcels?.lot_number ?? "N/A"} | Price {money(voidContractTarget.final_purchase_price)}
+                  </p>
+                </div>
+                <Field label="Void reason" error={!voidReason.trim() && voidReason.length > 0 ? "Void reason is required." : undefined}>
+                  <Textarea
+                    value={voidReason}
+                    onChange={(event) => setVoidReason(event.target.value)}
+                    placeholder="Explain why this contract is being voided."
+                    disabled={Boolean(voidingContractId)}
+                  />
+                </Field>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setVoidContractTarget(null);
+                      setVoidReason("");
+                    }}
+                    disabled={Boolean(voidingContractId)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    onClick={() => void voidContract()}
+                    disabled={Boolean(voidingContractId) || !voidReason.trim()}
+                  >
+                    {voidingContractId ? "Voiding..." : "Void Contract"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </ActionModal>
         </div>
       ) : null}
     </>
@@ -691,7 +798,7 @@ function CustomerAccountHeader({
           </p>
         </div>
         <div className="flex max-w-full flex-wrap gap-2">
-          {contract?.is_active ? <Badge tone="green">Active contract</Badge> : <Badge tone="gray">No active contract</Badge>}
+          {contract ? <Badge tone={contractStatusTone(contract)}>{contractStatusLabel(contract)} contract</Badge> : <Badge tone="gray">No active contract</Badge>}
           {lotNumber ? <Badge tone="blue">Lot assigned</Badge> : <Badge tone="amber">No lot assigned</Badge>}
           {remainingBalance > 0 ? <Badge tone="amber">Open balance</Badge> : contract ? <Badge tone="green">Paid in full</Badge> : null}
           {missingReceiptCount > 0 ? <Badge tone="red">{missingReceiptCount} missing receipt #</Badge> : null}
@@ -700,7 +807,7 @@ function CustomerAccountHeader({
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <SummaryCard label="Assigned lot" value={lotNumber ? `Lot ${lotNumber}` : "Not assigned"} />
-        <SummaryCard label="Contract status" value={contract ? (contract.is_active ? "Active" : "Closed") : "No contract"} />
+        <SummaryCard label="Contract status" value={contract ? contractStatusLabel(contract) : "No active contract"} />
         <SummaryCard label="Total paid" value={money(totalPaid)} />
         <SummaryCard label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} />
         <SummaryCard label="Monthly payment" value={contract ? money(contract.monthly_payment) : "N/A"} />
@@ -1291,11 +1398,23 @@ function Ledger({
   );
 }
 
-function ContractSection({ contracts }: { contracts: CustomerContract[] }) {
+function ContractSection({
+  contracts,
+  canVoid,
+  onVoidRequest,
+}: {
+  contracts: CustomerContract[];
+  canVoid: boolean;
+  onVoidRequest: (contract: CustomerContract) => void;
+}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Contract</CardTitle>
+        <CardTitle>Contract History</CardTitle>
+        <CardDescription>
+          Voided contracts remain visible in history. Payments, receipts, documents, collections records, and lot status
+          are reviewed separately.
+        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
         {contracts.length === 0 ? <EmptyState message="No contracts recorded." /> : null}
@@ -1308,7 +1427,14 @@ function ContractSection({ contracts }: { contracts: CustomerContract[] }) {
                   {contract.parcels?.lot_number ? `Lot ${contract.parcels.lot_number}` : "No lot label available"}
                 </p>
               </div>
-              <Badge tone={contract.is_active ? "green" : "gray"}>{contract.is_active ? "Active" : "Closed"}</Badge>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge tone={contractStatusTone(contract)}>{contractStatusLabel(contract)}</Badge>
+                {canVoid && isVoidableContract(contract) ? (
+                  <Button type="button" variant="danger" className="min-h-9 px-3 py-1.5 text-xs" onClick={() => onVoidRequest(contract)}>
+                    Void Contract
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <div className="grid gap-2 text-muted-foreground md:grid-cols-2">
               <span>Price: {money(contract.final_purchase_price)}</span>
@@ -1319,6 +1445,18 @@ function ContractSection({ contracts }: { contracts: CustomerContract[] }) {
               <span>Start: {formatDate(contract.start_date)}</span>
             </div>
             <p className="text-muted-foreground">Signed file: {contract.signed_contract_file_path ?? "Not uploaded"}</p>
+            {contract.status === "voided" ? (
+              <div className="rounded-md border border-danger/20 bg-danger/10 p-3 text-sm text-danger">
+                <p className="font-semibold">Voided {safeFormatDate(contract.voided_at)}</p>
+                <p className="mt-1 break-words">{contract.void_reason ?? "No reason recorded."}</p>
+              </div>
+            ) : null}
+            {contract.status === "cancelled" ? (
+              <div className="rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+                <p className="font-semibold text-foreground">Cancelled {safeFormatDate(contract.cancelled_at)}</p>
+                {contract.cancel_reason ? <p className="mt-1 break-words">{contract.cancel_reason}</p> : null}
+              </div>
+            ) : null}
           </div>
         ))}
       </CardContent>
@@ -1424,7 +1562,7 @@ function PaymentRequestForm({
   contracts: CustomerContract[];
   onSuccess: () => void;
 }) {
-  const [contractId, setContractId] = useState(String(contracts.find((contract) => contract.is_active)?.id ?? ""));
+  const [contractId, setContractId] = useState(String(contracts.find((contract) => isVoidableContract(contract))?.id ?? ""));
   const [amountDue, setAmountDue] = useState("");
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("Monthly installment");
@@ -1632,7 +1770,7 @@ function BalanceStatementSection({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatementMetric label="Customer" value={`${customer.first_name} ${customer.last_name}`} />
           <StatementMetric label="Lot" value={assignedLot(customer) ? `Lot ${assignedLot(customer)}` : "N/A"} />
-          <StatementMetric label="Contract summary" value={contract ? `Contract #${contract.id} (${contract.is_active ? "Active" : "Closed"})` : "No contract"} />
+          <StatementMetric label="Contract summary" value={contract ? `Contract #${contract.id} (${contractStatusLabel(contract)})` : "No active contract"} />
           <StatementMetric label="Original purchase price" value={contract ? money(contract.final_purchase_price) : "N/A"} />
           <StatementMetric label="Total paid" value={money(totalPaid)} />
           <StatementMetric label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} />
@@ -1883,8 +2021,26 @@ function totalAmount(rows: Array<{ amount: number }>) {
   return rows.reduce((sum, payment) => sum + Number(payment.amount), 0);
 }
 
+function contractStatusLabel(contract: Pick<Contract, "status" | "is_active">) {
+  if (contract.status === "voided") return "Voided";
+  if (contract.status === "cancelled") return "Cancelled";
+  if (contract.status === "archived") return "Archived";
+  return contract.is_active ? "Active" : "Closed";
+}
+
+function contractStatusTone(contract: Pick<Contract, "status" | "is_active">): BadgeTone {
+  if (contract.status === "voided") return "red";
+  if (contract.status === "cancelled") return "gray";
+  if (contract.status === "archived") return "gray";
+  return contract.is_active ? "green" : "gray";
+}
+
+function isVoidableContract(contract: Pick<Contract, "status" | "is_active">) {
+  return contract.is_active && contract.status === "active";
+}
+
 function activeContract(contracts: CustomerContract[]) {
-  return contracts.find((contract) => contract.is_active) ?? contracts[0] ?? null;
+  return contracts.find((contract) => isVoidableContract(contract)) ?? null;
 }
 
 function nextDueDate(contract: Contract) {

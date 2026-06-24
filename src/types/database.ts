@@ -8,6 +8,7 @@ export type TransactionType =
   | "Garbage Fee"
   | "Road Maintenance";
 export type CollectionMethod = "Cash" | "Online Transfer";
+export type ContractStatus = "active" | "voided" | "cancelled" | "archived";
 export type PaymentDocumentType =
   | "Bank Transfer Proof"
   | "Manual Receipt Photo"
@@ -44,7 +45,8 @@ export type BusinessSettingKey =
   | "company_profile"
   | "public_application"
   | "payment_settings"
-  | "lot_phase";
+  | "lot_phase"
+  | "reservation_workflow_settings";
 export type LeadPipelineStage =
   | "new_lead"
   | "contacted"
@@ -90,6 +92,19 @@ export type DepositStatus =
   | "overdue"
   | "waived"
   | "cancelled";
+
+export type ReservationWorkflowSettings = {
+  default_reservation_expiry_days: number | null;
+  default_deposit_due_days: number | null;
+  default_expected_deposit_amount: number | null;
+  require_expiry_date: boolean;
+  require_expected_deposit_amount: boolean;
+  default_reservation_status: ReservationStatus;
+  default_deposit_status: DepositStatus;
+  prompt_release_alternates_after_deposit_confirmed: boolean;
+  prompt_release_alternates_after_contract_started: boolean;
+  show_reservation_explanations: boolean;
+};
 export type ReservationActivityType =
   | "note"
   | "status_change"
@@ -144,6 +159,35 @@ export type PostSalesActivityType =
   | "payment_setup_status_change"
   | "blocked"
   | "unblocked";
+export type AuditEntityType =
+  | "lead"
+  | "application"
+  | "customer"
+  | "contract"
+  | "payment"
+  | "payment_request"
+  | "parcel"
+  | "reservation"
+  | "post_sales_checklist"
+  | "post_sales_task"
+  | "document"
+  | "ai_summary"
+  | "settings"
+  | "user"
+  | "system";
+export type AuditAction =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "voided"
+  | "cancelled"
+  | "released"
+  | "status_changed"
+  | "assignment_changed"
+  | "generated"
+  | "uploaded"
+  | "reviewed"
+  | "settings_changed";
 
 export type AdminProfile = {
   user_id: string;
@@ -220,6 +264,13 @@ export type Contract = {
   payment_due_day: number;
   signed_contract_file_path: string | null;
   is_active: boolean;
+  status: ContractStatus;
+  void_reason: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  cancel_reason: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -383,6 +434,11 @@ export type ReservationActivity = {
   metadata: Record<string, unknown> | null;
   created_by: string | null;
   created_at: string;
+};
+
+export type ReleaseAlternateReservationsResult = {
+  released_reservation_ids: string[];
+  skipped_reservations: unknown;
 };
 
 export type PostSalesChecklist = {
@@ -669,6 +725,22 @@ export type DeveloperFeedback = {
   updated_at: string;
 };
 
+export type AuditEvent = {
+  id: string;
+  entity_type: AuditEntityType;
+  entity_id: string | null;
+  action: AuditAction;
+  title: string;
+  summary: string | null;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -676,6 +748,12 @@ export type Database = {
         Row: AdminProfile;
         Insert: Omit<AdminProfile, "created_at" | "updated_at">;
         Update: Partial<Omit<AdminProfile, "created_at" | "updated_at">>;
+      };
+      audit_events: {
+        Row: AuditEvent;
+        Insert: Pick<AuditEvent, "entity_type" | "action" | "title"> &
+          Partial<Omit<AuditEvent, "id" | "entity_type" | "action" | "title" | "created_at">>;
+        Update: Partial<Omit<AuditEvent, "id" | "created_at">>;
       };
       parcels: {
         Row: Parcel;
@@ -721,7 +799,32 @@ export type Database = {
       };
       contracts: {
         Row: Contract;
-        Insert: Omit<Contract, "id" | "monthly_payment" | "created_at" | "updated_at">;
+        Insert: Omit<
+          Contract,
+          | "id"
+          | "monthly_payment"
+          | "status"
+          | "void_reason"
+          | "voided_at"
+          | "voided_by"
+          | "cancel_reason"
+          | "cancelled_at"
+          | "cancelled_by"
+          | "created_at"
+          | "updated_at"
+        > &
+          Partial<
+            Pick<
+              Contract,
+              | "status"
+              | "void_reason"
+              | "voided_at"
+              | "voided_by"
+              | "cancel_reason"
+              | "cancelled_at"
+              | "cancelled_by"
+            >
+          >;
         Update: Partial<Omit<Contract, "id" | "monthly_payment" | "created_at" | "updated_at">>;
       };
       transactions: {
@@ -888,6 +991,14 @@ export type Database = {
       approve_application: {
         Args: { p_application_id: number; p_parcel_id: number };
         Returns: void;
+      };
+      void_contract: {
+        Args: { p_contract_id: number; p_void_reason: string };
+        Returns: Contract;
+      };
+      release_alternate_reservations: {
+        Args: { p_primary_reservation_id: string; p_reservation_ids: string[]; p_release_reason: string };
+        Returns: ReleaseAlternateReservationsResult[];
       };
     };
   };

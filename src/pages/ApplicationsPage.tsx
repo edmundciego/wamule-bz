@@ -8,6 +8,7 @@ import { Select } from "../components/ui/Field";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
+import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { applicationSmartInsights, activeReservationStatuses } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
@@ -80,6 +81,10 @@ export function ApplicationsPage() {
       if (queryError) throw queryError;
       return reservations as LotReservation[];
     },
+  });
+  const { data: reservationSettings = reservationWorkflowDefaults } = useQuery({
+    queryKey: ["reservation-workflow-settings"],
+    queryFn: fetchReservationWorkflowSettings,
   });
   const { data: postSalesChecklists } = useQuery({
     queryKey: ["application-post-sales-checklists"],
@@ -191,14 +196,28 @@ export function ApplicationsPage() {
       (selectedParcelId && reservation.parcel_id === selectedParcelId && activeReservationStatuses.has(reservation.status))
     );
     if (existingReservation) return;
+    const expiresAt = futureIsoFromDays(reservationSettings.default_reservation_expiry_days);
+    const depositDueAt = futureIsoFromDays(reservationSettings.default_deposit_due_days);
+    const expectedDepositAmount = reservationSettings.default_expected_deposit_amount;
+    if (reservationSettings.require_expiry_date && !expiresAt) {
+      setActionError("Reservation settings require an expiry date, but no default expiry days are configured.");
+      return;
+    }
+    if (reservationSettings.require_expected_deposit_amount && expectedDepositAmount === null) {
+      setActionError("Reservation settings require an expected deposit amount, but no default amount is configured.");
+      return;
+    }
     const { data: reservation, error: insertError } = await supabase
       .from("lot_reservations")
       .insert({
         lead_id: linkedLead?.id ?? null,
         application_id: application.id,
         parcel_id: selectedParcelId,
-        status: "draft",
-        deposit_status: "not_requested",
+        status: reservationSettings.default_reservation_status,
+        deposit_status: reservationSettings.default_deposit_status,
+        expected_deposit_amount: expectedDepositAmount,
+        deposit_due_at: depositDueAt,
+        expires_at: expiresAt,
         reserved_at: new Date().toISOString(),
         notes: `Created from application for ${(application.applicant_full_name ?? `${application.first_name} ${application.last_name}`).trim() || `Application #${application.id}`}.`,
       })

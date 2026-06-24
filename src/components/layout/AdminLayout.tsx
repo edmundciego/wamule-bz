@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileText,
   HandCoins,
+  History,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -38,6 +39,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
   { href: "/payments", label: "Payments", icon: CreditCard },
   { href: "/collections", label: "Collections", icon: HandCoins },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/audit-trail", label: "Audit Trail", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

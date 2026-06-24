@@ -86,32 +86,42 @@ Lightweight helper copy was added to:
 
 The copy is intended to clarify terms without turning the app into a documentation portal.
 
-## Reservation Settings
+## Reservation Settings Implemented
 
-Reservation settings were reviewed against the current settings patterns.
+Reservation settings are stored in the existing `business_settings` table using the `reservation_workflow_settings` key.
 
-The app has a `business_settings` table and existing settings UI for company and public application settings. However, there is not yet a dedicated reservation settings key, seed, migration, or workflow integration for reservation defaults.
+Admins can manage these settings from Settings > Reservation Settings.
 
-Because the request preferred not forcing a migration, reservation settings were not implemented as active persisted settings in this pass.
-
-## Reservation Settings Deferred
-
-Recommended future reservation settings:
+Implemented settings:
 
 - Default reservation expiry days
 - Default deposit due days
 - Default expected deposit amount
-- Whether deposit amount is required when creating a reservation
 - Whether expiry date is required when creating a reservation
-- Whether active duplicate reservations for the same lot are blocked
+- Whether expected deposit amount is required when creating a reservation
 - Default reservation status
 - Default deposit status
+- Whether to prompt staff to release alternate reservations after deposit is confirmed
+- Whether to prompt staff to release alternate reservations after contract is started
+- Whether to show reservation explanation panels
 
-These settings should control CRM workflow defaults only. They should not automate payments, approvals, contracts, parcel status changes, or deposit confirmation.
+These settings control CRM workflow defaults, prefill values, frontend validation, and staff prompts.
+
+They do not automate payments, approvals, contracts, parcel status changes, reservation release, or deposit confirmation.
+
+## Reservation Settings Deferred
+
+Deferred settings or behavior:
+
+- Strict buyer-level reservation blocking
+- Auto-expiry jobs
+- Auto-release jobs
+- Parcel status automation
+- Server-side mandatory validation tied to settings
 
 ## What Reservation Settings Must Not Do
 
-Future reservation settings must not:
+Reservation settings must not:
 
 - Auto-expire reservations
 - Automatically change parcel status
@@ -126,9 +136,7 @@ Future reservation settings must not:
 
 ## Behavior Boundaries
 
-This pass added explanatory UI and documentation only.
-
-It did not change:
+The workflow explanations and reservation settings do not change:
 
 - Payment behavior or calculations
 - Contract behavior or calculations
@@ -140,4 +148,5 @@ It did not change:
 - Post-sales workflow behavior
 - AI behavior
 - Edge Functions
-- Database schema
+
+Phase D adds a settings seed migration only. It does not add automation or new workflow mutations.

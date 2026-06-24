@@ -3,6 +3,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
 import { ApplicationPage } from "./pages/ApplicationPage";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
+import { AuditTrailPage } from "./pages/AuditTrailPage";
 import { ContractsPage } from "./pages/ContractsPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { CustomerDetailPage } from "./pages/CustomerDetailPage";
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/audit-trail" element={<AuditTrailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

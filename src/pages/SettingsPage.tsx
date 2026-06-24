@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
+import { createAuditEvent } from "../lib/audit";
+import {
+  depositStatusOptions,
+  normalizeReservationWorkflowSettings,
+  reservationStatusOptions,
+  reservationWorkflowDefaults,
+} from "../lib/reservationSettings";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, money } from "../lib/utils";
@@ -22,12 +29,13 @@ import type {
   LotSize,
   PaymentMethod,
   PaymentMethodType,
+  ReservationWorkflowSettings,
 } from "../types/database";
 
 const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
 const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
 const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
-const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "AI Settings", "Users & Roles"] as const;
+const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
 type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
@@ -83,6 +91,7 @@ export function SettingsPage() {
   const [savingSection, setSavingSection] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyProfileSettings>(defaultCompany);
   const [application, setApplication] = useState<PublicApplicationSettings>(defaultApplication);
+  const [reservationSettings, setReservationSettings] = useState<ReservationWorkflowSettings>(reservationWorkflowDefaults);
   const [logoFile, setLogoFile] = useState<PreparedUploadFile | null>(null);
   const [logoStatus, setLogoStatus] = useState<string | null>(null);
   const [paymentMethodsDraft, setPaymentMethodsDraft] = useState<DraftPaymentMethod[]>([]);
@@ -194,6 +203,7 @@ export function SettingsPage() {
     if (!settings) return;
     setCompany({ ...defaultCompany, ...settingValue<CompanyProfileSettings>(settings, "company_profile") });
     setApplication({ ...defaultApplication, ...settingValue<PublicApplicationSettings>(settings, "public_application") });
+    setReservationSettings(normalizeReservationWorkflowSettings(settingValue<ReservationWorkflowSettings>(settings, "reservation_workflow_settings")));
   }, [settings]);
 
   useEffect(() => {
@@ -303,6 +313,39 @@ export function SettingsPage() {
     if (updateError) return setError(updateError.message);
     setToast("AI settings saved.");
     await queryClient.invalidateQueries({ queryKey: ["ai-settings-admin"] });
+  }
+
+  async function saveReservationSettings() {
+    setError(null);
+    setToast(null);
+    setSavingSection("Reservation settings");
+    const previousSettings = normalizeReservationWorkflowSettings(settingValue<ReservationWorkflowSettings>(settings ?? [], "reservation_workflow_settings"));
+    const cleanedSettings = normalizeReservationWorkflowSettings(reservationSettings);
+    const { data: session } = await supabase.auth.getSession();
+    const { error: upsertError } = await supabase.from("business_settings").upsert({
+      key: "reservation_workflow_settings",
+      value: cleanedSettings,
+      updated_by: session.session?.user.id ?? null,
+    });
+    setSavingSection(null);
+    if (upsertError) return setError(upsertError.message);
+    setReservationSettings(cleanedSettings);
+    try {
+      await createAuditEvent({
+        entity_type: "settings",
+        action: "settings_changed",
+        title: "Reservation settings updated",
+        summary: "Reservation workflow defaults and staff prompts were updated.",
+        before_data: previousSettings,
+        after_data: cleanedSettings,
+        metadata: { setting_key: "reservation_workflow_settings" },
+      });
+    } catch (auditError) {
+      console.warn("Reservation settings audit event was not recorded", auditError);
+    }
+    setToast("Reservation settings saved.");
+    await queryClient.invalidateQueries({ queryKey: ["business-settings"] });
+    await queryClient.invalidateQueries({ queryKey: ["reservation-workflow-settings"] });
   }
 
   async function saveRows(label: string, table: "payment_methods" | "installment_plans" | "lot_sizes" | "fee_types", rows: Record<string, unknown>[], queryKeys: string[]) {
@@ -559,6 +602,16 @@ export function SettingsPage() {
 
         {activeSection === "CRM Workflow Guide" ? <WorkflowGuideSection /> : null}
 
+        {activeSection === "Reservation Settings" ? (
+          <ReservationSettingsSection
+            settings={reservationSettings}
+            canEdit={canManageConfig}
+            saving={savingSection === "Reservation settings"}
+            onChange={setReservationSettings}
+            onSave={() => void saveReservationSettings()}
+          />
+        ) : null}
+
         {activeSection === "AI Settings" ? (
           <Card>
             <CardHeader>
@@ -697,60 +750,107 @@ function WorkflowGuideSection() {
       description: "Reports are read-only summaries for management review. They do not update records or trigger workflow changes.",
     },
   ];
-  const deferredSettings = [
-    "Default reservation expiry days",
-    "Default deposit due days",
-    "Default expected deposit amount",
-    "Require deposit amount when creating a reservation",
-    "Require expiry date when creating a reservation",
-    "Block active duplicate reservations for the same lot",
-    "Default reservation status",
-    "Default deposit status",
-  ];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>CRM Workflow Guide</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="crm-info-panel p-4 text-sm">
+          These terms explain how Wamule tracks the buyer journey. They are operational labels for staff review and do not automate approvals, payments, contracts, or parcel status changes.
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {terms.map((term) => (
+            <div key={term.title} className="crm-subpanel text-sm">
+              <p className="font-medium text-primary">{term.title}</p>
+              <p className="mt-1 text-muted-foreground">{term.description}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReservationSettingsSection({
+  settings,
+  canEdit,
+  saving,
+  onChange,
+  onSave,
+}: {
+  settings: ReservationWorkflowSettings;
+  canEdit: boolean;
+  saving: boolean;
+  onChange: (settings: ReservationWorkflowSettings) => void;
+  onSave: () => void;
+}) {
+  function setSetting<K extends keyof ReservationWorkflowSettings>(key: K, value: ReservationWorkflowSettings[K]) {
+    onChange({ ...settings, [key]: value });
+  }
 
   return (
-    <div className="grid gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>CRM Workflow Guide</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="crm-info-panel p-4 text-sm">
-            These terms explain how Wamule tracks the buyer journey. They are operational labels for staff review and do not automate approvals, payments, contracts, or parcel status changes.
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {terms.map((term) => (
-              <div key={term.title} className="crm-subpanel text-sm">
-                <p className="font-medium text-primary">{term.title}</p>
-                <p className="mt-1 text-muted-foreground">{term.description}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Reservation Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="crm-warning-panel p-4 text-sm">
-            Reservation settings are not active yet. A future settings migration should add these CRM workflow defaults before staff can edit them here.
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Reservation settings should control CRM workflow defaults only. They must not automate payments, approvals, contracts, parcel status changes, or deposit confirmation.
-          </p>
-          <div className="grid gap-2 md:grid-cols-2">
-            {deferredSettings.map((setting) => (
-              <div key={setting} className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
-                <span className="text-foreground">{setting}</span>
-                <Badge tone="gray">Deferred</Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Reservation Settings</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="crm-info-panel p-4 text-sm">
+          Reservation settings control CRM workflow defaults and staff prompts. They do not automate payments, approvals,
+          contracts, lot status, or releases.
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <OptionalNumberInput
+            label="Default reservation expiry days"
+            value={settings.default_reservation_expiry_days}
+            disabled={!canEdit}
+            onChange={(value) => setSetting("default_reservation_expiry_days", value)}
+          />
+          <OptionalNumberInput
+            label="Default deposit due days"
+            value={settings.default_deposit_due_days}
+            disabled={!canEdit}
+            onChange={(value) => setSetting("default_deposit_due_days", value)}
+          />
+          <OptionalNumberInput
+            label="Default expected deposit amount"
+            value={settings.default_expected_deposit_amount}
+            disabled={!canEdit}
+            step="0.01"
+            onChange={(value) => setSetting("default_expected_deposit_amount", value)}
+          />
+          <Field label="Default reservation status">
+            <Select
+              value={settings.default_reservation_status}
+              disabled={!canEdit}
+              onChange={(event) => setSetting("default_reservation_status", event.target.value as ReservationWorkflowSettings["default_reservation_status"])}
+            >
+              {reservationStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
+            </Select>
+          </Field>
+          <Field label="Default deposit status">
+            <Select
+              value={settings.default_deposit_status}
+              disabled={!canEdit}
+              onChange={(event) => setSetting("default_deposit_status", event.target.value as ReservationWorkflowSettings["default_deposit_status"])}
+            >
+              {depositStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <ToggleField label="Require expiry date when creating a reservation" checked={settings.require_expiry_date} disabled={!canEdit} onChange={(checked) => setSetting("require_expiry_date", checked)} />
+          <ToggleField label="Require expected deposit amount when creating a reservation" checked={settings.require_expected_deposit_amount} disabled={!canEdit} onChange={(checked) => setSetting("require_expected_deposit_amount", checked)} />
+          <ToggleField label="Prompt to release alternates after deposit is confirmed" checked={settings.prompt_release_alternates_after_deposit_confirmed} disabled={!canEdit} onChange={(checked) => setSetting("prompt_release_alternates_after_deposit_confirmed", checked)} />
+          <ToggleField label="Prompt to release alternates after contract is started" checked={settings.prompt_release_alternates_after_contract_started} disabled={!canEdit} onChange={(checked) => setSetting("prompt_release_alternates_after_contract_started", checked)} />
+          <ToggleField label="Show reservation explanation panels" checked={settings.show_reservation_explanations} disabled={!canEdit} onChange={(checked) => setSetting("show_reservation_explanations", checked)} />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          These settings apply to new reservation forms and staff prompts only. Existing reservations are not overwritten.
+        </p>
+        <SectionSaveButton disabled={!canEdit} saving={saving} onClick={onSave} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -830,6 +930,37 @@ function NumberInput({ label, value, disabled, min = 0, max, onChange }: { label
   return (
     <Field label={label}>
       <Input type="number" min={min} max={max} step="0.01" value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))} />
+    </Field>
+  );
+}
+
+function OptionalNumberInput({
+  label,
+  value,
+  disabled,
+  step = "1",
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  disabled: boolean;
+  step?: string;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Input
+        type="number"
+        min="0"
+        step={step}
+        value={value ?? ""}
+        disabled={disabled}
+        placeholder="Not set"
+        onChange={(event) => {
+          const nextValue = event.target.value === "" ? null : Number(event.target.value);
+          onChange(nextValue === null || Number.isFinite(nextValue) ? nextValue : null);
+        }}
+      />
     </Field>
   );
 }

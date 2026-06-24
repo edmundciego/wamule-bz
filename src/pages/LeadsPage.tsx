@@ -10,6 +10,7 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { SmartInsightList, SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { getSessionAndProfile } from "../lib/data";
+import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate, money } from "../lib/utils";
@@ -30,6 +31,7 @@ import type {
   Parcel,
   ReservationActivity,
   ReservationActivityType,
+  ReservationWorkflowSettings,
   ReservationStatus,
   SiteVisit,
   SiteVisitStatus,
@@ -227,6 +229,10 @@ export function LeadsPage() {
       return data as Array<Pick<Parcel, "id" | "lot_number" | "status">>;
     },
   });
+  const { data: reservationSettings = reservationWorkflowDefaults } = useQuery({
+    queryKey: ["reservation-workflow-settings"],
+    queryFn: fetchReservationWorkflowSettings,
+  });
 
   const currentRole = sessionProfile?.profile?.role;
   const canWrite = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
@@ -252,7 +258,7 @@ export function LeadsPage() {
   const selectedActivities = activities?.filter((activity) => activity.lead_id === selectedLead?.id) ?? [];
   const selectedTasks = tasks?.filter((task) => task.lead_id === selectedLead?.id) ?? [];
   const selectedVisits = visits?.filter((visit) => visit.lead_id === selectedLead?.id) ?? [];
-  const selectedReservations = reservations?.filter((reservation) => reservation.lead_id === selectedLead?.id) ?? [];
+  const selectedReservations = reservations?.filter((reservation) => selectedLead && sharesLeadContext(reservation, selectedLead)) ?? [];
   const selectedReservationActivities = reservationActivities?.filter((activity) =>
     selectedReservations.some((reservation) => reservation.id === activity.reservation_id),
   ) ?? [];
@@ -437,6 +443,12 @@ export function LeadsPage() {
       if (patch.expected_deposit_amount !== null && patch.expected_deposit_amount < 0) {
         throw new Error("Expected deposit amount cannot be negative.");
       }
+      if (reservationSettings.require_expiry_date && !patch.expires_at) {
+        throw new Error("Reservation expiry date is required by reservation settings.");
+      }
+      if (reservationSettings.require_expected_deposit_amount && patch.expected_deposit_amount === null) {
+        throw new Error("Expected deposit amount is required by reservation settings.");
+      }
       const { data, error } = await supabase
         .from("lot_reservations")
         .insert({
@@ -505,6 +517,35 @@ export function LeadsPage() {
     } catch (reservationError) {
       setActionError((reservationError as Error).message);
     }
+  }
+
+  async function releaseAlternateReservations(primaryReservationId: string, reservationIds: string[], reason: string) {
+    clearNotices();
+    const releaseReason = reason.trim();
+    if (!releaseReason) {
+      setActionError("Release reason is required.");
+      return false;
+    }
+    if (reservationIds.length === 0) {
+      setActionError("Select at least one alternate reservation to release.");
+      return false;
+    }
+
+    const { data, error } = await supabase.rpc("release_alternate_reservations", {
+      p_primary_reservation_id: primaryReservationId,
+      p_reservation_ids: reservationIds,
+      p_release_reason: releaseReason,
+    });
+    if (error) {
+      setActionError(error.message);
+      return false;
+    }
+
+    const result = Array.isArray(data) ? data[0] : null;
+    const releasedCount = result?.released_reservation_ids?.length ?? 0;
+    setMessage(releasedCount > 0 ? `${releasedCount} alternate reservation${releasedCount === 1 ? "" : "s"} released.` : "No alternate reservations were released.");
+    await refreshSalesData();
+    return true;
   }
 
   async function addReservationActivity(reservationId: string, activityType: ReservationActivityType, title: string, description?: string) {
@@ -687,9 +728,11 @@ export function LeadsPage() {
                 canWrite={canWrite}
                 onSave={(reservation, values) => reservation ? void updateReservation(reservation, values) : void createReservation(values)}
                 onQuickUpdate={(reservation, status, depositStatus) => void quickUpdateReservation(reservation, status, depositStatus)}
+                onReleaseAlternates={(primaryReservationId, reservationIds, reason) => releaseAlternateReservations(primaryReservationId, reservationIds, reason)}
                 adminProfiles={adminProfiles ?? []}
                 parcels={parcels ?? []}
                 lead={selectedLead}
+                reservationSettings={reservationSettings}
               />
               {canWrite ? (
                 <>
@@ -997,9 +1040,11 @@ function ReservationsCard({
   canWrite,
   onSave,
   onQuickUpdate,
+  onReleaseAlternates,
   adminProfiles,
   parcels,
   lead,
+  reservationSettings,
 }: {
   reservations: ReservationWithRelations[];
   tasks: FollowUpTask[];
@@ -1007,13 +1052,47 @@ function ReservationsCard({
   canWrite: boolean;
   onSave: (reservation: ReservationWithRelations | null, values: ReservationFormValues) => void;
   onQuickUpdate: (reservation: ReservationWithRelations, status: ReservationStatus, depositStatus?: DepositStatus) => void;
+  onReleaseAlternates: (primaryReservationId: string, reservationIds: string[], reason: string) => Promise<boolean>;
   adminProfiles: AdminProfile[];
   parcels: Array<Pick<Parcel, "id" | "lot_number" | "status">>;
   lead: LeadWithRelations;
+  reservationSettings: ReservationWorkflowSettings;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [releasePrimaryId, setReleasePrimaryId] = useState<string | null>(null);
+  const [releaseSelectedIds, setReleaseSelectedIds] = useState<string[]>([]);
+  const [releaseReason, setReleaseReason] = useState("");
+  const [releaseSubmitting, setReleaseSubmitting] = useState(false);
   const activeReservation = reservations.find((reservation) => activeReservationStatuses.has(reservation.status)) ?? null;
   const editingReservation = reservations.find((reservation) => reservation.id === editingId) ?? null;
+  const releasePrimary = reservations.find((reservation) => reservation.id === releasePrimaryId) ?? null;
+  const releaseAlternates = releasePrimary ? alternateReservationsForPrimary(releasePrimary, reservations) : [];
+
+  function openReleaseAlternates(reservation: ReservationWithRelations) {
+    const alternates = alternateReservationsForPrimary(reservation, reservations);
+    setReleasePrimaryId(reservation.id);
+    setReleaseSelectedIds(alternates.map((alternate) => alternate.id));
+    setReleaseReason("");
+  }
+
+  function toggleReleaseSelection(reservationId: string) {
+    setReleaseSelectedIds((current) =>
+      current.includes(reservationId)
+        ? current.filter((id) => id !== reservationId)
+        : [...current, reservationId],
+    );
+  }
+
+  async function submitReleaseAlternates() {
+    if (!releasePrimary) return;
+    setReleaseSubmitting(true);
+    const success = await onReleaseAlternates(releasePrimary.id, releaseSelectedIds, releaseReason);
+    setReleaseSubmitting(false);
+    if (!success) return;
+    setReleasePrimaryId(null);
+    setReleaseSelectedIds([]);
+    setReleaseReason("");
+  }
 
   return (
     <Card>
@@ -1021,7 +1100,9 @@ function ReservationsCard({
         <div>
           <CardTitle>Reservations</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
-            Reservations are internal lot holds or buyer-interest records. They help the team track serious interest in a specific lot while deposit, application, or contract next steps are handled.
+            {reservationSettings.show_reservation_explanations
+              ? "Reservations are internal lot holds or buyer-interest records. They help the team track serious interest in a specific lot while deposit, application, or contract next steps are handled."
+              : "Internal lot holds and buyer-interest records."}
           </p>
         </div>
         {activeReservation ? <ReservationBadge status={activeReservation.status} /> : <Badge tone="gray">No active hold</Badge>}
@@ -1034,6 +1115,7 @@ function ReservationsCard({
             reservation={null}
             adminProfiles={adminProfiles}
             parcels={parcels}
+            reservationSettings={reservationSettings}
             onSubmit={(values) => onSave(null, values)}
           />
         ) : null}
@@ -1058,9 +1140,13 @@ function ReservationsCard({
               <span>Reserved: {reservation.reserved_at ? formatDate(reservation.reserved_at) : "Not set"}</span>
               <span>Expires: {reservation.expires_at ? formatDate(reservation.expires_at) : "No expiry"}</span>
               <span>Deposit paid: {reservation.deposit_paid_at ? formatDate(reservation.deposit_paid_at) : "Not confirmed"}</span>
+              {reservation.status === "released" ? (
+                <span>Released: {reservation.released_at ? formatDate(reservation.released_at) : "Date not recorded"}</span>
+              ) : null}
               <span>Assigned: {adminLabelById(adminProfiles, reservation.assigned_to)}</span>
             </div>
             {reservation.notes ? <p className="break-words text-muted-foreground">{reservation.notes}</p> : null}
+            <ReservationReleasePrompt reservation={reservation} reservations={reservations} lead={lead} settings={reservationSettings} />
             <ReservationInsights reservation={reservation} tasks={tasks} />
             {canWrite ? (
               <div className="flex flex-wrap gap-2">
@@ -1074,6 +1160,11 @@ function ReservationsCard({
                 ) : null}
                 {activeReservationStatuses.has(reservation.status) ? (
                   <>
+                    {alternateReservationsForPrimary(reservation, reservations).length > 0 ? (
+                      <Button type="button" variant="outline" className="h-9" onClick={() => openReleaseAlternates(reservation)}>
+                        Release other reservations
+                      </Button>
+                    ) : null}
                     <Button type="button" variant="ghost" className="h-9" onClick={() => onQuickUpdate(reservation, "released", "cancelled")}>Release</Button>
                     <Button type="button" variant="ghost" className="h-9" onClick={() => onQuickUpdate(reservation, "cancelled", "cancelled")}>Cancel</Button>
                   </>
@@ -1087,6 +1178,7 @@ function ReservationsCard({
                 reservation={reservation}
                 adminProfiles={adminProfiles}
                 parcels={parcels}
+                reservationSettings={reservationSettings}
                 onSubmit={(values) => {
                   onSave(reservation, values);
                   setEditingId(null);
@@ -1096,6 +1188,84 @@ function ReservationsCard({
             <ReservationActivityList reservation={reservation} activities={activities.filter((activity) => activity.reservation_id === reservation.id)} />
           </div>
         ))}
+        {releasePrimary ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-primary/70 p-4" role="dialog" aria-modal="true">
+            <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+              <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-primary">Release Other Reservations</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Keep {releasePrimary.reservation_code || "this reservation"} {releasePrimary.parcels?.lot_number ? `for Lot ${releasePrimary.parcels.lot_number}` : ""} and release selected alternate holds.
+                  </p>
+                </div>
+                <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setReleasePrimaryId(null)} disabled={releaseSubmitting}>
+                  Close
+                </Button>
+              </div>
+              <div className="max-h-[calc(90vh-96px)] overflow-y-auto p-5">
+                <div className="grid gap-4">
+                  <div className="crm-warning-panel p-4 text-sm">
+                    <p className="font-semibold text-warning">Review selected reservations before releasing.</p>
+                    <p className="mt-2 leading-6">
+                      Releasing a reservation marks this internal lot hold as no longer active. It does not change parcel
+                      status, payments, deposits, contracts, applications, or customer records.
+                    </p>
+                    <p className="mt-2 leading-6">Only release reservations that are no longer being pursued by this buyer.</p>
+                  </div>
+
+                  {releaseAlternates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No active alternate reservations were found for this buyer context.</p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {releaseAlternates.map((alternate) => (
+                        <label key={alternate.id} className="flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4"
+                            checked={releaseSelectedIds.includes(alternate.id)}
+                            onChange={() => toggleReleaseSelection(alternate.id)}
+                            disabled={releaseSubmitting}
+                          />
+                          <span className="min-w-0">
+                            <span className="block break-words font-medium text-primary">
+                              {alternate.reservation_code || "Reservation"} {alternate.parcels?.lot_number ? `- Lot ${alternate.parcels.lot_number}` : ""}
+                            </span>
+                            <span className="mt-1 block text-muted-foreground">
+                              {reservationStatusLabel(alternate.status)} | Deposit {depositStatusLabel(alternate.deposit_status)}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <Field label="Release reason">
+                    <Textarea
+                      value={releaseReason}
+                      onChange={(event) => setReleaseReason(event.target.value)}
+                      placeholder="Example: Buyer confirmed another lot, deposit confirmed for another lot, duplicate/incorrect reservation."
+                      disabled={releaseSubmitting}
+                    />
+                  </Field>
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setReleasePrimaryId(null)} disabled={releaseSubmitting}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => void submitReleaseAlternates()}
+                      disabled={releaseSubmitting || releaseSelectedIds.length === 0 || !releaseReason.trim()}
+                    >
+                      {releaseSubmitting ? "Releasing..." : "Release Selected"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1106,15 +1276,17 @@ function ReservationForm({
   reservation,
   adminProfiles,
   parcels,
+  reservationSettings,
   onSubmit,
 }: {
   lead: LeadWithRelations;
   reservation: ReservationWithRelations | null;
   adminProfiles: AdminProfile[];
   parcels: Array<Pick<Parcel, "id" | "lot_number" | "status">>;
+  reservationSettings: ReservationWorkflowSettings;
   onSubmit: (values: ReservationFormValues) => void;
 }) {
-  const [values, setValues] = useState<ReservationFormValues>(() => reservationToFormValues(reservation, lead));
+  const [values, setValues] = useState<ReservationFormValues>(() => reservationToFormValues(reservation, lead, reservationSettings));
 
   function setField<K extends keyof ReservationFormValues>(key: K, value: ReservationFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -1122,9 +1294,18 @@ function ReservationForm({
 
   return (
     <form className="grid gap-3 rounded-md border border-primary/10 bg-primary-soft/40 p-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); }}>
-      <div className="crm-info-panel p-3 text-sm">
-        Deposit Readiness tracks whether a deposit is pending, submitted, confirmed, waived, overdue, or cancelled. It does not create payments, change balances, confirm proof, or replace the payment ledger.
-      </div>
+      {reservationSettings.show_reservation_explanations ? (
+        <div className="crm-info-panel p-3 text-sm">
+          Deposit Readiness tracks whether a deposit is pending, submitted, confirmed, waived, overdue, or cancelled. It does not create payments, change balances, confirm proof, or replace the payment ledger.
+        </div>
+      ) : null}
+      {!reservation && (reservationSettings.require_expiry_date || reservationSettings.require_expected_deposit_amount) ? (
+        <div className="crm-warning-panel p-3 text-sm">
+          Reservation settings require {reservationSettings.require_expiry_date ? "an expiry date" : ""}
+          {reservationSettings.require_expiry_date && reservationSettings.require_expected_deposit_amount ? " and " : ""}
+          {reservationSettings.require_expected_deposit_amount ? "an expected deposit amount" : ""} before a new reservation can be saved.
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Reservation code">
           <Input value={values.reservation_code} onChange={(event) => setField("reservation_code", event.target.value)} placeholder="Optional" />
@@ -1179,6 +1360,38 @@ function ReservationInsights({ reservation, tasks }: { reservation: LotReservati
   const hasOpenFollowUp = tasks.some((task) => task.status === "open" || task.status === "in_progress");
   return (
     <SmartInsightList insights={reservationReadinessInsights(reservation, hasOpenFollowUp)} compact />
+  );
+}
+
+function ReservationReleasePrompt({
+  reservation,
+  reservations,
+  lead,
+  settings,
+}: {
+  reservation: ReservationWithRelations;
+  reservations: ReservationWithRelations[];
+  lead: LeadWithRelations;
+  settings: ReservationWorkflowSettings;
+}) {
+  if (!activeReservationStatuses.has(reservation.status)) return null;
+
+  const hasAlternates = alternateReservationsForPrimary(reservation, reservations).length > 0;
+  if (!hasAlternates) return null;
+
+  const shouldPromptAfterDeposit =
+    settings.prompt_release_alternates_after_deposit_confirmed &&
+    (reservation.deposit_status === "confirmed" || reservation.status === "deposit_confirmed");
+  const shouldPromptAfterContract =
+    settings.prompt_release_alternates_after_contract_started &&
+    lead.pipeline_stage === "contract_started";
+
+  if (!shouldPromptAfterDeposit && !shouldPromptAfterContract) return null;
+
+  return (
+    <div className="crm-info-panel p-3 text-sm">
+      This buyer has other active reservations. Consider releasing alternates that are no longer being pursued.
+    </div>
   );
 }
 
@@ -1476,17 +1689,20 @@ function normalizeReservationValues(values: ReservationFormValues) {
   };
 }
 
-function reservationToFormValues(reservation: LotReservation | null, lead: Lead): ReservationFormValues {
+function reservationToFormValues(reservation: LotReservation | null, lead: Lead, settings: ReservationWorkflowSettings = reservationWorkflowDefaults): ReservationFormValues {
+  const defaultExpectedDeposit =
+    settings.default_expected_deposit_amount !== null ? String(settings.default_expected_deposit_amount) : "";
+
   return {
     reservation_code: reservation?.reservation_code ?? "",
     parcel_id: reservation?.parcel_id ? String(reservation.parcel_id) : lead.parcel_id ? String(lead.parcel_id) : "",
-    status: reservation?.status ?? "draft",
-    deposit_status: reservation?.deposit_status ?? "not_requested",
-    expected_deposit_amount: reservation?.expected_deposit_amount ? String(reservation.expected_deposit_amount) : "",
-    deposit_due_at: toDateTimeLocal(reservation?.deposit_due_at),
+    status: reservation?.status ?? settings.default_reservation_status,
+    deposit_status: reservation?.deposit_status ?? settings.default_deposit_status,
+    expected_deposit_amount: reservation?.expected_deposit_amount ? String(reservation.expected_deposit_amount) : defaultExpectedDeposit,
+    deposit_due_at: toDateTimeLocal(reservation?.deposit_due_at ?? futureIsoFromDays(settings.default_deposit_due_days)),
     deposit_paid_at: toDateTimeLocal(reservation?.deposit_paid_at),
     reserved_at: toDateTimeLocal(reservation ? reservation.reserved_at : new Date().toISOString()),
-    expires_at: toDateTimeLocal(reservation?.expires_at),
+    expires_at: toDateTimeLocal(reservation?.expires_at ?? futureIsoFromDays(settings.default_reservation_expiry_days)),
     assigned_to: reservation?.assigned_to ?? lead.assigned_to ?? "",
     notes: reservation?.notes ?? "",
   };
@@ -1595,6 +1811,31 @@ function budgetLabel(lead: Lead) {
   if (lead.budget_min) return `From ${money(lead.budget_min)}`;
   if (lead.budget_max) return `Up to ${money(lead.budget_max)}`;
   return "Not recorded";
+}
+
+function sharesLeadContext(reservation: LotReservation, lead: Lead) {
+  return (
+    reservation.lead_id === lead.id ||
+    (lead.application_id !== null && reservation.application_id === lead.application_id) ||
+    (lead.customer_id !== null && reservation.customer_id === lead.customer_id)
+  );
+}
+
+function sharesReservationContext(primary: LotReservation, alternate: LotReservation) {
+  return (
+    (primary.lead_id !== null && alternate.lead_id === primary.lead_id) ||
+    (primary.application_id !== null && alternate.application_id === primary.application_id) ||
+    (primary.customer_id !== null && alternate.customer_id === primary.customer_id)
+  );
+}
+
+function alternateReservationsForPrimary(primary: ReservationWithRelations, reservations: ReservationWithRelations[]) {
+  return reservations.filter((reservation) =>
+    reservation.id !== primary.id &&
+    activeReservationStatuses.has(reservation.status) &&
+    sharesReservationContext(primary, reservation) &&
+    (primary.parcel_id === null || reservation.parcel_id !== primary.parcel_id)
+  );
 }
 
 function isOverdue(value: string | null, now: Date) {
