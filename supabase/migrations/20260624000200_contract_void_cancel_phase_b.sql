@@ -9,9 +9,35 @@ alter table public.contracts
   add column if not exists cancelled_at timestamptz,
   add column if not exists cancelled_by uuid references auth.users(id) on delete set null;
 
+do $$
+begin
+  if exists (
+    select 1
+    from pg_trigger
+    where tgname = 'trg_validate_contract_write'
+      and tgrelid = 'public.contracts'::regclass
+  ) then
+    alter table public.contracts disable trigger trg_validate_contract_write;
+  end if;
+end;
+$$;
+
 update public.contracts
 set status = case when is_active then 'active' else 'archived' end
 where status is null;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_trigger
+    where tgname = 'trg_validate_contract_write'
+      and tgrelid = 'public.contracts'::regclass
+  ) then
+    alter table public.contracts enable trigger trg_validate_contract_write;
+  end if;
+end;
+$$;
 
 alter table public.contracts
   alter column status set default 'active',
