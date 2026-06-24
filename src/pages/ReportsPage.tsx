@@ -1530,12 +1530,12 @@ function CountPanel({ title, counts }: { title: string; counts: Record<string, n
 function ReportSummary({ title, description, onExport }: { title: string; description: string; onExport: () => void }) {
   return (
     <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-        <div>
+      <CardContent className="grid min-w-0 gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="min-w-0">
           <p className="font-display text-2xl font-semibold text-foreground">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
-        <Button type="button" onClick={onExport}>
+        <Button type="button" className="w-full sm:w-auto" onClick={onExport}>
           <Download className="h-4 w-4" />
           Export CSV
         </Button>
@@ -1551,7 +1551,7 @@ function ReportTable({ headers, rows, emptyMessage }: { headers: string[]; rows:
         {rows.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">{emptyMessage}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="max-w-full overflow-x-auto">
             <table className="crm-table min-w-[900px]">
               <thead>
                 <tr>

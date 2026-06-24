@@ -21,7 +21,7 @@ export function Button({ className, variant = "primary", ...props }: ButtonProps
   return (
     <button
       className={cn(
-        "focus-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md px-4 text-sm font-semibold transition disabled:pointer-events-none disabled:opacity-50",
+        "focus-ring inline-flex min-h-10 min-w-0 max-w-full items-center justify-center gap-2 whitespace-normal rounded-md px-4 py-2 text-center text-sm font-semibold leading-tight transition disabled:pointer-events-none disabled:opacity-50",
         "duration-150 ease-out hover:-translate-y-px active:translate-y-0",
         variants[variant],
         className,

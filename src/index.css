@@ -84,15 +84,15 @@
   }
 
   .crm-tabs {
-    @apply overflow-x-auto rounded-md border border-border bg-card p-1 shadow-[var(--shadow-card)];
+    @apply max-w-full overflow-x-auto rounded-md border border-border bg-card p-1 shadow-[var(--shadow-card)];
   }
 
   .crm-tab-list {
-    @apply flex min-w-max gap-1 sm:min-w-0 sm:flex-wrap;
+    @apply flex min-w-0 flex-wrap gap-1;
   }
 
   .crm-tab {
-    @apply h-10 rounded-md px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary;
+    @apply min-h-10 min-w-0 rounded-md px-4 py-2 text-sm font-medium leading-tight text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary;
   }
 
   .crm-tab-active {

@@ -151,7 +151,7 @@ export function DailyBriefsPage() {
             <CardHeader>
               <CardTitle>Generate Custom Brief</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <CardContent className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
               <Field label="Start date">
                 <Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} />
               </Field>
@@ -258,7 +258,7 @@ function OpenActionItems({
                     <span>Status: {item.status}</span>
                     <span>{item.related_table ? `Related: ${item.related_table} #${item.related_record_id ?? "N/A"}` : "Related: Not linked"}</span>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
                     {relatedHref(item) ? (
                       <a href={relatedHref(item) ?? undefined}>
                         <Button type="button" variant="outline" className="h-9">
@@ -413,8 +413,8 @@ function PreviousBriefs({
         {briefs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No previous briefs.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="crm-table min-w-[760px]">
+          <div className="max-w-full overflow-x-auto">
+            <table className="crm-table min-w-[640px] sm:min-w-[760px]">
               <thead>
                 <tr>
                   <th>Date</th>

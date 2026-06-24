@@ -123,7 +123,7 @@ export function AdminLayout() {
           </Button>
         </div>
       </aside>
-      <div className="min-w-0">
+      <div className="min-w-0 overflow-x-hidden">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur lg:px-6">
           <p className="text-sm font-medium text-slate">Housing project operations CRM</p>
           <NavLink className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground" to="/logout">
@@ -131,7 +131,7 @@ export function AdminLayout() {
             Logout
           </NavLink>
         </header>
-        <main className="mx-auto max-w-7xl p-4 lg:p-6">
+        <main className="mx-auto max-w-7xl min-w-0 p-4 lg:p-6">
           <Outlet />
         </main>
       </div>

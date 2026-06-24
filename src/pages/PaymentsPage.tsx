@@ -47,8 +47,8 @@ export function PaymentsPage() {
       <PageHeader title="Payments" description="Unified ledger for land installments and community fees." />
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
-      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
-        <div className="grid content-start gap-3">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+        <div className="grid min-w-0 content-start gap-3">
           <Card>
             <CardContent className="p-4">
               <Field label="Search manual receipt number">
