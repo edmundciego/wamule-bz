@@ -168,6 +168,7 @@ The Phase 4D-1 stabilization pass verified that the new table, policies, Edge Fu
 - The source snapshot stores CRM source metadata and related-record counts only; it does not include provider keys or AI configuration.
 - The Lead Detail panel handles missing, old, or malformed summary fields defensively, including null provider/model metadata and invalid generated dates.
 - The summary is a staff review aid only. It does not approve, confirm, convert, create tasks, change pipeline stages, send messages, or mutate operational records.
+- This stabilization was re-verified after the Supabase deployment and git sync; no additional workflow, schema, AI settings, notification, messaging, or automation behavior was added.
 
 Manual setup still requires applying the migration and deploying the `generate-lead-summary` Edge Function with the same environment variables used by existing AI functions. Authenticated protected-route browser/mobile QA remains pending until valid admin credentials are available and should be completed before broad staff rollout.
 
