@@ -149,3 +149,11 @@ Validation was run after the responsive fixes:
 The protected CRM routes covered in this pass are ready for demo/client review from a responsive rendering standpoint.
 
 Before a production demo, avoid exercising mutating actions unless the demo data has been approved for test changes.
+
+## Follow-Up Visual QA
+
+A focused follow-up visual polish pass was completed after the audit trail, contract void, reservation release, and reservation settings work.
+
+See `docs/protected-pages-visual-qa-polish.md`.
+
+That pass specifically verified the Leads Sales Pipeline filter overlap issue at desktop widths and retested protected pages at 360, 430, 768, 1280, 1440, and 1920px.

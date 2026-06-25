@@ -613,7 +613,7 @@ export function LeadsPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="grid min-w-0 content-start gap-4">
           <Card>
             <CardHeader>
@@ -621,7 +621,7 @@ export function LeadsPage() {
               <p className="mt-1 text-sm text-muted-foreground">A Lead is a person who has shown interest in a project or lot but may not yet be an applicant or customer.</p>
             </CardHeader>
             <CardContent className="grid gap-4">
-              <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px_180px]">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_220px_220px_180px]">
                 <Field label="Search">
                   <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone, email, source" />
                 </Field>
