@@ -21,6 +21,7 @@ export function DailyBriefsPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkedActions, setCheckedActions] = useState<Record<string, boolean>>({});
+  const [showAllPriorities, setShowAllPriorities] = useState(false);
 
   const { data: sessionProfile } = useQuery({
     queryKey: ["session-profile"],
@@ -169,9 +170,18 @@ export function DailyBriefsPage() {
         {selectedBrief ? (
           <>
             <LatestBriefCard brief={selectedBrief} />
-            <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
+            <SummaryCards brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
+            <TodayPriorities
+              items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")}
+              canManage={canGenerateBrief}
+              showAll={showAllPriorities}
+              onToggleShowAll={() => setShowAllPriorities((current) => !current)}
+              onUpdate={updateActionItem}
+            />
+            <WhatChanged brief={selectedBrief} />
             <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} canManage={canGenerateBrief} onUpdate={updateActionItem} />
             <BriefComparison brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
+            <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
           </>
         ) : !isLoading ? (
           <Card>
@@ -185,6 +195,105 @@ export function DailyBriefsPage() {
   );
 }
 
+function SummaryCards({
+  brief,
+  previousBrief,
+  actionItems,
+}: {
+  brief: AiDailyBrief;
+  previousBrief: AiDailyBrief | null;
+  actionItems: BriefActionItem[];
+}) {
+  const sections = structuredSections(brief);
+  const openCount = actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length;
+  const resolvedSincePrevious = resolvedSince(actionItems, previousBrief);
+  const outstanding = currencyValue(brief.collections_summary);
+  const cards = [
+    { label: "New applications / leads", value: countFromText(sections.activity, /(\d+)\s+new applications\/leads/i, countFromText(brief.applications_summary, /(\d+)\s+new applications/i)) },
+    { label: "Payments logged", value: countFromText(sections.activity, /(\d+)\s+payments logged/i, countFromText(brief.payments_summary, /(\d+)\s+payments logged/i)) },
+    { label: "New contracts", value: countFromText(sections.activity, /(\d+)\s+contracts created/i, countFromText(brief.contracts_summary, /(\d+)\s+new contracts/i)) },
+    { label: "Open action items", value: String(openCount) },
+    { label: "Resolved since last brief", value: String(resolvedSincePrevious) },
+    { label: "Outstanding balance", value: outstanding == null ? "Not available" : moneyLabel(outstanding) },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {cards.map((card) => (
+        <Card key={card.label}>
+          <CardContent className="p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{card.label}</p>
+            <p className="mt-2 text-2xl font-semibold text-primary">{card.value}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function TodayPriorities({
+  items,
+  canManage,
+  showAll,
+  onToggleShowAll,
+  onUpdate,
+}: {
+  items: BriefActionItem[];
+  canManage: boolean;
+  showAll: boolean;
+  onToggleShowAll: () => void;
+  onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
+}) {
+  const sorted = sortActionItems(items);
+  const visible = showAll ? sorted : sorted.slice(0, 5);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Today's Priorities</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">Highest-priority open work, sorted Red, Amber, then Info.</p>
+        </div>
+        {sorted.length > 5 ? (
+          <Button type="button" variant="outline" onClick={onToggleShowAll}>
+            {showAll ? "Show Less" : `View All ${sorted.length}`}
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {visible.length ? visible.map((item) => (
+          <ActionItemCard key={item.id} item={item} canManage={canManage} onUpdate={onUpdate} compact />
+        )) : (
+          <div className="crm-success-panel p-4 text-sm">No open priorities need attention right now.</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WhatChanged({ brief }: { brief: AiDailyBrief }) {
+  const activity = structuredSections(brief).activity || fallbackActivityText(brief);
+  const changes = activityItems(activity);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>What Changed</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">Only activity recorded during the selected period.</p>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {changes.length ? changes.map((item) => (
+          <div key={item} className="crm-subpanel text-sm">
+            {item}
+          </div>
+        )) : (
+          <div className="crm-info-panel p-4 text-sm">No new or updated records were detected during this brief period.</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function BriefComparison({
   brief,
   previousBrief,
@@ -194,8 +303,8 @@ function BriefComparison({
   previousBrief: AiDailyBrief | null;
   actionItems: BriefActionItem[];
 }) {
-  const currentAlerts = briefAlerts(brief).map((item) => normalizeAlertKey(item));
-  const previousAlerts = previousBrief ? briefAlerts(previousBrief).map((item) => normalizeAlertKey(item)) : [];
+  const currentAlerts = briefAlerts(brief).filter((item) => !isBriefSection(item)).map((item) => normalizeAlertKey(item));
+  const previousAlerts = previousBrief ? briefAlerts(previousBrief).filter((item) => !isBriefSection(item)).map((item) => normalizeAlertKey(item)) : [];
   const newAlerts = currentAlerts.filter((item) => !previousAlerts.includes(item));
   const repeatedAlerts = currentAlerts.filter((item) => previousAlerts.includes(item));
   const resolvedAlerts = previousAlerts.filter((item) => !currentAlerts.includes(item));
@@ -205,20 +314,32 @@ function BriefComparison({
   const previousOutstanding = previousBrief ? currencyValue(previousBrief.collections_summary) : null;
   const currentLotCounts = lotCounts(brief.lots_summary);
   const previousLotCounts = previousBrief ? lotCounts(previousBrief.lots_summary) : null;
+  const currentOpen = actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length;
+  const previousOpen = previousBrief
+    ? actionItems.filter((item) =>
+      (item.status === "Open" || item.status === "In Progress") &&
+      new Date(item.first_seen_on).getTime() <= new Date(previousBrief.brief_date).getTime()
+    ).length
+    : null;
 
   return (
     <Card>
       <CardHeader><CardTitle>Compared to Previous Brief</CardTitle></CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-3">
-        <ComparisonList title="New alerts" items={newAlerts} empty="No new alerts." />
-        <ComparisonList title="Repeated alerts" items={repeatedAlerts} empty="No repeated alerts." />
-        <ComparisonList title="Resolved or no longer appearing" items={resolvedAlerts} empty="No resolved alerts detected." />
+        <ComparisonMetric label="Open action item count" value={previousOpen == null ? `${currentOpen} open` : countChangeLabel(currentOpen, previousOpen)} />
+        <ComparisonMetric label="Resolved item count" value={`${resolvedSince(actionItems, previousBrief)} resolved`} />
+        <ComparisonMetric label="New / repeated issue count" value={`${newAlerts.length} new, ${repeatedAlerts.length} repeated`} />
         <ComparisonMetric label="Payment total change" value={changeLabel(currentPayments, previousPayments)} />
         <ComparisonMetric label="Outstanding balance change" value={changeLabel(currentOutstanding, previousOutstanding)} />
         <ComparisonMetric label="Lot status change" value={lotChangeLabel(currentLotCounts, previousLotCounts)} />
-        <div className="crm-info-panel lg:col-span-3 p-3 text-sm">
-          {actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length} open carryover items are being tracked after source records are rechecked.
-        </div>
+        <details className="crm-subpanel lg:col-span-3">
+          <summary className="cursor-pointer text-sm font-semibold text-primary">Show comparison details</summary>
+          <div className="mt-3 grid gap-4 lg:grid-cols-3">
+            <ComparisonList title="New alerts" items={newAlerts} empty="No new alerts." />
+            <ComparisonList title="Repeated alerts" items={repeatedAlerts} empty="No repeated alerts." />
+            <ComparisonList title="Resolved or no longer appearing" items={resolvedAlerts} empty="No resolved alerts detected." />
+          </div>
+        </details>
       </CardContent>
     </Card>
   );
@@ -234,59 +355,90 @@ function OpenActionItems({
   onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
 }) {
   const groups = groupActionItems(items);
+  const hasManyItems = items.length > 8;
 
   return (
     <Card>
-      <CardHeader><CardTitle>Open Items / Carryover</CardTitle></CardHeader>
-      <CardContent className="grid gap-5">
-        {items.length ? Object.entries(groups).map(([group, groupItems]) => (
-          <div key={group} className="grid gap-3">
-            <h3 className="text-sm font-semibold text-primary">{group}</h3>
-            <div className="grid gap-3 md:grid-cols-2">
-              {groupItems.map((item) => (
-                <div key={item.id} className="rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="mt-1 text-muted-foreground">{item.details || "No extra details."}</p>
-                    </div>
-                    <Badge tone={severityTone(item.severity)}>{item.severity}</Badge>
-                  </div>
-                  <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                    <span>First seen: {safeFormatDate(item.first_seen_on)}</span>
-                    <span>Last seen: {safeFormatDate(item.last_seen_on)}</span>
-                    <span>Status: {item.status}</span>
-                    <span>{item.related_table ? `Related: ${item.related_table} #${item.related_record_id ?? "N/A"}` : "Related: Not linked"}</span>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-                    {relatedHref(item) ? (
-                      <a href={relatedHref(item) ?? undefined}>
-                        <Button type="button" variant="outline" className="h-9">
-                          <ExternalLink className="h-4 w-4" />
-                          View Related Record
-                        </Button>
-                      </a>
-                    ) : null}
-                    {canManage ? (
-                      <>
-                        <Button type="button" variant="outline" className="h-9" onClick={() => void onUpdate(item.id, "Done")}>
-                          <CheckCircle2 className="h-4 w-4" />
-                          Mark Done
-                        </Button>
-                        <Button type="button" variant="ghost" className="h-9" onClick={() => void onUpdate(item.id, "Dismissed")}>
-                          <XCircle className="h-4 w-4" />
-                          Dismiss
-                        </Button>
-                      </>
-                    ) : null}
+      <CardHeader>
+        <CardTitle>Carryover Work</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">Unresolved items still open from current or previous briefs.</p>
+      </CardHeader>
+      <CardContent>
+        {items.length ? (
+          <details open={!hasManyItems} className="grid gap-5">
+            <summary className="cursor-pointer text-sm font-semibold text-primary">
+              {hasManyItems ? `Show ${items.length} open carryover items` : `${items.length} open carryover items`}
+            </summary>
+            <div className="mt-4 grid gap-5">
+              {Object.entries(groups).filter(([, groupItems]) => groupItems.length).map(([group, groupItems]) => (
+                <div key={group} className="grid gap-3">
+                  <h3 className="text-sm font-semibold text-primary">{group}</h3>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {groupItems.map((item) => (
+                      <ActionItemCard key={item.id} item={item} canManage={canManage} onUpdate={onUpdate} />
+                    ))}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        )) : <p className="text-sm text-muted-foreground">No open carryover action items.</p>}
+          </details>
+        ) : <p className="text-sm text-muted-foreground">No open carryover action items.</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function ActionItemCard({
+  item,
+  canManage,
+  onUpdate,
+  compact = false,
+}: {
+  item: BriefActionItem;
+  canManage: boolean;
+  onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
+  compact?: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="break-words font-medium">{item.title}</p>
+          <p className="mt-1 break-words text-muted-foreground">{item.details || "No extra details."}</p>
+        </div>
+        <Badge tone={severityTone(item.severity)}>{item.severity}</Badge>
+      </div>
+      {!compact ? (
+        <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+          <span>First seen: {safeFormatDate(item.first_seen_on)}</span>
+          <span>Last seen: {safeFormatDate(item.last_seen_on)}</span>
+          <span>Status: {item.status}</span>
+          <span>{item.related_table ? `Related: ${item.related_table} #${item.related_record_id ?? "N/A"}` : "Related: Not linked"}</span>
+        </div>
+      ) : null}
+      <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+        {relatedHref(item) ? (
+          <a href={relatedHref(item) ?? undefined}>
+            <Button type="button" variant="outline" className="h-9">
+              <ExternalLink className="h-4 w-4" />
+              View Related Record
+            </Button>
+          </a>
+        ) : null}
+        {canManage ? (
+          <>
+            <Button type="button" variant="outline" className="h-9" onClick={() => void onUpdate(item.id, "Done")}>
+              <CheckCircle2 className="h-4 w-4" />
+              Mark Done
+            </Button>
+            <Button type="button" variant="ghost" className="h-9" onClick={() => void onUpdate(item.id, "Dismissed")}>
+              <XCircle className="h-4 w-4" />
+              Dismiss
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -342,63 +494,66 @@ function BriefSections({
   ] as const;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      {expandedSections.length ? (
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Daily Operations Brief Sections</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Activity, current state, carryover work, and comparison are separated so old unresolved items are not presented as new activity.
-            </p>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            {expandedSections.map((item, index) => (
-              <div key={`${itemTitle(item)}-${index}`} className="crm-subpanel text-sm">
-                <p className="font-semibold text-primary">{itemTitle(item)}</p>
-                <p className="mt-1 leading-6 text-muted-foreground">{itemDetail(item)}</p>
+    <Card>
+      <CardHeader>
+        <CardTitle>Detailed Brief</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">Full AI/deterministic report sections and recommended actions.</p>
+      </CardHeader>
+      <CardContent>
+        <details>
+          <summary className="cursor-pointer text-sm font-semibold text-primary">Open detailed report</summary>
+          <div className="mt-4 grid gap-6 xl:grid-cols-2">
+            {expandedSections.length ? (
+              <div className="grid gap-3 xl:col-span-2 md:grid-cols-2">
+                {expandedSections.map((item, index) => (
+                  <div key={`${itemTitle(item)}-${index}`} className="crm-subpanel text-sm">
+                    <p className="font-semibold text-primary">{itemTitle(item)}</p>
+                    <p className="mt-1 leading-6 text-muted-foreground">{itemDetail(item)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {sections.map(([title, content]) => (
+              <div key={title} className="crm-subpanel">
+                <p className="text-sm font-semibold text-primary">{title}</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">{content || "No notable activity for this section."}</p>
               </div>
             ))}
-          </CardContent>
-        </Card>
-      ) : null}
 
-      {sections.map(([title, content]) => (
-        <Card key={title}>
-          <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-          <CardContent><p className="text-sm leading-6 text-foreground">{content || "No notable activity for this section."}</p></CardContent>
-        </Card>
-      ))}
+            <div className="crm-subpanel">
+              <p className="text-sm font-semibold text-primary">Alerts</p>
+              <div className="mt-3 grid gap-3">
+                {alertItems.length ? alertItems.map((item, index) => <AlertItem key={index} item={item} />) : <p className="text-sm text-muted-foreground">No alerts listed.</p>}
+              </div>
+            </div>
 
-      <Card>
-        <CardHeader><CardTitle>Alerts</CardTitle></CardHeader>
-        <CardContent className="grid gap-3">
-          {alertItems.length ? alertItems.map((item, index) => <AlertItem key={index} item={item} />) : <p className="text-sm text-muted-foreground">No alerts listed.</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Recommended Priorities</CardTitle></CardHeader>
-        <CardContent className="grid gap-3">
-          {recommendedActions.length ? recommendedActions.map((item, index) => {
-            const key = `${brief.id}-${index}`;
-            return (
-              <label key={key} className="flex gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-border"
-                  checked={Boolean(checkedActions[key])}
-                  onChange={() => onToggleAction(key)}
-                />
-                <span className={cn("grid gap-1", checkedActions[key] && "text-muted-foreground line-through")}>
-                  <span className="font-medium">{itemTitle(item)}</span>
-                  <span className="text-muted-foreground">{itemDetail(item)}</span>
-                </span>
-              </label>
-            );
-          }) : <p className="text-sm text-muted-foreground">No recommended actions listed.</p>}
-        </CardContent>
-      </Card>
-    </div>
+            <div className="crm-subpanel">
+              <p className="text-sm font-semibold text-primary">Full Recommended Actions</p>
+              <div className="mt-3 grid gap-3">
+                {recommendedActions.length ? recommendedActions.map((item, index) => {
+                  const key = `${brief.id}-${index}`;
+                  return (
+                    <label key={key} className="flex gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 rounded border-border"
+                        checked={Boolean(checkedActions[key])}
+                        onChange={() => onToggleAction(key)}
+                      />
+                      <span className={cn("grid gap-1", checkedActions[key] && "text-muted-foreground line-through")}>
+                        <span className="font-medium">{itemTitle(item)}</span>
+                        <span className="text-muted-foreground">{itemDetail(item)}</span>
+                      </span>
+                    </label>
+                  );
+                }) : <p className="text-sm text-muted-foreground">No recommended actions listed.</p>}
+              </div>
+            </div>
+          </div>
+        </details>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -530,24 +685,84 @@ function severityTone(severity: BriefActionItem["severity"]) {
 
 function groupActionItems(items: BriefActionItem[]) {
   const orderedGroups = [
-    "Buyer follow-ups",
-    "Reservation readiness",
-    "Post-sales",
-    "Collections handoff",
-    "Missing receipt numbers",
-    "Missing transfer proof",
+    "Missing receipts",
+    "Missing proof",
     "Missing signed contracts",
     "Lot conflicts",
     "Overdue accounts",
-    "Open payment requests",
     "Other",
   ];
   return items.reduce<Record<string, BriefActionItem[]>>((groups, item) => {
-    const group = orderedGroups.includes(item.source_type) ? item.source_type : "Other";
+    const group = carryoverGroupLabel(item);
     groups[group] = groups[group] ?? [];
     groups[group].push(item);
     return groups;
-  }, {});
+  }, orderedGroups.reduce<Record<string, BriefActionItem[]>>((groups, group) => ({ ...groups, [group]: [] }), {}));
+}
+
+function carryoverGroupLabel(item: BriefActionItem) {
+  if (item.source_type === "Missing receipt numbers") return "Missing receipts";
+  if (item.source_type === "Missing transfer proof") return "Missing proof";
+  if (item.source_type === "Missing signed contracts") return "Missing signed contracts";
+  if (item.source_type === "Lot conflicts") return "Lot conflicts";
+  if (item.source_type === "Overdue accounts") return "Overdue accounts";
+  return "Other";
+}
+
+function sortActionItems(items: BriefActionItem[]) {
+  const rank: Record<BriefActionItem["severity"], number> = { Red: 0, Amber: 1, Info: 2 };
+  return [...items].sort((a, b) => {
+    const severity = rank[a.severity] - rank[b.severity];
+    if (severity !== 0) return severity;
+    return new Date(b.last_seen_on).getTime() - new Date(a.last_seen_on).getTime();
+  });
+}
+
+function structuredSections(brief: AiDailyBrief) {
+  const sections = briefAlerts(brief).filter(isBriefSection);
+  return {
+    activity: sectionText(sections, "Activity During Period"),
+    currentSnapshot: sectionText(sections, "Current Snapshot"),
+    carryover: sectionText(sections, "Open Items / Carryover"),
+    comparison: sectionText(sections, "Compared to Previous Brief"),
+  };
+}
+
+function activityItems(activity: string) {
+  return activity
+    .split(/(?<=\.)\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => /\b[1-9]\d*\b/.test(item));
+}
+
+function fallbackActivityText(brief: AiDailyBrief) {
+  return [
+    firstSentence(brief.applications_summary),
+    firstSentence(brief.payments_summary),
+    firstSentence(brief.contracts_summary),
+    firstSentence(brief.lots_summary),
+  ].filter(Boolean).join(" ");
+}
+
+function firstSentence(value: string) {
+  return value.split(/(?<=\.)\s+/)[0]?.trim() ?? "";
+}
+
+function countFromText(text: string, pattern: RegExp, fallback = "0") {
+  return pattern.exec(text)?.[1] ?? fallback;
+}
+
+function resolvedSince(items: BriefActionItem[], previousBrief: AiDailyBrief | null) {
+  if (!previousBrief) return items.filter((item) => item.status === "Done" && item.resolved_at).length;
+  const since = new Date(previousBrief.created_at).getTime();
+  return items.filter((item) => item.status === "Done" && item.resolved_at && new Date(item.resolved_at).getTime() >= since).length;
+}
+
+function countChangeLabel(current: number, previous: number) {
+  const diff = current - previous;
+  if (diff === 0) return `${current} open, no change`;
+  return `${current} open (${diff > 0 ? "+" : ""}${diff})`;
 }
 
 function relatedHref(item: BriefActionItem) {
@@ -659,8 +874,12 @@ function changeLabel(current: number | null, previous: number | null) {
   if (current == null || previous == null) return "Not enough comparable data.";
   const difference = current - previous;
   if (difference === 0) return "No change detected.";
-  const formatted = new Intl.NumberFormat("en-BZ", { style: "currency", currency: "BZD" }).format(Math.abs(difference));
+  const formatted = moneyLabel(Math.abs(difference));
   return difference > 0 ? `Up ${formatted}` : `Down ${formatted}`;
+}
+
+function moneyLabel(value: number) {
+  return new Intl.NumberFormat("en-BZ", { style: "currency", currency: "BZD" }).format(value);
 }
 
 function lotCounts(summary: string) {
