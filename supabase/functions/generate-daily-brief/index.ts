@@ -349,9 +349,13 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
 
   const periodLeads = data.leads.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodUpdatedLeads = data.leads.filter((row) => updatedInPeriod(row, data.periodStart, data.periodEnd));
+  const periodPublicApplicationLeads = periodLeads.filter((row) => row.source === "Public Application Form");
   const assignedLeads = data.leads.filter((row) => Boolean(row.assigned_to));
   const unassignedLeads = data.leads.filter((row) => !row.assigned_to && !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)));
   const leadsByStage = countBy(data.leads, "pipeline_stage");
+  const leadsNeedingFollowUp = data.leads.filter((row) =>
+    !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && Boolean(row.next_action)
+  );
   const overdueLeadNextActions = data.leads.filter((row) =>
     !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && isBefore(row.next_action_due_at, today)
   );
@@ -406,7 +410,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
 
   alerts.push(section("Activity During Period", [
     `${periodApplications.length} new applications/leads and ${periodUpdatedApplications.length} updated applications/leads.`,
-    `${periodLeads.length} new CRM leads and ${periodUpdatedLeads.length} updated CRM leads.`,
+    `${periodLeads.length} new CRM leads, including ${periodPublicApplicationLeads.length} created from public applications, and ${periodUpdatedLeads.length} updated CRM leads.`,
     `${periodCustomers.length} customers created and ${periodUpdatedCustomers.length} customers updated.`,
     `${periodContracts.length} contracts created and ${periodUpdatedContracts.length} contracts updated.`,
     `${periodPayments.length} payments logged, ${periodPaymentDocuments.length} payment documents uploaded, ${periodPaymentRequests.length} payment requests created, and ${periodUpdatedPaymentRequests.length} payment requests updated.`,
@@ -414,7 +418,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   ].join(" ")));
   alerts.push(section("Current Snapshot", [
     `${data.lots.length} total lots: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold.`,
-    `${pendingApplications.length} pending applications/leads.`,
+    `${pendingApplications.length} pending applications/leads. ${leadsNeedingFollowUp.length} leads need staff follow-up, including ${overdueLeadNextActions.length} overdue follow-ups.`,
     `${activeContracts.length} active contracts across ${new Set(activeContracts.map((row) => row.customer_id).filter(Boolean)).size} customers.`,
     `Outstanding land balance is ${money(outstanding)}.`,
     `${openPaymentRequests.length} open payment requests.`,
@@ -424,7 +428,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   ].join(" ")));
   alerts.push(section("Open Items / Carryover", `${currentIssues.length} current source-backed issues remain open after rechecking source records. ${missingReceipts.length} missing receipt numbers, ${missingProof.length} missing transfer proof, ${missingSignedContracts.length} missing signed contracts, ${conflictApplications.length} unavailable preferred lots, ${overdue.length} overdue accounts, and ${openPaymentRequests.length} open payment requests.`));
   alerts.push(section("Compared to Previous Brief", `${newIssues.length} new source-backed issues, ${repeatedIssues.length} repeated unresolved issues, and ${resolvedIssues.length} issues appear resolved from source records. Payment total for this period is ${money(collected)}. Outstanding land balance is ${money(outstanding)}. Lot status snapshot: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold. Applications/leads: ${periodApplications.length} new applications/leads and ${periodUpdatedApplications.length} updated applications/leads.`));
-  alerts.push(section("Sales Activity", `${periodLeads.length} new leads in the period. ${assignedLeads.length} assigned leads and ${unassignedLeads.length} unassigned active leads. Pipeline stages: ${formatCounts(leadsByStage)}. ${overdueLeadNextActions.length} leads have overdue next actions. ${familyDecisionLeads.length} family decision, ${paymentPlanReviewLeads.length} payment plan review, and ${depositPendingLeads.length} deposit pending leads.`));
+  alerts.push(section("Sales Activity", `${periodLeads.length} new leads in the period, including ${periodPublicApplicationLeads.length} from public applications. ${assignedLeads.length} assigned leads and ${unassignedLeads.length} unassigned active leads. Pipeline stages: ${formatCounts(leadsByStage)}. ${leadsNeedingFollowUp.length} leads need follow-up and ${overdueLeadNextActions.length} leads have overdue next actions. ${familyDecisionLeads.length} family decision, ${paymentPlanReviewLeads.length} payment plan review, and ${depositPendingLeads.length} deposit pending leads.`));
   alerts.push(section("Buyer Follow-ups", `${dueTodayFollowUps.length} follow-ups due today. ${overdueFollowUps.length} overdue follow-ups. ${completedFollowUps.length} completed during the period. ${urgentFollowUps.length} high or urgent open follow-ups.`));
   alerts.push(section("Site Visits", `${siteVisitsToday.length} site visits today. ${upcomingSiteVisits.length} upcoming visits in the next 7 days. ${completedSiteVisits.length} completed during the period. ${missedSiteVisits.length} no-show or cancelled visits during the period.`));
   alerts.push(section("Reservation Readiness", `${activeReservations.length} active reservations. ${periodReservations.length} new reservations in the period. ${expiringSoonReservations.length} expiring within 3 days. ${expiredReservations.length} active reservations past expiry. ${releasedCancelledReservations.length} released or cancelled during the period.`));
@@ -471,7 +475,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   if (!recommendedActions.length) recommendedActions.push(action("Monitor operations", "No immediate manual follow-up was detected for this period.", "brief"));
 
   return {
-    summary: `${periodApplications.length} new applications/leads, ${periodUpdatedApplications.length} updated applications/leads, ${periodLeads.length} new CRM leads, ${periodPayments.length} payments totaling ${money(collected)}, and ${periodContracts.length} new contracts were recorded for the selected period. Current snapshot shows ${currentIssues.length} source-backed open items, including ${newIssues.length} new and ${repeatedIssues.length} repeated unresolved issues.`,
+    summary: `${periodApplications.length} new applications/leads, ${periodUpdatedApplications.length} updated applications/leads, ${periodLeads.length} new CRM leads (${periodPublicApplicationLeads.length} from public applications), ${periodPayments.length} payments totaling ${money(collected)}, and ${periodContracts.length} new contracts were recorded for the selected period. Current snapshot shows ${leadsNeedingFollowUp.length} leads needing follow-up and ${currentIssues.length} source-backed open items, including ${newIssues.length} new and ${repeatedIssues.length} repeated unresolved issues.`,
     applications_summary: `${periodApplications.length} new applications/leads. ${periodUpdatedApplications.length} applications/leads updated during the period. ${pendingApplications.length} pending applications/leads. ${incompleteApplications.length} applications are missing key information. ${flaggedReviews.length} applications have AI review flags. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. ${conflictApplications.length} active applications selected unavailable lots. ${approvedWithoutPostSales.length} approved applications do not have a linked post-sales checklist.`,
     lots_summary: `${data.lots.length} total lots: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold. ${recentlyUpdatedLots.length} lots were updated during the period. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. Reservations: ${activeReservations.length} active, ${expiringSoonReservations.length} expiring soon, ${expiredReservations.length} needing expiry review.`,
     payments_summary: `${periodPayments.length} payments logged during the period. Total collected: ${money(collected)}. Cash: ${money(cashTotal)}. Transfers: ${money(transferTotal)}. ${missingReceipts.length} payments are missing manual receipt numbers. ${missingProof.length} transfer payments are missing uploaded proof. ${duplicateRefs.length} duplicate bank references were detected. ${incompletePayments.length} payments look incomplete.`,

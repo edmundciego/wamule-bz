@@ -77,6 +77,12 @@ Deno.serve(async (request) => {
     return json({ error: "Application not found." }, 404);
   }
 
+  const { data: linkedLead } = await supabase
+    .from("leads")
+    .select("id, pipeline_stage, source, next_action, next_action_due_at, assigned_to")
+    .eq("application_id", application.id)
+    .maybeSingle();
+
   const preferredParcelIds = Array.isArray(application.preferred_parcel_ids)
     ? application.preferred_parcel_ids.map((id: unknown) => Number(id)).filter(Boolean)
     : [];
@@ -99,7 +105,7 @@ Deno.serve(async (request) => {
     .limit(1)
     .maybeSingle();
 
-  const deterministic = buildDeterministicReview(application, preferredLots ?? []);
+  const deterministic = buildDeterministicReview(application, preferredLots ?? [], linkedLead);
   const apiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
   const aiEnabled = Boolean(settings?.is_enabled && settings?.application_summary_enabled && apiKey);
   let review: ReviewPayload = deterministic;
@@ -107,6 +113,7 @@ Deno.serve(async (request) => {
   if (aiEnabled) {
     const geminiReview = await generateGeminiReview({
       application,
+      linkedLead,
       preferredLots: preferredLots ?? [],
       deterministic,
       apiKey,
@@ -137,7 +144,7 @@ Deno.serve(async (request) => {
   return json({ review: savedReview, fallback: !aiEnabled || review.model === deterministic.model });
 });
 
-function buildDeterministicReview(application: Record<string, unknown>, preferredLots: Array<Record<string, unknown>>): ReviewPayload {
+function buildDeterministicReview(application: Record<string, unknown>, preferredLots: Array<Record<string, unknown>>, linkedLead?: Record<string, unknown> | null): ReviewPayload {
   const name = String(application.applicant_full_name || `${application.first_name ?? ""} ${application.last_name ?? ""}`).trim() || "Applicant";
   const intendedUse = String(application.intended_use || "unspecified use");
   const paymentOption = String(application.payment_option || "unspecified payment option");
@@ -211,9 +218,12 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
   }
 
   const completenessStatus = chooseStatus(missingFields, riskFlags, hasLotConflict);
+  const leadContext = linkedLead
+    ? ` Linked lead stage: ${stageLabel(String(linkedLead.pipeline_stage ?? ""))}; source: ${linkedLead.source ?? "not recorded"}; next action: ${linkedLead.next_action ?? "not recorded"}.`
+    : " No linked lead was found for this application.";
 
   return {
-    summary: `${name} ${isApproved ? "has an approved application" : "applied"} for ${intendedUse} with ${paymentOption}. Preferred lots: ${preferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ") || "none listed"}.`,
+    summary: `${name} ${isApproved ? "has an approved application" : "applied"} for ${intendedUse} with ${paymentOption}. Preferred lots: ${preferredLots.map((lot) => `Lot ${lot.lot_number} (${lot.status})`).join(", ") || "none listed"}.${leadContext}`,
     completeness_status: completenessStatus,
     missing_fields: missingFields,
     risk_flags: riskFlags,
@@ -271,12 +281,14 @@ function chooseStatus(missingFields: string[], riskFlags: string[], hasLotConfli
 
 async function generateGeminiReview({
   application,
+  linkedLead,
   preferredLots,
   deterministic,
   apiKey,
   model,
 }: {
   application: Record<string, unknown>;
+  linkedLead?: Record<string, unknown> | null;
   preferredLots: Array<Record<string, unknown>>;
   deterministic: ReviewPayload;
   apiKey: string;
@@ -296,6 +308,7 @@ async function generateGeminiReview({
     "",
     `Deterministic checks: ${JSON.stringify(deterministic)}`,
     `Application: ${JSON.stringify(redactApplication(application))}`,
+    `Linked lead: ${JSON.stringify(redactLead(linkedLead))}`,
     `Preferred lots: ${JSON.stringify(preferredLots)}`,
   ].join("\n");
 
@@ -332,6 +345,23 @@ async function generateGeminiReview({
   } catch {
     return null;
   }
+}
+
+function redactLead(lead: Record<string, unknown> | null | undefined) {
+  if (!lead) return null;
+  return {
+    id: lead.id,
+    pipeline_stage: lead.pipeline_stage,
+    source: lead.source,
+    next_action_present: Boolean(lead.next_action),
+    next_action_due_at: lead.next_action_due_at,
+    assigned: Boolean(lead.assigned_to),
+  };
+}
+
+function stageLabel(stage: string) {
+  if (stage === "application_started") return "New Application";
+  return stage.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function redactApplication(application: Record<string, unknown>) {

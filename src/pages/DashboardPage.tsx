@@ -240,7 +240,7 @@ function leadStageLabel(stage: Lead["pipeline_stage"]) {
     site_visit_scheduled: "Site Visit Scheduled",
     deposit_pending: "Deposit Pending",
     deposit_paid: "Deposit Paid",
-    application_started: "Application Started",
+    application_started: "New Application",
     contract_started: "Contract Started",
     closed_won: "Closed/Won",
     lost_inactive: "Lost/Inactive",

@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -65,10 +66,10 @@ export function ApplicationsPage() {
     queryFn: async () => {
       const { data: leads, error: queryError } = await supabase
         .from("leads")
-        .select("id, application_id, pipeline_stage, full_name, next_action")
+        .select("id, application_id, pipeline_stage, full_name, source, assigned_to, next_action, next_action_due_at")
         .not("application_id", "is", null);
       if (queryError) throw queryError;
-      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "next_action">[];
+      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at">[];
     },
   });
   const { data: linkedReservations } = useQuery({
@@ -152,11 +153,12 @@ export function ApplicationsPage() {
         email: application.email,
         parcel_id: application.parcel_id,
         application_id: application.id,
-        source: "Public Application",
+        source: "Public Application Form",
         pipeline_stage: "application_started",
-        buyer_journey_stage: "Application submitted",
-        preferred_contact_method: "Phone",
-        next_action: "Review application and confirm buyer readiness",
+        buyer_journey_stage: "New Application",
+        preferred_contact_method: application.email ? "Email" : "Phone",
+        next_action: "Review public application and follow up with applicant",
+        next_action_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         notes: [application.intended_use, application.payment_option].filter(Boolean).join(" | ") || null,
       })
       .select("id")
@@ -165,10 +167,23 @@ export function ApplicationsPage() {
       setActionError(insertError.code === "23505" ? "A lead is already linked to this application." : insertError.message);
       return;
     }
+    const { error: taskError } = await supabase.from("follow_up_tasks").insert({
+      lead_id: insertedLead.id,
+      application_id: application.id,
+      title: "Follow up on public application",
+      description: "Review the application, confirm buyer readiness, and contact the applicant.",
+      due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      status: "open",
+      priority: "high",
+    });
+    if (taskError) {
+      setActionError(taskError.message);
+      return;
+    }
     const { error: activityError } = await supabase.from("lead_activities").insert({
       lead_id: insertedLead.id,
       activity_type: "application_linked",
-      title: "Lead created from application",
+      title: "Lead created from public application",
       description: `Application #${application.id} linked for sales follow-up.`,
       metadata: null,
     });
@@ -264,6 +279,7 @@ export function ApplicationsPage() {
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
       <div className="crm-info-panel mb-4 p-4 text-sm">
         Applications can be linked to a lead or reservation so staff can track the buyer journey from interest to application review.
+        Public applications are automatically added to the sales pipeline as leads for follow-up. This does not approve the application or reserve a lot.
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         {statuses.map((status) => (
@@ -429,7 +445,7 @@ function ApplicationLeadLink({
   canWrite,
   onCreate,
 }: {
-  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name"> | null;
+  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at"> | null;
   canWrite: boolean;
   onCreate: () => void;
 }) {
@@ -438,11 +454,25 @@ function ApplicationLeadLink({
       <div>
         <p className="font-medium text-primary">Sales Pipeline</p>
         <p className="text-xs text-muted-foreground">
-          {lead ? `${lead.full_name} is linked for follow-up.` : "Create or link a lead when this application needs sales follow-up."}
+          {lead
+            ? `${lead.full_name} is linked for follow-up. Stage: ${leadStageLabel(lead.pipeline_stage)}. ${lead.next_action_due_at ? `Due: ${formatDate(lead.next_action_due_at)}.` : "No due date recorded."}`
+            : "Older applications without a linked lead can be added to the sales pipeline manually."}
         </p>
+        {lead ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Source: {lead.source ?? "Not recorded"} · Assigned: {lead.assigned_to ? "Assigned" : "Unassigned"} · Action: {lead.next_action ?? "Review application"}
+          </p>
+        ) : null}
       </div>
       {lead ? (
-        <Badge tone="blue">Lead linked</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge tone="blue">Lead Created</Badge>
+          <Link to="/leads">
+            <Button type="button" variant="outline" className="h-9">
+              View Lead
+            </Button>
+          </Link>
+        </div>
       ) : canWrite ? (
         <Button type="button" variant="outline" className="h-9" onClick={onCreate}>
           Create Lead
@@ -450,6 +480,11 @@ function ApplicationLeadLink({
       ) : null}
     </div>
   );
+}
+
+function leadStageLabel(stage: Lead["pipeline_stage"]) {
+  if (stage === "application_started") return "New Application";
+  return statusLabel(stage);
 }
 
 function ApplicationReservationLink({

@@ -46,7 +46,7 @@ const pipelineStages: Array<{ value: LeadPipelineStage; label: string; tone: Bad
   { value: "site_visit_scheduled", label: "Site Visit Scheduled", tone: "blue" },
   { value: "deposit_pending", label: "Deposit Pending", tone: "amber" },
   { value: "deposit_paid", label: "Deposit Paid", tone: "green" },
-  { value: "application_started", label: "Application Started", tone: "blue" },
+  { value: "application_started", label: "New Application", tone: "blue" },
   { value: "contract_started", label: "Contract Started", tone: "blue" },
   { value: "closed_won", label: "Closed/Won", tone: "green" },
   { value: "lost_inactive", label: "Lost/Inactive", tone: "gray" },

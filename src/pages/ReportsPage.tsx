@@ -1674,6 +1674,7 @@ function labelize(value: string) {
 }
 
 function leadStageLabel(stage: string) {
+  if (stage === "application_started") return "New Application";
   return labelize(stage);
 }
 
