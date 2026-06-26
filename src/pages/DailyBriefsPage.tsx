@@ -169,9 +169,9 @@ export function DailyBriefsPage() {
         {selectedBrief ? (
           <>
             <LatestBriefCard brief={selectedBrief} />
-            <BriefComparison brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
-            <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} canManage={canGenerateBrief} onUpdate={updateActionItem} />
             <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
+            <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} canManage={canGenerateBrief} onUpdate={updateActionItem} />
+            <BriefComparison brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
           </>
         ) : !isLoading ? (
           <Card>
@@ -217,7 +217,7 @@ function BriefComparison({
         <ComparisonMetric label="Outstanding balance change" value={changeLabel(currentOutstanding, previousOutstanding)} />
         <ComparisonMetric label="Lot status change" value={lotChangeLabel(currentLotCounts, previousLotCounts)} />
         <div className="crm-info-panel lg:col-span-3 p-3 text-sm">
-          {actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length} open carryover items are being tracked from generated brief recommendations.
+          {actionItems.filter((item) => item.status === "Open" || item.status === "In Progress").length} open carryover items are being tracked after source records are rechecked.
         </div>
       </CardContent>
     </Card>
@@ -334,7 +334,7 @@ function BriefSections({
   const expandedSections = alerts.filter(isBriefSection);
   const alertItems = alerts.filter((item) => !isBriefSection(item));
   const sections = [
-    ["Applications", brief.applications_summary],
+    ["Applications / Leads", brief.applications_summary],
     ["Lots", brief.lots_summary],
     ["Payments", brief.payments_summary],
     ["Contracts", brief.contracts_summary],
@@ -345,7 +345,12 @@ function BriefSections({
     <div className="grid gap-6 xl:grid-cols-2">
       {expandedSections.length ? (
         <Card className="xl:col-span-2">
-          <CardHeader><CardTitle>Daily Operations Brief</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Daily Operations Brief Sections</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Activity, current state, carryover work, and comparison are separated so old unresolved items are not presented as new activity.
+            </p>
+          </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             {expandedSections.map((item, index) => (
               <div key={`${itemTitle(item)}-${index}`} className="crm-subpanel text-sm">
@@ -534,6 +539,7 @@ function groupActionItems(items: BriefActionItem[]) {
     "Missing signed contracts",
     "Lot conflicts",
     "Overdue accounts",
+    "Open payment requests",
     "Other",
   ];
   return items.reduce<Record<string, BriefActionItem[]>>((groups, item) => {
@@ -569,6 +575,10 @@ function formatBriefForClipboard(brief: AiDailyBrief) {
   const recommendedActions = briefRecommendedActions(brief);
   const expandedSections = alerts.filter(isBriefSection);
   const alertItems = alerts.filter((item) => !isBriefSection(item));
+  const activity = sectionText(expandedSections, "Activity During Period");
+  const currentSnapshot = sectionText(expandedSections, "Current Snapshot");
+  const carryover = sectionText(expandedSections, "Open Items / Carryover");
+  const comparison = sectionText(expandedSections, "Compared to Previous Brief");
 
   return [
     display.title,
@@ -579,10 +589,19 @@ function formatBriefForClipboard(brief: AiDailyBrief) {
     "Executive Summary",
     brief.summary,
     "",
-    "Daily Operations Brief",
-    expandedSections.map((item) => `${itemTitle(item)}\n${itemDetail(item)}`).join("\n\n") || "No expanded operations sections.",
+    "Activity During Period",
+    activity || "No period activity section recorded.",
     "",
-    "Applications",
+    "Current Snapshot",
+    currentSnapshot || "No current snapshot section recorded.",
+    "",
+    "Open Items / Carryover",
+    carryover || "No carryover section recorded.",
+    "",
+    "Compared to Previous Brief",
+    comparison || "No comparison section recorded.",
+    "",
+    "Applications / Leads",
     brief.applications_summary,
     "",
     "Lots",
@@ -603,6 +622,11 @@ function formatBriefForClipboard(brief: AiDailyBrief) {
     "Recommended Priorities",
     recommendedActions.map((item) => `- ${itemTitle(item)}${itemDetail(item) ? `: ${itemDetail(item)}` : ""}`).join("\n") || "- None",
   ].join("\n");
+}
+
+function sectionText(sections: unknown[], title: string) {
+  const match = sections.find((item) => itemTitle(item).toLowerCase() === title.toLowerCase());
+  return match ? itemDetail(match) : "";
 }
 
 function previousBrief(briefs: AiDailyBrief[], selectedBriefId: number) {
