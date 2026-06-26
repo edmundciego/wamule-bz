@@ -66,10 +66,10 @@ export function ApplicationsPage() {
     queryFn: async () => {
       const { data: leads, error: queryError } = await supabase
         .from("leads")
-        .select("id, application_id, pipeline_stage, full_name, source, assigned_to, next_action, next_action_due_at")
+        .select("id, application_id, pipeline_stage, full_name, source, assigned_to, next_action, next_action_due_at, possible_duplicate, duplicate_reason")
         .not("application_id", "is", null);
       if (queryError) throw queryError;
-      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at">[];
+      return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason">[];
     },
   });
   const { data: linkedReservations } = useQuery({
@@ -445,7 +445,7 @@ function ApplicationLeadLink({
   canWrite,
   onCreate,
 }: {
-  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at"> | null;
+  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason"> | null;
   canWrite: boolean;
   onCreate: () => void;
 }) {
@@ -459,13 +459,21 @@ function ApplicationLeadLink({
             : "Older applications without a linked lead can be added to the sales pipeline manually."}
         </p>
         {lead ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Source: {lead.source ?? "Not recorded"} · Assigned: {lead.assigned_to ? "Assigned" : "Unassigned"} · Action: {lead.next_action ?? "Review application"}
-          </p>
+          <div className="mt-1 grid gap-1 text-xs text-muted-foreground">
+            <p>
+              Source: {lead.source ?? "Not recorded"} · Assigned: {lead.assigned_to ? "Assigned" : "Unassigned"} · Action: {lead.next_action ?? "Review application"}
+            </p>
+            {lead.possible_duplicate ? (
+              <p className="max-w-full break-words text-amber-700">
+                Possible duplicate: {lead.duplicate_reason ?? "Review matching application or lead records."}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {lead ? (
         <div className="flex flex-wrap gap-2">
+          {lead.possible_duplicate ? <Badge tone="amber">Possible Duplicate</Badge> : null}
           <Badge tone="blue">Lead Created</Badge>
           <Link to="/leads">
             <Button type="button" variant="outline" className="h-9">

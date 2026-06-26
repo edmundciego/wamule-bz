@@ -108,6 +108,7 @@ export function LeadsPage() {
   const [stageFilter, setStageFilter] = useState<LeadPipelineStage | "all">("all");
   const [assignedFilter, setAssignedFilter] = useState("all");
   const [dueFilter, setDueFilter] = useState<"all" | "due" | "overdue">("all");
+  const [duplicateFilter, setDuplicateFilter] = useState<"all" | "possible">("all");
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [editingLead, setEditingLead] = useState<LeadWithRelations | null>(null);
   const [creatingLead, setCreatingLead] = useState(false);
@@ -251,10 +252,11 @@ export function LeadsPage() {
         dueFilter === "all" ||
         (dueFilter === "due" && dueDate && isToday(dueDate)) ||
         (dueFilter === "overdue" && dueDate && dueDate < startOfToday());
-      const matchesSearch = !q || `${lead.full_name} ${lead.phone ?? ""} ${lead.email ?? ""} ${lead.source ?? ""}`.toLowerCase().includes(q);
-      return assigned && stage && due && matchesSearch;
+      const duplicate = duplicateFilter === "all" || Boolean(lead.possible_duplicate);
+      const matchesSearch = !q || `${lead.full_name} ${lead.phone ?? ""} ${lead.email ?? ""} ${lead.source ?? ""} ${lead.duplicate_reason ?? ""}`.toLowerCase().includes(q);
+      return assigned && stage && due && duplicate && matchesSearch;
     });
-  }, [assignedFilter, dueFilter, leads, search, stageFilter]);
+  }, [assignedFilter, dueFilter, duplicateFilter, leads, search, stageFilter]);
   const selectedActivities = activities?.filter((activity) => activity.lead_id === selectedLead?.id) ?? [];
   const selectedTasks = tasks?.filter((task) => task.lead_id === selectedLead?.id) ?? [];
   const selectedVisits = visits?.filter((visit) => visit.lead_id === selectedLead?.id) ?? [];
@@ -621,7 +623,7 @@ export function LeadsPage() {
               <p className="mt-1 text-sm text-muted-foreground">A Lead is a person who has shown interest in a project or lot but may not yet be an applicant or customer.</p>
             </CardHeader>
             <CardContent className="grid gap-4">
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_220px_220px_180px]">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(220px,1fr)_220px_220px_180px_180px]">
                 <Field label="Search">
                   <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone, email, source" />
                 </Field>
@@ -646,6 +648,12 @@ export function LeadsPage() {
                     <option value="overdue">Overdue</option>
                   </Select>
                 </Field>
+                <Field label="Duplicate review">
+                  <Select value={duplicateFilter} onChange={(event) => setDuplicateFilter(event.target.value as typeof duplicateFilter)}>
+                    <option value="all">All leads</option>
+                    <option value="possible">Possible duplicates</option>
+                  </Select>
+                </Field>
               </div>
               {filteredLeads.length ? (
                 <div className="overflow-x-auto">
@@ -667,6 +675,12 @@ export function LeadsPage() {
                           <td>
                             <div className="max-w-[260px] break-words font-medium text-foreground">{lead.full_name}</div>
                             <div className="max-w-[260px] break-words text-xs text-muted-foreground">{[lead.phone, lead.email].filter(Boolean).join(" | ") || "No contact details"}</div>
+                            {lead.possible_duplicate ? (
+                              <div className="mt-1 grid gap-1">
+                                <Badge tone="amber">Possible Duplicate</Badge>
+                                <div className="max-w-[260px] break-words text-xs text-amber-700">{lead.duplicate_reason ?? "Review matching application or lead records."}</div>
+                              </div>
+                            ) : null}
                           </td>
                           <td><PipelineBadge stage={lead.pipeline_stage} /></td>
                           <td>
@@ -897,7 +911,10 @@ function LeadDetailCard({
           <CardTitle className="break-words">{lead.full_name}</CardTitle>
           <p className="mt-1 break-words text-sm text-muted-foreground">{[lead.phone, lead.email, lead.whatsapp ? `WhatsApp ${lead.whatsapp}` : ""].filter(Boolean).join(" | ") || "No contact details"}</p>
         </div>
-        <PipelineBadge stage={lead.pipeline_stage} />
+        <div className="flex flex-wrap gap-2">
+          {lead.possible_duplicate ? <Badge tone="amber">Possible Duplicate</Badge> : null}
+          <PipelineBadge stage={lead.pipeline_stage} />
+        </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid gap-3 text-sm">
@@ -909,6 +926,9 @@ function LeadDetailCard({
           <Meta label="Budget" value={budgetLabel(lead)} />
           <Meta label="Preferred contact" value={lead.preferred_contact_method ?? "Not recorded"} />
           <Meta label="Source" value={lead.source ?? "Not recorded"} />
+          {lead.possible_duplicate ? (
+            <Meta label="Duplicate review" value={lead.duplicate_reason ?? "Review matching application or lead records."} />
+          ) : null}
         </div>
         <div className="grid gap-2 text-sm">
           {lead.parcels ? <p>Interested lot: <strong>Lot {lead.parcels.lot_number}</strong></p> : null}

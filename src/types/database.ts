@@ -348,6 +348,9 @@ export type Lead = {
   next_action_due_at: string | null;
   notes: string | null;
   lost_reason: string | null;
+  possible_duplicate: boolean;
+  duplicate_reason: string | null;
+  duplicate_checked_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

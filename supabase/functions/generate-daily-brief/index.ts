@@ -356,6 +356,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   const leadsNeedingFollowUp = data.leads.filter((row) =>
     !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && Boolean(row.next_action)
   );
+  const possibleDuplicateLeads = data.leads.filter((row) => Boolean(row.possible_duplicate));
   const overdueLeadNextActions = data.leads.filter((row) =>
     !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && isBefore(row.next_action_due_at, today)
   );
@@ -418,7 +419,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   ].join(" ")));
   alerts.push(section("Current Snapshot", [
     `${data.lots.length} total lots: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold.`,
-    `${pendingApplications.length} pending applications/leads. ${leadsNeedingFollowUp.length} leads need staff follow-up, including ${overdueLeadNextActions.length} overdue follow-ups.`,
+    `${pendingApplications.length} pending applications/leads. ${leadsNeedingFollowUp.length} leads need staff follow-up, including ${overdueLeadNextActions.length} overdue follow-ups. ${possibleDuplicateLeads.length} leads are flagged for possible duplicate review.`,
     `${activeContracts.length} active contracts across ${new Set(activeContracts.map((row) => row.customer_id).filter(Boolean)).size} customers.`,
     `Outstanding land balance is ${money(outstanding)}.`,
     `${openPaymentRequests.length} open payment requests.`,
@@ -436,6 +437,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   alerts.push(section("Post-Sales Blockers", `${openPostSalesTasks.length} open post-sales tasks. ${overduePostSalesTasks.length} overdue post-sales tasks. ${blockedPostSalesChecklists.length} blocked checklists. ${agreementsReady.length} agreements ready for review or signature. ${documentsPending.length} documents missing or pending review. ${paymentSetupPending.length} payment setups pending.`));
   alerts.push(section("Collections Handoff", `${handoffReady.length} customers are ready for collections handoff. ${overdue.length} active contracts appear overdue. ${overduePaymentRequests.length} open payment requests are past due.`));
 
+  if (possibleDuplicateLeads.length) alerts.push(alert("amber", "Possible duplicate leads", `${possibleDuplicateLeads.length} leads need duplicate review before staff merge or cleanup decisions.`));
   if (flaggedReviews.length) alerts.push(alert("amber", "Applications need review", `${flaggedReviews.length} applications have AI review flags.`));
   if (lotInterest.filter((row) => row.count > 1).length) alerts.push(alert("amber", "Lot interest conflicts", `${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest.`));
   if (conflictApplications.length) alerts.push(alert("red", "Unavailable preferred lots", `${conflictApplications.length} applications selected reserved or sold lots.`));
@@ -452,6 +454,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   if (handoffReady.length) alerts.push(alert("amber", "Collections handoff ready", `${handoffReady.length} customers are ready for collections handoff.`));
 
   overdueFollowUps.slice(0, 5).forEach((row) => recommendedActions.push(action("Follow up on overdue lead task", String(row.title ?? "Sales follow-up task"), "follow_up_task", row.id)));
+  possibleDuplicateLeads.slice(0, 5).forEach((row) => recommendedActions.push(action("Review possible duplicate lead", `${row.full_name ?? "Lead"}: ${row.duplicate_reason ?? "Possible duplicate detected."}`, "lead", row.id)));
   urgentFollowUps.slice(0, 5).forEach((row) => recommendedActions.push(action("Review high-priority buyer follow-up", String(row.title ?? "Sales follow-up task"), "follow_up_task", row.id)));
   expiringSoonReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review reservation expiring soon", reservationLabel(row), "reservation", row.id)));
   expiredReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review expired active reservation", reservationLabel(row), "reservation", row.id)));
@@ -475,7 +478,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   if (!recommendedActions.length) recommendedActions.push(action("Monitor operations", "No immediate manual follow-up was detected for this period.", "brief"));
 
   return {
-    summary: `${periodApplications.length} new applications/leads, ${periodUpdatedApplications.length} updated applications/leads, ${periodLeads.length} new CRM leads (${periodPublicApplicationLeads.length} from public applications), ${periodPayments.length} payments totaling ${money(collected)}, and ${periodContracts.length} new contracts were recorded for the selected period. Current snapshot shows ${leadsNeedingFollowUp.length} leads needing follow-up and ${currentIssues.length} source-backed open items, including ${newIssues.length} new and ${repeatedIssues.length} repeated unresolved issues.`,
+    summary: `${periodApplications.length} new applications/leads, ${periodUpdatedApplications.length} updated applications/leads, ${periodLeads.length} new CRM leads (${periodPublicApplicationLeads.length} from public applications), ${periodPayments.length} payments totaling ${money(collected)}, and ${periodContracts.length} new contracts were recorded for the selected period. Current snapshot shows ${leadsNeedingFollowUp.length} leads needing follow-up, ${possibleDuplicateLeads.length} possible duplicate leads, and ${currentIssues.length} source-backed open items, including ${newIssues.length} new and ${repeatedIssues.length} repeated unresolved issues.`,
     applications_summary: `${periodApplications.length} new applications/leads. ${periodUpdatedApplications.length} applications/leads updated during the period. ${pendingApplications.length} pending applications/leads. ${incompleteApplications.length} applications are missing key information. ${flaggedReviews.length} applications have AI review flags. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. ${conflictApplications.length} active applications selected unavailable lots. ${approvedWithoutPostSales.length} approved applications do not have a linked post-sales checklist.`,
     lots_summary: `${data.lots.length} total lots: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold. ${recentlyUpdatedLots.length} lots were updated during the period. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. Reservations: ${activeReservations.length} active, ${expiringSoonReservations.length} expiring soon, ${expiredReservations.length} needing expiry review.`,
     payments_summary: `${periodPayments.length} payments logged during the period. Total collected: ${money(collected)}. Cash: ${money(cashTotal)}. Transfers: ${money(transferTotal)}. ${missingReceipts.length} payments are missing manual receipt numbers. ${missingProof.length} transfer payments are missing uploaded proof. ${duplicateRefs.length} duplicate bank references were detected. ${incompletePayments.length} payments look incomplete.`,
