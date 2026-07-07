@@ -268,7 +268,7 @@ export function PaymentForm({
             </Select>
           </Field>
           <Field label="Optional payment document">
-            <div className="crm-subpanel grid gap-2">
+            <div className="v2-workflow-panel grid gap-2 p-3">
               <Input
                 type="file"
                 accept="application/pdf,image/jpeg,image/png,image/webp"
@@ -292,7 +292,7 @@ export function PaymentForm({
   }
 
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardHeader>
         <CardTitle>Record Payment</CardTitle>
       </CardHeader>

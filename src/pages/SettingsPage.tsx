@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -407,8 +406,12 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Business configuration, payment options, role management, and smart helper foundation." />
-      <div className="grid gap-6">
+      <section className="v2-page-shell">
+        <div className="v2-page-header">
+          <p className="v2-page-kicker">Administration</p>
+          <h1 className="v2-page-title">Settings</h1>
+          <p className="v2-page-description">Business configuration, payment options, role management, and smart helper foundation.</p>
+        </div>
         {settingsLoading ? <LoadingState label="Loading settings" /> : null}
         {error ? <ErrorState message={error} /> : null}
         {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
@@ -418,8 +421,8 @@ export function SettingsPage() {
           </div>
         ) : null}
 
-        <div className="crm-tabs">
-          <div className="crm-tab-list">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card/90 p-2 shadow-sm shadow-primary/5">
+          <div className="flex min-w-max gap-1">
             {settingsSections.map((section) => (
               <button
                 key={section}
@@ -438,7 +441,7 @@ export function SettingsPage() {
 
         {activeSection === "Company Profile" ? (
           <div className="grid gap-6">
-            <Card>
+            <Card className="v2-workflow-panel">
               <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
               <CardContent className="grid gap-4">
                 <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-start">
@@ -469,7 +472,7 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="v2-workflow-panel">
               <CardHeader><CardTitle>Public Application Settings</CardTitle></CardHeader>
               <CardContent className="grid gap-4">
                 <ToggleField label="Applications open" checked={application.applications_open} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, applications_open: checked })} />
@@ -503,7 +506,7 @@ export function SettingsPage() {
           >
             {paymentMethodsDraft.length === 0 ? <EmptyState label="No payment methods configured." /> : null}
             {paymentMethodsDraft.map((method, index) => (
-              <div key={method.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
+              <div key={method.id} className="v2-record-row grid gap-4">
                 <RowHeader title={method.name || "New payment method"} active={method.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={method.name} disabled={!canManageConfig} onChange={(value) => updateDraft(paymentMethodsDraft, setPaymentMethodsDraft, index, { name: value })} />
@@ -532,7 +535,7 @@ export function SettingsPage() {
           <ConfigList title="Installment Plans" loading={plansLoading} canEdit={canManageConfig} saving={savingSection === "Installment plans"} onAdd={() => setPlansDraft((rows) => [...rows, newPlan(rows.length)])} onSave={() => void savePlans()}>
             {plansDraft.length === 0 ? <EmptyState label="No installment plans configured." /> : null}
             {plansDraft.map((plan, index) => (
-              <div key={plan.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
+              <div key={plan.id} className="v2-ledger-row grid gap-4">
                 <RowHeader title={plan.name || "New installment plan"} active={plan.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={plan.name} disabled={!canManageConfig} onChange={(value) => updateDraft(plansDraft, setPlansDraft, index, { name: value })} />
@@ -557,7 +560,7 @@ export function SettingsPage() {
           <ConfigList title="Lot Sizes" loading={lotSizesLoading} canEdit={canManageConfig} saving={savingSection === "Lot sizes"} onAdd={() => setLotSizesDraft((rows) => [...rows, newLotSize(rows.length)])} onSave={() => void saveLotSizes()}>
             {lotSizesDraft.length === 0 ? <EmptyState label="No lot sizes configured." /> : null}
             {lotSizesDraft.map((lotSize, index) => (
-              <div key={lotSize.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
+              <div key={lotSize.id} className="v2-record-row grid gap-4">
                 <RowHeader title={lotSize.name || "New lot size"} active={lotSize.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={lotSize.name} disabled={!canManageConfig} onChange={(value) => updateDraft(lotSizesDraft, setLotSizesDraft, index, { name: value })} />
@@ -578,7 +581,7 @@ export function SettingsPage() {
           <ConfigList title="Fee Types" loading={feeTypesLoading} canEdit={canManageConfig} saving={savingSection === "Fee types"} onAdd={() => setFeeTypesDraft((rows) => [...rows, newFeeType(rows.length)])} onSave={() => void saveFeeTypes()}>
             {feeTypesDraft.length === 0 ? <EmptyState label="No fee types configured." /> : null}
             {feeTypesDraft.map((feeType, index) => (
-              <div key={feeType.id} className="grid gap-4 rounded-md border border-border bg-card p-4 shadow-sm shadow-primary/5">
+              <div key={feeType.id} className="v2-ledger-row grid gap-4">
                 <RowHeader title={feeType.name || "New fee type"} active={feeType.is_active} />
                 <div className="grid gap-4 md:grid-cols-3">
                   <TextInput label="Name" value={feeType.name} disabled={!canManageConfig} onChange={(value) => updateDraft(feeTypesDraft, setFeeTypesDraft, index, { name: value })} />
@@ -613,7 +616,7 @@ export function SettingsPage() {
         ) : null}
 
         {activeSection === "AI Settings" ? (
-          <Card>
+          <Card className="v2-advisor-panel">
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle>AI Settings</CardTitle>
@@ -661,14 +664,14 @@ export function SettingsPage() {
         ) : null}
 
         {activeSection === "Users & Roles" ? (
-          <Card>
+          <Card className="v2-workflow-panel">
             <CardHeader><CardTitle>Users & Roles</CardTitle></CardHeader>
             <CardContent className="grid gap-5">
               {usersLoading ? <LoadingState label="Loading users" /> : null}
               {userError ? <ErrorState message={userError} /> : null}
               {userMessage ? <Toast message={userMessage} onDismiss={() => setUserMessage(null)} /> : null}
               {!canManageUsers ? <div className="crm-warning-panel p-3 text-sm">Only Super Admin users can create users or change roles.</div> : null}
-              <form className="crm-subpanel grid gap-4" onSubmit={createUser}>
+              <form className="v2-workflow-panel grid gap-4 p-4" onSubmit={createUser}>
                 <div className="grid gap-4 md:grid-cols-2">
                   <TextInput label="Email" type="email" value={email} disabled={!canManageUsers} onChange={setEmail} />
                   <TextInput label="Full name" value={fullName} disabled={!canManageUsers} onChange={setFullName} />
@@ -685,7 +688,7 @@ export function SettingsPage() {
               </form>
               <div className="grid gap-3">
                 {users?.map((user) => (
-                  <div key={user.user_id} className="grid gap-3 rounded-md border p-3 text-sm md:grid-cols-[1fr_220px] md:items-center">
+                  <div key={user.user_id} className="v2-record-row grid gap-3 md:grid-cols-[1fr_220px] md:items-center">
                     <div>
                       <p className="font-medium">{user.full_name || user.email || user.user_id}</p>
                       <p className="text-muted-foreground">{user.email ?? "No email stored"}</p>
@@ -702,7 +705,7 @@ export function SettingsPage() {
             </CardContent>
           </Card>
         ) : null}
-      </div>
+      </section>
     </>
   );
 }
@@ -751,7 +754,7 @@ function WorkflowGuideSection() {
     },
   ];
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>CRM Workflow Guide</CardTitle>
       </CardHeader>
@@ -790,7 +793,7 @@ function ReservationSettingsSection({
   }
 
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>Reservation Settings</CardTitle>
       </CardHeader>
@@ -872,7 +875,7 @@ function ConfigList({
   children: React.ReactNode;
 }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>{title}</CardTitle>
@@ -901,7 +904,7 @@ function RowHeader({ title, active }: { title: string; active: boolean }) {
 
 function SectionSaveButton({ disabled, saving, onClick }: { disabled: boolean; saving: boolean; onClick: () => void }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-end border-t border-border/80 pt-4">
       <Button type="button" disabled={disabled || saving} onClick={onClick}>
         {saving ? "Saving..." : "Save section"}
       </Button>
@@ -911,7 +914,7 @@ function SectionSaveButton({ disabled, saving, onClick }: { disabled: boolean; s
 
 function ToggleField({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="flex min-h-11 items-center justify-between gap-4 rounded-md border border-border bg-card p-3 text-sm font-medium text-foreground shadow-sm shadow-primary/5">
+    <label className="flex min-h-11 items-center justify-between gap-4 rounded-md border border-primary/10 bg-card/80 p-3 text-sm font-medium text-foreground shadow-sm shadow-primary/5">
       <span>{label}</span>
       <input className="h-4 w-4 accent-primary disabled:opacity-50" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
     </label>
@@ -966,7 +969,7 @@ function OptionalNumberInput({
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">{label}</p>;
+  return <p className="rounded-lg border border-dashed border-primary/20 bg-primary-soft/25 p-4 text-sm text-muted-foreground">{label}</p>;
 }
 
 function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {

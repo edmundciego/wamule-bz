@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge, statusBadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -433,16 +432,20 @@ export function ReportsPage() {
   );
 
   return (
-    <>
-      <PageHeader title="Reports" description="Operational reports and CSV exports for payments, balances, applications, lots, and cleanup items." />
+    <section className="v2-page-shell">
+      <div className="v2-page-header">
+        <p className="v2-page-kicker">Management Review</p>
+        <h1 className="v2-page-title">Reports</h1>
+        <p className="v2-page-description">Operational reports and CSV exports for payments, balances, applications, lots, and cleanup items.</p>
+      </div>
       {isLoading ? <LoadingState label="Loading reports" /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
-      <div className="crm-info-panel mb-6 p-4 text-sm">
+      <div className="v2-archive-panel p-4 text-sm text-primary">
         Reports are read-only summaries for management review. They do not update records or trigger workflow changes.
       </div>
 
-      <div className="crm-tabs mb-6 overflow-x-auto">
-        <div className="crm-tab-list">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card/90 p-2 shadow-sm shadow-primary/5">
+        <div className="flex min-w-max gap-1">
           {tabs.map((tab) => (
             <button
               key={tab}
@@ -479,7 +482,7 @@ export function ReportsPage() {
       {activeTab === "Demand" ? <DemandReport leads={leadsQuery.data ?? []} applications={applicationsQuery.data ?? []} reservations={reservationsQuery.data ?? []} visits={siteVisitsQuery.data ?? []} lotById={lotById} /> : null}
       {activeTab === "Lots" ? <LotsReport rows={lotsQuery.data ?? []} /> : null}
       {activeTab === "Missing Items" ? <MissingItemsReport items={missingItems} paymentRequests={paymentRequestsQuery.data ?? []} postSalesChecklists={postSalesChecklistsQuery.data ?? []} /> : null}
-    </>
+    </section>
   );
 }
 
@@ -549,7 +552,7 @@ function PaymentsReport({
         description={`${rows.length} of ${allRows.length} payments shown. Total: ${money(total)}.`}
         onExport={exportPayments}
       />
-      <Card>
+      <Card className="v2-filter-bar">
         <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-5">
           <Field label="Date from">
@@ -1274,7 +1277,7 @@ function MissingItemsReport({
   const handoffReady = postSalesChecklists.filter((row) => row.collections_handoff_status === "ready");
   return (
     <div className="grid gap-5">
-      <Card>
+      <Card className="v2-workflow-panel">
         <CardHeader>
           <CardTitle>Missing Items Report</CardTitle>
         </CardHeader>
@@ -1348,7 +1351,7 @@ type ReportFilterSetters = {
 
 function DateFilters({ dateFrom, dateTo, setDateFrom, setDateTo }: { dateFrom: string; dateTo: string; setDateFrom: (value: string) => void; setDateTo: (value: string) => void }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
         <Field label="Date from">
@@ -1364,7 +1367,7 @@ function DateFilters({ dateFrom, dateTo, setDateFrom, setDateTo }: { dateFrom: s
 
 function SalesFilters({ filters, onFiltersChange, sourceOptions, staffOptions }: { filters: ReportFilters; onFiltersChange: ReportFilterSetters; sourceOptions: string[]; staffOptions: Array<[string, string]> }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-5">
         <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
@@ -1394,7 +1397,7 @@ function SalesFilters({ filters, onFiltersChange, sourceOptions, staffOptions }:
 
 function TaskFilters({ filters, onFiltersChange, staffOptions, statusOptions }: { filters: ReportFilters; onFiltersChange: ReportFilterSetters; staffOptions: Array<[string, string]>; statusOptions: string[] }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-5">
         <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
@@ -1424,7 +1427,7 @@ function TaskFilters({ filters, onFiltersChange, staffOptions, statusOptions }: 
 
 function VisitFilters({ filters, onFiltersChange, staffOptions }: { filters: ReportFilters; onFiltersChange: ReportFilterSetters; staffOptions: Array<[string, string]> }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-4">
         <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
@@ -1448,7 +1451,7 @@ function VisitFilters({ filters, onFiltersChange, staffOptions }: { filters: Rep
 
 function ReservationFilters({ filters, onFiltersChange, staffOptions }: { filters: ReportFilters; onFiltersChange: ReportFilterSetters; staffOptions: Array<[string, string]> }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-4">
         <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
@@ -1472,7 +1475,7 @@ function ReservationFilters({ filters, onFiltersChange, staffOptions }: { filter
 
 function PostSalesFilters({ filters, onFiltersChange, staffOptions }: { filters: ReportFilters; onFiltersChange: ReportFilterSetters; staffOptions: Array<[string, string]> }) {
   return (
-    <Card>
+    <Card className="v2-filter-bar">
       <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-5">
         <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
@@ -1502,7 +1505,7 @@ function PostSalesFilters({ filters, onFiltersChange, staffOptions }: { filters:
 
 function MetricGrid({ metrics }: { metrics: Array<[string, number]> }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         {metrics.map(([title, value]) => <CleanupMetric key={title} title={title} value={value} />)}
       </CardContent>
@@ -1513,11 +1516,11 @@ function MetricGrid({ metrics }: { metrics: Array<[string, number]> }) {
 function CountPanel({ title, counts }: { title: string; counts: Record<string, number> }) {
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 12);
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent className="grid gap-2">
         {entries.length ? entries.map(([label, count]) => (
-          <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm">
+          <div key={label} className="flex items-center justify-between gap-3 rounded-md border border-primary/10 bg-card/80 px-3 py-2 text-sm">
             <span className="font-medium text-primary">{label}</span>
             <Badge tone="blue">{count}</Badge>
           </div>
@@ -1529,10 +1532,10 @@ function CountPanel({ title, counts }: { title: string; counts: Record<string, n
 
 function ReportSummary({ title, description, onExport }: { title: string; description: string; onExport: () => void }) {
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardContent className="grid min-w-0 gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="min-w-0">
-          <p className="font-display text-2xl font-semibold text-foreground">{title}</p>
+          <p className="text-2xl font-semibold text-primary">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
         <Button type="button" className="w-full sm:w-auto" onClick={onExport}>
@@ -1546,12 +1549,12 @@ function ReportSummary({ title, description, onExport }: { title: string; descri
 
 function ReportTable({ headers, rows, emptyMessage }: { headers: string[]; rows: React.ReactNode[][]; emptyMessage: string }) {
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardContent className="p-0">
         {rows.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">{emptyMessage}</div>
         ) : (
-          <div className="max-w-full overflow-x-auto">
+          <div className="v2-table-wrap">
             <table className="crm-table min-w-[900px]">
               <thead>
                 <tr>
@@ -1581,7 +1584,7 @@ function ReportTable({ headers, rows, emptyMessage }: { headers: string[]; rows:
 
 function CleanupMetric({ title, value }: { title: string; value: number }) {
   return (
-    <div className="crm-subpanel">
+    <div className="v2-record-row">
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
       <p className="mt-2 text-2xl font-semibold text-primary">{value}</p>
     </div>
@@ -1590,12 +1593,12 @@ function CleanupMetric({ title, value }: { title: string; value: number }) {
 
 function MissingList({ title, rows }: { title: string; rows: string[] }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent className="grid gap-2">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No items found.</p> : null}
         {rows.map((row) => (
-          <div key={row} className="break-words rounded-md border border-border bg-card p-3 text-sm text-slate shadow-sm shadow-primary/5">{row}</div>
+          <div key={row} className="v2-record-row break-words text-slate">{row}</div>
         ))}
       </CardContent>
     </Card>

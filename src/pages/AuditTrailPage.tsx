@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select } from "../components/ui/Field";
@@ -152,13 +151,14 @@ export function AuditTrailPage() {
   }, [action, dateFrom, dateTo, entityType, events, search]);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Audit Trail"
-        description="Audit Trail records important system and staff actions for accountability."
-      />
+    <section className="v2-page-shell">
+      <div className="v2-page-header">
+        <p className="v2-page-kicker">History / Accountability</p>
+        <h1 className="v2-page-title">Audit Trail</h1>
+        <p className="v2-page-description">Read-only history of important system and staff actions.</p>
+      </div>
 
-      <Card>
+      <Card className="v2-archive-panel">
         <CardHeader>
           <CardTitle>Read-only history</CardTitle>
           <CardDescription>
@@ -207,7 +207,7 @@ export function AuditTrailPage() {
 
       {!isLoading && !error ? (
         filteredEvents.length > 0 ? (
-          <Card>
+          <Card className="v2-archive-panel">
             <CardHeader>
               <CardTitle>Audit entries</CardTitle>
               <CardDescription>
@@ -215,7 +215,7 @@ export function AuditTrailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="v2-table-wrap">
                 <table className="crm-table min-w-[980px]">
                   <thead>
                     <tr>
@@ -230,7 +230,7 @@ export function AuditTrailPage() {
                   </thead>
                   <tbody>
                     {filteredEvents.map((event) => (
-                      <tr key={event.id}>
+                      <tr key={event.id} className="align-top">
                         <td className="whitespace-nowrap text-sm">{formatDateTime(event.created_at)}</td>
                         <td>
                           <Badge tone="slate">{auditEntityLabel(event.entity_type)}</Badge>
@@ -276,6 +276,6 @@ export function AuditTrailPage() {
           />
         )
       ) : null}
-    </div>
+    </section>
   );
 }

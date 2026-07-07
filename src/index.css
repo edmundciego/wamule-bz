@@ -100,7 +100,7 @@
   }
 
   .crm-subpanel {
-    @apply rounded-md border border-border bg-muted p-3;
+    @apply rounded-lg border border-border/80 bg-card/80 p-3 shadow-sm shadow-primary/5;
   }
 
   .crm-success-panel {
@@ -113,6 +113,78 @@
 
   .crm-info-panel {
     @apply rounded-md border border-primary/15 bg-primary-soft text-primary;
+  }
+
+  .v2-page-shell {
+    @apply mx-auto grid max-w-[1520px] gap-6;
+  }
+
+  .v2-page-header {
+    @apply rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_52%,#ecf3e6_100%)] p-5 shadow-[0_18px_48px_rgba(45,35,23,0.08)] sm:p-6;
+  }
+
+  .v2-page-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-secondary;
+  }
+
+  .v2-page-title {
+    @apply mt-2 text-3xl font-semibold leading-tight text-primary;
+  }
+
+  .v2-page-description {
+    @apply mt-2 max-w-3xl text-sm leading-6 text-muted-foreground;
+  }
+
+  .v2-ledger-panel {
+    @apply rounded-xl border border-border bg-white shadow-sm shadow-primary/5;
+  }
+
+  .v2-workflow-panel {
+    @apply rounded-xl border border-primary/15 bg-primary-soft/35 shadow-sm shadow-primary/5;
+  }
+
+  .v2-advisor-panel {
+    @apply rounded-xl border border-secondary/25 bg-[#fff8e6] shadow-sm shadow-secondary/10;
+  }
+
+  .v2-archive-panel {
+    @apply rounded-xl border border-border/80 bg-muted/40 shadow-sm shadow-primary/5;
+  }
+
+  .v2-filter-bar {
+    @apply rounded-xl border border-border bg-card/90 p-4 shadow-sm shadow-primary/5;
+  }
+
+  .v2-record-row {
+    @apply rounded-lg border border-border bg-card/90 p-4 text-sm shadow-sm shadow-primary/5 transition hover:border-primary/20 hover:bg-primary-soft/20;
+  }
+
+  .v2-ledger-row {
+    @apply rounded-lg border border-border bg-white p-4 text-sm shadow-sm shadow-primary/5;
+  }
+
+  .v2-archive-row {
+    @apply rounded-lg border border-border/80 bg-card/70 p-4 text-sm shadow-sm shadow-primary/5;
+  }
+
+  .v2-section-title {
+    @apply text-lg font-semibold text-primary;
+  }
+
+  .v2-section-copy {
+    @apply mt-1 text-sm leading-6 text-muted-foreground;
+  }
+
+  .v2-definition-row {
+    @apply grid gap-1 border-b border-border/70 pb-2 text-sm last:border-b-0 last:pb-0 sm:grid-cols-[150px_minmax(0,1fr)];
+  }
+
+  .v2-money {
+    @apply font-semibold text-primary tabular-nums;
+  }
+
+  .v2-table-wrap {
+    @apply overflow-x-auto rounded-xl border border-border bg-white shadow-sm shadow-primary/5;
   }
 
   .brand-rule {

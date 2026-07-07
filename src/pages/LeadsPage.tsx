@@ -1,14 +1,30 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, CheckCircle2, ClipboardList, Edit3, Plus, RefreshCw, XCircle } from "lucide-react";
-import { PageHeader } from "../components/layout/PageHeader";
+import {
+  ArrowLeft,
+  Brain,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Edit3,
+  Flag,
+  History,
+  MapPin,
+  MessageSquareText,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  UserRound,
+  XCircle,
+} from "lucide-react";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
-import { SmartInsightList, SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
+import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
 import { getSessionAndProfile } from "../lib/data";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
@@ -112,6 +128,7 @@ export function LeadsPage() {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [editingLead, setEditingLead] = useState<LeadWithRelations | null>(null);
   const [creatingLead, setCreatingLead] = useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
@@ -265,6 +282,11 @@ export function LeadsPage() {
     selectedReservations.some((reservation) => reservation.id === activity.reservation_id),
   ) ?? [];
   const selectedLeadSummary = leadAiSummaries?.find((summary) => summary.lead_id === selectedLead?.id) ?? null;
+  const pipelineCounts = useMemo(() => {
+    const counts = new Map<LeadPipelineStage, number>();
+    (leads ?? []).forEach((lead) => counts.set(lead.pipeline_stage, (counts.get(lead.pipeline_stage) ?? 0) + 1));
+    return counts;
+  }, [leads]);
 
   function clearNotices() {
     setActionError(null);
@@ -576,27 +598,29 @@ export function LeadsPage() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Leads"
-        description="Sales pipeline, follow-ups, site visits, and buyer journey tracking."
-        action={canWrite ? (
+    <div className="space-y-5">
+      <header className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Sales workspace</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">Leads</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Manage buyer interest, follow-ups, site visits, and reservations.
+          </p>
+        </div>
+        {canWrite ? (
           <Button type="button" onClick={() => { setCreatingLead(true); setEditingLead(null); }}>
             <Plus className="h-4 w-4" />
-            New Lead
+            Add Lead
           </Button>
         ) : null}
-      />
+      </header>
       {isLoading ? <LoadingState label="Loading leads" /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
       {message ? <div className="crm-success-panel mb-4 p-3 text-sm">{message}</div> : null}
-      <div className="crm-info-panel mb-4 p-4 text-sm">
-        Leads track interested buyers before or during the application and customer process. Follow-ups are internal reminders for the next staff action, and Site Visits are appointments to view a project or lot.
-      </div>
 
       {(creatingLead || editingLead) && canWrite ? (
-        <Card className="mb-6">
+        <Card className="v2-workflow-panel mb-6">
           <CardHeader>
             <CardTitle>{editingLead ? "Edit Lead" : "Create Lead"}</CardTitle>
           </CardHeader>
@@ -615,156 +639,100 @@ export function LeadsPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="grid min-w-0 content-start gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sales Pipeline</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">A Lead is a person who has shown interest in a project or lot but may not yet be an applicant or customer.</p>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(220px,1fr)_220px_220px_180px_180px]">
-                <Field label="Search">
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone, email, source" />
-                </Field>
-                <Field label="Pipeline stage">
-                  <Select value={stageFilter} onChange={(event) => setStageFilter(event.target.value as LeadPipelineStage | "all")}>
-                    <option value="all">All stages</option>
-                    {pipelineStages.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-                  </Select>
-                </Field>
-                <Field label="Assigned staff">
-                  <Select value={assignedFilter} onChange={(event) => setAssignedFilter(event.target.value)}>
-                    <option value="all">All staff</option>
-                    {(adminProfiles ?? []).map((profile) => (
-                      <option key={profile.user_id} value={profile.user_id}>{adminLabel(profile)}</option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Follow-up">
-                  <Select value={dueFilter} onChange={(event) => setDueFilter(event.target.value as typeof dueFilter)}>
-                    <option value="all">All</option>
-                    <option value="due">Due today</option>
-                    <option value="overdue">Overdue</option>
-                  </Select>
-                </Field>
-                <Field label="Duplicate review">
-                  <Select value={duplicateFilter} onChange={(event) => setDuplicateFilter(event.target.value as typeof duplicateFilter)}>
-                    <option value="all">All leads</option>
-                    <option value="possible">Possible duplicates</option>
-                  </Select>
-                </Field>
-              </div>
-              {filteredLeads.length ? (
-                <div className="overflow-x-auto">
-                  <table className="crm-table min-w-[980px]">
-                    <thead>
-                      <tr>
-                        <th>Lead</th>
-                        <th>Stage</th>
-                        <th>Next Action</th>
-                        <th>Assigned</th>
-                        <th>Linked Records</th>
-                        <th>Updated</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredLeads.map((lead) => (
-                        <tr key={lead.id}>
-                          <td>
-                            <div className="max-w-[260px] break-words font-medium text-foreground">{lead.full_name}</div>
-                            <div className="max-w-[260px] break-words text-xs text-muted-foreground">{[lead.phone, lead.email].filter(Boolean).join(" | ") || "No contact details"}</div>
-                            {lead.possible_duplicate ? (
-                              <div className="mt-1 grid gap-1">
-                                <Badge tone="amber">Possible Duplicate</Badge>
-                                <div className="max-w-[260px] break-words text-xs text-amber-700">{lead.duplicate_reason ?? "Review matching application or lead records."}</div>
-                              </div>
-                            ) : null}
-                          </td>
-                          <td><PipelineBadge stage={lead.pipeline_stage} /></td>
-                          <td>
-                            <div className="max-w-[240px] truncate">{lead.next_action ?? "No next action"}</div>
-                            <div className={cn("text-xs", isOverdue(lead.next_action_due_at, now) ? "text-danger" : "text-muted-foreground")}>
-                              {lead.next_action_due_at ? formatDate(lead.next_action_due_at) : "No due date"}
-                            </div>
-                          </td>
-                          <td>{adminLabelById(adminProfiles, lead.assigned_to)}</td>
-                          <td>
-                            <div className="grid gap-1 text-xs">
-                              {lead.applications ? <span>Application #{lead.applications.id}</span> : null}
-                              {lead.customers ? <span>Customer #{lead.customers.id}</span> : null}
-                              {lead.parcels ? <span>Lot {lead.parcels.lot_number}</span> : null}
-                              {!lead.applications && !lead.customers && !lead.parcels ? <span className="text-muted-foreground">Not linked</span> : null}
-                            </div>
-                          </td>
-                          <td>{formatDate(lead.updated_at)}</td>
-                          <td>
-                            <Button type="button" variant={selectedLead?.id === lead.id ? "primary" : "outline"} onClick={() => setSelectedLeadId(lead.id)}>
-                              View
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <EmptyState title="No leads found" detail="Create a lead or adjust the sales filters." />
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      <PipelineStrip
+        counts={pipelineCounts}
+        activeStage={stageFilter}
+        onStageSelect={(stage) => setStageFilter(stage)}
+      />
 
-        <aside className="grid min-w-0 content-start gap-4">
+      <div className="grid gap-5 xl:grid-cols-[minmax(330px,0.38fr)_minmax(0,0.62fr)]">
+        <section className={cn("min-w-0 xl:block", mobileDetailOpen && "hidden")}>
+          <BuyerQueue
+            search={search}
+            stageFilter={stageFilter}
+            assignedFilter={assignedFilter}
+            dueFilter={dueFilter}
+            duplicateFilter={duplicateFilter}
+            adminProfiles={adminProfiles ?? []}
+            leads={filteredLeads}
+            selectedLeadId={selectedLead?.id ?? null}
+            now={now}
+            onSearch={setSearch}
+            onStageFilter={setStageFilter}
+            onAssignedFilter={setAssignedFilter}
+            onDueFilter={setDueFilter}
+            onDuplicateFilter={setDuplicateFilter}
+            onSelect={(leadId) => {
+              setSelectedLeadId(leadId);
+              setMobileDetailOpen(true);
+            }}
+          />
+        </section>
+
+        <section className={cn("min-w-0 xl:block", !mobileDetailOpen && "hidden")}>
           {selectedLead ? (
-            <>
-              <LeadDetailCard
+            <div className="grid content-start gap-4">
+              <Button type="button" variant="ghost" className="w-fit xl:hidden" onClick={() => setMobileDetailOpen(false)}>
+                <ArrowLeft className="h-4 w-4" />
+                Back to Leads
+              </Button>
+              <SelectedLeadWorkbench
                 lead={selectedLead}
                 adminProfiles={adminProfiles ?? []}
                 tasks={selectedTasks}
                 visits={selectedVisits}
+                reservations={selectedReservations}
                 canWrite={canWrite}
                 onEdit={() => { setEditingLead(selectedLead); setCreatingLead(false); }}
               />
-              <BuyerInsights lead={selectedLead} tasks={selectedTasks} visits={selectedVisits} reservations={selectedReservations} />
-              <LeadSmartSummaryPanel
-                summary={selectedLeadSummary}
-                aiEnabled={Boolean(aiSettings?.is_enabled)}
-                canGenerate={canWrite}
-                generating={generatingSummaryId === selectedLead.id}
-                onGenerate={() => void generateLeadSummary(selectedLead.id)}
-              />
-              <ReservationsCard
-                reservations={selectedReservations}
-                tasks={selectedTasks}
-                activities={selectedReservationActivities}
-                canWrite={canWrite}
-                onSave={(reservation, values) => reservation ? void updateReservation(reservation, values) : void createReservation(values)}
-                onQuickUpdate={(reservation, status, depositStatus) => void quickUpdateReservation(reservation, status, depositStatus)}
-                onReleaseAlternates={(primaryReservationId, reservationIds, reason) => releaseAlternateReservations(primaryReservationId, reservationIds, reason)}
-                adminProfiles={adminProfiles ?? []}
-                parcels={parcels ?? []}
-                lead={selectedLead}
-                reservationSettings={reservationSettings}
-              />
+              <section className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)]">
+                <div className="grid min-w-0 content-start gap-4">
+                  <NextActionPanel lead={selectedLead} adminProfiles={adminProfiles ?? []} tasks={selectedTasks} now={now} />
+                  <TasksCard tasks={selectedTasks} canWrite={canWrite} onUpdate={updateTaskStatus} />
+                  <VisitsCard visits={selectedVisits} canWrite={canWrite} onUpdate={updateVisitStatus} />
+                  <ReservationsCard
+                    reservations={selectedReservations}
+                    tasks={selectedTasks}
+                    activities={selectedReservationActivities}
+                    canWrite={canWrite}
+                    onSave={(reservation, values) => reservation ? void updateReservation(reservation, values) : void createReservation(values)}
+                    onQuickUpdate={(reservation, status, depositStatus) => void quickUpdateReservation(reservation, status, depositStatus)}
+                    onReleaseAlternates={(primaryReservationId, reservationIds, reason) => releaseAlternateReservations(primaryReservationId, reservationIds, reason)}
+                    adminProfiles={adminProfiles ?? []}
+                    parcels={parcels ?? []}
+                    lead={selectedLead}
+                    reservationSettings={reservationSettings}
+                  />
+                </div>
+                <div className="grid min-w-0 content-start gap-4">
+                  <AdvisorRegion
+                    lead={selectedLead}
+                    tasks={selectedTasks}
+                    visits={selectedVisits}
+                    reservations={selectedReservations}
+                    summary={selectedLeadSummary}
+                    aiEnabled={Boolean(aiSettings?.is_enabled)}
+                    canGenerate={canWrite}
+                    generating={generatingSummaryId === selectedLead.id}
+                    onGenerate={() => void generateLeadSummary(selectedLead.id)}
+                  />
+                  <TimelineCard activities={selectedActivities} />
+                </div>
+              </section>
               {canWrite ? (
-                <>
+                <section className="grid gap-4 lg:grid-cols-3">
                   <TaskForm key={`task-${selectedLead.id}`} adminProfiles={adminProfiles ?? []} lead={selectedLead} onSubmit={(values) => void createTask(values)} />
                   <VisitForm key={`visit-${selectedLead.id}`} adminProfiles={adminProfiles ?? []} lead={selectedLead} onSubmit={(values) => void createVisit(values)} />
                   <ActivityForm key={`activity-${selectedLead.id}`} onSubmit={(values) => void createTimelineNote(values)} />
-                </>
+                </section>
               ) : null}
-              <TasksCard tasks={selectedTasks} canWrite={canWrite} onUpdate={updateTaskStatus} />
-              <VisitsCard visits={selectedVisits} canWrite={canWrite} onUpdate={updateVisitStatus} />
-              <TimelineCard activities={selectedActivities} />
-            </>
+            </div>
           ) : (
             <EmptyState title="No lead selected" detail="Select a lead to view buyer details, follow-ups, visits, and timeline notes." />
           )}
-        </aside>
+        </section>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -889,11 +857,200 @@ function LeadForm({
   );
 }
 
-function LeadDetailCard({
+function PipelineStrip({
+  counts,
+  activeStage,
+  onStageSelect,
+}: {
+  counts: Map<LeadPipelineStage, number>;
+  activeStage: LeadPipelineStage | "all";
+  onStageSelect: (stage: LeadPipelineStage | "all") => void;
+}) {
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return (
+    <section className="overflow-hidden rounded-xl border border-primary/10 bg-primary-soft/70 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2 overflow-x-auto p-2">
+        <button
+          type="button"
+          onClick={() => onStageSelect("all")}
+          className={cn(
+            "min-w-[118px] rounded-lg border px-3 py-2 text-left transition",
+            activeStage === "all" ? "border-primary bg-primary text-white shadow-sm" : "border-primary/10 bg-card text-slate hover:border-primary/30 hover:bg-card",
+          )}
+        >
+          <span className="block text-xs font-semibold uppercase tracking-[0.12em] opacity-75">All Leads</span>
+          <span className="mt-1 block text-xl font-semibold tabular-nums">{total}</span>
+        </button>
+        {pipelineStages.map((stage) => (
+          <button
+            key={stage.value}
+            type="button"
+            onClick={() => onStageSelect(stage.value)}
+            className={cn(
+              "min-w-[142px] rounded-lg border px-3 py-2 text-left transition",
+              activeStage === stage.value ? "border-primary bg-primary text-white shadow-sm" : "border-primary/10 bg-card text-slate hover:border-primary/30 hover:bg-card",
+            )}
+          >
+            <span className="block truncate text-xs font-semibold uppercase tracking-[0.12em] opacity-75">{stage.label}</span>
+            <span className="mt-1 block text-xl font-semibold tabular-nums">{counts.get(stage.value) ?? 0}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BuyerQueue({
+  search,
+  stageFilter,
+  assignedFilter,
+  dueFilter,
+  duplicateFilter,
+  adminProfiles,
+  leads,
+  selectedLeadId,
+  now,
+  onSearch,
+  onStageFilter,
+  onAssignedFilter,
+  onDueFilter,
+  onDuplicateFilter,
+  onSelect,
+}: {
+  search: string;
+  stageFilter: LeadPipelineStage | "all";
+  assignedFilter: string;
+  dueFilter: "all" | "due" | "overdue";
+  duplicateFilter: "all" | "possible";
+  adminProfiles: AdminProfile[];
+  leads: LeadWithRelations[];
+  selectedLeadId: string | null;
+  now: Date;
+  onSearch: (value: string) => void;
+  onStageFilter: (value: LeadPipelineStage | "all") => void;
+  onAssignedFilter: (value: string) => void;
+  onDueFilter: (value: "all" | "due" | "overdue") => void;
+  onDuplicateFilter: (value: "all" | "possible") => void;
+  onSelect: (leadId: string) => void;
+}) {
+  return (
+    <div className="grid content-start gap-4 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-hidden">
+      <section className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Buyer Queue</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Filtered sales worklist for active buyer conversations.</p>
+          </div>
+          <Badge tone="brown">{leads.length}</Badge>
+        </div>
+        <div className="grid gap-3">
+          <Field label="Search leads">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-9" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Name, phone, email, source" />
+            </div>
+          </Field>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <Field label="Pipeline stage">
+              <Select value={stageFilter} onChange={(event) => onStageFilter(event.target.value as LeadPipelineStage | "all")}>
+                <option value="all">All stages</option>
+                {pipelineStages.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
+              </Select>
+            </Field>
+            <Field label="Assigned staff">
+              <Select value={assignedFilter} onChange={(event) => onAssignedFilter(event.target.value)}>
+                <option value="all">All staff</option>
+                {adminProfiles.map((profile) => (
+                  <option key={profile.user_id} value={profile.user_id}>{adminLabel(profile)}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Follow-up">
+              <Select value={dueFilter} onChange={(event) => onDueFilter(event.target.value as "all" | "due" | "overdue")}>
+                <option value="all">All follow-ups</option>
+                <option value="due">Due today</option>
+                <option value="overdue">Overdue</option>
+              </Select>
+            </Field>
+            <Field label="Duplicate review">
+              <Select value={duplicateFilter} onChange={(event) => onDuplicateFilter(event.target.value as "all" | "possible")}>
+                <option value="all">All leads</option>
+                <option value="possible">Possible duplicates</option>
+              </Select>
+            </Field>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+        {leads.length ? leads.map((lead) => (
+          <LeadQueueCard
+            key={lead.id}
+            lead={lead}
+            selected={selectedLeadId === lead.id}
+            adminProfiles={adminProfiles}
+            now={now}
+            onSelect={() => onSelect(lead.id)}
+          />
+        )) : (
+          <EmptyState title="No leads found" detail="Create a lead or adjust the sales filters." />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function LeadQueueCard({
+  lead,
+  selected,
+  adminProfiles,
+  now,
+  onSelect,
+}: {
+  lead: LeadWithRelations;
+  selected: boolean;
+  adminProfiles: AdminProfile[];
+  now: Date;
+  onSelect: () => void;
+}) {
+  const overdue = isOverdue(lead.next_action_due_at, now);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-xl border p-4 text-left shadow-[var(--shadow-card)] transition hover:border-primary/30 hover:bg-primary-soft/50",
+        selected ? "border-primary/35 bg-primary-soft" : "border-border bg-card",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-words text-base font-semibold text-foreground">{lead.full_name}</p>
+          <p className="mt-1 break-words text-sm text-muted-foreground">{leadInterestLabel(lead)}</p>
+        </div>
+        <PipelineBadge stage={lead.pipeline_stage} />
+      </div>
+      <div className="mt-4 grid gap-2 text-sm">
+        <div className="flex items-start gap-2">
+          <Clock3 className={cn("mt-0.5 h-4 w-4 shrink-0", overdue ? "text-danger" : "text-primary")} />
+          <span className="min-w-0 break-words text-slate">{lead.next_action || "No next action recorded"}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{lead.next_action_due_at ? formatDate(lead.next_action_due_at) : "No due date"}</span>
+          <span>{adminLabelById(adminProfiles, lead.assigned_to)}</span>
+          {lead.possible_duplicate ? <Badge tone="amber">Duplicate Review</Badge> : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function SelectedLeadWorkbench({
   lead,
   adminProfiles,
   tasks,
   visits,
+  reservations,
   canWrite,
   onEdit,
 }: {
@@ -901,62 +1058,174 @@ function LeadDetailCard({
   adminProfiles: AdminProfile[];
   tasks: FollowUpTask[];
   visits: SiteVisit[];
+  reservations: ReservationWithRelations[];
   canWrite: boolean;
   onEdit: () => void;
 }) {
+  const openTasks = tasks.filter((task) => task.status === "open" || task.status === "in_progress").length;
+  const upcomingVisits = visits.filter((visit) => visit.status === "scheduled" || visit.status === "rescheduled").length;
+  const activeReservation = reservations.find((reservation) => activeReservationStatuses.has(reservation.status)) ?? null;
+
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <CardTitle className="break-words">{lead.full_name}</CardTitle>
-          <p className="mt-1 break-words text-sm text-muted-foreground">{[lead.phone, lead.email, lead.whatsapp ? `WhatsApp ${lead.whatsapp}` : ""].filter(Boolean).join(" | ") || "No contact details"}</p>
+    <section className="overflow-hidden rounded-xl border border-primary/15 bg-card shadow-[0_12px_28px_rgba(31,41,51,0.08)]">
+      <div className="relative bg-primary p-5 text-white sm:p-6">
+        <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(135deg,rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(45deg,rgba(214,168,79,.18)_1px,transparent_1px)] [background-size:28px_28px]" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-soft">Selected buyer</p>
+            <h2 className="mt-2 break-words text-3xl font-semibold leading-tight sm:text-4xl">{lead.full_name}</h2>
+            <p className="mt-2 break-words text-sm text-white/75">{leadInterestLabel(lead)}</p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/80">
+              {lead.phone ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">{lead.phone}</span> : null}
+              {lead.whatsapp ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">WhatsApp {lead.whatsapp}</span> : null}
+              {lead.email ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">{lead.email}</span> : null}
+              {!lead.phone && !lead.whatsapp && !lead.email ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">No contact details</span> : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PipelineBadge stage={lead.pipeline_stage} />
+            {lead.possible_duplicate ? <Badge tone="amber">Possible Duplicate</Badge> : null}
+            {canWrite ? (
+              <Button type="button" variant="outline" className="bg-white text-primary hover:bg-primary-soft" onClick={onEdit}>
+                <Edit3 className="h-4 w-4" />
+                Edit Lead
+              </Button>
+            ) : null}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {lead.possible_duplicate ? <Badge tone="amber">Possible Duplicate</Badge> : null}
-          <PipelineBadge stage={lead.pipeline_stage} />
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <div className="grid gap-3 text-sm">
-          <Meta label="Assigned staff" value={adminLabelById(adminProfiles, lead.assigned_to)} />
-          <Meta label="Next action" value={lead.next_action ?? "No next action recorded"} />
-          <Meta label="Next action due" value={lead.next_action_due_at ? formatDate(lead.next_action_due_at) : "No due date"} />
-          <Meta label="Buyer journey" value={lead.buyer_journey_stage ?? "Not recorded"} />
-          <Meta label="Decision blocker" value={lead.decision_blocker ?? "No blocker recorded"} />
-          <Meta label="Budget" value={budgetLabel(lead)} />
-          <Meta label="Preferred contact" value={lead.preferred_contact_method ?? "Not recorded"} />
-          <Meta label="Source" value={lead.source ?? "Not recorded"} />
-          {lead.possible_duplicate ? (
-            <Meta label="Duplicate review" value={lead.duplicate_reason ?? "Review matching application or lead records."} />
-          ) : null}
-        </div>
-        <div className="grid gap-2 text-sm">
-          {lead.parcels ? <p>Interested lot: <strong>Lot {lead.parcels.lot_number}</strong></p> : null}
-          {lead.applications ? <p>Application: <strong>#{lead.applications.id} - {applicationName(lead.applications)}</strong></p> : null}
-          {lead.customers ? (
-            <p>Customer: <Link className="font-semibold text-primary hover:text-primary-hover" to={`/customers/${lead.customers.id}`}>#{lead.customers.id} - {lead.customers.first_name} {lead.customers.last_name}</Link></p>
-          ) : null}
-          <p className="text-muted-foreground">{tasks.filter((task) => task.status === "open" || task.status === "in_progress").length} open follow-ups, {visits.filter((visit) => visit.status === "scheduled" || visit.status === "rescheduled").length} upcoming visits.</p>
-        </div>
-        {lead.notes ? <div className="crm-subpanel break-words text-sm text-muted-foreground">{lead.notes}</div> : null}
-        {canWrite ? (
-          <Button type="button" variant="outline" onClick={onEdit}>
-            <Edit3 className="h-4 w-4" />
-            Edit Lead
-          </Button>
-        ) : null}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="grid gap-3 border-b border-border bg-primary-soft/50 p-4 md:grid-cols-2 xl:grid-cols-4">
+        <WorkbenchStatus label="Owner" value={adminLabelById(adminProfiles, lead.assigned_to)} icon={UserRound} />
+        <WorkbenchStatus label="Next action" value={lead.next_action || "No next action"} icon={Flag} />
+        <WorkbenchStatus label="Follow-ups" value={`${openTasks} open`} icon={MessageSquareText} />
+        <WorkbenchStatus label="Reservation" value={activeReservation ? reservationStatusLabel(activeReservation.status) : "No active hold"} icon={MapPin} />
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-3">
+        <MiniStanding label="Upcoming visits" value={upcomingVisits} detail="Scheduled/rescheduled" />
+        <MiniStanding label="Budget" value={budgetLabel(lead)} detail="Buyer range" />
+        <MiniStanding label="Preferred contact" value={lead.preferred_contact_method ?? "Not recorded"} detail="Staff follow-up context" />
+      </div>
+      {isPublicInquiryLead(lead) ? <PublicInquiryContext lead={lead} /> : null}
+      {lead.notes && !isPublicInquiryLead(lead) ? <div className="border-t border-border px-4 py-3 text-sm leading-6 text-muted-foreground">{lead.notes}</div> : null}
+    </section>
   );
 }
 
-function BuyerInsights({ lead, tasks, visits, reservations }: { lead: LeadWithRelations; tasks: FollowUpTask[]; visits: SiteVisit[]; reservations: LotReservation[] }) {
+function PublicInquiryContext({ lead }: { lead: LeadWithRelations }) {
   return (
-    <SmartInsightsPanel
-      title="Buyer Insights"
-      description="Rule-based guidance from lead, follow-up, visit, and reservation records."
-      insights={leadSmartInsights(lead, tasks, visits, reservations)}
-    />
+    <div className="border-t border-accent/25 bg-accent-soft/60 px-4 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Public inquiry context</p>
+          <h3 className="mt-1 text-base font-semibold text-foreground">What did this buyer ask us about?</h3>
+        </div>
+        <Badge tone="amber">Information request</Badge>
+      </div>
+      <div className="mt-3 rounded-lg border border-accent/20 bg-card/80 p-3 text-sm leading-6 text-muted-foreground">
+        {lead.notes ? (
+          <p className="whitespace-pre-line break-words">{lead.notes}</p>
+        ) : (
+          <p>This buyer requested project information through the public Wamule page.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchStatus({ label, value, icon: Icon }: { label: string; value: string; icon: typeof UserRound }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-primary/10 bg-card/85 p-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 text-primary" />
+        {label}
+      </div>
+      <p className="mt-2 break-words text-sm font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MiniStanding({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-lg font-semibold text-primary">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function NextActionPanel({ lead, adminProfiles, tasks, now }: { lead: LeadWithRelations; adminProfiles: AdminProfile[]; tasks: FollowUpTask[]; now: Date }) {
+  const nextTask = tasks.find((task) => task.status === "open" || task.status === "in_progress") ?? null;
+  const title = nextTask?.title ?? lead.next_action ?? "No next action recorded";
+  const due = nextTask?.due_at ?? lead.next_action_due_at;
+  const overdue = isOverdue(due, now);
+  const priority = nextTask?.priority ?? "normal";
+
+  return (
+    <section className="rounded-xl border border-primary/10 bg-primary-soft/80 p-5 shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next Action</p>
+          <h3 className="mt-2 break-words text-xl font-semibold text-foreground">{title}</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {nextTask?.description || "Use this as the buyer's immediate sales follow-up context."}
+          </p>
+        </div>
+        <Badge tone={overdue ? "red" : priorityTone(priority)}>{overdue ? "Overdue" : taskPriorityLabel(priority)}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <Meta label="Due" value={due ? formatDate(due) : "No due date"} />
+        <Meta label="Owner" value={adminLabelById(adminProfiles, nextTask?.assigned_to ?? lead.assigned_to)} />
+        <Meta label="Status" value={nextTask ? taskStatusLabel(nextTask.status) : stageLabel(lead.pipeline_stage)} />
+      </div>
+    </section>
+  );
+}
+
+function AdvisorRegion({
+  lead,
+  tasks,
+  visits,
+  reservations,
+  summary,
+  aiEnabled,
+  canGenerate,
+  generating,
+  onGenerate,
+}: {
+  lead: LeadWithRelations;
+  tasks: FollowUpTask[];
+  visits: SiteVisit[];
+  reservations: LotReservation[];
+  summary: LeadAiSummary | null;
+  aiEnabled: boolean;
+  canGenerate: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <section className="rounded-xl border border-accent/30 bg-accent-soft/70 p-4 shadow-[0_6px_18px_rgba(138,90,53,0.07)]">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md border border-accent/30 bg-card p-2 text-secondary">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Staff guidance</p>
+          <h3 className="mt-1 text-lg font-semibold text-foreground">Buyer Insights</h3>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">Assistive guidance from current lead, follow-up, visit, and reservation records.</p>
+        </div>
+      </div>
+      <div className="grid gap-4">
+        <SmartInsightList insights={leadSmartInsights(lead, tasks, visits, reservations)} compact />
+        <LeadSmartSummaryPanel
+          summary={summary}
+          aiEnabled={aiEnabled}
+          canGenerate={canGenerate}
+          generating={generating}
+          onGenerate={onGenerate}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -979,20 +1248,23 @@ function LeadSmartSummaryPanel({
   const summaryText = safeString(summary?.summary, "No summary text recorded.");
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="rounded-lg border border-accent/25 bg-card/80">
+      <div className="flex flex-col gap-3 border-b border-accent/20 p-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <CardTitle>Lead Smart Summary</CardTitle>
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-secondary" />
+            <h4 className="font-semibold text-foreground">Lead Smart Summary</h4>
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
             This summary is generated from Wamule CRM data to support staff review. Staff should verify details before making decisions.
           </p>
         </div>
         {summary?.readiness_status ? <Badge tone={readinessTone(summary.readiness_status)}>{readinessLabel(summary.readiness_status)}</Badge> : <Badge tone="gray">Not generated</Badge>}
-      </CardHeader>
-      <CardContent className="grid gap-4">
+      </div>
+      <div className="grid gap-4 p-4">
         {summary ? (
           <>
-            <div className="crm-info-panel break-words p-3 text-sm leading-6">
+            <div className="rounded-md border border-accent/25 bg-accent-soft/60 p-3 text-sm leading-6 text-slate">
               {summaryText}
             </div>
             <SummaryList title="Risk Flags" items={risks} empty="No risk flags listed." tone="red" />
@@ -1034,8 +1306,8 @@ function LeadSmartSummaryPanel({
         ) : (
           <p className="text-sm text-muted-foreground">You can view summaries but do not have permission to generate them.</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -1115,10 +1387,13 @@ function ReservationsCard({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <CardTitle>Reservations</CardTitle>
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-primary" />
+            <h3 className="text-lg font-semibold text-foreground">Reservations / Deposit Readiness</h3>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {reservationSettings.show_reservation_explanations
               ? "Reservations are internal lot holds or buyer-interest records. They help the team track serious interest in a specific lot while deposit, application, or contract next steps are handled."
@@ -1126,8 +1401,8 @@ function ReservationsCard({
           </p>
         </div>
         {activeReservation ? <ReservationBadge status={activeReservation.status} /> : <Badge tone="gray">No active hold</Badge>}
-      </CardHeader>
-      <CardContent className="grid gap-4">
+      </div>
+      <div className="mt-4 grid gap-4">
         {canWrite && !activeReservation && !editingReservation ? (
           <ReservationForm
             key={`new-reservation-${lead.id}`}
@@ -1141,7 +1416,7 @@ function ReservationsCard({
         ) : null}
         {reservations.length === 0 ? <p className="text-sm text-muted-foreground">No reservations recorded for this lead.</p> : null}
         {reservations.map((reservation) => (
-          <div key={reservation.id} className="grid gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+          <div key={reservation.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="break-words font-medium text-primary">
@@ -1185,8 +1460,8 @@ function ReservationsCard({
                         Release other reservations
                       </Button>
                     ) : null}
-                    <Button type="button" variant="ghost" className="h-9" onClick={() => onQuickUpdate(reservation, "released", "cancelled")}>Release</Button>
-                    <Button type="button" variant="ghost" className="h-9" onClick={() => onQuickUpdate(reservation, "cancelled", "cancelled")}>Cancel</Button>
+                    <Button type="button" variant="ghost" className="h-9 text-danger hover:bg-danger/10 hover:text-danger" onClick={() => onQuickUpdate(reservation, "released", "cancelled")}>Release</Button>
+                    <Button type="button" variant="ghost" className="h-9 text-danger hover:bg-danger/10 hover:text-danger" onClick={() => onQuickUpdate(reservation, "cancelled", "cancelled")}>Cancel</Button>
                   </>
                 ) : null}
               </div>
@@ -1286,8 +1561,8 @@ function ReservationsCard({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1422,7 +1697,7 @@ function ReservationActivityList({ reservation, activities }: { reservation: Lot
       <div className="mt-3 grid gap-2">
         {activities.length === 0 ? <p className="text-xs text-muted-foreground">No reservation activity recorded.</p> : null}
         {activities.map((activity) => (
-          <div key={activity.id} className="rounded-md border-l-4 border-primary/25 bg-muted p-2 text-xs">
+          <div key={activity.id} className="v2-archive-row text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="break-words font-medium text-primary">{activity.title}</p>
               <Badge tone="gray">{reservationActivityLabel(activity.activity_type)}</Badge>
@@ -1448,7 +1723,7 @@ type TaskFormValues = {
 function TaskForm({ adminProfiles, lead, onSubmit }: { adminProfiles: AdminProfile[]; lead: Lead; onSubmit: (values: TaskFormValues) => void }) {
   const [values, setValues] = useState<TaskFormValues>({ title: lead.next_action ?? "", description: "", due_at: toDateTimeLocal(lead.next_action_due_at), priority: "normal", assigned_to: lead.assigned_to ?? "" });
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>New Follow-up</CardTitle>
         <p className="mt-1 text-sm text-muted-foreground">A Follow-up is an internal task reminding staff what action should happen next with a lead, applicant, or customer.</p>
@@ -1489,7 +1764,7 @@ type VisitFormValues = {
 function VisitForm({ adminProfiles, lead, onSubmit }: { adminProfiles: AdminProfile[]; lead: Lead; onSubmit: (values: VisitFormValues) => void }) {
   const [values, setValues] = useState<VisitFormValues>({ scheduled_at: "", visit_type: "Site Visit", location: "", notes: "", assigned_to: lead.assigned_to ?? "" });
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>Schedule Site Visit</CardTitle>
         <p className="mt-1 text-sm text-muted-foreground">Site Visits are appointments to view a project or lot. They are separate from reservations.</p>
@@ -1524,7 +1799,7 @@ type ActivityFormValues = {
 function ActivityForm({ onSubmit }: { onSubmit: (values: ActivityFormValues) => void }) {
   const [values, setValues] = useState<ActivityFormValues>({ activity_type: "note", title: "", description: "" });
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader><CardTitle>Add Timeline Note</CardTitle></CardHeader>
       <CardContent>
         <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); setValues({ activity_type: "note", title: "", description: "" }); }}>
@@ -1546,12 +1821,15 @@ function ActivityForm({ onSubmit }: { onSubmit: (values: ActivityFormValues) => 
 
 function TasksCard({ tasks, canWrite, onUpdate }: { tasks: FollowUpTask[]; canWrite: boolean; onUpdate: (task: FollowUpTask, status: FollowUpTaskStatus) => void }) {
   return (
-    <Card>
-      <CardHeader><CardTitle>Follow-ups</CardTitle></CardHeader>
-      <CardContent className="grid gap-3">
+    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-4 flex items-center gap-2">
+        <MessageSquareText className="h-4 w-4 text-primary" />
+        <h3 className="text-lg font-semibold text-foreground">Follow-ups</h3>
+      </div>
+      <div className="grid gap-3">
         {tasks.length === 0 ? <p className="text-sm text-muted-foreground">No follow-ups recorded.</p> : null}
         {tasks.map((task) => (
-          <div key={task.id} className="grid gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+          <div key={task.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="break-words font-medium text-primary">{task.title}</p>
@@ -1571,22 +1849,30 @@ function TasksCard({ tasks, canWrite, onUpdate }: { tasks: FollowUpTask[]; canWr
             ) : null}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
 function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWrite: boolean; onUpdate: (visit: SiteVisit, status: SiteVisitStatus) => void }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Site Visits</CardTitle>
+    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-4">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-4 w-4 text-primary" />
+          <h3 className="text-lg font-semibold text-foreground">Site Visits</h3>
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">Site Visits are viewing appointments and do not hold a lot or confirm buyer readiness.</p>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        {visits.length === 0 ? <p className="text-sm text-muted-foreground">No site visits scheduled.</p> : null}
+      </div>
+      <div className="grid gap-3">
+        {visits.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-primary/20 bg-card/60 p-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">No site visit scheduled</p>
+            <p className="mt-1">Site Visits are appointments to view a project or lot. They do not reserve a lot.</p>
+          </div>
+        ) : null}
         {visits.map((visit) => (
-          <div key={visit.id} className="grid gap-3 rounded-md border border-border bg-card p-3 text-sm shadow-sm shadow-primary/5">
+          <div key={visit.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="break-words font-medium text-primary">{visit.visit_type ?? "Site Visit"}</p>
@@ -1605,29 +1891,32 @@ function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWr
             ) : null}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
 function TimelineCard({ activities }: { activities: LeadActivity[] }) {
   return (
-    <Card>
-      <CardHeader><CardTitle>Activity Timeline</CardTitle></CardHeader>
-      <CardContent className="grid gap-3">
+    <section className="rounded-xl border border-border bg-muted/60 p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <History className="h-4 w-4 text-slate" />
+        <h3 className="text-lg font-semibold text-foreground">Activity Timeline</h3>
+      </div>
+      <div className="grid gap-3">
         {activities.length === 0 ? <p className="text-sm text-muted-foreground">No activity has been recorded yet.</p> : null}
         {activities.map((activity) => (
-          <div key={activity.id} className="rounded-md border-l-4 border-primary/30 bg-muted p-3 text-sm">
+          <div key={activity.id} className="border-b border-border pb-3 text-sm last:border-0 last:pb-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="break-words font-medium text-primary">{activity.title}</p>
+              <p className="break-words font-medium text-foreground">{activity.title}</p>
               <Badge tone="gray">{activityTypeLabel(activity.activity_type)}</Badge>
             </div>
             {activity.description ? <p className="mt-2 break-words text-muted-foreground">{activity.description}</p> : null}
             <p className="mt-2 text-xs text-muted-foreground">{formatDate(activity.created_at)}</p>
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1804,6 +2093,17 @@ function adminLabelById(profiles: AdminProfile[] | undefined, id: string | null)
 
 function applicationName(application: Pick<Application, "applicant_full_name" | "first_name" | "last_name">) {
   return application.applicant_full_name || `${application.first_name} ${application.last_name}`.trim();
+}
+
+function leadInterestLabel(lead: LeadWithRelations) {
+  if (lead.parcels?.lot_number) return `Lot ${lead.parcels.lot_number}${lead.parcels.status ? ` | ${lead.parcels.status}` : ""}`;
+  if (lead.applications) return `Application #${lead.applications.id} | ${applicationName(lead.applications)}`;
+  if (lead.customers) return `Customer #${lead.customers.id} | ${lead.customers.first_name} ${lead.customers.last_name}`.trim();
+  return lead.source ? `Source: ${lead.source}` : "No lot or linked record";
+}
+
+function isPublicInquiryLead(lead: Pick<Lead, "source">) {
+  return lead.source === "public_inquiry";
 }
 
 function stageLabel(stage: LeadPipelineStage) {

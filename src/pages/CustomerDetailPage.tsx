@@ -1,10 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { Clipboard, RefreshCw } from "lucide-react";
+import { Clipboard, CreditCard, FileText, Home, Landmark, RefreshCw, UserRound } from "lucide-react";
 import { ContractForm } from "../components/forms/ContractForm";
 import { PaymentForm } from "../components/forms/PaymentForm";
-import { PageHeader } from "../components/layout/PageHeader";
 import { PaymentDocumentLinks } from "../components/payments/PaymentDocumentLinks";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -529,14 +528,10 @@ export function CustomerDetailPage() {
 
   return (
     <>
-      <PageHeader
-        title={data ? `${data.first_name} ${data.last_name}` : "Customer"}
-        description="Customer account profile, balance standing, documents, requests, and collections history."
-      />
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {data ? (
-        <div className="mx-auto grid max-w-7xl gap-6">
+        <div className="mx-auto grid max-w-[1520px] gap-6">
           {toast ? (
             <div className="crm-success-panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
               <span>{toast}</span>
@@ -547,19 +542,30 @@ export function CustomerDetailPage() {
           ) : null}
           {actionError ? <ErrorState message={actionError} /> : null}
 
-          <CustomerAccountHeader customer={data} landPayments={landPayments} />
+          <CustomerCommandProfile
+            customer={data}
+            landPayments={landPayments}
+            reservations={relatedReservations ?? []}
+            postSalesChecklist={latestPostSalesChecklist}
+            postSalesTasks={postSalesTasks ?? []}
+            onRecordPayment={() => setActiveAction("payment")}
+            onCreateContract={() => setActiveAction("contract")}
+            onCreateRequest={() => setActiveAction("request")}
+            onUploadDocument={() => setActiveAction("document")}
+            onStatement={showStatement}
+          />
 
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="grid min-w-0 gap-6">
-              <div className="crm-tabs">
-                <div className="crm-tab-list">
+              <div className="rounded-lg border border-border/80 bg-card/80 p-2 shadow-sm shadow-primary/5">
+                <div className="flex gap-1 overflow-x-auto">
                   {customerSections.map((section) => (
                     <button
                       key={section}
                       type="button"
                       className={cn(
-                        "crm-tab",
-                        activeSection === section ? "crm-tab-active" : "",
+                        "min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:bg-primary-soft/60 hover:text-primary",
+                        activeSection === section ? "bg-primary text-primary-foreground shadow-sm shadow-primary/10" : "",
                       )}
                       onClick={() => setActiveSection(section)}
                     >
@@ -641,12 +647,23 @@ export function CustomerDetailPage() {
               ) : null}
             </div>
 
-            <QuickActions
+            <CustomerCommandRail
+              customer={data}
+              reservations={relatedReservations ?? []}
+              siteVisits={relatedSiteVisits ?? []}
+              postSalesChecklist={latestPostSalesChecklist}
+              postSalesTasks={postSalesTasks ?? []}
+              latestAiSummary={latestAiSummary}
+              generatedByLabel={adminProfileLabel(generatedByProfile)}
+              canGenerate={canGenerateAiSummary}
+              aiEnabled={collectionsAiEnabled}
+              generating={generatingSummary}
               onRecordPayment={() => setActiveAction("payment")}
               onCreateContract={() => setActiveAction("contract")}
               onCreateRequest={() => setActiveAction("request")}
               onUploadDocument={() => setActiveAction("document")}
               onStatement={showStatement}
+              onGenerate={() => void generateAiSummary()}
             />
           </div>
 
@@ -772,61 +789,129 @@ export function CustomerDetailPage() {
   );
 }
 
-function CustomerAccountHeader({
+function CustomerCommandProfile({
   customer,
   landPayments,
+  reservations,
+  postSalesChecklist,
+  postSalesTasks,
+  onRecordPayment,
+  onCreateContract,
+  onCreateRequest,
+  onUploadDocument,
+  onStatement,
 }: {
   customer: CustomerDetail;
   landPayments: CustomerTransaction[];
+  reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
+  postSalesChecklist: PostSalesChecklist | null;
+  postSalesTasks: PostSalesTask[];
+  onRecordPayment: () => void;
+  onCreateContract: () => void;
+  onCreateRequest: () => void;
+  onUploadDocument: () => void;
+  onStatement: () => void;
 }) {
   const contract = activeContract(customer.contracts ?? []);
-  const lotNumber = assignedLot(customer);
+  const latestReservation = reservations[0] ?? null;
+  const lotNumber = assignedLot(customer) ?? latestReservation?.parcels?.lot_number ?? null;
   const totalPaid = totalAmount(landPayments);
   const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price) - totalPaid, 0) : 0;
+  const lastPayment = [...landPayments].sort((a, b) => safeDateTime(b.created_at) - safeDateTime(a.created_at))[0] ?? null;
   const missingReceiptCount = customer.transactions?.filter((transaction) => !transaction.manual_receipt_number).length ?? 0;
+  const openRequests = customer.payment_requests?.filter((request) => !["Paid", "Cancelled"].includes(request.status)).length ?? 0;
+  const documentsCount = customer.payment_documents?.length ?? 0;
+  const openPostSalesTasks = postSalesTasks.filter((task) => !["completed", "cancelled"].includes(task.status));
+  const blockedPostSalesTasks = postSalesTasks.filter((task) => task.status === "blocked");
+  const overduePostSalesTasks = postSalesTasks.filter((task) => task.due_at && safeDateTime(task.due_at) < Date.now() && !["completed", "cancelled"].includes(task.status));
+  const paymentStatus = customerPaymentStanding(contract, remainingBalance);
+  const collectionsStatus = customerCollectionsStanding(openRequests, remainingBalance);
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-secondary">Customer Account</p>
-          <h1 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">
-            {customer.first_name} {customer.last_name}
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Account standing, contract activity, payment records, and collection follow-up for this customer.
-          </p>
-        </div>
-        <div className="flex max-w-full flex-wrap gap-2">
-          {contract ? <Badge tone={contractStatusTone(contract)}>{contractStatusLabel(contract)} contract</Badge> : <Badge tone="gray">No active contract</Badge>}
-          {lotNumber ? <Badge tone="blue">Lot assigned</Badge> : <Badge tone="amber">No lot assigned</Badge>}
-          {remainingBalance > 0 ? <Badge tone="amber">Open balance</Badge> : contract ? <Badge tone="green">Paid in full</Badge> : null}
-          {missingReceiptCount > 0 ? <Badge tone="red">{missingReceiptCount} missing receipt #</Badge> : null}
-        </div>
-      </div>
+    <section className="overflow-hidden rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_46%,#ecf3e6_100%)] shadow-[0_24px_70px_rgba(45,35,23,0.12)]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid gap-6 p-5 sm:p-6 xl:p-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Customer Command Profile</p>
+              <h1 className="mt-3 break-words text-3xl font-semibold leading-tight text-primary sm:text-4xl">
+                {customer.first_name} {customer.last_name}
+              </h1>
+              <div className="mt-4 flex flex-wrap gap-2 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
+                  <Home className="h-4 w-4 text-secondary" />
+                  {lotNumber ? `Lot ${lotNumber}` : "No lot assigned"}
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
+                  <UserRound className="h-4 w-4 text-secondary" />
+                  Customer since {formatDate(customer.created_at)}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                <span className="break-words">{customer.phone || "No phone recorded"}</span>
+                <span className="break-words">{customer.email ?? "No email recorded"}</span>
+                {customer.address ? <span className="break-words sm:col-span-2">{customer.address}</span> : null}
+              </div>
+            </div>
+            <PrimaryActionCluster
+              onRecordPayment={onRecordPayment}
+              onCreateContract={onCreateContract}
+              onCreateRequest={onCreateRequest}
+              onUploadDocument={onUploadDocument}
+              onStatement={onStatement}
+            />
+          </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <SummaryCard label="Assigned lot" value={lotNumber ? `Lot ${lotNumber}` : "Not assigned"} />
-        <SummaryCard label="Contract status" value={contract ? contractStatusLabel(contract) : "No active contract"} />
-        <SummaryCard label="Total paid" value={money(totalPaid)} />
-        <SummaryCard label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} />
-        <SummaryCard label="Monthly payment" value={contract ? money(contract.monthly_payment) : "N/A"} />
-        <SummaryCard label="Next due date" value={contract ? formatDate(nextDueDate(contract)) : "N/A"} />
+          <CustomerStatusStrip
+            contract={contract}
+            paymentStatus={paymentStatus}
+            collectionsStatus={collectionsStatus}
+            documentsCount={documentsCount}
+            missingReceiptCount={missingReceiptCount}
+            postSalesChecklist={postSalesChecklist}
+            openPostSalesTasks={openPostSalesTasks.length}
+            blockedPostSalesTasks={blockedPostSalesTasks.length}
+            overduePostSalesTasks={overduePostSalesTasks.length}
+            remainingBalance={remainingBalance}
+            lastPaymentDate={lastPayment?.created_at ?? null}
+          />
+
+          <OperationalSummary
+            contract={contract}
+            remainingBalance={remainingBalance}
+            openRequests={openRequests}
+            latestReservation={latestReservation}
+            postSalesChecklist={postSalesChecklist}
+            openPostSalesTasks={openPostSalesTasks.length}
+            overduePostSalesTasks={overduePostSalesTasks.length}
+            missingReceiptCount={missingReceiptCount}
+          />
+        </div>
+
+        <div className="border-t border-primary/10 bg-primary/95 p-5 text-primary-foreground lg:border-l lg:border-t-0 sm:p-6 xl:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/65">Account Ledger</p>
+          <div className="mt-5 grid gap-4">
+            <CommandLedgerMetric icon={Landmark} label="Purchase price" value={contract ? money(contract.final_purchase_price) : "N/A"} />
+            <CommandLedgerMetric icon={CreditCard} label="Recorded land payments" value={money(totalPaid)} />
+            <CommandLedgerMetric icon={FileText} label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} emphasis />
+            <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-primary-foreground/70">Next due date</span>
+                <span className="font-semibold tabular-nums">{contract ? formatDate(nextDueDate(contract)) : "N/A"}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-primary-foreground/70">Monthly payment</span>
+                <span className="font-semibold tabular-nums">{contract ? money(contract.monthly_payment) : "N/A"}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="crm-subpanel">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-base font-semibold text-primary">{value}</p>
-    </div>
-  );
-}
-
-function QuickActions({
+function PrimaryActionCluster({
   onRecordPayment,
   onCreateContract,
   onCreateRequest,
@@ -840,20 +925,338 @@ function QuickActions({
   onStatement: () => void;
 }) {
   return (
+    <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:max-w-sm lg:justify-end">
+      <Button type="button" onClick={onRecordPayment}>Record Payment</Button>
+      <Button type="button" variant="secondary" onClick={onCreateContract}>Create Contract</Button>
+      <Button type="button" variant="outline" onClick={onCreateRequest}>Create Request</Button>
+      <Button type="button" variant="outline" onClick={onUploadDocument}>Upload Document</Button>
+      <Button type="button" variant="ghost" onClick={onStatement}>Statement</Button>
+    </div>
+  );
+}
+
+function CommandLedgerMetric({
+  icon: Icon,
+  label,
+  value,
+  emphasis = false,
+}: {
+  icon: typeof Landmark;
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.08] p-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground/65">
+        <Icon className="h-4 w-4" />
+        {label}
+      </div>
+      <p className={cn("mt-3 font-semibold tabular-nums", emphasis ? "text-2xl text-primary-foreground" : "text-xl text-primary-foreground/90")}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function CustomerStatusStrip({
+  contract,
+  paymentStatus,
+  collectionsStatus,
+  documentsCount,
+  missingReceiptCount,
+  postSalesChecklist,
+  openPostSalesTasks,
+  blockedPostSalesTasks,
+  overduePostSalesTasks,
+  remainingBalance,
+  lastPaymentDate,
+}: {
+  contract: CustomerContract | null;
+  paymentStatus: { label: string; tone: BadgeTone; detail: string };
+  collectionsStatus: { label: string; tone: BadgeTone; detail: string };
+  documentsCount: number;
+  missingReceiptCount: number;
+  postSalesChecklist: PostSalesChecklist | null;
+  openPostSalesTasks: number;
+  blockedPostSalesTasks: number;
+  overduePostSalesTasks: number;
+  remainingBalance: number;
+  lastPaymentDate: string | null;
+}) {
+  const documentToneValue: BadgeTone = missingReceiptCount > 0 ? "amber" : documentsCount > 0 ? "green" : "gray";
+  const postSalesToneValue: BadgeTone = blockedPostSalesTasks > 0 ? "red" : overduePostSalesTasks > 0 ? "amber" : postSalesChecklist ? postSalesStatusTone(postSalesChecklist.status) : "gray";
+  const postSalesLabel = postSalesChecklist ? statusLabel(postSalesChecklist.status) : "Not started";
+  const postSalesDetail = blockedPostSalesTasks > 0
+    ? `${blockedPostSalesTasks} blocked`
+    : overduePostSalesTasks > 0
+      ? `${overduePostSalesTasks} overdue`
+      : openPostSalesTasks > 0
+        ? `${openPostSalesTasks} open tasks`
+        : postSalesChecklist
+          ? "No open tasks"
+          : "No checklist";
+
+  return (
+    <div className="grid overflow-hidden rounded-xl border border-primary/15 bg-card shadow-sm shadow-primary/5 sm:grid-cols-2 xl:grid-cols-5">
+      <StatusStripCell
+        family="stable"
+        label="Contract"
+        value={contract ? contractStatusLabel(contract) : "No active contract"}
+        detail={contract ? `Contract #${contract.id}` : "Create when agreement starts"}
+        tone={contract ? contractStatusTone(contract) : "gray"}
+      />
+      <StatusStripCell
+        family="ledger"
+        label="Payments"
+        value={paymentStatus.label}
+        detail={lastPaymentDate ? `Last recorded ${formatDate(lastPaymentDate)}` : paymentStatus.detail}
+        tone={paymentStatus.tone}
+        amount={contract ? money(remainingBalance) : undefined}
+      />
+      <StatusStripCell
+        family="ledger"
+        label="Collections"
+        value={collectionsStatus.label}
+        detail={collectionsStatus.detail}
+        tone={collectionsStatus.tone}
+      />
+      <StatusStripCell
+        family="workflow"
+        label="Documents"
+        value={missingReceiptCount > 0 ? `${missingReceiptCount} missing` : documentsCount > 0 ? `${documentsCount} uploaded` : "None uploaded"}
+        detail={missingReceiptCount > 0 ? "Receipt number review" : "Payment proof records"}
+        tone={documentToneValue}
+      />
+      <StatusStripCell
+        family="workflow"
+        label="Post-Sales"
+        value={postSalesLabel}
+        detail={postSalesDetail}
+        tone={postSalesToneValue}
+      />
+    </div>
+  );
+}
+
+function StatusStripCell({
+  label,
+  value,
+  detail,
+  tone,
+  family,
+  amount,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: BadgeTone;
+  family: "stable" | "ledger" | "workflow";
+  amount?: string;
+}) {
+  const familyClass = family === "ledger"
+    ? "bg-white"
+    : family === "workflow"
+      ? "bg-primary-soft/35"
+      : "bg-card";
+  return (
+    <div className={cn("min-w-0 border-b border-primary/10 p-4 last:border-b-0 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0", familyClass)}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+        <Badge tone={tone}>{value}</Badge>
+      </div>
+      {amount ? <p className="mt-3 text-xl font-semibold text-primary tabular-nums">{amount}</p> : null}
+      <p className="mt-2 min-h-5 break-words text-sm text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function OperationalSummary({
+  contract,
+  remainingBalance,
+  openRequests,
+  latestReservation,
+  postSalesChecklist,
+  openPostSalesTasks,
+  overduePostSalesTasks,
+  missingReceiptCount,
+}: {
+  contract: CustomerContract | null;
+  remainingBalance: number;
+  openRequests: number;
+  latestReservation: (LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }) | null;
+  postSalesChecklist: PostSalesChecklist | null;
+  openPostSalesTasks: number;
+  overduePostSalesTasks: number;
+  missingReceiptCount: number;
+}) {
+  const statements = [
+    contract ? `Contract #${contract.id} is ${contractStatusLabel(contract).toLowerCase()}.` : "No active contract is recorded.",
+    contract ? `Remaining land balance is ${money(remainingBalance)}.` : "Financial standing will appear when a contract exists.",
+    openRequests > 0 ? `${openRequests} payment request${openRequests === 1 ? "" : "s"} remain open.` : "No open payment requests.",
+    latestReservation ? `Latest reservation is ${statusLabel(latestReservation.status).toLowerCase()} with deposit status ${statusLabel(latestReservation.deposit_status).toLowerCase()}.` : "No current reservation is linked.",
+    postSalesChecklist
+      ? overduePostSalesTasks > 0
+        ? `${overduePostSalesTasks} post-sales task${overduePostSalesTasks === 1 ? "" : "s"} overdue.`
+        : `${openPostSalesTasks} post-sales task${openPostSalesTasks === 1 ? "" : "s"} open.`
+      : "Post-Sales checklist has not been started.",
+    missingReceiptCount > 0 ? `${missingReceiptCount} recorded payment${missingReceiptCount === 1 ? "" : "s"} need a manual receipt number.` : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 shadow-sm shadow-secondary/10">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Operational Summary</p>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-primary">
+            {statements.join(" ")}
+          </p>
+        </div>
+        <Badge tone={openRequests > 0 || overduePostSalesTasks > 0 || missingReceiptCount > 0 ? "amber" : "green"}>
+          {openRequests > 0 || overduePostSalesTasks > 0 || missingReceiptCount > 0 ? "Needs review" : "Current view"}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function CustomerCommandRail({
+  customer,
+  reservations,
+  siteVisits,
+  postSalesChecklist,
+  postSalesTasks,
+  latestAiSummary,
+  generatedByLabel,
+  canGenerate,
+  aiEnabled,
+  generating,
+  onRecordPayment,
+  onCreateContract,
+  onCreateRequest,
+  onUploadDocument,
+  onStatement,
+  onGenerate,
+}: {
+  customer: CustomerDetail;
+  reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
+  siteVisits: SiteVisit[];
+  postSalesChecklist: PostSalesChecklist | null;
+  postSalesTasks: PostSalesTask[];
+  latestAiSummary: CustomerAiSummary | null;
+  generatedByLabel: string;
+  canGenerate: boolean;
+  aiEnabled: boolean;
+  generating: boolean;
+  onRecordPayment: () => void;
+  onCreateContract: () => void;
+  onCreateRequest: () => void;
+  onUploadDocument: () => void;
+  onStatement: () => void;
+  onGenerate: () => void;
+}) {
+  const latestReservation = reservations[0] ?? null;
+  const upcomingVisit = siteVisits.find((visit) => safeDateTime(visit.scheduled_at) >= Date.now()) ?? null;
+  const recentTasks = postSalesTasks.slice(0, 3);
+
+  return (
     <aside className="grid gap-4 xl:sticky xl:top-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2">
+      <div className="rounded-xl border border-primary/15 bg-primary-soft/45 p-4 shadow-sm shadow-primary/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Current Workflow</p>
+        <div className="mt-4 grid gap-3">
+          {latestReservation ? (
+            <div className="rounded-lg border border-primary/10 bg-card/80 p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-primary">Reservation / Deposit Readiness</p>
+                <Badge tone={reservationTone(latestReservation.status)}>{statusLabel(latestReservation.status)}</Badge>
+              </div>
+              <p className="mt-2 text-muted-foreground">
+                {latestReservation.parcels?.lot_number ? `Lot ${latestReservation.parcels.lot_number}` : "No lot selected"} · Deposit {statusLabel(latestReservation.deposit_status).toLowerCase()}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Deposit readiness is workflow tracking. Confirmed payments remain in Payments and Collections.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-primary/20 bg-card/60 p-3 text-sm text-muted-foreground">
+              No linked reservation is currently shown for this customer.
+            </div>
+          )}
+          {upcomingVisit ? (
+            <div className="rounded-lg border border-primary/10 bg-card/80 p-3 text-sm">
+              <p className="font-semibold text-primary">Upcoming Site Visit</p>
+              <p className="mt-1 text-muted-foreground">{formatDate(upcomingVisit.scheduled_at)}</p>
+              <Badge tone="blue">{statusLabel(upcomingVisit.status)}</Badge>
+            </div>
+          ) : null}
+          {postSalesChecklist ? (
+            <div className="rounded-lg border border-primary/10 bg-card/80 p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-primary">Post-Sales Work</p>
+                <Badge tone={postSalesStatusTone(postSalesChecklist.status)}>{statusLabel(postSalesChecklist.status)}</Badge>
+              </div>
+              <p className="mt-2 text-muted-foreground">{recentTasks.length} recent task{recentTasks.length === 1 ? "" : "s"} visible in this rail.</p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 shadow-sm shadow-secondary/10">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Smart Summary</p>
+            <p className="mt-1 text-sm text-muted-foreground">Advisory account guidance only.</p>
+          </div>
+          {latestAiSummary ? <Badge tone={accountStatusTone(latestAiSummary.account_status)}>{latestAiSummary.account_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
+        </div>
+        {latestAiSummary ? (
+          <p className="mt-4 line-clamp-5 text-sm leading-6 text-primary">{latestAiSummary.summary || "No summary text recorded."}</p>
+        ) : (
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">No smart customer account summary has been generated yet.</p>
+        )}
+        <div className="mt-4 grid gap-1 text-xs text-muted-foreground">
+          {latestAiSummary ? <span>Generated: {formatDate(latestAiSummary.updated_at || latestAiSummary.created_at)}</span> : null}
+          {latestAiSummary ? <span>Generated by: {generatedByLabel}</span> : null}
+          {!aiEnabled ? <span>AI provider access is disabled; fallback summaries may still be available by role.</span> : null}
+        </div>
+        {canGenerate ? (
+          <Button type="button" variant="outline" className="mt-4 w-full" disabled={generating} onClick={onGenerate}>
+            <RefreshCw className={cn("h-4 w-4", generating && "animate-spin")} />
+            {generating ? "Generating..." : latestAiSummary ? "Regenerate Summary" : "Generate Summary"}
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Record Actions</p>
+        <div className="mt-4 grid gap-2">
           <Button type="button" onClick={onRecordPayment}>Record Payment</Button>
           <Button type="button" variant="secondary" onClick={onCreateContract}>Create Contract</Button>
           <Button type="button" variant="outline" onClick={onCreateRequest}>Create Payment Request</Button>
           <Button type="button" variant="outline" onClick={onUploadDocument}>Upload Payment Document</Button>
           <Button type="button" variant="ghost" onClick={onStatement}>Print / View Statement</Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border/80 bg-muted/40 p-4 shadow-sm shadow-primary/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Record Context</p>
+        <div className="mt-4 grid gap-3 text-sm">
+          <RailContextRow label="Application" value={`#${customer.application_id}`} />
+          <RailContextRow label="Payment requests" value={String(customer.payment_requests?.length ?? 0)} />
+          <RailContextRow label="Documents" value={String(customer.payment_documents?.length ?? 0)} />
+          <RailContextRow label="Post-sales tasks" value={String(postSalesTasks.length)} />
+        </div>
+      </div>
     </aside>
+  );
+}
+
+function RailContextRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-2 last:border-b-0 last:pb-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold text-primary">{value}</span>
+    </div>
   );
 }
 
@@ -893,15 +1296,17 @@ function OverviewSection({
 
   return (
     <div className="grid gap-4">
-      <SmartInsightsPanel
-        title="Operations Insights"
-        description="Live account guidance from customer, contract, payment, reservation, and post-sales records."
-        insights={operationsInsights}
-      />
+      <div className="rounded-xl border border-secondary/20 bg-[#fff8e6] p-4 shadow-sm shadow-secondary/10">
+        <SmartInsightsPanel
+          title="Operations Insights"
+          description="Advisory account guidance from customer, contract, payment, reservation, and post-sales records."
+          insights={operationsInsights}
+        />
+      </div>
       <div className="crm-info-panel p-4 text-sm">
         Post-Sales tracks the operational steps after approval or contract start, including documents, agreement readiness, payment setup, and collections handoff.
       </div>
-      <Card>
+      <Card className="v2-ledger-panel">
         <CardHeader>
           <CardTitle>Overview</CardTitle>
         </CardHeader>
@@ -914,7 +1319,7 @@ function OverviewSection({
         </CardContent>
       </Card>
       {latestLead ? (
-        <Card>
+        <Card className="v2-workflow-panel">
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>Sales Lead</CardTitle>
@@ -931,7 +1336,7 @@ function OverviewSection({
         </Card>
       ) : null}
       {latestReservation ? (
-        <Card>
+        <Card className="v2-workflow-panel">
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>Reservation / Deposit Readiness</CardTitle>
@@ -1002,7 +1407,7 @@ function PostSalesSection({
 }) {
   if (!checklist) {
     return (
-      <Card>
+      <Card className="v2-workflow-panel">
         <CardHeader>
           <CardTitle>Post-Sales Automation</CardTitle>
           <CardDescription className="mt-1 text-sm">
@@ -1028,7 +1433,7 @@ function PostSalesSection({
         generating={generatingSummary}
         onGenerate={() => onGenerateSummary(checklist.id)}
       />
-      <Card>
+      <Card className="v2-workflow-panel">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle>Post-Sales Automation</CardTitle>
@@ -1082,7 +1487,7 @@ function PostSalesSmartSummaryPanel({
   const actions = stringList(summary?.recommended_actions);
 
   return (
-    <Card>
+      <Card className="v2-advisor-panel">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>Post-Sales Smart Summary</CardTitle>
@@ -1263,7 +1668,7 @@ function PostSalesTaskForm({
   }
 
   return (
-    <Card>
+      <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>New Post-Sales Task</CardTitle></CardHeader>
       <CardContent>
         <form className="grid gap-3" onSubmit={submit}>
@@ -1307,7 +1712,7 @@ function PostSalesTasksCard({
   onUpdate: (task: PostSalesTask, status: PostSalesTaskStatus) => void;
 }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>Post-Sales Tasks</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
         {tasks.length === 0 ? <p className="text-sm text-muted-foreground">No post-sales tasks recorded.</p> : null}
@@ -1340,12 +1745,12 @@ function PostSalesTasksCard({
 
 function PostSalesTimeline({ activities }: { activities: PostSalesActivity[] }) {
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader><CardTitle>Post-Sales Timeline</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
         {activities.length === 0 ? <p className="text-sm text-muted-foreground">No post-sales activity has been recorded yet.</p> : null}
         {activities.map((activity) => (
-          <div key={activity.id} className="rounded-md border-l-4 border-primary/30 bg-muted p-3 text-sm">
+          <div key={activity.id} className="v2-archive-row">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="break-words font-medium text-primary">{activity.title}</p>
               <Badge tone="gray">{statusLabel(activity.activity_type)}</Badge>
@@ -1367,22 +1772,22 @@ function Ledger({
   rows: CustomerTransaction[];
 }) {
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-primary">{title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
         {rows.length === 0 ? <EmptyState message="No transactions recorded." /> : null}
         {rows.map((row) => (
-          <div key={row.id} className="grid gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5">
+          <div key={row.id} className="v2-ledger-row grid gap-3">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
                 <p className="font-medium text-primary">{row.transaction_type}</p>
                 <p className="text-muted-foreground">{formatDate(row.created_at)}</p>
               </div>
-              <span className="font-semibold text-primary">{money(row.amount)}</span>
+              <span className="font-semibold text-primary tabular-nums">{money(row.amount)}</span>
             </div>
-            <div className="grid gap-2 text-muted-foreground sm:grid-cols-2">
+            <div className="grid gap-2 border-t border-border/80 pt-3 text-muted-foreground sm:grid-cols-2">
               <span>Bank reference: {row.bank_reference ?? "N/A"}</span>
               <span>Receipt date: {row.receipt_date ? formatDate(row.receipt_date) : "Not recorded"}</span>
               <span>Manual receipt: {row.manual_receipt_number ?? "Missing"}</span>
@@ -1408,7 +1813,7 @@ function ContractSection({
   onVoidRequest: (contract: CustomerContract) => void;
 }) {
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader>
         <CardTitle>Contract History</CardTitle>
         <CardDescription>
@@ -1419,7 +1824,7 @@ function ContractSection({
       <CardContent className="grid gap-3">
         {contracts.length === 0 ? <EmptyState message="No contracts recorded." /> : null}
         {contracts.map((contract) => (
-          <div key={contract.id} className="grid gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5">
+          <div key={contract.id} className="v2-archive-row grid gap-3">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
                 <strong className="text-primary">Contract #{contract.id}</strong>
@@ -1466,14 +1871,14 @@ function ContractSection({
 
 function DocumentsSection({ documents }: { documents: PaymentDocumentWithTransaction[] }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>Documents</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
         {documents.length === 0 ? <EmptyState message="No payment documents uploaded." /> : null}
         {documents.map((document) => (
-          <div key={document.id} className="grid gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div key={document.id} className="v2-record-row grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="blue">{document.document_type}</Badge>
@@ -1517,7 +1922,7 @@ function PaymentRequestsSection({
   }
 
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <CardTitle>Requests</CardTitle>
@@ -1528,7 +1933,7 @@ function PaymentRequestsSection({
         {status ? <p className="crm-warning-panel p-3 text-sm">{status}</p> : null}
         {requests.length === 0 ? <EmptyState message="No payment requests created." /> : null}
         {requests.map((request) => (
-          <div key={request.id} className="grid gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-sm shadow-primary/5">
+          <div key={request.id} className="v2-ledger-row grid gap-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-medium text-primary">{request.reason}</p>
@@ -1759,7 +2164,7 @@ function BalanceStatementSection({
   const lastPayment = [...landPayments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <CardTitle>Statement</CardTitle>
@@ -1802,7 +2207,7 @@ function AiSummarySection({
   onCopy: (message: string) => void;
 }) {
   return (
-    <Card>
+    <Card className="v2-advisor-panel">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1957,6 +2362,26 @@ function ActionModal({
       </div>
     </div>
   );
+}
+
+function customerPaymentStanding(contract: CustomerContract | null, remainingBalance: number): { label: string; tone: BadgeTone; detail: string } {
+  if (!contract) return { label: "No account", tone: "gray", detail: "No active contract" };
+  if (remainingBalance <= 0) return { label: "Paid in full", tone: "green", detail: "No remaining land balance" };
+  const dueDate = accountDueDate(contract);
+  if (dueDate < startOfToday()) return { label: "Due", tone: "amber", detail: `Next due ${formatDate(dueDate.toISOString())}` };
+  return { label: "Current", tone: "green", detail: `Next due ${formatDate(dueDate.toISOString())}` };
+}
+
+function customerCollectionsStanding(openRequests: number, remainingBalance: number): { label: string; tone: BadgeTone; detail: string } {
+  if (openRequests > 0) {
+    return {
+      label: `${openRequests} open`,
+      tone: "amber",
+      detail: `${openRequests} payment request${openRequests === 1 ? "" : "s"} open`,
+    };
+  }
+  if (remainingBalance > 0) return { label: "Clear", tone: "green", detail: "No open payment requests" };
+  return { label: "Clear", tone: "green", detail: "No collection follow-up" };
 }
 
 function assignedLot(customer: CustomerDetail) {

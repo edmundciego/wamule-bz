@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { PaymentForm } from "../components/forms/PaymentForm";
-import { PageHeader } from "../components/layout/PageHeader";
 import { PaymentDocumentLinks } from "../components/payments/PaymentDocumentLinks";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -43,13 +42,17 @@ export function PaymentsPage() {
   }, [data, receiptSearch]);
 
   return (
-    <>
-      <PageHeader title="Payments" description="Unified ledger for land installments and community fees." />
+    <section className="v2-page-shell">
+      <div className="v2-page-header">
+        <p className="v2-page-kicker">Financial Truth</p>
+        <h1 className="v2-page-title">Payments</h1>
+        <p className="v2-page-description">Unified ledger for land installments and community fees.</p>
+      </div>
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
         <div className="grid min-w-0 content-start gap-3">
-          <Card>
+          <Card className="v2-filter-bar">
             <CardContent className="p-4">
               <Field label="Search manual receipt number">
                 <Input value={receiptSearch} onChange={(event) => setReceiptSearch(event.target.value)} placeholder="Receipt number" />
@@ -57,21 +60,27 @@ export function PaymentsPage() {
             </CardContent>
           </Card>
           {filteredPayments.map((payment) => (
-            <Card key={payment.id}>
-              <CardContent className="grid gap-2 p-4 text-sm">
+            <Card key={payment.id} className="v2-ledger-panel">
+              <CardContent className="grid gap-3 p-4 text-sm">
                 <div className="flex flex-wrap justify-between gap-3">
-                  <p className="font-medium text-foreground">{payment.customers?.first_name} {payment.customers?.last_name}</p>
-                  <Badge tone={["Down Payment", "Land Installment"].includes(payment.transaction_type) ? "blue" : "amber"}>{payment.transaction_type}</Badge>
+                  <div>
+                    <p className="font-semibold text-primary">{payment.customers?.first_name} {payment.customers?.last_name}</p>
+                    <p className="mt-1 text-muted-foreground">Lot {payment.contracts?.parcels?.lot_number ?? "N/A"} · {formatDate(payment.created_at)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="v2-money text-xl">{money(payment.amount)}</p>
+                    <Badge tone={["Down Payment", "Land Installment"].includes(payment.transaction_type) ? "blue" : "amber"}>{payment.transaction_type}</Badge>
+                  </div>
                 </div>
-                <p className="text-muted-foreground">
-                  Lot {payment.contracts?.parcels?.lot_number ?? "N/A"} | {money(payment.amount)} by {payment.collection_method} on {formatDate(payment.created_at)}
-                </p>
-                <p className="text-muted-foreground">Reference: {payment.bank_reference ?? "Cash"}</p>
+                <div className="grid gap-2 border-t border-border/80 pt-3 text-muted-foreground sm:grid-cols-3">
+                  <span>Method: {payment.collection_method}</span>
+                  <span>Reference: {payment.bank_reference ?? "Cash"}</span>
+                  <span>Receipt date: {payment.receipt_date ? formatDate(payment.receipt_date) : "Not recorded"}</span>
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>Manual receipt: {payment.manual_receipt_number ?? "Missing"}</span>
+                  <span className="text-muted-foreground">Manual receipt: {payment.manual_receipt_number ?? "Missing"}</span>
                   {payment.manual_receipt_number ? <Badge tone="green">Recorded</Badge> : <Badge tone="amber">Missing receipt #</Badge>}
                 </div>
-                <p className="text-muted-foreground">Receipt date: {payment.receipt_date ? formatDate(payment.receipt_date) : "Not recorded"}</p>
                 <PaymentDocumentLinks documents={payment.payment_documents} />
                 <ExistingPaymentDocumentUpload
                   payment={{
@@ -99,9 +108,11 @@ export function PaymentsPage() {
             </Card>
           ))}
         </div>
-        <PaymentForm />
+        <div className="xl:sticky xl:top-6">
+          <PaymentForm />
+        </div>
       </div>
-    </>
+    </section>
   );
 }
 
@@ -181,7 +192,7 @@ function ExistingPaymentDocumentUpload({
   }
 
   return (
-    <details className="crm-subpanel">
+    <details className="v2-workflow-panel p-3">
       <summary className="cursor-pointer text-sm font-medium text-primary">Upload document to this payment</summary>
       <div className="mt-3 grid gap-3">
         <Field label="Document type">
@@ -269,7 +280,7 @@ function PaymentEditor({
   }
 
   return (
-    <details className="crm-subpanel">
+    <details className="v2-workflow-panel p-3">
       <summary className="cursor-pointer text-sm font-medium text-primary">Edit payment details</summary>
       <div className="mt-3 grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">

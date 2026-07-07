@@ -1,11 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
-import { Card, CardContent } from "../components/ui/Card";
-import { Select } from "../components/ui/Field";
+import { Input, Select } from "../components/ui/Field";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
@@ -13,13 +11,22 @@ import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflo
 import { applicationSmartInsights, activeReservationStatuses } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
-import type { ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation, PostSalesChecklist } from "../types/database";
+import type { Application, ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation, PostSalesChecklist } from "../types/database";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
+type ReviewFilter = ApplicationStatus | "All";
+type ApplicationRow = Application & {
+  parcels?: { id: number; lot_number: string | null; status: string | null } | null;
+  application_ai_reviews?: ApplicationAiReview[] | ApplicationAiReview | null;
+};
+type LotOption = { id: number; lot_number: string | null; dimensions: string | null; status: string | null };
 
 export function ApplicationsPage() {
   const queryClient = useQueryClient();
   const [selectedLots, setSelectedLots] = useState<Record<number, string>>({});
+  const [selectedStatus, setSelectedStatus] = useState<ReviewFilter>("Pending Review");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [generatingReviewId, setGeneratingReviewId] = useState<number | null>(null);
   const { data: sessionProfile } = useQuery({
@@ -34,7 +41,7 @@ export function ApplicationsPage() {
         .select("*, parcels(id, lot_number, status), application_ai_reviews(*)")
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
-      return applications;
+      return applications as ApplicationRow[];
     },
   });
   const { data: aiSettings } = useQuery({
@@ -58,7 +65,7 @@ export function ApplicationsPage() {
         .select("id, lot_number, dimensions, status")
         .order("lot_number");
       if (queryError) throw queryError;
-      return parcels;
+      return parcels as LotOption[];
     },
   });
   const { data: linkedLeads } = useQuery({
@@ -270,118 +277,617 @@ export function ApplicationsPage() {
   const canWriteSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const canGenerateAiReview = currentRole === "Super Admin" || currentRole === "Admin";
   const aiReviewEnabled = Boolean(aiSettings?.is_enabled && aiSettings.application_summary_enabled);
+  const applications = data ?? [];
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredApplications = applications.filter((application) => {
+    const matchesStatus = selectedStatus === "All" || application.status === selectedStatus;
+    const searchable = [
+      applicationName(application),
+      application.phone,
+      application.email ?? "",
+      application.parcels?.lot_number ? `Lot ${application.parcels.lot_number}` : "",
+      preferredLotText(application.preferred_parcel_ids),
+      application.intended_use ?? "",
+      application.payment_option ?? "",
+    ].join(" ").toLowerCase();
+    return matchesStatus && (!normalizedSearch || searchable.includes(normalizedSearch));
+  });
+  const selectedApplication =
+    applications.find((application) => application.id === selectedApplicationId) ??
+    filteredApplications[0] ??
+    applications[0] ??
+    null;
 
   return (
     <>
-      <PageHeader title="Applications" description="Review intake applications and approve qualifying applicants." />
+      <section className="mx-auto grid max-w-[1520px] gap-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Application Review</p>
+            <h1 className="mt-2 text-3xl font-semibold text-primary">Applications</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Review buyer applications, lot preferences, missing information, and next steps.
+            </p>
+          </div>
+        </div>
+
+        <ApplicationReviewStrip
+          applications={applications}
+          selectedStatus={selectedStatus}
+          onSelectStatus={setSelectedStatus}
+        />
+      </section>
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
-      <div className="crm-info-panel mb-4 p-4 text-sm">
-        Applications can be linked to a lead or reservation so staff can track the buyer journey from interest to application review.
-        Public applications are automatically added to the sales pipeline as leads for follow-up. This does not approve the application or reserve a lot.
-      </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {statuses.map((status) => (
-          <section key={status} className="min-w-0">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">{status}</h2>
-              <Badge tone={statusBadgeTone(status)}>
-                {data?.filter((item) => item.status === status).length ?? 0}
-              </Badge>
-            </div>
-            <div className="grid gap-3">
-              {data
-                ?.filter((item) => item.status === status)
-                .map((application) => {
-                  const linkedLead = linkedLeads?.find((item) => item.application_id === application.id) ?? null;
-                  const selectedParcelId = application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null);
-                  const linkedReservation = applicationReservation(application.id, selectedParcelId, linkedLeads, linkedReservations);
-                  const postSalesChecklist = postSalesChecklists?.find((checklist) => checklist.application_id === application.id) ?? null;
-                  const selectedLotStatus = lotOptions?.find((lot) => lot.id === selectedParcelId)?.status ?? application.parcels?.status ?? null;
+      <section className="mx-auto mt-6 grid max-w-[1520px] gap-6 xl:grid-cols-[minmax(320px,0.38fr)_minmax(0,1fr)]">
+        <ApplicationReviewQueue
+          applications={filteredApplications}
+          selectedApplicationId={selectedApplication?.id ?? null}
+          searchQuery={searchQuery}
+          preferredLotText={preferredLotText}
+          linkedLeads={linkedLeads}
+          linkedReservations={linkedReservations}
+          lotOptions={lotOptions}
+          postSalesChecklists={postSalesChecklists}
+          onSearchChange={setSearchQuery}
+          onSelect={(application) => setSelectedApplicationId(application.id)}
+        />
+        {selectedApplication ? (
+          <ApplicationWorkbench
+            application={selectedApplication}
+            preferredLotText={preferredLotText}
+            selectedLotValue={selectedLots[selectedApplication.id] ?? ""}
+            lotOptions={lotOptions}
+            linkedLead={linkedLeads?.find((item) => item.application_id === selectedApplication.id) ?? null}
+            linkedReservation={applicationReservation(
+              selectedApplication.id,
+              selectedApplication.parcel_id ?? (selectedLots[selectedApplication.id] ? Number(selectedLots[selectedApplication.id]) : null),
+              linkedLeads,
+              linkedReservations,
+            )}
+            postSalesChecklist={postSalesChecklists?.find((checklist) => checklist.application_id === selectedApplication.id) ?? null}
+            canWriteSales={canWriteSales}
+            canGenerateAiReview={canGenerateAiReview}
+            aiReviewEnabled={aiReviewEnabled}
+            generatingReview={generatingReviewId === selectedApplication.id}
+            selectedLotStatus={lotOptions?.find((lot) => lot.id === (selectedApplication.parcel_id ?? (selectedLots[selectedApplication.id] ? Number(selectedLots[selectedApplication.id]) : null)))?.status ?? selectedApplication.parcels?.status ?? null}
+            onSelectedLotChange={(value) =>
+              setSelectedLots((current) => ({
+                ...current,
+                [selectedApplication.id]: value,
+              }))
+            }
+            onCreateLead={() => void createLeadFromApplication(selectedApplication)}
+            onCreateReservation={() => void createReservationFromApplication(selectedApplication)}
+            onGenerateReview={() => void generateReview(selectedApplication.id)}
+            onApprove={() => void setStatus(selectedApplication.id, "Approved")}
+            onDecline={() => void setStatus(selectedApplication.id, "Declined")}
+            onBackToQueue={() => setSelectedApplicationId(null)}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+            No applications match the current review filter.
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
 
-                  return (
-                  <Card key={application.id}>
-                    <CardContent className="grid gap-3 p-4">
-                      <div>
-                        <p className="font-medium">{application.applicant_full_name ?? `${application.first_name} ${application.last_name}`}</p>
-                        <p className="text-sm text-muted-foreground">{application.phone}</p>
-                      </div>
-                      <div className="grid gap-1 text-sm">
-                        <p>Assigned lot: {application.parcels?.lot_number ?? "Not assigned"}</p>
-                        <p>Preferred lots: {preferredLotText(application.preferred_parcel_ids)}</p>
-                        <p>Alternate: {application.alternate_lot_preference ?? "Not provided"}</p>
-                        <p>Use: {application.intended_use ?? "Not provided"}{application.intended_use_other ? ` - ${application.intended_use_other}` : ""}</p>
-                        <p>Payment: {application.payment_option ?? "Not provided"}</p>
-                        <p>Created: {formatDate(application.created_at)}</p>
-                        <p>{application.legal_notice_acknowledged ? "Legal notice acknowledged" : "Missing legal acknowledgement"}</p>
-                      </div>
-                      <ApplicationLeadLink
-                        lead={linkedLead}
-                        canWrite={canWriteSales}
-                        onCreate={() => void createLeadFromApplication(application)}
-                      />
-                      <ApplicationReservationLink
-                        reservation={linkedReservation}
-                        canWrite={canWriteSales}
-                        hasLot={Boolean(application.parcel_id || selectedLots[application.id])}
-                        onCreate={() => void createReservationFromApplication(application)}
-                      />
-                      <ApplicationPostSalesLink
-                        checklist={postSalesChecklist}
-                        applicationStatus={application.status}
-                      />
-                      <SmartInsightsPanel
-                        title="Missing Information"
-                        description="Rule-based application guidance. Approval remains manual."
-                        insights={applicationSmartInsights({
-                          application,
-                          selectedLotStatus,
-                          linkedLead,
-                          postSalesChecklist,
-                        })}
-                        compact
-                      />
-                      <ApplicationAiReviewSection
-                        review={firstReview(application.application_ai_reviews)}
-                        canGenerate={canGenerateAiReview}
-                        aiReviewEnabled={aiReviewEnabled}
-                        generating={generatingReviewId === application.id}
-                        onGenerate={() => void generateReview(application.id)}
-                      />
-                      {status !== "Approved" ? (
-                        <Select
-                          value={selectedLots[application.id] ?? ""}
-                          onChange={(event) =>
-                            setSelectedLots((current) => ({
-                              ...current,
-                              [application.id]: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">Select lot to reserve</option>
-                          {lotOptions
-                            ?.filter((lot) => lot.status === "Available")
-                            .map((lot) => (
-                              <option key={lot.id} value={lot.id}>
-                                Lot {lot.lot_number} - {lot.dimensions}
-                              </option>
-                            ))}
-                        </Select>
-                      ) : null}
-                      <div className="flex flex-wrap gap-2">
-                        {status !== "Approved" ? <Button type="button" onClick={() => void setStatus(application.id, "Approved")}>Approve</Button> : null}
-                        {status !== "Declined" ? <Button type="button" variant="outline" onClick={() => void setStatus(application.id, "Declined")}>Decline</Button> : null}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  );
-                })}
+function ApplicationReviewStrip({
+  applications,
+  selectedStatus,
+  onSelectStatus,
+}: {
+  applications: ApplicationRow[];
+  selectedStatus: ReviewFilter;
+  onSelectStatus: (status: ReviewFilter) => void;
+}) {
+  const filters: ReviewFilter[] = ["All", ...statuses];
+  return (
+    <div className="overflow-x-auto rounded-xl border border-primary/15 bg-primary-soft/45 p-2 shadow-sm shadow-primary/5">
+      <div className="flex min-w-max gap-2">
+        {filters.map((status) => {
+          const count = status === "All" ? applications.length : applications.filter((application) => application.status === status).length;
+          const active = selectedStatus === status;
+          return (
+            <button
+              key={status}
+              type="button"
+              className={[
+                "flex min-h-12 items-center gap-3 rounded-lg px-4 text-left text-sm transition",
+                active ? "bg-primary text-primary-foreground shadow-sm shadow-primary/10" : "bg-card/75 text-primary hover:bg-card",
+              ].join(" ")}
+              onClick={() => onSelectStatus(status)}
+            >
+              <span className="font-semibold">{status}</span>
+              <span className={active ? "text-primary-foreground/75" : "text-muted-foreground"}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ApplicationReviewQueue({
+  applications,
+  selectedApplicationId,
+  searchQuery,
+  preferredLotText,
+  linkedLeads,
+  linkedReservations,
+  lotOptions,
+  postSalesChecklists,
+  onSearchChange,
+  onSelect,
+}: {
+  applications: ApplicationRow[];
+  selectedApplicationId: number | null;
+  searchQuery: string;
+  preferredLotText: (preferredParcelIds: unknown) => string;
+  linkedLeads: Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason">[] | undefined;
+  linkedReservations: LotReservation[] | undefined;
+  lotOptions: LotOption[] | undefined;
+  postSalesChecklists: PostSalesChecklist[] | undefined;
+  onSearchChange: (value: string) => void;
+  onSelect: (application: ApplicationRow) => void;
+}) {
+  return (
+    <aside className="grid min-w-0 gap-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:grid-rows-[auto_minmax(0,1fr)]">
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Review Queue</p>
+        <Input
+          className="mt-3"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search applicant, phone, lot, use..."
+        />
+      </div>
+      <div className="grid min-h-0 gap-3 overflow-visible xl:overflow-y-auto xl:pr-1">
+        {applications.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
+            No applications match this view.
+          </div>
+        ) : null}
+        {applications.map((application) => {
+          const linkedLead = linkedLeads?.find((item) => item.application_id === application.id) ?? null;
+          const selectedParcelId = application.parcel_id;
+          const linkedReservation = applicationReservation(application.id, selectedParcelId, linkedLeads, linkedReservations);
+          const postSalesChecklist = postSalesChecklists?.find((checklist) => checklist.application_id === application.id) ?? null;
+          const selectedLotStatus = lotOptions?.find((lot) => lot.id === selectedParcelId)?.status ?? application.parcels?.status ?? null;
+          const missingFacts = knownMissingFacts(application);
+          const selected = selectedApplicationId === application.id;
+
+          return (
+            <button
+              key={application.id}
+              type="button"
+              className={[
+                "group min-w-0 rounded-xl border p-4 text-left shadow-sm transition",
+                selected ? "border-primary/30 bg-primary-soft/60 shadow-primary/10" : "border-border bg-card hover:border-primary/20 hover:bg-primary-soft/20",
+              ].join(" ")}
+              onClick={() => onSelect(application)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words text-base font-semibold text-primary">{applicationName(application)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{application.phone}</p>
+                </div>
+                <Badge tone={statusBadgeTone(application.status)}>{application.status}</Badge>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Preferred</span>
+                  <span className="min-w-0 truncate font-medium text-primary">{preferredLotText(application.preferred_parcel_ids)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>Submitted</span>
+                  <span className="font-medium text-primary">{formatDate(application.created_at)}</span>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedLotStatus && selectedLotStatus !== "Available" && application.status !== "Approved" ? <Badge tone="red">Lot issue</Badge> : null}
+                {missingFacts.length ? <Badge tone="amber">{missingFacts.length} missing</Badge> : <Badge tone="green">Required fields</Badge>}
+                {linkedLead?.possible_duplicate ? <Badge tone="amber">Possible duplicate</Badge> : null}
+                {linkedReservation ? <Badge tone={reservationTone(linkedReservation.status)}>Reservation</Badge> : null}
+                {postSalesChecklist ? <Badge tone={postSalesTone(postSalesChecklist.status)}>Post-Sales</Badge> : null}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function ApplicationWorkbench({
+  application,
+  preferredLotText,
+  selectedLotValue,
+  lotOptions,
+  linkedLead,
+  linkedReservation,
+  postSalesChecklist,
+  canWriteSales,
+  canGenerateAiReview,
+  aiReviewEnabled,
+  generatingReview,
+  selectedLotStatus,
+  onSelectedLotChange,
+  onCreateLead,
+  onCreateReservation,
+  onGenerateReview,
+  onApprove,
+  onDecline,
+  onBackToQueue,
+}: {
+  application: ApplicationRow;
+  preferredLotText: (preferredParcelIds: unknown) => string;
+  selectedLotValue: string;
+  lotOptions: LotOption[] | undefined;
+  linkedLead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason"> | null;
+  linkedReservation: LotReservation | null;
+  postSalesChecklist: PostSalesChecklist | null;
+  canWriteSales: boolean;
+  canGenerateAiReview: boolean;
+  aiReviewEnabled: boolean;
+  generatingReview: boolean;
+  selectedLotStatus: string | null;
+  onSelectedLotChange: (value: string) => void;
+  onCreateLead: () => void;
+  onCreateReservation: () => void;
+  onGenerateReview: () => void;
+  onApprove: () => void;
+  onDecline: () => void;
+  onBackToQueue: () => void;
+}) {
+  const missingFacts = knownMissingFacts(application);
+  const review = firstReview(application.application_ai_reviews);
+  const preferredLotLabel = preferredLotText(application.preferred_parcel_ids);
+  const lotConflict = Boolean(selectedLotStatus && selectedLotStatus !== "Available" && application.status !== "Approved");
+
+  return (
+    <main className="grid min-w-0 gap-5">
+      <section className="overflow-hidden rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_48%,#ecf3e6_100%)] shadow-[0_20px_60px_rgba(45,35,23,0.10)]">
+        <div className="grid gap-5 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <button type="button" className="mb-3 text-sm font-semibold text-primary xl:hidden" onClick={onBackToQueue}>
+                Back to queue
+              </button>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Application Workbench</p>
+              <h2 className="mt-2 break-words text-3xl font-semibold leading-tight text-primary">{applicationName(application)}</h2>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm text-muted-foreground">
+                <span className="rounded-md border border-primary/10 bg-card/70 px-3 py-2">Submitted {formatDate(application.created_at)}</span>
+                <span className="rounded-md border border-primary/10 bg-card/70 px-3 py-2">{application.phone}</span>
+                {application.email ? <span className="rounded-md border border-primary/10 bg-card/70 px-3 py-2">{application.email}</span> : null}
+              </div>
             </div>
-          </section>
+            <DecisionActions
+              application={application}
+              selectedLotValue={selectedLotValue}
+              lotOptions={lotOptions}
+              onSelectedLotChange={onSelectedLotChange}
+              onApprove={onApprove}
+              onDecline={onDecline}
+            />
+          </div>
+          <CurrentReviewState
+            application={application}
+            missingFacts={missingFacts}
+            lotConflict={lotConflict}
+            selectedLotStatus={selectedLotStatus}
+            linkedLead={linkedLead}
+            linkedReservation={linkedReservation}
+            postSalesChecklist={postSalesChecklist}
+          />
+        </div>
+      </section>
+
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid min-w-0 gap-5">
+          <LotPreferenceWorkspace
+            application={application}
+            preferredLotLabel={preferredLotLabel}
+            selectedLotStatus={selectedLotStatus}
+          />
+          <MissingInformationPanel missingFacts={missingFacts} application={application} selectedLotStatus={selectedLotStatus} linkedLead={linkedLead} postSalesChecklist={postSalesChecklist} />
+          <ApplicantInformation application={application} />
+          <BuyerJourneyPanel
+            lead={linkedLead}
+            reservation={linkedReservation}
+            postSalesChecklist={postSalesChecklist}
+            applicationStatus={application.status}
+            canWrite={canWriteSales}
+            hasLot={Boolean(application.parcel_id || selectedLotValue)}
+            onCreateLead={onCreateLead}
+            onCreateReservation={onCreateReservation}
+          />
+        </div>
+        <div className="grid min-w-0 gap-5 content-start">
+          <ApplicationAiReviewSection
+            review={review}
+            canGenerate={canGenerateAiReview}
+            aiReviewEnabled={aiReviewEnabled}
+            generating={generatingReview}
+            onGenerate={onGenerateReview}
+          />
+          <ApplicationContextPanel application={application} />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function CurrentReviewState({
+  application,
+  missingFacts,
+  lotConflict,
+  selectedLotStatus,
+  linkedLead,
+  linkedReservation,
+  postSalesChecklist,
+}: {
+  application: ApplicationRow;
+  missingFacts: string[];
+  lotConflict: boolean;
+  selectedLotStatus: string | null;
+  linkedLead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason"> | null;
+  linkedReservation: LotReservation | null;
+  postSalesChecklist: PostSalesChecklist | null;
+}) {
+  return (
+    <div className="grid overflow-hidden rounded-xl border border-primary/15 bg-card shadow-sm shadow-primary/5 sm:grid-cols-2 xl:grid-cols-4">
+      <ReviewStateCell label="Status" value={application.status} detail={application.status === "Pending Review" ? "Decision pending" : "Stable application state"} tone={statusBadgeTone(application.status)} />
+      <ReviewStateCell label="Lot" value={lotConflict ? "Needs review" : selectedLotStatus ?? "Not selected"} detail={lotConflict ? `Current lot status is ${selectedLotStatus}` : application.parcels?.lot_number ? `Assigned Lot ${application.parcels.lot_number}` : "No assigned lot"} tone={lotConflict ? "red" : selectedLotStatus === "Available" ? "green" : "gray"} />
+      <ReviewStateCell label="Missing" value={missingFacts.length ? `${missingFacts.length} item${missingFacts.length === 1 ? "" : "s"}` : "Clear"} detail={missingFacts[0] ?? "Known required fields present"} tone={missingFacts.length ? "amber" : "green"} />
+      <ReviewStateCell label="Journey" value={linkedLead ? "Lead linked" : "No lead"} detail={linkedReservation ? `Reservation ${reservationLabel(linkedReservation.status)}` : postSalesChecklist ? `Post-Sales ${statusLabel(postSalesChecklist.status)}` : "No reservation linked"} tone={linkedLead || linkedReservation || postSalesChecklist ? "blue" : "gray"} />
+    </div>
+  );
+}
+
+function ReviewStateCell({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: BadgeTone }) {
+  return (
+    <div className="min-w-0 border-b border-primary/10 bg-primary-soft/30 p-4 last:border-b-0 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+        <Badge tone={tone}>{value}</Badge>
+      </div>
+      <p className="mt-2 min-h-5 break-words text-sm text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function DecisionActions({
+  application,
+  selectedLotValue,
+  lotOptions,
+  onSelectedLotChange,
+  onApprove,
+  onDecline,
+}: {
+  application: ApplicationRow;
+  selectedLotValue: string;
+  lotOptions: LotOption[] | undefined;
+  onSelectedLotChange: (value: string) => void;
+  onApprove: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="grid w-full gap-3 rounded-xl border border-primary/15 bg-card/80 p-4 shadow-sm shadow-primary/5 lg:w-[320px]">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Review Decision</p>
+      {application.status !== "Approved" ? (
+        <Select value={selectedLotValue} onChange={(event) => onSelectedLotChange(event.target.value)}>
+          <option value="">Select lot to reserve</option>
+          {lotOptions
+            ?.filter((lot) => lot.status === "Available")
+            .map((lot) => (
+              <option key={lot.id} value={lot.id}>
+                Lot {lot.lot_number} - {lot.dimensions}
+              </option>
+            ))}
+        </Select>
+      ) : (
+        <p className="text-sm text-muted-foreground">Approved applications keep their recorded lot/customer context.</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {application.status !== "Approved" ? <Button type="button" onClick={onApprove}>Approve</Button> : null}
+        {application.status !== "Declined" ? <Button type="button" variant="outline" onClick={onDecline}>Decline</Button> : null}
+      </div>
+    </div>
+  );
+}
+
+function LotPreferenceWorkspace({
+  application,
+  preferredLotLabel,
+  selectedLotStatus,
+}: {
+  application: ApplicationRow;
+  preferredLotLabel: string;
+  selectedLotStatus: string | null;
+}) {
+  const lotConflict = Boolean(selectedLotStatus && selectedLotStatus !== "Available" && application.status !== "Approved");
+  return (
+    <section className="rounded-xl border border-primary/15 bg-primary-soft/35 p-5 shadow-sm shadow-primary/5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-primary">Lot Preference</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Preferred lot direction and availability context for review.</p>
+        </div>
+        {lotConflict ? <Badge tone="red">Lot unavailable</Badge> : <Badge tone={selectedLotStatus === "Available" ? "green" : "gray"}>{selectedLotStatus ?? "No lot selected"}</Badge>}
+      </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.5fr)]">
+        <div className="rounded-lg border border-primary/10 bg-card/80 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Preferred lot</p>
+          <p className="mt-2 text-2xl font-semibold text-primary">{application.parcels?.lot_number ? `Lot ${application.parcels.lot_number}` : preferredLotLabel}</p>
+          <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+            <span>Parcel count: {application.parcel_count ?? "Not provided"}</span>
+            <span>Current status: {selectedLotStatus ?? "Not selected"}</span>
+          </div>
+          {lotConflict ? (
+            <div className="mt-4 rounded-md border border-danger/20 bg-danger/10 p-3 text-sm text-danger">
+              This lot is currently marked {selectedLotStatus}. Staff should review lot availability before approval.
+            </div>
+          ) : null}
+        </div>
+        <div className="rounded-lg border border-primary/10 bg-card/70 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Alternative</p>
+          <p className="mt-2 break-words text-base font-semibold text-primary">{application.alternate_lot_preference ?? "Not provided"}</p>
+          <p className="mt-4 text-sm text-muted-foreground">Alternative lot information is supporting context and does not change the preferred lot.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MissingInformationPanel({
+  missingFacts,
+  application,
+  selectedLotStatus,
+  linkedLead,
+  postSalesChecklist,
+}: {
+  missingFacts: string[];
+  application: ApplicationRow;
+  selectedLotStatus: string | null;
+  linkedLead: Pick<Lead, "id" | "next_action"> | null;
+  postSalesChecklist: PostSalesChecklist | null;
+}) {
+  return (
+    <section className="grid gap-4 rounded-xl border border-primary/15 bg-primary-soft/25 p-5 shadow-sm shadow-primary/5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-primary">Missing Information</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Known application facts are separated from smart guidance.</p>
+        </div>
+        <Badge tone={missingFacts.length ? "amber" : "green"}>{missingFacts.length ? `${missingFacts.length} known item${missingFacts.length === 1 ? "" : "s"}` : "Known fields clear"}</Badge>
+      </div>
+      {missingFacts.length ? (
+        <div className="grid gap-2">
+          {missingFacts.map((item) => (
+            <div key={item} className="rounded-md border border-warning/20 bg-accent-soft p-3 text-sm text-warning">
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-md border border-primary/10 bg-card/70 p-3 text-sm text-muted-foreground">No known required application facts are missing.</p>
+      )}
+      <div className="rounded-xl border border-secondary/20 bg-[#fff8e6] p-4 shadow-sm shadow-secondary/10">
+        <SmartInsightsPanel
+          title="Review Guidance"
+          description="Rule-based application guidance. Approval remains manual."
+          insights={applicationSmartInsights({
+            application,
+            selectedLotStatus,
+            linkedLead,
+            postSalesChecklist,
+          })}
+          compact
+        />
+      </div>
+    </section>
+  );
+}
+
+function ApplicantInformation({ application }: { application: ApplicationRow }) {
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 shadow-sm shadow-primary/5">
+      <h3 className="text-lg font-semibold text-primary">Applicant Information</h3>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <DefinitionGroup title="Identity / Contact" rows={[
+          ["Name", applicationName(application)],
+          ["Nationality", application.nationality ?? "Not provided"],
+          ["Occupation", application.occupation ?? "Not provided"],
+          ["Phone", application.phone],
+          ["Email", application.email ?? "Not provided"],
+          ["Address", application.applicant_address ?? "Not provided"],
+        ]} />
+        <DefinitionGroup title="Submitted Use" rows={[
+          ["Intended use", `${application.intended_use ?? "Not provided"}${application.intended_use_other ? ` - ${application.intended_use_other}` : ""}`],
+          ["Payment option", application.payment_option ?? "Not provided"],
+          ["Legal notice", application.legal_notice_acknowledged ? "Acknowledged" : "Missing"],
+          ["Signature", application.applicant_acknowledgement_signature ? "Recorded" : "Not recorded"],
+          ["Cultural review", application.cultural_preservation_review ?? "Not provided"],
+          ["Sustainability terms", application.sustainability_terms_verified ? "Verified" : "Not verified"],
+        ]} />
+      </div>
+    </section>
+  );
+}
+
+function DefinitionGroup({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/40 p-4">
+      <p className="text-sm font-semibold text-primary">{title}</p>
+      <div className="mt-3 grid gap-2 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid gap-1 border-b border-border/70 pb-2 last:border-b-0 last:pb-0 sm:grid-cols-[140px_minmax(0,1fr)]">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="min-w-0 break-words font-medium text-foreground">{value}</span>
+          </div>
         ))}
       </div>
-    </>
+    </div>
+  );
+}
+
+function BuyerJourneyPanel({
+  lead,
+  reservation,
+  postSalesChecklist,
+  applicationStatus,
+  canWrite,
+  hasLot,
+  onCreateLead,
+  onCreateReservation,
+}: {
+  lead: Pick<Lead, "id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason"> | null;
+  reservation: LotReservation | null;
+  postSalesChecklist: PostSalesChecklist | null;
+  applicationStatus: ApplicationStatus;
+  canWrite: boolean;
+  hasLot: boolean;
+  onCreateLead: () => void;
+  onCreateReservation: () => void;
+}) {
+  return (
+    <section className="rounded-xl border border-primary/15 bg-primary-soft/30 p-5 shadow-sm shadow-primary/5">
+      <h3 className="text-lg font-semibold text-primary">Buyer Journey</h3>
+      <p className="mt-1 text-sm text-muted-foreground">Linked operational records around this application.</p>
+      <div className="mt-5 grid gap-3">
+        <ApplicationLeadLink lead={lead} canWrite={canWrite} onCreate={onCreateLead} />
+        <ApplicationReservationLink reservation={reservation} canWrite={canWrite} hasLot={hasLot} onCreate={onCreateReservation} />
+        <ApplicationPostSalesLink checklist={postSalesChecklist} applicationStatus={applicationStatus} />
+      </div>
+    </section>
+  );
+}
+
+function ApplicationContextPanel({ application }: { application: ApplicationRow }) {
+  return (
+    <section className="rounded-xl border border-border/80 bg-muted/40 p-4 shadow-sm shadow-primary/5">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Application Context</p>
+      <div className="mt-4 grid gap-3 text-sm">
+        <ContextRow label="Application ID" value={`#${application.id}`} />
+        <ContextRow label="Submitted" value={formatDate(application.created_at)} />
+        <ContextRow label="Updated" value={formatDate(application.updated_at)} />
+        <ContextRow label="Status" value={application.status} />
+      </div>
+      {application.notes ? <p className="mt-4 break-words rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">{application.notes}</p> : null}
+    </section>
+  );
+}
+
+function ContextRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-2 last:border-b-0 last:pb-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-right font-semibold text-primary">{value}</span>
+    </div>
   );
 }
 
@@ -399,10 +905,10 @@ function ApplicationAiReviewSection({
   onGenerate: () => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-md border border-primary/10 bg-primary-soft p-3 text-sm">
+    <div className="grid gap-4 rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 text-sm shadow-sm shadow-secondary/10">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="font-medium text-primary">Decision Support</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Decision Support</p>
           <p className="text-xs text-muted-foreground">Smart review guidance only. Admin remains responsible for final decisions.</p>
         </div>
         {review ? <Badge tone={reviewTone(review.completeness_status)}>{review.completeness_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
@@ -415,8 +921,8 @@ function ApplicationAiReviewSection({
       ) : null}
 
       {review ? (
-        <div className="grid gap-2">
-          <p>{review.summary}</p>
+        <div className="grid gap-3">
+          <p className="break-words rounded-md border border-secondary/15 bg-card/70 p-3 leading-6 text-primary">{review.summary}</p>
           <ReviewList title="Missing fields" items={review.missing_fields} emptyLabel="No missing fields flagged." />
           <ReviewList title="Risk flags" items={review.risk_flags} emptyLabel="No risk flags listed." />
           <ReviewList title="Recommended admin actions" items={review.recommended_admin_actions} emptyLabel="No extra actions listed." />
@@ -450,7 +956,7 @@ function ApplicationLeadLink({
   onCreate: () => void;
 }) {
   return (
-    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+    <div className="v2-record-row flex flex-wrap items-center justify-between gap-3">
       <div>
         <p className="font-medium text-primary">Sales Pipeline</p>
         <p className="text-xs text-muted-foreground">
@@ -507,7 +1013,7 @@ function ApplicationReservationLink({
   onCreate: () => void;
 }) {
   return (
-    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+    <div className="v2-record-row flex flex-wrap items-center justify-between gap-3">
       <div>
         <p className="font-medium text-primary">Reservation / Deposit Readiness</p>
         <p className="text-xs text-muted-foreground">
@@ -541,7 +1047,7 @@ function ApplicationPostSalesLink({
 }) {
   if (applicationStatus !== "Approved" && !checklist) return null;
   return (
-    <div className="crm-subpanel flex flex-wrap items-center justify-between gap-3 text-sm">
+    <div className="v2-record-row flex flex-wrap items-center justify-between gap-3">
       <div>
         <p className="font-medium text-primary">Post-Sales Checklist</p>
         <p className="text-xs text-muted-foreground">
@@ -575,6 +1081,21 @@ function ReviewList({ title, items, emptyLabel }: { title: string; items: string
       )}
     </div>
   );
+}
+
+function applicationName(application: Pick<Application, "applicant_full_name" | "first_name" | "last_name">) {
+  return (application.applicant_full_name ?? `${application.first_name} ${application.last_name}`).trim() || `Application`;
+}
+
+function knownMissingFacts(application: ApplicationRow) {
+  const missing: string[] = [];
+  if (!applicationName(application) || applicationName(application) === "Application") missing.push("Applicant name is missing.");
+  if (!application.phone) missing.push("Phone number is missing.");
+  if (!application.email) missing.push("Email is missing.");
+  if (!application.intended_use) missing.push("Intended use is missing.");
+  if (!application.payment_option) missing.push("Payment option is missing.");
+  if (!application.legal_notice_acknowledged) missing.push("Legal notice acknowledgement is missing.");
+  return missing;
 }
 
 function firstReview(value: unknown): ApplicationAiReview | null {

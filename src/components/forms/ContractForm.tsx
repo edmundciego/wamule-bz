@@ -238,7 +238,7 @@ export function ContractForm({
             </Field>
           </div>
           <Field label="Signed contract upload">
-            <div className="crm-subpanel grid gap-2">
+            <div className="v2-workflow-panel grid gap-2 p-3">
               <Input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => void handleContractFileChange(event.target.files?.[0])} />
               <p className="text-xs font-normal text-muted-foreground">
                 PDFs must be 20 MB or smaller. Images are compressed before upload.
@@ -246,7 +246,7 @@ export function ContractForm({
               <UploadFileSummary file={file} status={fileStatus} />
             </div>
           </Field>
-          <div className="crm-subpanel text-sm">
+          <div className="v2-ledger-row text-sm">
             Calculated monthly payment: <strong>{money(monthly)}</strong>
             {!isCustomAgreement && selectedPlan?.monthly_payment && Math.abs(monthly - Number(selectedPlan.monthly_payment)) >= 0.01 ? (
               <span className="mt-1 block text-muted-foreground">
@@ -263,7 +263,7 @@ export function ContractForm({
   }
 
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>Create Contract</CardTitle>
       </CardHeader>

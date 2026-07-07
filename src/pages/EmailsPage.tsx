@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Mail, RefreshCw, RotateCcw, Send, TestTube2 } from "lucide-react";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -67,19 +66,19 @@ export function EmailsPage() {
 
   if (profileLoading) {
     return (
-      <>
-        <PageHeader title="Email Center" description="Admin-controlled notification outbox for previewing and sending system emails." />
+      <section className="v2-page-shell">
+        <EmailCenterHeader canSend={false} sending={false} onProcess={() => undefined} />
         <LoadingState label="Checking Email Center access" />
-      </>
+      </section>
     );
   }
 
   if (!canSend) {
     return (
-      <>
-        <PageHeader title="Email Center" description="Admin-controlled notification outbox for previewing and sending system emails." />
+      <section className="v2-page-shell">
+        <EmailCenterHeader canSend={false} sending={false} onProcess={() => undefined} />
         <ErrorState message="Only Super Admin and Admin users can access the Email Center." />
-      </>
+      </section>
     );
   }
 
@@ -140,19 +139,8 @@ export function EmailsPage() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Email Center"
-        description="Admin-controlled notification outbox for previewing and sending system emails."
-        action={
-          canSend ? (
-            <Button type="button" disabled={sending} onClick={() => void invokeSend({ batch: true })}>
-              <Send className="h-4 w-4" />
-              Process Pending Emails
-            </Button>
-          ) : null
-        }
-      />
+    <section className="v2-page-shell">
+      <EmailCenterHeader canSend={canSend} sending={sending} onProcess={() => void invokeSend({ batch: true })} />
 
       <div className="grid gap-6">
         {isLoading ? <LoadingState label="Loading email notifications" /> : null}
@@ -165,7 +153,7 @@ export function EmailsPage() {
           </div>
         ) : null}
 
-        <Card>
+        <Card className="v2-workflow-panel">
           <CardHeader><CardTitle>Send Test Email</CardTitle></CardHeader>
           <CardContent>
             <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={(event) => void createTestEmail(event)}>
@@ -191,7 +179,7 @@ export function EmailsPage() {
         </Card>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <Card>
+          <Card className="v2-archive-panel">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle>Notification Outbox</CardTitle>
               <div className="flex flex-wrap gap-2">
@@ -204,7 +192,7 @@ export function EmailsPage() {
             </CardHeader>
             <CardContent>
               {filtered.length ? (
-                <div className="overflow-x-auto">
+                <div className="v2-table-wrap">
                   <table className="crm-table min-w-[820px]">
                     <thead>
                       <tr>
@@ -243,7 +231,25 @@ export function EmailsPage() {
           <EmailPreview email={selected} canSend={canSend} sending={sending} onSend={invokeSend} />
         </div>
       </div>
-    </>
+    </section>
+  );
+}
+
+function EmailCenterHeader({ canSend, sending, onProcess }: { canSend: boolean; sending: boolean; onProcess: () => void }) {
+  return (
+    <div className="v2-page-header flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p className="v2-page-kicker">Email Operations</p>
+        <h1 className="v2-page-title">Email Center</h1>
+        <p className="v2-page-description">Admin-controlled notification outbox for previewing and sending system emails.</p>
+      </div>
+      {canSend ? (
+        <Button type="button" disabled={sending} onClick={onProcess}>
+          <Send className="h-4 w-4" />
+          Process Pending Emails
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -259,7 +265,7 @@ function EmailPreview({
   onSend: (body: Record<string, unknown>) => Promise<void>;
 }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>Email Preview</CardTitle></CardHeader>
       <CardContent className="grid gap-4">
         {email ? (

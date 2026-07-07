@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, CheckCircle2, Clipboard, ExternalLink, Mail, RefreshCw, XCircle } from "lucide-react";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -109,11 +108,13 @@ export function DailyBriefsPage() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Daily Brief"
-        description="Morning operational summary for Wamule Development."
-        action={
+    <section className="v2-page-shell">
+      <div className="v2-page-header flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="v2-page-kicker">Daily Operations</p>
+          <h1 className="v2-page-title">Daily Brief</h1>
+          <p className="v2-page-description">Morning operational summary for Wamule Development.</p>
+        </div>
           <div className="flex flex-wrap gap-2">
             {canGenerateBrief ? (
               <Button type="button" disabled={generating} onClick={() => void generateBrief({ period_start: todayInputValue(), period_end: todayInputValue() })}>
@@ -130,8 +131,7 @@ export function DailyBriefsPage() {
               Email Brief
             </Button>
           </div>
-        }
-      />
+      </div>
 
       <div className="grid gap-6">
         {isLoading ? <LoadingState label="Loading daily briefs" /> : null}
@@ -143,12 +143,12 @@ export function DailyBriefsPage() {
             Your role can view daily briefs but cannot generate new briefs.
           </div>
         ) : null}
-        <div className="crm-info-panel p-4 text-sm">
+        <div className="v2-advisor-panel p-4 text-sm text-primary">
           The Daily Operations Brief summarizes sales, reservations, applications, post-sales, payments, and recommended priorities for staff review.
         </div>
 
         {canGenerateBrief ? (
-          <Card>
+          <Card className="v2-workflow-panel">
             <CardHeader>
               <CardTitle>Generate Custom Brief</CardTitle>
             </CardHeader>
@@ -184,14 +184,14 @@ export function DailyBriefsPage() {
             <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
           </>
         ) : !isLoading ? (
-          <Card>
+          <Card className="v2-advisor-panel">
             <CardContent className="p-6 text-sm text-muted-foreground">No previous briefs have been generated yet.</CardContent>
           </Card>
         ) : null}
 
         <PreviousBriefs briefs={briefs ?? []} selectedBriefId={selectedBrief?.id ?? null} onSelect={setSelectedBriefId} />
       </div>
-    </>
+    </section>
   );
 }
 
@@ -220,7 +220,7 @@ function SummaryCards({
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
       {cards.map((card) => (
-        <Card key={card.label}>
+        <Card key={card.label} className="v2-ledger-panel">
           <CardContent className="p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{card.label}</p>
             <p className="mt-2 text-2xl font-semibold text-primary">{card.value}</p>
@@ -248,7 +248,7 @@ function TodayPriorities({
   const visible = showAll ? sorted : sorted.slice(0, 5);
 
   return (
-    <Card>
+    <Card className="v2-advisor-panel">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>Today's Priorities</CardTitle>
@@ -276,7 +276,7 @@ function WhatChanged({ brief }: { brief: AiDailyBrief }) {
   const changes = activityItems(activity);
 
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader>
         <CardTitle>What Changed</CardTitle>
         <p className="mt-1 text-sm text-muted-foreground">Only activity recorded during the selected period.</p>
@@ -323,7 +323,7 @@ function BriefComparison({
     : null;
 
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader><CardTitle>Compared to Previous Brief</CardTitle></CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-3">
         <ComparisonMetric label="Open action item count" value={previousOpen == null ? `${currentOpen} open` : countChangeLabel(currentOpen, previousOpen)} />
@@ -358,7 +358,7 @@ function OpenActionItems({
   const hasManyItems = items.length > 8;
 
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader>
         <CardTitle>Carryover Work</CardTitle>
         <p className="mt-1 text-sm text-muted-foreground">Unresolved items still open from current or previous briefs.</p>
@@ -446,7 +446,7 @@ function LatestBriefCard({ brief }: { brief: AiDailyBrief }) {
   const display = briefDisplay(brief);
 
   return (
-    <Card>
+    <Card className="v2-advisor-panel">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>Latest Brief</CardTitle>
@@ -463,7 +463,7 @@ function LatestBriefCard({ brief }: { brief: AiDailyBrief }) {
           <Meta label="Generated by" value={brief.generated_by ?? "Not recorded"} />
           <Meta label="Sent" value={brief.sent_at ? safeFormatDate(brief.sent_at) : "Not sent"} />
         </div>
-        <div className="crm-info-panel p-4">
+        <div className="rounded-lg border border-secondary/20 bg-card/70 p-4">
           <p className="text-sm font-semibold text-primary">Executive summary</p>
           <p className="mt-2 text-sm leading-6 text-foreground">{brief.summary}</p>
         </div>
@@ -494,7 +494,7 @@ function BriefSections({
   ] as const;
 
   return (
-    <Card>
+    <Card className="v2-advisor-panel">
       <CardHeader>
         <CardTitle>Detailed Brief</CardTitle>
         <p className="mt-1 text-sm text-muted-foreground">Full AI/deterministic report sections and recommended actions.</p>
@@ -567,13 +567,13 @@ function PreviousBriefs({
   onSelect: (id: number) => void;
 }) {
   return (
-    <Card>
+    <Card className="v2-archive-panel">
       <CardHeader><CardTitle>Previous Briefs</CardTitle></CardHeader>
       <CardContent>
         {briefs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No previous briefs.</p>
         ) : (
-          <div className="max-w-full overflow-x-auto">
+          <div className="v2-table-wrap">
             <table className="crm-table min-w-[640px] sm:min-w-[760px]">
               <thead>
                 <tr>

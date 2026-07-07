@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader } from "../components/layout/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
@@ -104,17 +103,21 @@ export function CollectionsPage() {
   });
 
   return (
-    <>
-      <PageHeader title="Collections" description="Account standing, due accounts, missing documents, and follow-up queues." />
+    <section className="v2-page-shell">
+      <div className="v2-page-header">
+        <p className="v2-page-kicker">Collections Operations</p>
+        <h1 className="v2-page-title">Collections</h1>
+        <p className="v2-page-description">Account standing, due accounts, missing documents, and follow-up queues.</p>
+      </div>
       {isLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric title="Outstanding land balance" value={money(contractGroups.outstanding)} />
-        <Metric title="Due today" value={contractGroups.dueToday.length} />
-        <Metric title="Due this week" value={contractGroups.dueThisWeek.length} />
-        <Metric title="Overdue" value={contractGroups.overdue.length} />
+        <Metric title="Outstanding land balance" value={money(contractGroups.outstanding)} material="ledger" />
+        <Metric title="Due today" value={contractGroups.dueToday.length} material="workflow" />
+        <Metric title="Due this week" value={contractGroups.dueThisWeek.length} material="workflow" />
+        <Metric title="Overdue" value={contractGroups.overdue.length} material="workflow" />
       </div>
-      <div className="mt-6">
+      <div className="v2-advisor-panel p-4">
         <SmartInsightsPanel
           title="Operations Insights"
           description="Display-only collections flags from existing contracts and payment records."
@@ -129,15 +132,15 @@ export function CollectionsPage() {
         <PaymentQueue title="Payments missing manual receipt numbers" rows={paymentGroups.missingReceipts} />
         <PaymentQueue title="Online transfers missing uploaded proof" rows={paymentGroups.missingProof} />
       </div>
-    </>
+    </section>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string | number }) {
+function Metric({ title, value, material }: { title: string; value: string | number; material: "ledger" | "workflow" }) {
   return (
-    <Card>
+    <Card className={material === "ledger" ? "v2-ledger-panel" : "v2-workflow-panel"}>
       <CardHeader><CardTitle className="text-sm text-muted-foreground">{title}</CardTitle></CardHeader>
-      <CardContent><p className="font-display text-3xl font-semibold text-primary">{value}</p></CardContent>
+      <CardContent><p className="text-3xl font-semibold text-primary tabular-nums">{value}</p></CardContent>
     </Card>
   );
 }
@@ -152,12 +155,12 @@ function ContractQueue({
   tone: "blue" | "green" | "red";
 }) {
   return (
-    <Card>
+    <Card className={tone === "red" ? "border-warning/25 bg-accent-soft/40" : "v2-workflow-panel"}>
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No customers in this queue.</p> : null}
         {rows.map(({ contract, dueDate }) => (
-          <div key={contract.id} className="rounded-md border p-3 text-sm">
+          <div key={contract.id} className="v2-record-row">
             <div className="flex justify-between gap-3">
               <Link className="font-medium text-primary hover:text-copper" to={`/customers/${contract.customer_id}`}>
                 {customerName(contract.customers)}
@@ -174,12 +177,12 @@ function ContractQueue({
 
 function ContractMissingQueue({ title, rows }: { title: string; rows: ContractCollectionRow[] }) {
   return (
-    <Card>
+    <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No missing signed contracts.</p> : null}
         {rows.map((contract) => (
-          <div key={contract.id} className="rounded-md border p-3 text-sm">
+          <div key={contract.id} className="v2-record-row">
             <Link className="font-medium text-primary hover:text-copper" to={`/customers/${contract.customer_id}`}>
               {customerName(contract.customers)}
             </Link>
@@ -193,12 +196,12 @@ function ContractMissingQueue({ title, rows }: { title: string; rows: ContractCo
 
 function PaymentQueue({ title, rows }: { title: string; rows: PaymentCollectionRow[] }) {
   return (
-    <Card>
+    <Card className="v2-ledger-panel">
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No payments in this queue.</p> : null}
         {rows.map((payment) => (
-          <div key={payment.id} className="rounded-md border p-3 text-sm">
+          <div key={payment.id} className="v2-ledger-row">
             <div className="flex justify-between gap-3">
               <Link className="font-medium text-primary hover:text-copper" to={`/customers/${payment.customer_id}`}>
                 {customerName(payment.customers)}
