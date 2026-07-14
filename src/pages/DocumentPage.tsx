@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useCompanyProfile } from "../lib/brand";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
 
@@ -194,14 +195,24 @@ function DocumentShell({
   documentNumber: string;
   children: React.ReactNode;
 }) {
+  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+
+  if (companyLoading) {
+    return (
+      <article className="mx-auto max-w-4xl rounded-lg border bg-white p-8 shadow-sm print:max-w-none print:rounded-none print:border-0 print:shadow-none">
+        <LoadingState label="Loading document branding…" />
+      </article>
+    );
+  }
+
   return (
     <article className="mx-auto max-w-4xl rounded-lg border bg-white p-8 shadow-sm print:max-w-none print:rounded-none print:border-0 print:shadow-none">
       <header className="mb-8 flex items-start justify-between gap-6 border-b border-copper/30 pb-5">
         <div className="flex items-center gap-4">
-          <img src="/favicon/android-chrome-192x192.png" alt="Wamule Development" className="h-16 w-16 rounded-md border bg-ivory object-cover" />
+          <img src={companyUnavailable ? "/favicon/android-chrome-192x192.png" : company.logo_url} alt={companyUnavailable ? "Company logo" : companyName} className="h-16 w-16 rounded-md border bg-ivory object-cover" />
           <div>
-            <p className="font-display text-3xl font-semibold text-primary">Wamule</p>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-copper">Development</p>
+            <p className="font-display text-3xl font-semibold text-primary">{companyUnavailable ? "Company" : shortName}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-copper">{companyUnavailable ? "Administrative record" : "Development"}</p>
           </div>
         </div>
         <div className="text-right text-sm">
@@ -212,7 +223,7 @@ function DocumentShell({
       </header>
       {children}
       <footer className="mt-8 border-t pt-4 text-xs text-muted-foreground">
-        This document was generated from Wamule Development administrative records.
+        This document was generated from {companyUnavailable ? "company" : companyName} administrative records.
       </footer>
     </article>
   );

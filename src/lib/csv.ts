@@ -24,7 +24,7 @@ export function exportCsv({
 
 export function reportFileName(reportName: string, date = new Date()) {
   const stamp = date.toISOString().slice(0, 10);
-  return `wamule-${reportName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${stamp}.csv`;
+  return `operations-${reportName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${stamp}.csv`;
 }
 
 function escapeCsvValue(value: CsvValue) {

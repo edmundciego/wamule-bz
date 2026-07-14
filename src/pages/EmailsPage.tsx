@@ -8,23 +8,28 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile } from "../lib/data";
 import { edgeFunctionErrorMessage } from "../lib/functions";
+import { useCompanyProfile } from "../lib/brand";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
 import type { AppRole, EmailNotification, EmailNotificationStatus } from "../types/database";
 
 const statuses: EmailNotificationStatus[] = ["Pending", "Sent", "Failed", "Cancelled"];
-const emailTemplates = {
-  test: {
+type EmailTemplateKey = "test" | "update";
+
+function emailTemplates(companyName: string) {
+  return {
+    test: {
     label: "Simple Test",
-    subject: "Wamule Development test email",
-    body: "Good day,\n\nThis is a manual test email from the Wamule Development Email Center.\n\nPlease reply to confirm that the message was received correctly.\n\nThank you,\nWamule Development",
-  },
-  update: {
+      subject: `${companyName} test email`,
+      body: `Good day,\n\nThis is a manual test email from the ${companyName} Email Center.\n\nPlease reply to confirm that the message was received correctly.\n\nThank you,\n${companyName}`,
+    },
+    update: {
     label: "Customer Update",
-    subject: "Wamule Development account update",
-    body: "Good day,\n\nThis is a quick update from Wamule Development regarding your account file. Our team is reviewing the latest records and will contact you if any additional information is needed.\n\nPlease contact us when convenient if you have any questions or need us to confirm your account details.\n\nThank you,\nWamule Development",
-  },
-} as const;
+      subject: `${companyName} account update`,
+      body: `Good day,\n\nThis is a quick update from ${companyName} regarding your account file. Our team is reviewing the latest records and will contact you if any additional information is needed.\n\nPlease contact us when convenient if you have any questions or need us to confirm your account details.\n\nThank you,\n${companyName}`,
+    },
+  } as const;
+}
 
 export function EmailsPage() {
   const queryClient = useQueryClient();
@@ -34,7 +39,9 @@ export function EmailsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [testEmail, setTestEmail] = useState("");
-  const [testTemplate, setTestTemplate] = useState<keyof typeof emailTemplates>("test");
+  const [testTemplate, setTestTemplate] = useState<EmailTemplateKey>("test");
+  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+  const testTemplates = useMemo(() => emailTemplates(companyName), [companyName]);
 
   const { data: sessionProfile, isLoading: profileLoading } = useQuery({
     queryKey: ["email-center-session"],
@@ -109,7 +116,11 @@ export function EmailsPage() {
       setActionError("Enter a recipient email for the test notification.");
       return;
     }
-    const template = emailTemplates[testTemplate];
+    if (companyLoading || companyUnavailable) {
+      setActionError("Company Profile settings are unavailable. Refresh the page before queuing a test email.");
+      return;
+    }
+    const template = testTemplates[testTemplate];
     const { data, error: insertError } = await supabase
       .from("email_notifications")
       .insert({
@@ -165,12 +176,12 @@ export function EmailsPage() {
                   value={testTemplate}
                   onChange={(event) => setTestTemplate(event.target.value as keyof typeof emailTemplates)}
                 >
-                  {Object.entries(emailTemplates).map(([key, template]) => (
+                  {Object.entries(testTemplates).map(([key, template]) => (
                     <option key={key} value={key}>{template.label}</option>
                   ))}
                 </Select>
               </Field>
-              <Button type="submit" disabled={!canSend} className="self-end">
+              <Button type="submit" disabled={!canSend || companyLoading || companyUnavailable} className="self-end">
                 <TestTube2 className="h-4 w-4" />
                 Queue Test Email
               </Button>

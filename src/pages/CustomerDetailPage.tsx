@@ -1492,7 +1492,7 @@ function PostSalesSmartSummaryPanel({
         <div>
           <CardTitle>Post-Sales Smart Summary</CardTitle>
           <CardDescription className="mt-1 text-xs">
-            This summary is generated from Wamule CRM data to support staff review. Staff should verify details before making decisions.
+            This summary is generated from platform data to support staff review. Staff should verify details before making decisions.
           </CardDescription>
         </div>
         {summary?.readiness_status ? (

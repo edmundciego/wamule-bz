@@ -87,7 +87,11 @@ export function ApplicationPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
-  const { data: publicSettings } = useQuery({
+  const {
+    data: publicSettings,
+    isLoading: publicSettingsLoading,
+    isError: publicSettingsError,
+  } = useQuery({
     queryKey: ["public-business-settings"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -193,7 +197,7 @@ export function ApplicationPage() {
       applicant_acknowledgement_signature: values.applicant_acknowledgement_signature,
       notes: values.notes || null,
       cultural_preservation_review:
-        "Applicant acknowledged the Wamule Development application notice, reservation terms, and applicant acknowledgement.",
+        `Applicant acknowledged the ${company.company_name} application notice, reservation terms, and applicant acknowledgement.`,
       sustainability_terms_verified: values.sustainability_terms_verified,
       status: "Pending Review",
     });
@@ -209,7 +213,9 @@ export function ApplicationPage() {
     });
   }
 
-  const company = { ...defaultCompany, ...settingValue<typeof defaultCompany>(publicSettings, "company_profile") };
+  const companyProfile = settingValue<typeof defaultCompany>(publicSettings, "company_profile");
+  const hasCompanyProfile = publicSettings?.some((setting) => setting.key === "company_profile") ?? false;
+  const company = { ...defaultCompany, ...companyProfile };
   const applicationSettings = {
     ...defaultApplicationSettings,
     ...settingValue<typeof defaultApplicationSettings>(publicSettings, "public_application"),
@@ -223,6 +229,17 @@ export function ApplicationPage() {
     selectedLotIds,
     parcels: parcels ?? [],
   });
+
+  // The public page must never flash a bundled brand before the admin-managed
+  // company profile arrives. In a configured environment, branding is rendered
+  // only after the public settings query succeeds.
+  if (hasSupabaseConfig && publicSettingsLoading) {
+    return <PublicPageLoading />;
+  }
+
+  if (hasSupabaseConfig && (publicSettingsError || !hasCompanyProfile)) {
+    return <PublicSettingsUnavailable />;
+  }
 
   function scrollToInquiry() {
     document.getElementById("request-info")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -296,7 +313,7 @@ export function ApplicationPage() {
             </div>
             {!lotPhase.public_availability_display ? (
               <div className="rounded-md border border-dashed bg-muted p-5 text-sm text-muted-foreground">
-                Lot availability is confirmed by Wamule Development staff during application review.
+                Lot availability is confirmed by {company.company_name} staff during application review.
               </div>
             ) : isLoading ? (
               <LoadingState label="Loading lot availability" />
@@ -361,7 +378,7 @@ export function ApplicationPage() {
             </p>
           </div>
           <div className="grid gap-2 rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 text-sm text-primary shadow-sm shadow-secondary/10">
-            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-secondary" />Applications are reviewed by Wamule Development staff.</p>
+            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-secondary" />Applications are reviewed by {company.company_name} staff.</p>
             <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-secondary" />Preferred lots are requests only and do not reserve land.</p>
           </div>
         </div>
@@ -1000,6 +1017,27 @@ function SummaryLine({ label, value, muted = false }: { label: string; value: st
       <span className="text-white/60">{label}</span>
       <span className={cn("max-w-[12rem] break-words text-right font-semibold", muted ? "text-white/60" : "text-white")}>{value}</span>
     </div>
+  );
+}
+
+function PublicPageLoading() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm rounded-lg border bg-card p-6 text-center shadow-sm">
+        <LoadingState label="Loading application information…" />
+      </div>
+    </main>
+  );
+}
+
+function PublicSettingsUnavailable() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm rounded-lg border bg-card p-6 text-center shadow-sm">
+        <h1 className="font-display text-xl font-semibold text-primary">Application information is unavailable</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">Please try again shortly. If the problem continues, contact the project office.</p>
+      </div>
+    </main>
   );
 }
 

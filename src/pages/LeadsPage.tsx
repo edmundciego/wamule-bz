@@ -1125,7 +1125,7 @@ function PublicInquiryContext({ lead }: { lead: LeadWithRelations }) {
         {lead.notes ? (
           <p className="whitespace-pre-line break-words">{lead.notes}</p>
         ) : (
-          <p>This buyer requested project information through the public Wamule page.</p>
+          <p>This buyer requested project information through the public application page.</p>
         )}
       </div>
     </div>
@@ -1256,7 +1256,7 @@ function LeadSmartSummaryPanel({
             <h4 className="font-semibold text-foreground">Lead Smart Summary</h4>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            This summary is generated from Wamule CRM data to support staff review. Staff should verify details before making decisions.
+            This summary is generated from platform data to support staff review. Staff should verify details before making decisions.
           </p>
         </div>
         {summary?.readiness_status ? <Badge tone={readinessTone(summary.readiness_status)}>{readinessLabel(summary.readiness_status)}</Badge> : <Badge tone="gray">Not generated</Badge>}

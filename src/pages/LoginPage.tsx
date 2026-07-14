@@ -5,7 +5,7 @@ import { Button } from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
 import { ErrorState } from "../components/ui/State";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
-import { CANONICAL_COMPANY_NAME, CANONICAL_SHORT_NAME } from "../lib/brand";
+import { useCompanyProfile } from "../lib/brand";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -13,6 +13,8 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+  const showCompanyBrand = !companyLoading && !companyUnavailable;
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -27,6 +29,14 @@ export function LoginPage() {
     navigate("/dashboard");
   }
 
+  if (companyLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-4">
+        <p className="text-sm text-muted-foreground">Loading sign-in…</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-8 px-4 py-8 lg:grid-cols-[1fr_440px] lg:px-8">
@@ -35,13 +45,13 @@ export function LoginPage() {
           <div className="grid gap-8 p-6 sm:p-8 lg:p-10">
             <div className="flex items-center gap-4">
               <img
-                src="/favicon/android-chrome-192x192.png"
-                alt={CANONICAL_COMPANY_NAME}
+                src={showCompanyBrand ? company.logo_url : "/favicon/android-chrome-192x192.png"}
+                alt={showCompanyBrand ? companyName : "Company logo"}
                 className="h-16 w-16 rounded-md border border-secondary/50 bg-background object-cover shadow-sm"
               />
               <div>
-                <p className="font-display text-3xl font-semibold leading-tight">{CANONICAL_SHORT_NAME}</p>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-accent">Development</p>
+                <p className="font-display text-3xl font-semibold leading-tight">{showCompanyBrand ? shortName : "Staff workspace"}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-accent">{showCompanyBrand ? "Development" : "Secure access"}</p>
               </div>
             </div>
 
@@ -71,7 +81,7 @@ export function LoginPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Secure Sign In</p>
             <h2 className="mt-3 font-display text-3xl font-semibold text-foreground">Admin Login</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Sign in with your Wamule Development staff account to continue.
+              Sign in with your {showCompanyBrand ? `${companyName} ` : ""}staff account to continue.
             </p>
           </div>
 
@@ -87,7 +97,7 @@ export function LoginPage() {
                   onChange={(event) => setEmail(event.target.value)}
                   required
                   autoComplete="email"
-                  placeholder="staff@wamule.example"
+                  placeholder="staff@example.com"
                 />
               </Field>
               <Field label="Password">

@@ -25,7 +25,7 @@ import { getSessionAndProfile } from "../../lib/data";
 import { edgeFunctionErrorMessage } from "../../lib/functions";
 import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
-import { CANONICAL_COMPANY_NAME, CANONICAL_SHORT_NAME } from "../../lib/brand";
+import { useCompanyProfile } from "../../lib/brand";
 import type { AppRole, DeveloperFeedbackPriority, DeveloperFeedbackType } from "../../types/database";
 
 const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }> = [
@@ -61,6 +61,11 @@ export function AdminLayout() {
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+
+  if (companyLoading) {
+    return <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">Loading workspace…</div>;
+  }
 
   async function submitFeedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,13 +98,13 @@ export function AdminLayout() {
       <aside className="border-r border-primary/15 bg-primary text-primary-foreground">
         <div className="flex h-16 items-center gap-3 border-b border-white/15 px-5">
           <img
-            src="/favicon/android-chrome-192x192.png"
-            alt={CANONICAL_COMPANY_NAME}
+            src={companyUnavailable ? "/favicon/android-chrome-192x192.png" : company.logo_url}
+            alt={companyUnavailable ? "Company logo" : companyName}
             className="h-11 w-11 rounded-md border border-secondary/40 bg-background object-cover shadow-sm"
           />
           <div>
-            <p className="font-display text-xl font-semibold leading-tight">{CANONICAL_SHORT_NAME}</p>
-            <p className="text-xs uppercase tracking-[0.22em] text-white/65">Development</p>
+            <p className="font-display text-xl font-semibold leading-tight">{companyUnavailable ? "Staff workspace" : shortName}</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-white/65">{companyUnavailable ? "Configuration unavailable" : "Development"}</p>
           </div>
         </div>
         <nav className="grid gap-1 p-3">

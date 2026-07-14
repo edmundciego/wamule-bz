@@ -236,6 +236,9 @@ export function SettingsPage() {
     if (upsertError) return setError(upsertError.message);
     setToast(`${label} saved.`);
     await queryClient.invalidateQueries({ queryKey: ["business-settings"] });
+    if (key === "company_profile") {
+      await queryClient.invalidateQueries({ queryKey: ["company-profile"] });
+    }
   }
 
   async function uploadLogo() {
@@ -370,7 +373,7 @@ export function SettingsPage() {
       setAiStatus("AI must be enabled and connected before the assistant can be used.");
       return;
     }
-    setAiStatus("Wamule AI Helper foundation is ready. Full helper behavior is not built yet.");
+    setAiStatus("AI Helper foundation is ready. Full helper behavior is not built yet.");
   }
 
   async function createUser(event: FormEvent) {
@@ -647,7 +650,7 @@ export function SettingsPage() {
                       <RefreshCw className="h-4 w-4" /> Check provider
                     </Button>
                     <Button type="button" variant="outline" onClick={handleAssistantClick}>
-                      <Bot className="h-4 w-4" /> Wamule AI Helper
+                      <Bot className="h-4 w-4" /> AI Helper
                     </Button>
                     <Button type="button" disabled={!canManageAi || savingSection === "AI settings"} onClick={() => void saveAiSettings()}>
                       {savingSection === "AI settings" ? "Saving..." : "Save AI settings"}
@@ -758,7 +761,7 @@ function WorkflowGuideSection() {
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="crm-info-panel p-4 text-sm">
-          These terms explain how Wamule tracks the buyer journey. They are operational labels for staff review and do not automate approvals, payments, contracts, or parcel status changes.
+          These terms explain how the platform tracks the buyer journey. They are operational labels for staff review and do not automate approvals, payments, contracts, or parcel status changes.
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           {terms.map((term) => (

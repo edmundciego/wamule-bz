@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useCompanyProfile } from "../lib/brand";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate } from "../lib/utils";
@@ -21,6 +22,7 @@ export function DailyBriefsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkedActions, setCheckedActions] = useState<Record<string, boolean>>({});
   const [showAllPriorities, setShowAllPriorities] = useState(false);
+  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
 
   const { data: sessionProfile } = useQuery({
     queryKey: ["session-profile"],
@@ -113,7 +115,7 @@ export function DailyBriefsPage() {
         <div>
           <p className="v2-page-kicker">Daily Operations</p>
           <h1 className="v2-page-title">Daily Brief</h1>
-          <p className="v2-page-description">Morning operational summary for Wamule Development.</p>
+          <p className="v2-page-description">{companyLoading || companyUnavailable ? "Morning operational summary." : `Morning operational summary for ${companyName}.`}</p>
         </div>
           <div className="flex flex-wrap gap-2">
             {canGenerateBrief ? (

@@ -16,6 +16,8 @@ Deno.serve(async () => {
     return Response.json({ error: jobError.message }, { status: 500 });
   }
 
+  const companyName = await loadCompanyName();
+
   const processed: Array<{ job_id: number; transaction_id: number; status: string }> = [];
 
   for (const job of jobs ?? []) {
@@ -34,7 +36,7 @@ Deno.serve(async () => {
     }
 
     const receiptLines = [
-      "Wamule Development",
+      companyName,
       `Receipt: ${transaction.receipt_number}`,
       `Customer: ${transaction.customers.first_name} ${transaction.customers.last_name}`,
       `Lot: ${transaction.contracts?.parcels?.lot_number ?? "N/A"}`,
@@ -67,6 +69,17 @@ Deno.serve(async () => {
 
   return Response.json({ processed });
 });
+
+async function loadCompanyName() {
+  const { data } = await supabase
+    .from("business_settings")
+    .select("value")
+    .eq("key", "company_profile")
+    .maybeSingle();
+  const value = data?.value && typeof data.value === "object" ? data.value as Record<string, unknown> : {};
+  const configuredName = typeof value.company_name === "string" ? value.company_name.trim() : "";
+  return configuredName || "Wamule Development";
+}
 
 function createSimplePdf(lines: string[]) {
   const escapedLines = lines.map((line) => line.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)"));
