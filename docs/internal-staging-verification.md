@@ -109,3 +109,25 @@ production operational record was changed during this preflight.
   external backup directory.
 - No remote migration dry run, production migration, Edge Function deployment,
   frontend deployment, test record, or production data change was attempted.
+
+## Production Batch 1 release attempt — 2026-07-14
+
+**Status: stopped on functional migration failure.**
+
+- Source commit pushed to `main`: `7dc9d34cb43ed48d26d993dce7ffb230f10c9ad5`.
+- The two retired migration names were applied as no-ops and recorded remotely
+  under migration versions `20260714220603` and `20260714220611`.
+- `20260714210447_critical_correctness_batch_1` failed inside its explicit
+  transaction. PostgreSQL rejected `CREATE OR REPLACE VIEW
+  public.customer_balance_view` because the existing `land_paid` view column is
+  `numeric`, while the new expression is `numeric(12,2)` (`42P16`).
+- Read-only post-failure inspection confirmed rollback: the transaction status
+  column, contract-void-resolution table, payment-void RPC, and canonical
+  financial-summary view do not exist remotely; the functional migration was
+  not recorded in remote migration history.
+- No Edge Function or frontend deployment was attempted. No legacy-resolution
+  records, customers, contracts, parcels, payments, reservations, documents, or
+  other operational data were changed by the failed functional migration.
+
+Required next step: correct the view replacement in a new reviewed migration or
+approved amendment, validate it locally, then obtain fresh production approval.

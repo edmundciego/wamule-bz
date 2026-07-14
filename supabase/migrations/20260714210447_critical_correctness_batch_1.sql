@@ -561,9 +561,9 @@ as
 select
   cu.id as customer_id,
   trim(cu.first_name || ' ' || cu.last_name) as customer_name,
-  coalesce((select sum(summary.total_posted_land_paid) from public.contract_financial_summary summary where summary.customer_id = cu.id), 0)::numeric(12,2) as land_paid,
-  coalesce((select sum(t.amount) from public.transactions t where t.customer_id = cu.id and t.status = 'posted' and t.transaction_type in ('Garbage Fee'::public.transaction_type, 'Road Maintenance'::public.transaction_type)), 0)::numeric(12,2) as community_paid,
-  coalesce((select sum(summary.remaining_balance) from public.contract_financial_summary summary where summary.customer_id = cu.id), 0)::numeric(12,2) as land_balance
+  coalesce((select sum(summary.total_posted_land_paid) from public.contract_financial_summary summary where summary.customer_id = cu.id), 0::numeric) as land_paid,
+  coalesce((select sum(t.amount) from public.transactions t where t.customer_id = cu.id and t.status = 'posted' and t.transaction_type in ('Garbage Fee'::public.transaction_type, 'Road Maintenance'::public.transaction_type)), 0::numeric) as community_paid,
+  coalesce((select sum(summary.remaining_balance) from public.contract_financial_summary summary where summary.customer_id = cu.id), 0::numeric) as land_balance
 from public.customers cu
 ;
 
