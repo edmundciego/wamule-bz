@@ -5,6 +5,7 @@ import { Button } from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
 import { ErrorState } from "../components/ui/State";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
+import { CANONICAL_COMPANY_NAME, CANONICAL_SHORT_NAME } from "../lib/brand";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -35,11 +36,11 @@ export function LoginPage() {
             <div className="flex items-center gap-4">
               <img
                 src="/favicon/android-chrome-192x192.png"
-                alt="Wamuale Development"
+                alt={CANONICAL_COMPANY_NAME}
                 className="h-16 w-16 rounded-md border border-secondary/50 bg-background object-cover shadow-sm"
               />
               <div>
-                <p className="font-display text-3xl font-semibold leading-tight">Wamuale</p>
+                <p className="font-display text-3xl font-semibold leading-tight">{CANONICAL_SHORT_NAME}</p>
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-accent">Development</p>
               </div>
             </div>
@@ -70,7 +71,7 @@ export function LoginPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Secure Sign In</p>
             <h2 className="mt-3 font-display text-3xl font-semibold text-foreground">Admin Login</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Sign in with your Wamuale staff account to continue.
+              Sign in with your Wamule Development staff account to continue.
             </p>
           </div>
 
@@ -86,7 +87,7 @@ export function LoginPage() {
                   onChange={(event) => setEmail(event.target.value)}
                   required
                   autoComplete="email"
-                  placeholder="staff@wamuale.com"
+                  placeholder="staff@wamule.example"
                 />
               </Field>
               <Field label="Password">

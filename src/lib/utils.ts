@@ -14,5 +14,5 @@ export function money(value: number | null | undefined) {
 
 export function formatDate(value: string | null | undefined) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-BZ", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-BZ", { dateStyle: "medium", timeZone: "America/Belize" }).format(new Date(value));
 }

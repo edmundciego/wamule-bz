@@ -34,7 +34,7 @@ Deno.serve(async () => {
     }
 
     const receiptLines = [
-      "Wamuale Development",
+      "Wamule Development",
       `Receipt: ${transaction.receipt_number}`,
       `Customer: ${transaction.customers.first_name} ${transaction.customers.last_name}`,
       `Lot: ${transaction.contracts?.parcels?.lot_number ?? "N/A"}`,

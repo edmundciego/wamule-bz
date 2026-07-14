@@ -139,7 +139,7 @@ function feedbackEmailBody({
   message: string;
 }) {
   return [
-    "New Wamule Development Platform feedback was submitted.",
+    "New Wamule Development feedback was submitted.",
     "",
     `Submitted by: ${name}`,
     `Email: ${email ?? "Not available"}`,

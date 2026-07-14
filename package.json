@@ -1,5 +1,5 @@
 {
-  "name": "wamuale-development-platform",
+  "name": "wamule-development",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test",
+    "check:brand": "node scripts/check-brand.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {

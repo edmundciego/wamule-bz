@@ -11,6 +11,7 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { applicationSchema } from "../lib/schemas";
+import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
 import type { BusinessSetting, InstallmentPlan, PaymentMethod } from "../types/database";
@@ -61,25 +62,17 @@ function applicationStepForField(field: string) {
   return 4;
 }
 
-const defaultCompany = {
-  company_name: "Wamuale Development",
-  logo_url: "/favicon/android-chrome-192x192.png",
-  contact_email: "",
-  phone_number: "",
-  website: "",
-  location_address: "Mile 3 on the Hummingbird Highway in Dangriga Town, Belize",
-  short_description: "Private subdivision land development in Dangriga Town, Belize.",
-};
+const defaultCompany = defaultCompanyProfile;
 
 const defaultApplicationSettings = {
   applications_open: true,
   public_notice_text:
-    "Submission of this application is solely a request to be considered for the purchase of a lot within Wamuale Development. Submission or acceptance of this application does not create any legal right to purchase land, does not reserve a lot, and does not guarantee that any lot will be sold or transferred to the applicant.",
+    `Submission of this application is solely a request to be considered for the purchase of a lot within ${CANONICAL_COMPANY_NAME}. Submission or acceptance of this application does not create any legal right to purchase land, does not reserve a lot, and does not guarantee that any lot will be sold or transferred to the applicant.`,
   application_acknowledgment_text:
-    "By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by Wamuale Development; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.",
+    `By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by ${CANONICAL_COMPANY_NAME}; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.`,
   show_lot_prices_publicly: true,
   show_available_lot_count_publicly: true,
-  default_confirmation_message: "Application submitted. A Wamuale Development representative will contact you after review.",
+  default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
 };
 
 const defaultLotPhase = {
@@ -200,7 +193,7 @@ export function ApplicationPage() {
       applicant_acknowledgement_signature: values.applicant_acknowledgement_signature,
       notes: values.notes || null,
       cultural_preservation_review:
-        "Applicant acknowledged the Wamuale Development application notice, reservation terms, and applicant acknowledgement.",
+        "Applicant acknowledged the Wamule Development application notice, reservation terms, and applicant acknowledgement.",
       sustainability_terms_verified: values.sustainability_terms_verified,
       status: "Pending Review",
     });
@@ -303,7 +296,7 @@ export function ApplicationPage() {
             </div>
             {!lotPhase.public_availability_display ? (
               <div className="rounded-md border border-dashed bg-muted p-5 text-sm text-muted-foreground">
-                Lot availability is confirmed by Wamuale Development staff during application review.
+                Lot availability is confirmed by Wamule Development staff during application review.
               </div>
             ) : isLoading ? (
               <LoadingState label="Loading lot availability" />
@@ -368,7 +361,7 @@ export function ApplicationPage() {
             </p>
           </div>
           <div className="grid gap-2 rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 text-sm text-primary shadow-sm shadow-secondary/10">
-            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-secondary" />Applications are reviewed by Wamuale Development staff.</p>
+            <p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-secondary" />Applications are reviewed by Wamule Development staff.</p>
             <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-secondary" />Preferred lots are requests only and do not reserve land.</p>
           </div>
         </div>
