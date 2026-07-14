@@ -84,11 +84,11 @@
   }
 
   .crm-tabs {
-    @apply max-w-full overflow-x-auto rounded-md border border-border bg-card p-1 shadow-[var(--shadow-card)];
+    @apply max-w-full min-w-0 overflow-x-auto rounded-md border border-border bg-card p-1 shadow-[var(--shadow-card)];
   }
 
   .crm-tab-list {
-    @apply flex min-w-0 flex-wrap gap-1;
+    @apply flex min-w-max gap-1 sm:min-w-0 sm:flex-wrap;
   }
 
   .crm-tab {
@@ -116,11 +116,11 @@
   }
 
   .v2-page-shell {
-    @apply mx-auto grid max-w-[1520px] gap-6;
+    @apply mx-auto grid w-full min-w-0 max-w-[1520px] gap-6;
   }
 
   .v2-page-header {
-    @apply rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_52%,#ecf3e6_100%)] p-5 shadow-[0_18px_48px_rgba(45,35,23,0.08)] sm:p-6;
+    @apply min-w-0 overflow-hidden rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_52%,#ecf3e6_100%)] p-5 shadow-[0_18px_48px_rgba(45,35,23,0.08)] sm:p-6;
   }
 
   .v2-page-kicker {
@@ -184,7 +184,7 @@
   }
 
   .v2-table-wrap {
-    @apply overflow-x-auto rounded-xl border border-border bg-white shadow-sm shadow-primary/5;
+    @apply max-w-full overflow-x-auto rounded-xl border border-border bg-white shadow-sm shadow-primary/5;
   }
 
   .brand-rule {

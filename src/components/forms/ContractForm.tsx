@@ -101,17 +101,44 @@ export function ContractForm({
     },
   });
   const { data: parcels } = useQuery({
-    queryKey: ["available-parcels-options"],
+    queryKey: ["contract-customer-authorization", form.watch("customer_id")],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase
-        .from("parcels")
-        .select("id, lot_number, status")
-        .in("status", ["Available", "Reserved"])
-        .order("lot_number");
-      if (queryError) throw queryError;
-      return data;
+      const customerIdValue = Number(form.watch("customer_id"));
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .select("application_id, applications(status, parcel_id, parcels(id, lot_number, status))")
+        .eq("id", customerIdValue)
+        .maybeSingle();
+      if (customerError) throw customerError;
+      if (!customer) return null;
+      const { data: reservations, error: reservationError } = await supabase
+        .from("lot_reservations")
+        .select("id, parcel_id, status, updated_at, parcels(id, lot_number, status)")
+        .eq("customer_id", customerIdValue)
+        .in("status", ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"])
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (reservationError) throw reservationError;
+      const reservation = reservations?.[0] ?? null;
+      const reservationParcel = Array.isArray(reservation?.parcels) ? reservation.parcels[0] : reservation?.parcels;
+      if (reservation && reservationParcel) return { parcel: reservationParcel, source: "Active Reservation" };
+      const application = (Array.isArray(customer.applications) ? customer.applications[0] : customer.applications) as unknown as { status: string; parcel_id: number | null; parcels?: { id: number; lot_number: string; status: string } | Array<{ id: number; lot_number: string; status: string }> | null } | null;
+      const applicationParcel = Array.isArray(application?.parcels) ? application.parcels[0] : application?.parcels;
+      if (application?.status === "Approved" && application.parcel_id && applicationParcel) {
+        return { parcel: applicationParcel, source: "Approved Application" };
+      }
+      return null;
     },
+    enabled: Boolean(form.watch("customer_id")),
   });
+
+  useEffect(() => {
+    if (parcels?.parcel?.id) {
+      form.setValue("parcel_id", parcels.parcel.id, { shouldValidate: true });
+    } else {
+      form.setValue("parcel_id", 0, { shouldValidate: true });
+    }
+  }, [form, parcels]);
 
   function applyPaymentPlan(plan: InstallmentPlan) {
     if (/other|custom/i.test(plan.name)) return;
@@ -191,15 +218,15 @@ export function ContractForm({
               ))}
             </Select>
           </Field>
-          <Field label="Parcel" error={form.formState.errors.parcel_id?.message}>
-            <Select {...form.register("parcel_id")}>
-              <option value="">Select lot</option>
-              {parcels?.map((parcel) => (
-                <option key={parcel.id} value={parcel.id}>
-                  Lot {parcel.lot_number} ({parcel.status})
-                </option>
-              ))}
-            </Select>
+          <Field label="Authorized lot" error={form.formState.errors.parcel_id?.message}>
+            <Input
+              readOnly
+              value={parcels?.parcel ? `Lot ${parcels.parcel.lot_number} (${parcels.parcel.status}) — ${parcels.source}` : "No authorized lot"}
+            />
+            <input type="hidden" {...form.register("parcel_id")} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              A contract requires an active reservation for this customer, or the lot on the customer’s approved application.
+            </p>
           </Field>
           <Field label="Payment plan">
             <Select value={paymentPlanId ?? ""} onChange={(event) => handlePaymentPlanChange(Number(event.target.value))}>
@@ -254,7 +281,7 @@ export function ContractForm({
               </span>
             ) : null}
           </div>
-      <Button disabled={form.formState.isSubmitting}>Create contract</Button>
+      <Button disabled={form.formState.isSubmitting || !parcels?.parcel}>Create contract</Button>
     </form>
   );
 

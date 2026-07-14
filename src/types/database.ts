@@ -9,6 +9,7 @@ export type TransactionType =
   | "Road Maintenance";
 export type CollectionMethod = "Cash" | "Online Transfer";
 export type ContractStatus = "active" | "voided" | "cancelled" | "archived";
+export type TransactionStatus = "posted" | "voided" | "reversed";
 export type PaymentDocumentType =
   | "Bank Transfer Proof"
   | "Manual Receipt Photo"
@@ -292,6 +293,13 @@ export type Transaction = {
   receipt_notes: string | null;
   notes: string | null;
   created_at: string;
+  updated_at: string;
+  status: TransactionStatus;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+  reversal_of_transaction_id: number | null;
+  correction_notes: string | null;
 };
 
 export type PaymentDocument = {

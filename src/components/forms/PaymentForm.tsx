@@ -22,10 +22,12 @@ const compatibleFeeTypes = ["Garbage Fee", "Road Maintenance"] as const;
 
 export function PaymentForm({
   customerId,
+  correctionOfTransactionId,
   embedded = false,
   onSuccess,
 }: {
   customerId?: number;
+  correctionOfTransactionId?: number | null;
   embedded?: boolean;
   onSuccess?: () => void;
 }) {
@@ -57,9 +59,10 @@ export function PaymentForm({
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("contracts")
-        .select("id, customer_id, parcel_id, is_active")
+        .select("id, customer_id, parcel_id, is_active, status")
         .eq("customer_id", Number(form.watch("customer_id")))
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .eq("status", "active");
       if (queryError) throw queryError;
       return data;
     },
@@ -123,6 +126,9 @@ export function PaymentForm({
         receipt_issued_by: values.receipt_issued_by?.trim() || null,
         receipt_notes: values.receipt_notes?.trim() || null,
         notes: values.notes || null,
+        status: "posted",
+        reversal_of_transaction_id: correctionOfTransactionId ?? null,
+        correction_notes: correctionOfTransactionId ? "Corrected replacement for a voided payment." : null,
         authorized_by: userId,
       })
       .select("id")
@@ -190,6 +196,11 @@ export function PaymentForm({
   const formContent = (
     <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
           {error ? <ErrorState message={error} /> : null}
+          {correctionOfTransactionId ? (
+            <div className="crm-warning-panel p-3 text-sm">
+              Recording a corrected replacement for voided payment #{correctionOfTransactionId}. The original payment remains in history.
+            </div>
+          ) : null}
           {successMessage ? (
             <div className="crm-success-panel p-3 text-sm">
               {successMessage}

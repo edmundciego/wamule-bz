@@ -5,21 +5,24 @@ import { PaymentDocumentLinks } from "../components/payments/PaymentDocumentLink
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
-import { Field, Input, Select, Textarea } from "../components/ui/Field";
+import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
+import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { formatDate, money } from "../lib/utils";
-import type { CollectionMethod, TransactionType } from "../types/database";
+import type { AppRole } from "../types/database";
 
-const transactionTypes: TransactionType[] = ["Down Payment", "Land Installment", "Garbage Fee", "Road Maintenance"];
-const collectionMethods: CollectionMethod[] = ["Cash", "Online Transfer"];
 const documentTypes = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"] as const;
 
 export function PaymentsPage() {
   const queryClient = useQueryClient();
   const [receiptSearch, setReceiptSearch] = useState("");
+  const [correctionOfTransactionId, setCorrectionOfTransactionId] = useState<number | null>(null);
+  const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
+  const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
+  const canRemovePayments = currentRole === "Super Admin" || currentRole === "Admin";
   const { data, isLoading, error } = useQuery({
     queryKey: ["payments"],
     queryFn: async () => {
@@ -69,7 +72,11 @@ export function PaymentsPage() {
                   </div>
                   <div className="text-right">
                     <p className="v2-money text-xl">{money(payment.amount)}</p>
-                    <Badge tone={["Down Payment", "Land Installment"].includes(payment.transaction_type) ? "blue" : "amber"}>{payment.transaction_type}</Badge>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Badge tone={["Down Payment", "Land Installment"].includes(payment.transaction_type) ? "blue" : "amber"}>{payment.transaction_type}</Badge>
+                      {payment.status === "voided" ? <Badge tone="red">Voided</Badge> : null}
+                      {payment.status === "reversed" ? <Badge tone="gray">Reversed</Badge> : null}
+                    </div>
                   </div>
                 </div>
                 <div className="grid gap-2 border-t border-border/80 pt-3 text-muted-foreground sm:grid-cols-3">
@@ -89,30 +96,92 @@ export function PaymentsPage() {
                   }}
                   onUploaded={() => queryClient.invalidateQueries({ queryKey: ["payments"] })}
                 />
-                <PaymentEditor
-                  payment={{
-                    id: payment.id,
-                    amount: payment.amount,
-                    transaction_type: payment.transaction_type,
-                    collection_method: payment.collection_method,
-                    bank_reference: payment.bank_reference,
-                    notes: payment.notes,
-                    manual_receipt_number: payment.manual_receipt_number,
-                    receipt_date: payment.receipt_date,
-                    receipt_issued_by: payment.receipt_issued_by,
-                    receipt_notes: payment.receipt_notes,
-                  }}
-                  onSaved={() => queryClient.invalidateQueries({ queryKey: ["payments"] })}
-                />
+                {payment.status === "posted" && canRemovePayments ? (
+                  <PaymentVoidControl
+                    payment={payment}
+                    onVoided={async () => {
+                      setCorrectionOfTransactionId(payment.id);
+                      await queryClient.invalidateQueries();
+                    }}
+                  />
+                ) : null}
               </CardContent>
             </Card>
           ))}
         </div>
         <div className="xl:sticky xl:top-6">
-          <PaymentForm />
+          <PaymentForm correctionOfTransactionId={correctionOfTransactionId} onSuccess={() => setCorrectionOfTransactionId(null)} />
         </div>
       </div>
     </section>
+  );
+}
+
+function PaymentVoidControl({
+  payment,
+  onVoided,
+}: {
+  payment: {
+    id: number;
+    amount: number;
+    created_at: string;
+    collection_method: string;
+    bank_reference: string | null;
+    receipt_number: string;
+    manual_receipt_number: string | null;
+    customers?: { first_name: string; last_name: string } | null;
+  };
+  onVoided: () => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  async function voidPayment() {
+    if (reason.trim().length < 3) {
+      setStatus("Enter a reason for voiding this payment.");
+      return;
+    }
+    setRemoving(true);
+    setStatus(null);
+    const { error } = await supabase.rpc("void_payment_record", {
+      p_transaction_id: payment.id,
+      p_reason: reason.trim(),
+    });
+    setRemoving(false);
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+    await onVoided();
+    setStatus("Payment voided. The original record and documents remain in history and the current ledger excludes it.");
+    setOpen(false);
+  }
+
+  return (
+    <details className="rounded-md border border-danger/20 bg-danger/5 p-3" open={open} onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-sm font-medium text-danger">Void payment</summary>
+      <div className="mt-3 grid gap-3 text-sm">
+        <div className="grid gap-1 rounded border border-danger/15 bg-card p-3 text-muted-foreground">
+          <span>Customer: {payment.customers ? `${payment.customers.first_name} ${payment.customers.last_name}` : "Not recorded"}</span>
+          <span>Payment date: {formatDate(payment.created_at)}</span>
+          <span>Amount: {money(payment.amount)}</span>
+          <span>Method: {payment.collection_method}</span>
+          <span>Reference: {payment.bank_reference ?? payment.manual_receipt_number ?? payment.receipt_number}</span>
+        </div>
+        <p className="text-muted-foreground">The payment and its documents remain in history. Voiding excludes it from current totals; record a linked replacement only if a correction is needed.</p>
+        <Field label="Void reason">
+          <textarea className="min-h-20 rounded-md border border-input bg-background px-3 py-2 text-sm" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explain why this payment entry must be voided" />
+        </Field>
+        {status ? <p className="text-sm text-danger">{status}</p> : null}
+        <div>
+          <Button type="button" variant="danger" disabled={removing} onClick={() => void voidPayment()}>
+            {removing ? "Voiding..." : "Confirm void"}
+          </Button>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -211,119 +280,6 @@ function ExistingPaymentDocumentUpload({
         <div>
           <Button type="button" disabled={uploading} onClick={() => void uploadDocument()}>
             {uploading ? "Uploading..." : "Upload document"}
-          </Button>
-        </div>
-      </div>
-    </details>
-  );
-}
-
-function PaymentEditor({
-  payment,
-  onSaved,
-}: {
-  payment: {
-    id: number;
-    amount: number;
-    transaction_type: TransactionType;
-    collection_method: CollectionMethod;
-    bank_reference: string | null;
-    notes: string | null;
-    manual_receipt_number: string | null;
-    receipt_date: string | null;
-    receipt_issued_by: string | null;
-    receipt_notes: string | null;
-  };
-  onSaved: () => void;
-}) {
-  const [amount, setAmount] = useState(String(payment.amount));
-  const [transactionType, setTransactionType] = useState<TransactionType>(payment.transaction_type);
-  const [collectionMethod, setCollectionMethod] = useState<CollectionMethod>(payment.collection_method);
-  const [bankReference, setBankReference] = useState(payment.bank_reference ?? "");
-  const [notes, setNotes] = useState(payment.notes ?? "");
-  const [manualReceiptNumber, setManualReceiptNumber] = useState(payment.manual_receipt_number ?? "");
-  const [receiptDate, setReceiptDate] = useState(payment.receipt_date ?? "");
-  const [receiptIssuedBy, setReceiptIssuedBy] = useState(payment.receipt_issued_by ?? "");
-  const [receiptNotes, setReceiptNotes] = useState(payment.receipt_notes ?? "");
-  const [status, setStatus] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function saveReceiptDetails() {
-    if (collectionMethod === "Online Transfer" && !bankReference.trim()) {
-      setStatus("Bank reference is required for online transfers.");
-      return;
-    }
-
-    setSaving(true);
-    setStatus(null);
-    const { error } = await supabase
-      .from("transactions")
-      .update({
-        amount: Number(amount),
-        transaction_type: transactionType,
-        collection_method: collectionMethod,
-        bank_reference: bankReference.trim() || null,
-        notes: notes.trim() || null,
-        manual_receipt_number: manualReceiptNumber.trim() || null,
-        receipt_date: receiptDate || null,
-        receipt_issued_by: receiptIssuedBy.trim() || null,
-        receipt_notes: receiptNotes.trim() || null,
-      })
-      .eq("id", payment.id);
-    setSaving(false);
-    if (error) {
-      setStatus(error.message);
-      return;
-    }
-    setStatus("Receipt details saved.");
-    onSaved();
-  }
-
-  return (
-    <details className="v2-workflow-panel p-3">
-      <summary className="cursor-pointer text-sm font-medium text-primary">Edit payment details</summary>
-      <div className="mt-3 grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Amount">
-            <Input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
-          </Field>
-          <Field label="Transaction type">
-            <Select value={transactionType} onChange={(event) => setTransactionType(event.target.value as TransactionType)}>
-              {transactionTypes.map((transactionTypeOption) => <option key={transactionTypeOption}>{transactionTypeOption}</option>)}
-            </Select>
-          </Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Collection method">
-            <Select value={collectionMethod} onChange={(event) => setCollectionMethod(event.target.value as CollectionMethod)}>
-              {collectionMethods.map((collectionMethodOption) => <option key={collectionMethodOption}>{collectionMethodOption}</option>)}
-            </Select>
-          </Field>
-          <Field label="Bank reference">
-            <Input value={bankReference} onChange={(event) => setBankReference(event.target.value)} />
-          </Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Manual receipt number">
-            <Input value={manualReceiptNumber} onChange={(event) => setManualReceiptNumber(event.target.value)} />
-          </Field>
-          <Field label="Receipt date">
-            <Input type="date" value={receiptDate} onChange={(event) => setReceiptDate(event.target.value)} />
-          </Field>
-        </div>
-        <Field label="Receipt issued by">
-          <Input value={receiptIssuedBy} onChange={(event) => setReceiptIssuedBy(event.target.value)} />
-        </Field>
-        <Field label="Receipt notes">
-          <Textarea value={receiptNotes} onChange={(event) => setReceiptNotes(event.target.value)} />
-        </Field>
-        <Field label="Payment notes">
-          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
-        </Field>
-        {status ? <p className="crm-info-panel p-3 text-xs">{status}</p> : null}
-        <div>
-          <Button type="button" disabled={saving} onClick={() => void saveReceiptDetails()}>
-            {saving ? "Saving..." : "Save payment details"}
           </Button>
         </div>
       </div>

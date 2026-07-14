@@ -16,7 +16,7 @@ export function CustomersPage() {
         queryFn: async () => {
       const { data: customers, error: queryError } = await supabase
         .from("customers")
-        .select("*, applications(parcel_id, parcels(lot_number)), contracts(id, is_active)")
+        .select("*, applications(parcel_id, parcels(lot_number)), contracts(id, is_active, status)")
         .order("last_name");
       if (queryError) throw queryError;
       return customers;
@@ -25,7 +25,7 @@ export function CustomersPage() {
       {
         queryKey: ["customer-balances"],
         queryFn: async () => {
-          const { data: balances, error: queryError } = await supabase.from("customer_balance_view").select("*");
+          const { data: balances, error: queryError } = await supabase.from("contract_financial_summary").select("*");
           if (queryError) throw queryError;
           return balances;
         },
@@ -67,9 +67,9 @@ export function CustomersPage() {
                     <p className="font-medium">{customer.first_name} {customer.last_name}</p>
                     <p className="text-sm text-muted-foreground">{customer.phone} {customer.email ? `| ${customer.email}` : ""}</p>
                   </div>
-                  <p className="text-sm tabular-nums">Land balance: {money(balance?.land_balance ?? 0)}</p>
-                  <p className="text-sm tabular-nums">Community paid: {money(balance?.community_paid ?? 0)}</p>
-                  <p className="text-sm">Active contracts: {customer.contracts?.filter((contract: { is_active: boolean }) => contract.is_active).length ?? 0}</p>
+                  <p className="text-sm tabular-nums">Land balance: {balance ? money(balance.remaining_balance) : "N/A"}</p>
+                  <p className="text-sm tabular-nums">Posted land paid: {balance ? money(balance.total_posted_land_paid) : "N/A"}</p>
+                  <p className="text-sm">Active contracts: {customer.contracts?.filter((contract: { is_active: boolean; status: string }) => contract.is_active && contract.status === "active").length ?? 0}</p>
                 </CardContent>
               </Card>
             </Link>

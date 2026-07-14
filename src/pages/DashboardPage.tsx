@@ -30,7 +30,7 @@ export function DashboardPage() {
       { queryKey: ["parcels"], queryFn: async () => (await supabase.from("parcels").select("*")).data ?? [] },
       { queryKey: ["applications"], queryFn: async () => (await supabase.from("applications").select("*")).data ?? [] },
       { queryKey: ["transactions"], queryFn: async () => (await supabase.from("transactions").select("*")).data ?? [] },
-      { queryKey: ["balances"], queryFn: async () => (await supabase.from("customer_balance_view").select("*")).data ?? [] },
+      { queryKey: ["balances"], queryFn: async () => (await supabase.from("contract_financial_summary").select("*")).data ?? [] },
       { queryKey: ["dashboard-sales-leads"], queryFn: async () => (await supabase.from("leads").select("*").order("updated_at", { ascending: false })).data as Lead[] ?? [] },
       { queryKey: ["dashboard-follow-ups"], queryFn: async () => (await supabase.from("follow_up_tasks").select("*").in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false })).data as FollowUpTask[] ?? [] },
       { queryKey: ["dashboard-site-visits"], queryFn: async () => (await supabase.from("site_visits").select("*").in("status", ["scheduled", "rescheduled"]).order("scheduled_at", { ascending: true })).data as SiteVisit[] ?? [] },
@@ -51,8 +51,8 @@ export function DashboardPage() {
   const reservations = results[7].data ?? [];
   const postSalesTasks = results[8].data ?? [];
   const postSalesChecklists = results[9].data ?? [];
-  const totalRevenue = transactions.reduce((sum, item) => sum + Number(item.amount), 0);
-  const overdueBalance = balances.reduce((sum, item) => sum + Number(item.land_balance ?? 0), 0);
+  const totalRevenue = transactions.filter((item) => item.status === "posted").reduce((sum, item) => sum + Number(item.amount), 0);
+  const overdueBalance = balances.reduce((sum, item) => sum + Number(item.remaining_balance ?? 0), 0);
   const salesSummary = salesDashboardSummary(leads, followUps, siteVisits);
   const reservationSummary = reservationDashboardSummary(reservations);
   const postSalesSummary = postSalesDashboardSummary(postSalesTasks, postSalesChecklists);

@@ -25,7 +25,19 @@ export function LotsPage() {
       return rows as LotReservation[];
     },
   });
+  const { data: pendingVoidResolutions } = useQuery({
+    queryKey: ["lot-board-void-resolutions"],
+    queryFn: async () => {
+      const { data: rows, error: queryError } = await supabase
+        .from("contract_void_resolutions")
+        .select("parcel_id")
+        .eq("status", "pending");
+      if (queryError) throw queryError;
+      return rows as Array<{ parcel_id: number }>;
+    },
+  });
   const activeReservationByParcel = new Map((reservations ?? []).filter((reservation) => reservation.parcel_id).map((reservation) => [reservation.parcel_id, reservation]));
+  const pendingResolutionParcelIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.parcel_id));
 
   return (
     <section className="v2-page-shell">
@@ -54,6 +66,7 @@ export function LotsPage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {data?.map((lot) => {
             const activeReservation = activeReservationByParcel.get(lot.id);
+            const resolutionRequired = pendingResolutionParcelIds.has(lot.id);
             return (
               <div
                 key={lot.id}
@@ -71,6 +84,7 @@ export function LotsPage() {
                   <span className="flex flex-wrap gap-1">
                     <Badge tone={statusBadgeTone(lot.status)}>{lot.status}</Badge>
                     {activeReservation ? <Badge tone="blue">Active Reservation</Badge> : null}
+                    {resolutionRequired ? <Badge tone="red">Resolution Required</Badge> : null}
                   </span>
                 </div>
               </div>

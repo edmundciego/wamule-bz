@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isActiveContract, remainingLandBalance } from "../_shared/financial.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -132,7 +133,7 @@ Deno.serve(async (request) => {
       .order("created_at", { ascending: false }),
     supabase
       .from("contracts")
-      .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, created_at)")
+      .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, contract_id, status, created_at)")
       .order("created_at", { ascending: false }),
     supabase
       .from("payment_requests")
@@ -319,7 +320,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   const soldLots = data.lots.filter((lot) => lot.status === "Sold");
   const recentlyUpdatedLots = data.lots.filter((lot) => inPeriod(lot.updated_at, data.periodStart, data.periodEnd));
 
-  const periodPayments = data.payments.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
+  const periodPayments = data.payments.filter((row) => row.status === "posted" && inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodPaymentDocuments = data.paymentDocuments.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const collected = sum(periodPayments, "amount");
   const cashTotal = sum(periodPayments.filter((row) => row.collection_method === "Cash"), "amount");
@@ -331,7 +332,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
 
   const periodContracts = data.contracts.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodUpdatedContracts = data.contracts.filter((row) => updatedInPeriod(row, data.periodStart, data.periodEnd));
-  const activeContracts = data.contracts.filter((row) => Boolean(row.is_active));
+  const activeContracts = data.contracts.filter((row) => isActiveContract(row));
   const missingSignedContracts = activeContracts.filter((row) => !row.signed_contract_file_path);
   const incompleteContracts = data.contracts.filter((row) => !row.customer_id || !row.parcel_id || !row.start_date || !row.payment_due_day);
   const startingSoon = data.contracts.filter((row) => daysFromToday(String(row.start_date)) >= 0 && daysFromToday(String(row.start_date)) <= 7);
@@ -759,10 +760,7 @@ function hasRecentPayment(contract: Record<string, unknown>, days: number) {
 }
 
 function outstandingBalance(contract: Record<string, unknown>) {
-  const paid = relationArray(contract.transactions)
-    .filter((transaction) => ["Down Payment", "Land Installment"].includes(String((transaction as Record<string, unknown>).transaction_type)))
-    .reduce((total, transaction) => total + Number((transaction as Record<string, unknown>).amount ?? 0), 0);
-  return Math.max(Number(contract.final_purchase_price ?? 0) - paid, 0);
+  return remainingLandBalance(contract, relationArray(contract.transactions)) ?? 0;
 }
 
 function dueDateForCurrentCycle(contract: Record<string, unknown>, today: Date) {

@@ -16,14 +16,14 @@ test("release quality brand guard and metadata use the canonical name", async ()
   assert.match(brandGuard, /wamuale/i);
 });
 
-test("purge implementation keeps authorization, confirmation, transaction, and cleanup controls server-side", async () => {
-  const [migration, functionSource, panel] = await Promise.all([
+test("retired purge migration and application control cannot delete operational history", async () => {
+  const [migration, panel] = await Promise.all([
     read("supabase/migrations/20260714074603_release_quality_data_management.sql"),
-    read("supabase/functions/purge-contact-record/index.ts"),
     read("src/components/settings/DataManagementPanel.tsx"),
   ]);
-  for (const requirement of ["security definer", "Only Super Admin users can purge records", "purge_contact_preview", "purge_storage_cleanup_tasks", "delete from public.transactions", "delete from public.contracts", "delete from public.customers", "delete from public.applications", "delete from public.leads", "Purge Test or Incorrect Record completed"]) assert.match(migration, new RegExp(requirement, "i"));
-  for (const requirement of ["Only Super Admin users can purge records", "PURGE FINANCIAL HISTORY", "cleanStorage", "deleteUser", "possibleRelatedRecords"]) assert.match(functionSource, new RegExp(requirement));
-  assert.match(panel, /Possible related records requiring confirmation/);
-  assert.match(panel, /Purge Test or Incorrect Record/);
+  assert.match(migration, /NO-OP/);
+  assert.doesNotMatch(migration, /create or replace function/i);
+  assert.doesNotMatch(migration, /delete from public\./i);
+  assert.match(panel, /Permanent purge is unavailable in the application/);
+  assert.doesNotMatch(panel, /purge-contact-record/);
 });

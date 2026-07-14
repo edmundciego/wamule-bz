@@ -14,6 +14,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { accountDueDate } from "../lib/accountDates";
 import { getSessionAndProfile } from "../lib/data";
+import { activeContract as canonicalActiveContract, openPaymentRequests, postedLandPaymentsForContract, remainingLandBalance } from "../lib/financial";
 import { customerOperationsInsights, postSalesRecommendedInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
@@ -72,6 +73,7 @@ type CustomerDetail = {
   email: string | null;
   address: string | null;
   created_at: string;
+  updated_at: string;
   applications?: { parcels?: { lot_number: string | null; status?: string | null } | null } | null;
   contracts?: CustomerContract[] | null;
   transactions?: CustomerTransaction[] | null;
@@ -245,8 +247,22 @@ export function CustomerDetailPage() {
     },
     enabled: Number.isFinite(customerId),
   });
+  const { data: contractVoidResolutions } = useQuery({
+    queryKey: ["customer-contract-void-resolutions", customerId],
+    queryFn: async () => {
+      const { data: resolutions, error: queryError } = await supabase
+        .from("contract_void_resolutions")
+        .select("*")
+        .eq("customer_id", customerId)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (queryError) throw queryError;
+      return resolutions as Array<{ id: string; contract_id: number; parcel_id: number; status: string; created_at: string }>;
+    },
+    enabled: Number.isFinite(customerId),
+  });
 
-  const landPayments =
+  const historicalLandPayments =
     data?.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
   const communityPayments =
     data?.transactions?.filter((item) => ["Garbage Fee", "Road Maintenance"].includes(item.transaction_type)) ?? [];
@@ -259,6 +275,9 @@ export function CustomerDetailPage() {
   const latestLead = relatedLeads?.[0] ?? null;
   const latestReservation = relatedReservations?.[0] ?? null;
   const activeCustomerContract = data ? activeContract(data.contracts ?? []) : null;
+  const landPayments = activeCustomerContract
+    ? postedLandPaymentsForContract(data?.transactions ?? [], activeCustomerContract.id)
+    : [];
   const latestPostSalesChecklist = postSalesChecklists?.[0] ?? null;
   const latestPostSalesAiSummary = latestPostSalesChecklist
     ? latestPostSalesSummary(postSalesAiSummaries ?? [], latestPostSalesChecklist.id)
@@ -266,6 +285,14 @@ export function CustomerDetailPage() {
   const generatedByProfile = latestAiSummary?.generated_by
     ? adminProfiles?.find((profile) => profile.user_id === latestAiSummary.generated_by) ?? null
     : null;
+  const customerSummaryIsStale = isCustomerSummaryStale(latestAiSummary, {
+    customer: data,
+    contracts: data?.contracts ?? [],
+    transactions: data?.transactions ?? [],
+    paymentRequests: data?.payment_requests ?? [],
+    reservations: relatedReservations ?? [],
+    postSalesChecklist: latestPostSalesChecklist,
+  });
 
   function refreshCustomer() {
     void queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
@@ -543,8 +570,9 @@ export function CustomerDetailPage() {
           {actionError ? <ErrorState message={actionError} /> : null}
 
           <CustomerCommandProfile
-            customer={data}
-            landPayments={landPayments}
+              customer={data}
+              landPayments={landPayments}
+              historicalLandPayments={historicalLandPayments}
             reservations={relatedReservations ?? []}
             postSalesChecklist={latestPostSalesChecklist}
             postSalesTasks={postSalesTasks ?? []}
@@ -554,18 +582,34 @@ export function CustomerDetailPage() {
             onUploadDocument={() => setActiveAction("document")}
             onStatement={showStatement}
           />
+          {contractVoidResolutions?.length ? (
+            <div className="crm-warning-panel p-4 text-sm">
+              <p className="font-semibold text-warning">Contract Voided — Resolution Required</p>
+              <p className="mt-1">Lot review and linked payment review are required before this customer can be treated as an active contract account. Contract #{contractVoidResolutions[0].contract_id} remains in history.</p>
+              {canVoidContracts ? (
+                <ContractVoidResolutionControl
+                  resolution={contractVoidResolutions[0]}
+                  reservations={relatedReservations ?? []}
+                  onResolved={async () => {
+                    setToast("Contract void resolution recorded.");
+                    await queryClient.invalidateQueries();
+                  }}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] 2xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="grid min-w-0 gap-6">
-              <div className="rounded-lg border border-border/80 bg-card/80 p-2 shadow-sm shadow-primary/5">
-                <div className="flex gap-1 overflow-x-auto">
+              <div className="crm-tabs">
+                <div className="crm-tab-list">
                   {customerSections.map((section) => (
                     <button
                       key={section}
                       type="button"
                       className={cn(
-                        "min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:bg-primary-soft/60 hover:text-primary",
-                        activeSection === section ? "bg-primary text-primary-foreground shadow-sm shadow-primary/10" : "",
+                        "crm-tab shrink-0 font-semibold",
+                        activeSection === section ? "crm-tab-active" : "",
                       )}
                       onClick={() => setActiveSection(section)}
                     >
@@ -616,7 +660,7 @@ export function CustomerDetailPage() {
               ) : null}
               {activeSection === "Payments" ? (
                 <>
-                  <Ledger title="Land Payment History" rows={landPayments} />
+                  <Ledger title={activeCustomerContract ? "Posted Land Payment History" : "Historical Land Payments (no active contract)"} rows={historicalLandPayments} />
                   <Ledger title="Community Fee History" rows={communityPayments} />
                 </>
               ) : null}
@@ -632,11 +676,12 @@ export function CustomerDetailPage() {
                 />
               ) : null}
               {activeSection === "Statement" ? (
-                <BalanceStatementSection customer={data} landPayments={landPayments} />
+                  <BalanceStatementSection customer={data} landPayments={landPayments} />
               ) : null}
               {activeSection === "Smart Summary" ? (
                 <AiSummarySection
                   summary={latestAiSummary}
+                  isStale={customerSummaryIsStale}
                   canGenerate={canGenerateAiSummary}
                   aiEnabled={collectionsAiEnabled}
                   generating={generatingSummary}
@@ -654,15 +699,11 @@ export function CustomerDetailPage() {
               postSalesChecklist={latestPostSalesChecklist}
               postSalesTasks={postSalesTasks ?? []}
               latestAiSummary={latestAiSummary}
+              summaryIsStale={customerSummaryIsStale}
               generatedByLabel={adminProfileLabel(generatedByProfile)}
               canGenerate={canGenerateAiSummary}
               aiEnabled={collectionsAiEnabled}
               generating={generatingSummary}
-              onRecordPayment={() => setActiveAction("payment")}
-              onCreateContract={() => setActiveAction("contract")}
-              onCreateRequest={() => setActiveAction("request")}
-              onUploadDocument={() => setActiveAction("document")}
-              onStatement={showStatement}
               onGenerate={() => void generateAiSummary()}
             />
           </div>
@@ -792,6 +833,7 @@ export function CustomerDetailPage() {
 function CustomerCommandProfile({
   customer,
   landPayments,
+  historicalLandPayments,
   reservations,
   postSalesChecklist,
   postSalesTasks,
@@ -803,6 +845,7 @@ function CustomerCommandProfile({
 }: {
   customer: CustomerDetail;
   landPayments: CustomerTransaction[];
+  historicalLandPayments: CustomerTransaction[];
   reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
   postSalesChecklist: PostSalesChecklist | null;
   postSalesTasks: PostSalesTask[];
@@ -813,13 +856,15 @@ function CustomerCommandProfile({
   onStatement: () => void;
 }) {
   const contract = activeContract(customer.contracts ?? []);
-  const latestReservation = reservations[0] ?? null;
-  const lotNumber = assignedLot(customer) ?? latestReservation?.parcels?.lot_number ?? null;
-  const totalPaid = totalAmount(landPayments);
-  const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price) - totalPaid, 0) : 0;
+  const latestReservation = reservations.find((reservation) => ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"].includes(reservation.status)) ?? null;
+  const contractLot = contract?.parcels?.lot_number ?? null;
+  const reservedLot = latestReservation?.parcels?.lot_number ?? null;
+  const requestedLot = customer.applications?.parcels?.lot_number ?? null;
+  const totalPaid = contract ? totalAmount(landPayments) : 0;
+  const remainingBalance = remainingLandBalance(contract, landPayments) ?? 0;
   const lastPayment = [...landPayments].sort((a, b) => safeDateTime(b.created_at) - safeDateTime(a.created_at))[0] ?? null;
   const missingReceiptCount = customer.transactions?.filter((transaction) => !transaction.manual_receipt_number).length ?? 0;
-  const openRequests = customer.payment_requests?.filter((request) => !["Paid", "Cancelled"].includes(request.status)).length ?? 0;
+  const openRequests = openPaymentRequests(customer.payment_requests).length;
   const documentsCount = customer.payment_documents?.length ?? 0;
   const openPostSalesTasks = postSalesTasks.filter((task) => !["completed", "cancelled"].includes(task.status));
   const blockedPostSalesTasks = postSalesTasks.filter((task) => task.status === "blocked");
@@ -838,19 +883,19 @@ function CustomerCommandProfile({
                 {customer.first_name} {customer.last_name}
               </h1>
               <div className="mt-4 flex flex-wrap gap-2 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
-                  <Home className="h-4 w-4 text-secondary" />
-                  {lotNumber ? `Lot ${lotNumber}` : "No lot assigned"}
-                </span>
+                {contractLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Contract lot {contractLot}</span> : null}
+                {!contractLot && reservedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Reserved lot {reservedLot}</span> : null}
+                {!contractLot && !reservedLot && requestedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Requested lot {requestedLot}</span> : null}
+                {!contractLot && !reservedLot && !requestedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />No contract or reservation lot</span> : null}
                 <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
                   <UserRound className="h-4 w-4 text-secondary" />
                   Customer since {formatDate(customer.created_at)}
                 </span>
               </div>
-              <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                <span className="break-words">{customer.phone || "No phone recorded"}</span>
-                <span className="break-words">{customer.email ?? "No email recorded"}</span>
-                {customer.address ? <span className="break-words sm:col-span-2">{customer.address}</span> : null}
+              <div className="mt-4 grid min-w-0 gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                <span className="min-w-0 break-words">{customer.phone || "No phone recorded"}</span>
+                <span className="min-w-0 break-all">{customer.email ?? "No email recorded"}</span>
+                {customer.address ? <span className="min-w-0 break-words sm:col-span-2">{customer.address}</span> : null}
               </div>
             </div>
             <PrimaryActionCluster
@@ -892,7 +937,7 @@ function CustomerCommandProfile({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/65">Account Ledger</p>
           <div className="mt-5 grid gap-4">
             <CommandLedgerMetric icon={Landmark} label="Purchase price" value={contract ? money(contract.final_purchase_price) : "N/A"} />
-            <CommandLedgerMetric icon={CreditCard} label="Recorded land payments" value={money(totalPaid)} />
+            <CommandLedgerMetric icon={CreditCard} label={contract ? "Posted land payments" : "Historical land payments"} value={contract ? money(totalPaid) : money(totalAmount(historicalLandPayments))} />
             <CommandLedgerMetric icon={FileText} label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} emphasis />
             <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -998,7 +1043,7 @@ function CustomerStatusStrip({
           : "No checklist";
 
   return (
-    <div className="grid overflow-hidden rounded-xl border border-primary/15 bg-card shadow-sm shadow-primary/5 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid overflow-hidden rounded-xl border border-primary/15 bg-card shadow-sm shadow-primary/5 sm:grid-cols-2 2xl:grid-cols-5">
       <StatusStripCell
         family="stable"
         label="Contract"
@@ -1060,9 +1105,9 @@ function StatusStripCell({
       ? "bg-primary-soft/35"
       : "bg-card";
   return (
-    <div className={cn("min-w-0 border-b border-primary/10 p-4 last:border-b-0 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0", familyClass)}>
+    <div className={cn("min-w-0 border-b border-primary/10 p-4 last:border-b-0 sm:odd:border-r 2xl:border-b-0 2xl:border-r 2xl:last:border-r-0", familyClass)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+        <p className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
         <Badge tone={tone}>{value}</Badge>
       </div>
       {amount ? <p className="mt-3 text-xl font-semibold text-primary tabular-nums">{amount}</p> : null}
@@ -1127,15 +1172,11 @@ function CustomerCommandRail({
   postSalesChecklist,
   postSalesTasks,
   latestAiSummary,
+  summaryIsStale,
   generatedByLabel,
   canGenerate,
   aiEnabled,
   generating,
-  onRecordPayment,
-  onCreateContract,
-  onCreateRequest,
-  onUploadDocument,
-  onStatement,
   onGenerate,
 }: {
   customer: CustomerDetail;
@@ -1144,15 +1185,11 @@ function CustomerCommandRail({
   postSalesChecklist: PostSalesChecklist | null;
   postSalesTasks: PostSalesTask[];
   latestAiSummary: CustomerAiSummary | null;
+  summaryIsStale: boolean;
   generatedByLabel: string;
   canGenerate: boolean;
   aiEnabled: boolean;
   generating: boolean;
-  onRecordPayment: () => void;
-  onCreateContract: () => void;
-  onCreateRequest: () => void;
-  onUploadDocument: () => void;
-  onStatement: () => void;
   onGenerate: () => void;
 }) {
   const latestReservation = reservations[0] ?? null;
@@ -1160,7 +1197,7 @@ function CustomerCommandRail({
   const recentTasks = postSalesTasks.slice(0, 3);
 
   return (
-    <aside className="grid gap-4 xl:sticky xl:top-6">
+    <aside className="grid min-w-0 gap-4 self-start">
       <div className="rounded-xl border border-primary/15 bg-primary-soft/45 p-4 shadow-sm shadow-primary/5">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Current Workflow</p>
         <div className="mt-4 grid gap-3">
@@ -1207,10 +1244,12 @@ function CustomerCommandRail({
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Smart Summary</p>
             <p className="mt-1 text-sm text-muted-foreground">Advisory account guidance only.</p>
           </div>
-          {latestAiSummary ? <Badge tone={accountStatusTone(latestAiSummary.account_status)}>{latestAiSummary.account_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
+          {latestAiSummary ? <Badge tone={summaryIsStale ? "amber" : accountStatusTone(latestAiSummary.account_status)}>{summaryIsStale ? "Update available" : latestAiSummary.account_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
         </div>
-        {latestAiSummary ? (
+        {latestAiSummary && !summaryIsStale ? (
           <p className="mt-4 line-clamp-5 text-sm leading-6 text-primary">{latestAiSummary.summary || "No summary text recorded."}</p>
+        ) : latestAiSummary ? (
+          <p className="mt-4 text-sm leading-6 text-warning">Live customer, contract, payment, reservation, or post-sales data changed after this summary was generated. Regenerate it before relying on status or financial guidance.</p>
         ) : (
           <p className="mt-4 text-sm leading-6 text-muted-foreground">No smart customer account summary has been generated yet.</p>
         )}
@@ -1225,17 +1264,6 @@ function CustomerCommandRail({
             {generating ? "Generating..." : latestAiSummary ? "Regenerate Summary" : "Generate Summary"}
           </Button>
         ) : null}
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Record Actions</p>
-        <div className="mt-4 grid gap-2">
-          <Button type="button" onClick={onRecordPayment}>Record Payment</Button>
-          <Button type="button" variant="secondary" onClick={onCreateContract}>Create Contract</Button>
-          <Button type="button" variant="outline" onClick={onCreateRequest}>Create Payment Request</Button>
-          <Button type="button" variant="outline" onClick={onUploadDocument}>Upload Payment Document</Button>
-          <Button type="button" variant="ghost" onClick={onStatement}>Print / View Statement</Button>
-        </div>
       </div>
 
       <div className="rounded-xl border border-border/80 bg-muted/40 p-4 shadow-sm shadow-primary/5">
@@ -1275,12 +1303,12 @@ function OverviewSection({
   postSalesChecklist: PostSalesChecklist | null;
   postSalesTasks: PostSalesTask[];
 }) {
-  const openRequests = customer.payment_requests?.filter((request) => !["Paid", "Cancelled"].includes(request.status)).length ?? 0;
+  const openRequests = openPaymentRequests(customer.payment_requests).length;
   const latestLead = leads[0] ?? null;
   const latestReservation = reservations[0] ?? null;
   const contract = activeContract(customer.contracts ?? []);
-  const landPayments = customer.transactions?.filter((item) => ["Down Payment", "Land Installment"].includes(item.transaction_type)) ?? [];
-  const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price) - totalAmount(landPayments), 0) : 0;
+  const landPayments = contract ? postedLandPaymentsForContract(customer.transactions ?? [], contract.id) : [];
+  const remainingBalance = remainingLandBalance(contract, landPayments) ?? 0;
   const operationsInsights = customerOperationsInsights({
     activeContract: contract?.is_active ? contract : null,
     transactions: customer.transactions ?? [],
@@ -1314,7 +1342,7 @@ function OverviewSection({
           <InfoItem label="Phone" value={customer.phone} />
           <InfoItem label="Email" value={customer.email ?? "Not provided"} />
           <InfoItem label="Address" value={customer.address ?? "Not provided"} />
-          <InfoItem label="Assigned lot" value={assignedLot(customer) ? `Lot ${assignedLot(customer)}` : "Not assigned"} />
+          <InfoItem label="Requested lot" value={customer.applications?.parcels?.lot_number ? `Lot ${customer.applications.parcels.lot_number}` : "Not recorded"} />
           <InfoItem label="Open payment requests" value={String(openRequests)} />
         </CardContent>
       </Card>
@@ -2174,7 +2202,7 @@ function BalanceStatementSection({
       <CardContent className="grid gap-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatementMetric label="Customer" value={`${customer.first_name} ${customer.last_name}`} />
-          <StatementMetric label="Lot" value={assignedLot(customer) ? `Lot ${assignedLot(customer)}` : "N/A"} />
+          <StatementMetric label="Contract lot" value={contract?.parcels?.lot_number ? `Lot ${contract.parcels.lot_number}` : "N/A"} />
           <StatementMetric label="Contract summary" value={contract ? `Contract #${contract.id} (${contractStatusLabel(contract)})` : "No active contract"} />
           <StatementMetric label="Original purchase price" value={contract ? money(contract.final_purchase_price) : "N/A"} />
           <StatementMetric label="Total paid" value={money(totalPaid)} />
@@ -2191,6 +2219,7 @@ function BalanceStatementSection({
 
 function AiSummarySection({
   summary,
+  isStale,
   canGenerate,
   aiEnabled,
   generating,
@@ -2199,6 +2228,7 @@ function AiSummarySection({
   onCopy,
 }: {
   summary: CustomerAiSummary | null;
+  isStale: boolean;
   canGenerate: boolean;
   aiEnabled: boolean;
   generating: boolean;
@@ -2257,14 +2287,18 @@ function AiSummarySection({
                   Model: {summary.model} | Generated: {formatDate(summary.updated_at || summary.created_at)} | Generated by: {generatedByLabel}
                 </p>
               </div>
-              <Badge tone={accountStatusTone(summary.account_status)}>{summary.account_status}</Badge>
+              <Badge tone={isStale ? "amber" : accountStatusTone(summary.account_status)}>{isStale ? "Update available" : summary.account_status}</Badge>
             </div>
 
             <SummaryBlock title="Buyer Insights" content={summary.summary} />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <SummaryBlock title="Balance Summary" content={summary.balance_summary} />
-              <SummaryBlock title="Payment Summary" content={summary.payment_summary} />
-            </div>
+            {isStale ? (
+              <p className="crm-warning-panel p-3 text-sm">This summary predates live account changes. Financial and status assertions are hidden until it is regenerated; use the live ledger and statement above as the authoritative record.</p>
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <SummaryBlock title="Balance Summary" content={summary.balance_summary} />
+                <SummaryBlock title="Payment Summary" content={summary.payment_summary} />
+              </div>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-3">
               <SummaryList title="Risk Flags" items={summary.collections_flags} emptyLabel="No risk flags listed." />
@@ -2329,6 +2363,76 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
+function ContractVoidResolutionControl({
+  resolution,
+  reservations,
+  onResolved,
+}: {
+  resolution: { id: string; parcel_id: number };
+  reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
+  onResolved: () => Promise<void>;
+}) {
+  const [resolutionType, setResolutionType] = useState<"release_lot" | "return_to_reservation" | "retain_sold">("release_lot");
+  const [reservationId, setReservationId] = useState("");
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const matchingReservations = reservations.filter((reservation) => reservation.parcel_id === resolution.parcel_id && ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed", "expired", "cancelled", "released"].includes(reservation.status));
+
+  async function resolve() {
+    if (resolutionType === "retain_sold" && !reason.trim()) {
+      setStatus("A reason is required to retain this lot as sold.");
+      return;
+    }
+    if (resolutionType === "return_to_reservation" && !reservationId) {
+      setStatus("Choose the reservation to restore.");
+      return;
+    }
+    setSaving(true);
+    setStatus(null);
+    const { error } = await supabase.rpc("resolve_contract_void_resolution", {
+      p_resolution_id: resolution.id,
+      p_resolution_type: resolutionType,
+      p_reason: reason.trim() || null,
+      p_reservation_id: reservationId || null,
+    });
+    setSaving(false);
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+    await onResolved();
+  }
+
+  return (
+    <details className="mt-3 rounded-md border border-warning/25 bg-card/70 p-3">
+      <summary className="cursor-pointer font-medium text-primary">Resolve lot status</summary>
+      <div className="mt-3 grid gap-3">
+        <Field label="Resolution">
+          <Select value={resolutionType} onChange={(event) => setResolutionType(event.target.value as typeof resolutionType)}>
+            <option value="release_lot">Release lot to Available</option>
+            <option value="return_to_reservation">Return lot to reservation</option>
+            <option value="retain_sold">Retain lot as Sold</option>
+          </Select>
+        </Field>
+        {resolutionType === "return_to_reservation" ? (
+          <Field label="Reservation">
+            <Select value={reservationId} onChange={(event) => setReservationId(event.target.value)}>
+              <option value="">Choose reservation</option>
+              {matchingReservations.map((reservation) => <option key={reservation.id} value={reservation.id}>{reservation.reservation_code ?? reservation.id} ({reservation.status})</option>)}
+            </Select>
+          </Field>
+        ) : null}
+        <Field label={resolutionType === "retain_sold" ? "Reason (required)" : "Resolution notes"}>
+          <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
+        </Field>
+        {status ? <p className="text-danger">{status}</p> : null}
+        <div><Button type="button" disabled={saving} onClick={() => void resolve()}>{saving ? "Resolving..." : "Confirm resolution"}</Button></div>
+      </div>
+    </details>
+  );
+}
+
 function ActionModal({
   title,
   description,
@@ -2384,13 +2488,34 @@ function customerCollectionsStanding(openRequests: number, remainingBalance: num
   return { label: "Clear", tone: "green", detail: "No collection follow-up" };
 }
 
-function assignedLot(customer: CustomerDetail) {
-  const contract = activeContract(customer.contracts ?? []);
-  return contract?.parcels?.lot_number ?? customer.applications?.parcels?.lot_number ?? null;
-}
-
 function latestSummary(summaries: CustomerAiSummary[]) {
   return [...summaries].sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())[0] ?? null;
+}
+
+function isCustomerSummaryStale(
+  summary: CustomerAiSummary | null,
+  records: {
+    customer: CustomerDetail | undefined;
+    contracts: CustomerContract[];
+    transactions: CustomerTransaction[];
+    paymentRequests: PaymentRequest[];
+    reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
+    postSalesChecklist: PostSalesChecklist | null;
+  },
+) {
+  if (!summary) return false;
+  const generatedAt = safeDateTime(summary.updated_at || summary.created_at);
+  const sourceTimes = [
+    records.customer?.created_at,
+    records.customer?.updated_at,
+    ...records.contracts.flatMap((record) => [record.created_at, record.updated_at]),
+    ...records.transactions.map((record) => record.created_at),
+    ...records.paymentRequests.flatMap((record) => [record.created_at, record.updated_at]),
+    ...records.reservations.flatMap((record) => [record.created_at, record.updated_at]),
+    records.postSalesChecklist?.created_at,
+    records.postSalesChecklist?.updated_at,
+  ].map(safeDateTime);
+  return Math.max(0, ...sourceTimes) > generatedAt;
 }
 
 function latestPostSalesSummary(summaries: PostSalesAiSummary[], checklistId: string) {
@@ -2465,7 +2590,7 @@ function isVoidableContract(contract: Pick<Contract, "status" | "is_active">) {
 }
 
 function activeContract(contracts: CustomerContract[]) {
-  return contracts.find((contract) => isVoidableContract(contract)) ?? null;
+  return canonicalActiveContract(contracts);
 }
 
 function nextDueDate(contract: Contract) {

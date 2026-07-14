@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { accountDueDate, startOfDay } from "../lib/accountDates";
+import { remainingLandBalance } from "../lib/financial";
 import { collectionsOperationsInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
@@ -19,9 +20,10 @@ type ContractCollectionRow = {
   payment_due_day: number;
   signed_contract_file_path: string | null;
   is_active: boolean;
+  status: string;
   customers?: { first_name: string; last_name: string } | null;
   parcels?: { lot_number: string } | null;
-  transactions?: Array<{ amount: number; transaction_type: string }> | null;
+  transactions?: Array<{ amount: number; transaction_type: string; contract_id: number | null; status: string }> | null;
 };
 
 type PaymentCollectionRow = {
@@ -218,10 +220,7 @@ function PaymentQueue({ title, rows }: { title: string; rows: PaymentCollectionR
 }
 
 function outstandingBalance(contract: ContractCollectionRow) {
-  const paid = contract.transactions
-    ?.filter((transaction) => ["Down Payment", "Land Installment"].includes(transaction.transaction_type))
-    .reduce((sum, transaction) => sum + Number(transaction.amount), 0) ?? 0;
-  return Math.max(Number(contract.final_purchase_price) - paid, 0);
+  return remainingLandBalance(contract, contract.transactions ?? []) ?? 0;
 }
 
 function dueDateForCurrentCycle(contract: ContractCollectionRow, today: Date) {

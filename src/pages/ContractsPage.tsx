@@ -4,13 +4,14 @@ import { Badge } from "../components/ui/Badge";
 import { Card, CardContent } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
+import { remainingLandBalance } from "../lib/financial";
 import { money } from "../lib/utils";
 import type { Contract, ContractStatus } from "../types/database";
 
 type ContractListRow = Contract & {
   customers?: { first_name: string | null; last_name: string | null } | null;
   parcels?: { lot_number: string | null } | null;
-  transactions?: Array<{ amount: number; transaction_type: string }> | null;
+  transactions?: Array<{ amount: number; transaction_type: string; contract_id: number | null; status: string }> | null;
 };
 
 function contractStatusLabel(contract: Pick<Contract, "status" | "is_active">) {
@@ -42,6 +43,18 @@ export function ContractsPage() {
       return contracts as ContractListRow[];
     },
   });
+  const { data: pendingVoidResolutions } = useQuery({
+    queryKey: ["contract-void-resolutions"],
+    queryFn: async () => {
+      const { data: rows, error: queryError } = await supabase
+        .from("contract_void_resolutions")
+        .select("contract_id")
+        .eq("status", "pending");
+      if (queryError) throw queryError;
+      return rows as Array<{ contract_id: number }>;
+    },
+  });
+  const pendingResolutionContractIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.contract_id));
   return (
     <section className="v2-page-shell">
       <div className="v2-page-header">
@@ -54,13 +67,8 @@ export function ContractsPage() {
       <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
         <div className="grid content-start gap-3">
           {data?.map((contract) => {
-            const paid =
-              contract.transactions
-                ?.filter((item: { transaction_type: string }) =>
-                  ["Down Payment", "Land Installment"].includes(item.transaction_type),
-                )
-                .reduce((sum: number, item: { amount: number }) => sum + Number(item.amount), 0) ?? 0;
-            const balance = Number(contract.final_purchase_price) - paid;
+            const balance = remainingLandBalance(contract, contract.transactions ?? []);
+            const paid = balance === null ? 0 : Number(contract.final_purchase_price) - balance;
             const archived = ["voided", "cancelled", "archived"].includes(contract.status);
             return (
               <Card key={contract.id} className={archived ? "v2-archive-panel" : "v2-ledger-panel"}>
@@ -71,11 +79,12 @@ export function ContractsPage() {
                       <p className="text-muted-foreground">{contract.customers?.first_name} {contract.customers?.last_name} · Lot {contract.parcels?.lot_number ?? "N/A"}</p>
                     </div>
                     <Badge tone={contractStatusTone(contract)}>{contractStatusLabel(contract)}</Badge>
+                    {pendingResolutionContractIds.has(contract.id) ? <Badge tone="red">Resolution Required</Badge> : null}
                   </div>
                   <div className="grid gap-2 border-t border-border/80 pt-3 sm:grid-cols-3">
                     <ContractFact label="Price" value={money(contract.final_purchase_price)} />
                     <ContractFact label="Paid" value={money(paid)} />
-                    <ContractFact label="Balance" value={money(balance)} />
+                    <ContractFact label="Balance" value={balance === null ? "N/A" : money(balance)} />
                   </div>
                 </CardContent>
               </Card>

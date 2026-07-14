@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../_shared/financial.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -184,7 +185,7 @@ function buildAccountData({
   feeTypes: Record<string, unknown>[];
 }): AccountData {
   const contracts = relationArray(customer.contracts);
-  const activeContract = contracts.find((contract) => Boolean(contract.is_active)) ?? contracts[0] ?? null;
+  const activeContract = canonicalActiveContract(contracts);
   return {
     customer,
     application: (customer.applications as Record<string, unknown> | null | undefined) ?? null,
@@ -202,10 +203,9 @@ function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
   const customer = data.customer;
   const name = customerName(customer);
   const contract = data.activeContract;
-  const landPayments = data.payments.filter((payment) => ["Down Payment", "Land Installment"].includes(String(payment.transaction_type)));
-  const totalPaid = sum(landPayments, "amount");
+  const totalPaid = contract ? totalPostedLandPayments(data.payments, contract.id) : 0;
   const finalPrice = Number(contract?.final_purchase_price ?? 0);
-  const remainingBalance = contract ? Math.max(finalPrice - totalPaid, 0) : 0;
+  const remainingBalance = remainingLandBalance(contract, data.payments) ?? 0;
   const lastPayment = [...data.payments].sort((a, b) => dateTime(b.created_at) - dateTime(a.created_at))[0] ?? null;
   const missingReceiptPayments = data.payments.filter((payment) => !payment.manual_receipt_number);
   const missingProofPayments = data.payments.filter((payment) => isTransfer(payment) && !relationArray(payment.payment_documents).length);
@@ -343,9 +343,8 @@ function sanitizeSummary(value: Partial<CustomerSummaryOutput>, fallback: Custom
 
 function summarizeForPrompt(data: AccountData) {
   const contract = data.activeContract;
-  const landPayments = data.payments.filter((payment) => ["Down Payment", "Land Installment"].includes(String(payment.transaction_type)));
-  const totalPaid = sum(landPayments, "amount");
-  const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price ?? 0) - totalPaid, 0) : null;
+  const totalPaid = contract ? totalPostedLandPayments(data.payments, contract.id) : 0;
+  const remainingBalance = remainingLandBalance(contract, data.payments);
   return {
     customer: {
       id: data.customer.id,
@@ -366,6 +365,7 @@ function summarizeForPrompt(data: AccountData) {
       start_date: contract.start_date,
       payment_due_day: contract.payment_due_day,
       signed_contract_uploaded: Boolean(contract.signed_contract_file_path),
+      total_posted_land_paid: totalPaid,
       remaining_balance: remainingBalance,
     } : null,
     payments: data.payments.map((payment) => ({
@@ -464,10 +464,6 @@ function relationArray(value: unknown) {
 
 function isTransfer(payment: Record<string, unknown>) {
   return ["Online Transfer", "Bank Transfer"].includes(String(payment.collection_method));
-}
-
-function sum(rows: Record<string, unknown>[], field: string) {
-  return rows.reduce((total, row) => total + Number(row[field] ?? 0), 0);
 }
 
 function customerName(customer: Record<string, unknown>) {

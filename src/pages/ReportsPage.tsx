@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { exportCsv, reportFileName } from "../lib/csv";
+import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
@@ -65,9 +66,10 @@ type ContractReportRow = {
   payment_due_day: number;
   signed_contract_file_path: string | null;
   is_active: boolean;
+  status: string;
   customers?: { id: number; first_name: string; last_name: string } | null;
   parcels?: { lot_number: string | null } | null;
-  transactions?: Array<{ amount: number; transaction_type: string; created_at: string }> | null;
+  transactions?: Array<{ amount: number; transaction_type: string; created_at: string; contract_id: number | null; status: string }> | null;
 };
 type ApplicationReportRow = {
   id: number;
@@ -98,7 +100,7 @@ type CustomerReportRow = {
   id: number;
   first_name: string;
   last_name: string;
-  contracts?: Array<{ id: number; is_active: boolean }> | null;
+  contracts?: Array<{ id: number; is_active: boolean; status: string; final_purchase_price: number; monthly_payment: number; start_date: string; payment_due_day: number }> | null;
 };
 type LeadReportRow = Lead & { parcels?: { id: number; lot_number: string | null; status: string | null } | null };
 type SiteVisitReportRow = SiteVisit & { parcels?: { id: number; lot_number: string | null; status: string | null } | null };
@@ -299,15 +301,13 @@ export function ReportsPage() {
   const balanceRows = useMemo(
     () =>
       contractsQuery.data?.map((contract) => {
-        const landPayments = contract.transactions?.filter((transaction) =>
-          ["Down Payment", "Land Installment"].includes(transaction.transaction_type),
-        ) ?? [];
-        const totalPaid = landPayments.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+        const totalPaid = totalPostedLandPayments(contract.transactions ?? [], contract.id);
+        const landPayments = (contract.transactions ?? []).filter((transaction) => transaction.status === "posted" && transaction.contract_id === contract.id && ["Down Payment", "Land Installment"].includes(transaction.transaction_type));
         const lastPayment = [...landPayments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
         return {
           ...contract,
           totalPaid,
-          remainingBalance: Math.max(Number(contract.final_purchase_price) - totalPaid, 0),
+          remainingBalance: remainingLandBalance(contract, contract.transactions ?? []) ?? 0,
           lastPaymentDate: lastPayment?.created_at ?? null,
           nextDueDate: nextDueDate(contract),
         };
@@ -326,7 +326,7 @@ export function ReportsPage() {
       missingReceipts: paymentsQuery.data?.filter((payment) => !payment.manual_receipt_number) ?? [],
       missingProofs: paymentsQuery.data?.filter((payment) => payment.collection_method === "Online Transfer" && !payment.payment_documents?.length) ?? [],
       missingSignedContracts: contractsQuery.data?.filter((contract) => !contract.signed_contract_file_path) ?? [],
-      customersWithoutActiveContract: customersQuery.data?.filter((customer) => !customer.contracts?.some((contract) => contract.is_active)) ?? [],
+      customersWithoutActiveContract: customersQuery.data?.filter((customer) => !canonicalActiveContract(customer.contracts ?? [])) ?? [],
       incompleteApplications: applicationsQuery.data?.filter((application) =>
         !application.phone ||
         !application.email ||

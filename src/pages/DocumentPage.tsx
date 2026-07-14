@@ -3,12 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { useCompanyProfile } from "../lib/brand";
+import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
 
 type DocumentKind = "receipt" | "balance" | "ledger";
 
-const landTypes = ["Down Payment", "Land Installment"];
 const communityTypes = ["Garbage Fee", "Road Maintenance"];
 
 export function DocumentPage() {
@@ -77,7 +77,7 @@ async function getReceiptDocument(transactionId: number) {
     transaction,
     customerContracts: customerContracts ?? [],
     authorizedAdmin: profile?.full_name ?? transaction.authorized_by,
-    remainingBalance: calculateRemainingLandBalance(transaction.contracts ?? activeContract(customerContracts ?? []), allTransactions ?? []),
+    remainingBalance: remainingLandBalance(transaction.contracts ?? activeContract(customerContracts ?? []), allTransactions ?? []),
   };
 }
 
@@ -132,9 +132,9 @@ function BalanceStatement({ data }: { data: CustomerDocumentData }) {
   const { customer, communityStatus } = data;
   const contract = activeContract(customer.contracts);
   const transactions = sortedTransactions(customer.transactions ?? []);
-  const landPaid = sumTransactions(transactions, landTypes);
+  const landPaid = contract ? totalPostedLandPayments(transactions, contract.id) : 0;
   const communityPaid = sumTransactions(transactions, communityTypes);
-  const balance = contract ? Math.max(Number(contract.final_purchase_price) - landPaid, 0) : null;
+  const balance = remainingLandBalance(contract, transactions);
 
   return (
     <DocumentShell title="Balance Statement" documentNumber={`BS-${customer.id}-${dateStamp()}`}>
@@ -161,7 +161,7 @@ function LedgerStatement({ data }: { data: CustomerDocumentData }) {
   const { customer, communityStatus } = data;
   const contract = activeContract(customer.contracts);
   const transactions = sortedTransactions(customer.transactions ?? []);
-  const landPaid = sumTransactions(transactions, landTypes);
+  const landPaid = contract ? totalPostedLandPayments(transactions, contract.id) : 0;
   const expectedLandPaid = contract ? expectedLandDue(contract) : 0;
   const missedAmount = contract ? Math.max(expectedLandPaid - landPaid, 0) : 0;
 
@@ -311,6 +311,8 @@ type TransactionRow = {
   collection_method: string;
   bank_reference: string | null;
   amount: number;
+  contract_id: number | null;
+  status: string;
   notes: string | null;
   created_at: string;
 };
@@ -330,12 +332,13 @@ function sumTransactions(rows: TransactionRow[], types: string[]) {
 }
 
 function activeContract(contracts?: ContractRow[] | null) {
-  return contracts?.find((contract) => contract.is_active) ?? contracts?.[0] ?? null;
+  return canonicalActiveContract(contracts);
 }
 
 type ContractRow = {
   id: number;
   is_active: boolean;
+  status: string;
   final_purchase_price: number;
   initial_deposit: number;
   term_months: number;
@@ -344,12 +347,6 @@ type ContractRow = {
   payment_due_day: number;
   parcels?: { lot_number?: string | null } | null;
 };
-
-function calculateRemainingLandBalance(contract: ContractRow | null, transactions: TransactionRow[]) {
-  if (!contract) return null;
-  const landPaid = sumTransactions(transactions, landTypes);
-  return Math.max(Number(contract.final_purchase_price) - landPaid, 0);
-}
 
 function nextDueDate(contract: ContractRow) {
   const now = new Date();
