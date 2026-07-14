@@ -25,6 +25,7 @@ import { getSessionAndProfile } from "../../lib/data";
 import { edgeFunctionErrorMessage } from "../../lib/functions";
 import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
+import { CANONICAL_COMPANY_NAME, CANONICAL_SHORT_NAME } from "../../lib/brand";
 import type { AppRole, DeveloperFeedbackPriority, DeveloperFeedbackType } from "../../types/database";
 
 const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }> = [
@@ -93,11 +94,11 @@ export function AdminLayout() {
         <div className="flex h-16 items-center gap-3 border-b border-white/15 px-5">
           <img
             src="/favicon/android-chrome-192x192.png"
-            alt="Wamuale Development"
+            alt={CANONICAL_COMPANY_NAME}
             className="h-11 w-11 rounded-md border border-secondary/40 bg-background object-cover shadow-sm"
           />
           <div>
-            <p className="font-display text-xl font-semibold leading-tight">Wamuale</p>
+            <p className="font-display text-xl font-semibold leading-tight">{CANONICAL_SHORT_NAME}</p>
             <p className="text-xs uppercase tracking-[0.22em] text-white/65">Development</p>
           </div>
         </div>

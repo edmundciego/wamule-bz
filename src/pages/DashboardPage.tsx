@@ -165,7 +165,7 @@ function DashboardHeader() {
       <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-slate shadow-sm">
         <span className="font-medium text-foreground">Today</span>
         <span className="mx-2 text-border">|</span>
-        {new Intl.DateTimeFormat("en-BZ", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date())}
+        {new Intl.DateTimeFormat("en-BZ", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "America/Belize" }).format(new Date())}
       </div>
     </header>
   );

@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
+import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
+import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import {
   depositStatusOptions,
   normalizeReservationWorkflowSettings,
@@ -34,7 +36,7 @@ import type {
 const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
 const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
 const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
-const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles"] as const;
+const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles", "Data Management"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
 type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
@@ -62,24 +64,19 @@ type PublicApplicationSettings = {
 };
 
 const defaultCompany: CompanyProfileSettings = {
-  company_name: "Wamuale Development",
-  logo_url: "/favicon/android-chrome-192x192.png",
-  contact_email: "",
-  phone_number: "",
-  website: "",
+  ...defaultCompanyProfile,
   location_address: "Mile 3, Hummingbird Highway, Dangriga Town, Belize",
-  short_description: "Private subdivision land development in Dangriga Town, Belize.",
 };
 
 const defaultApplication: PublicApplicationSettings = {
   applications_open: true,
   public_notice_text:
-    "Submission of this application is solely a request to be considered for the purchase of a lot within Wamuale Development.",
+    `Submission of this application is solely a request to be considered for the purchase of a lot within ${CANONICAL_COMPANY_NAME}.`,
   application_acknowledgment_text:
     "By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot.",
   show_lot_prices_publicly: true,
   show_available_lot_count_publicly: true,
-  default_confirmation_message: "Application submitted. A Wamuale Development representative will contact you after review.",
+  default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
 };
 
 export function SettingsPage() {
@@ -423,7 +420,7 @@ export function SettingsPage() {
 
         <div className="overflow-x-auto rounded-xl border border-border bg-card/90 p-2 shadow-sm shadow-primary/5">
           <div className="flex min-w-max gap-1">
-            {settingsSections.map((section) => (
+            {settingsSections.filter((section) => section !== "Data Management" || isSuperAdmin).map((section) => (
               <button
                 key={section}
                 type="button"
@@ -494,6 +491,7 @@ export function SettingsPage() {
             </Card>
           </div>
         ) : null}
+        {activeSection === "Data Management" ? <DataManagementPanel isSuperAdmin={isSuperAdmin} /> : null}
 
         {activeSection === "Payment Methods" ? (
           <ConfigList

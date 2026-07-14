@@ -13,7 +13,9 @@ function listFiles(path) {
   const base = join(root, path);
   return readdirSync(base, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => join(entry.parentPath, entry.name));
+    // Node 18 exposes the containing path as `path`; newer Node versions use
+    // `parentPath`. Support both so the security check runs in CI and locally.
+    .map((entry) => join(entry.parentPath ?? entry.path ?? base, entry.name));
 }
 
 function readAbsolute(path) {
