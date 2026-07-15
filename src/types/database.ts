@@ -692,6 +692,14 @@ export type BriefActionItem = {
   assigned_to: string | null;
   created_at: string;
   updated_at: string;
+  attention_kind: string | null;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  related_entity_id: string | null;
+  generated_status: string | null;
+  generated_due_at: string | null;
+  generated_source_updated_at: string | null;
+  destination_route: string | null;
 };
 
 export type EmailNotification = {

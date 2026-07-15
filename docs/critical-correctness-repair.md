@@ -9,22 +9,22 @@ This repair implements only Batch 1 from `internal-quality-correctness-audit.md`
 3. Immutable payment correction
 4. Canonical active-contract and financial definitions
 
-No migration has been applied or deployed by this change. The connected Wamule Supabase migration history was checked on 2026-07-14: `20260714203000_controlled_payment_removal.sql` was **not** present.
+The connected Wamule Supabase migration history was reconciled on 2026-07-14. The production-recorded versions are preserved by the matching local filenames below; the three no-op/Batch 1 migrations are not to be re-applied.
 
 ## Migrations
 
-- `20260714074603_release_quality_data_management.sql`
+- `20260714220603_20260714074603_release_quality_data_management.sql`
   - Retired before production use and replaced with a timestamp-preserving
     documented no-op. Its destructive purge workflow is not part of Batch 1
     and cannot run through `supabase db push`.
 
-- `20260714210447_critical_correctness_batch_1.sql`
+- `20260714223959_20260714210447_critical_correctness_batch_1.sql`
   - Supersedes the unsafe hard-delete payment design. If an environment previously ran it, the later migration drops `remove_payment_record`.
   - Adds transaction lifecycle fields: `posted`, `voided`, and `reversed`; void metadata; correction linkage; and `updated_at`.
   - Removes the direct transaction delete RLS policy.
   - Adds controlled `void_payment_record` RPC, `contract_void_resolutions`, `resolve_contract_void_resolution`, corrected contract validation, and canonical financial views.
 
-**Migration-chain decision:** `20260714074603_release_quality_data_management.sql` and `20260714203000_controlled_payment_removal.sql` are timestamp-preserving, documented no-ops. Neither was applied to the Wamule database. Neither creates a function, policy, data purge, or hard-delete behavior. The later Batch 1 migration defensively drops the retired payment RPC for any unknown historical environment where it may have been applied.
+**Migration-chain decision:** `20260714220603_20260714074603_release_quality_data_management.sql` and `20260714220611_20260714203000_controlled_payment_removal.sql` are documented no-ops aligned to the production migration history. Neither creates a function, policy, data purge, or hard-delete behavior. `20260714223959_20260714210447_critical_correctness_batch_1.sql` is already recorded remotely and must not be re-applied.
 
 Batch 1 also adds a database-level transaction-delete trigger. This prevents the
 legacy Super Admin test-data purge workflow from deleting a financial record;
@@ -155,7 +155,7 @@ where transaction_type in ('Down Payment', 'Land Installment')
 ## Deployment order and containment
 
 1. Back up and review migration history; verify the unsafe removal migration is not applied.
-2. Apply `20260714210447_critical_correctness_batch_1.sql` to a safe Supabase environment.
+2. Apply only the separately approved pending migration after confirming the three reconciled versions are already recorded remotely.
 3. Run the inspection queries; do not auto-correct returned records.
 4. Execute role-based RPC/RLS tests and focused workflow tests.
 5. Deploy the matching application build only after migration checks pass.

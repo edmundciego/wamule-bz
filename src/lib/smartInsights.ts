@@ -1,4 +1,5 @@
 import { formatDate } from "./utils";
+import { buildOperationalAttention, operationalAttentionInsights, type OperationalAttentionItem } from "./operationalAttention";
 import type {
   Application,
   Contract,
@@ -21,6 +22,8 @@ export type SmartInsight = {
   tone: SmartInsightTone;
   actionLabel?: string;
   metadata?: string;
+  actionHref?: string;
+  sourceItemId?: string;
 };
 
 export const activeReservationStatuses = new Set<LotReservation["status"]>([
@@ -77,12 +80,19 @@ export function leadSmartInsights(
     });
   }
 
-  if (isBeforeToday(lead.next_action_due_at, now)) {
+  const attentionItems = buildOperationalAttention({
+    leads: [lead as Lead],
+    followUps: tasks as FollowUpTask[],
+  }, now);
+  const overdueFollowUp = attentionItems.find((item) => item.kind === "overdue_follow_up");
+  if (overdueFollowUp) {
     insights.push({
       title: "Follow-up overdue.",
-      description: "The recorded next action date has passed.",
+      description: overdueFollowUp.summary,
       tone: "danger",
-      metadata: safeFormatDate(lead.next_action_due_at),
+      metadata: safeFormatDate(overdueFollowUp.dueAt ?? null),
+      actionLabel: "Open follow-up",
+      actionHref: overdueFollowUp.route,
     });
   }
 
@@ -421,50 +431,8 @@ export function customerOperationsInsights({
   });
 }
 
-export function dashboardOperationsInsights({
-  overdueFollowUps,
-  siteVisitsToday,
-  upcomingSiteVisits,
-  reservationsExpiringSoon,
-  depositsOverdue,
-  postSalesTasksOverdue,
-  documentsPendingReview,
-  collectionsHandoffReady,
-}: {
-  overdueFollowUps: number;
-  siteVisitsToday: number;
-  upcomingSiteVisits: number;
-  reservationsExpiringSoon: number;
-  depositsOverdue: number;
-  postSalesTasksOverdue: number;
-  documentsPendingReview: number;
-  collectionsHandoffReady: number;
-}): SmartInsight[] {
-  const insights: SmartInsight[] = [];
-  const counts = {
-    overdueFollowUps: safeCount(overdueFollowUps),
-    siteVisitsToday: safeCount(siteVisitsToday),
-    upcomingSiteVisits: safeCount(upcomingSiteVisits),
-    reservationsExpiringSoon: safeCount(reservationsExpiringSoon),
-    depositsOverdue: safeCount(depositsOverdue),
-    postSalesTasksOverdue: safeCount(postSalesTasksOverdue),
-    documentsPendingReview: safeCount(documentsPendingReview),
-    collectionsHandoffReady: safeCount(collectionsHandoffReady),
-  };
-  if (counts.overdueFollowUps > 0) insights.push(countInsight("Overdue follow-ups", counts.overdueFollowUps, "Sales follow-up tasks are past due.", "danger"));
-  if (counts.depositsOverdue > 0) insights.push(countInsight("Deposits overdue", counts.depositsOverdue, "Deposit due dates have passed.", "danger"));
-  if (counts.postSalesTasksOverdue > 0) insights.push(countInsight("Post-sales tasks overdue", counts.postSalesTasksOverdue, "Open post-sales tasks are past due.", "danger"));
-  if (counts.reservationsExpiringSoon > 0) insights.push(countInsight("Reservations expiring soon", counts.reservationsExpiringSoon, "Review holds expiring in the next 3 days.", "warning"));
-  if (counts.siteVisitsToday > 0) insights.push(countInsight("Site visits today", counts.siteVisitsToday, "Review today’s scheduled visits.", "action"));
-  else if (counts.upcomingSiteVisits > 0) insights.push(countInsight("Upcoming site visits", counts.upcomingSiteVisits, "Site visits are scheduled soon.", "info"));
-  if (counts.documentsPendingReview > 0) insights.push(countInsight("Documents pending review", counts.documentsPendingReview, "Post-sales documents need staff review.", "action"));
-  if (counts.collectionsHandoffReady > 0) insights.push(countInsight("Collections handoff ready", counts.collectionsHandoffReady, "Customers are ready for collections handoff.", "success"));
-
-  return withFallback(insights.slice(0, 6), {
-    title: "No urgent operations flags.",
-    description: "Live CRM records do not show overdue follow-ups, overdue deposits, or pending post-sales blockers.",
-    tone: "success",
-  });
+export function dashboardOperationsInsights(items: OperationalAttentionItem[]): SmartInsight[] {
+  return operationalAttentionInsights(items);
 }
 
 export function collectionsOperationsInsights({

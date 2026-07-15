@@ -9,6 +9,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { useCompanyProfile } from "../lib/brand";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
+import { isOperationalAttentionCurrent } from "../lib/operationalAttention";
 import { cn, formatDate } from "../lib/utils";
 import type { AiDailyBrief, AppRole, BriefActionItem, BriefActionItemStatus } from "../types/database";
 
@@ -53,6 +54,13 @@ export function DailyBriefsPage() {
       if (queryError) throw queryError;
       return data as BriefActionItem[];
     },
+  });
+
+  const { data: revalidation = {}, isError: revalidationError } = useQuery({
+    queryKey: ["brief-action-revalidation", (actionItems ?? []).map((item) => `${item.id}:${item.updated_at}`).join(",")],
+    enabled: Boolean(actionItems?.length),
+    queryFn: () => revalidateBriefItems(actionItems ?? []),
+    staleTime: 30_000,
   });
 
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
@@ -175,15 +183,17 @@ export function DailyBriefsPage() {
             <SummaryCards brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
             <TodayPriorities
               items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")}
+              revalidation={revalidation}
               canManage={canGenerateBrief}
               showAll={showAllPriorities}
               onToggleShowAll={() => setShowAllPriorities((current) => !current)}
               onUpdate={updateActionItem}
             />
             <WhatChanged brief={selectedBrief} />
-            <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} canManage={canGenerateBrief} onUpdate={updateActionItem} />
+            <OpenActionItems items={(actionItems ?? []).filter((item) => item.status === "Open" || item.status === "In Progress")} revalidation={revalidation} canManage={canGenerateBrief} onUpdate={updateActionItem} />
+            {revalidationError ? <div className="crm-warning-panel flex flex-wrap items-center justify-between gap-3 p-3 text-sm"><span>Some source records could not be revalidated. Retry before acting on an alert.</span><Button type="button" variant="outline" className="h-8" onClick={() => void queryClient.invalidateQueries({ queryKey: ["brief-action-revalidation"] })}>Retry</Button></div> : null}
             <BriefComparison brief={selectedBrief} previousBrief={previousBrief(briefs ?? [], selectedBrief.id)} actionItems={actionItems ?? []} />
-            <BriefSections brief={selectedBrief} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
+            <BriefSections brief={selectedBrief} actionItems={actionItems ?? []} checkedActions={checkedActions} onToggleAction={(key) => setCheckedActions((current) => ({ ...current, [key]: !current[key] }))} />
           </>
         ) : !isLoading ? (
           <Card className="v2-advisor-panel">
@@ -235,12 +245,14 @@ function SummaryCards({
 
 function TodayPriorities({
   items,
+  revalidation,
   canManage,
   showAll,
   onToggleShowAll,
   onUpdate,
 }: {
   items: BriefActionItem[];
+  revalidation: Record<number, BriefRevalidationState>;
   canManage: boolean;
   showAll: boolean;
   onToggleShowAll: () => void;
@@ -264,7 +276,7 @@ function TodayPriorities({
       </CardHeader>
       <CardContent className="grid gap-3">
         {visible.length ? visible.map((item) => (
-          <ActionItemCard key={item.id} item={item} canManage={canManage} onUpdate={onUpdate} compact />
+          <ActionItemCard key={item.id} item={item} revalidation={revalidation[item.id]} canManage={canManage} onUpdate={onUpdate} compact />
         )) : (
           <div className="crm-success-panel p-4 text-sm">No open priorities need attention right now.</div>
         )}
@@ -349,10 +361,12 @@ function BriefComparison({
 
 function OpenActionItems({
   items,
+  revalidation,
   canManage,
   onUpdate,
 }: {
   items: BriefActionItem[];
+  revalidation: Record<number, BriefRevalidationState>;
   canManage: boolean;
   onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
 }) {
@@ -377,7 +391,7 @@ function OpenActionItems({
                   <h3 className="text-sm font-semibold text-primary">{group}</h3>
                   <div className="grid gap-3 md:grid-cols-2">
                     {groupItems.map((item) => (
-                      <ActionItemCard key={item.id} item={item} canManage={canManage} onUpdate={onUpdate} />
+                      <ActionItemCard key={item.id} item={item} revalidation={revalidation[item.id]} canManage={canManage} onUpdate={onUpdate} />
                     ))}
                   </div>
                 </div>
@@ -392,11 +406,13 @@ function OpenActionItems({
 
 function ActionItemCard({
   item,
+  revalidation,
   canManage,
   onUpdate,
   compact = false,
 }: {
   item: BriefActionItem;
+  revalidation?: BriefRevalidationState;
   canManage: boolean;
   onUpdate: (id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) => Promise<void>;
   compact?: boolean;
@@ -410,6 +426,7 @@ function ActionItemCard({
         </div>
         <Badge tone={severityTone(item.severity)}>{item.severity}</Badge>
       </div>
+      {revalidation ? <div className="mt-2"><Badge tone={revalidationTone(revalidation)}>{revalidation}</Badge></div> : null}
       {!compact ? (
         <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
           <span>First seen: {safeFormatDate(item.first_seen_on)}</span>
@@ -476,10 +493,12 @@ function LatestBriefCard({ brief }: { brief: AiDailyBrief }) {
 
 function BriefSections({
   brief,
+  actionItems,
   checkedActions,
   onToggleAction,
 }: {
   brief: AiDailyBrief;
+  actionItems: BriefActionItem[];
   checkedActions: Record<string, boolean>;
   onToggleAction: (key: string) => void;
 }) {
@@ -546,6 +565,12 @@ function BriefSections({
                       <span className={cn("grid gap-1", checkedActions[key] && "text-muted-foreground line-through")}>
                         <span className="font-medium">{itemTitle(item)}</span>
                         <span className="text-muted-foreground">{itemDetail(item)}</span>
+                        {(() => {
+                          const sourceKey = String(itemRecord(item)?.source_key ?? "");
+                          const linked = actionItems.find((actionItem) => actionItem.source_key === sourceKey);
+                          const href = linked ? relatedHref(linked) : null;
+                          return href ? <a className="text-xs font-semibold text-primary underline-offset-2 hover:underline" href={href}>Open source record</a> : null;
+                        })()}
                       </span>
                     </label>
                   );
@@ -687,6 +712,12 @@ function severityTone(severity: BriefActionItem["severity"]) {
 
 function groupActionItems(items: BriefActionItem[]) {
   const orderedGroups = [
+    "Overdue follow-ups",
+    "Reservations and deposits",
+    "Applications awaiting review",
+    "Collections alerts",
+    "Post-sales blockers",
+    "Site visits",
     "Missing receipts",
     "Missing proof",
     "Missing signed contracts",
@@ -703,6 +734,12 @@ function groupActionItems(items: BriefActionItem[]) {
 }
 
 function carryoverGroupLabel(item: BriefActionItem) {
+  if (["overdue_follow_up", "follow_up_due_today"].includes(item.attention_kind ?? "")) return "Overdue follow-ups";
+  if (["reservation_expiring", "deposit_overdue"].includes(item.attention_kind ?? "")) return "Reservations and deposits";
+  if (item.attention_kind === "application_review") return "Applications awaiting review";
+  if (item.attention_kind === "collection_alert") return "Collections alerts";
+  if (["post_sales_blocker", "post_sales_task_overdue"].includes(item.attention_kind ?? "")) return "Post-sales blockers";
+  if (["site_visit_today", "site_visit_upcoming"].includes(item.attention_kind ?? "")) return "Site visits";
   if (item.source_type === "Missing receipt numbers") return "Missing receipts";
   if (item.source_type === "Missing transfer proof") return "Missing proof";
   if (item.source_type === "Missing signed contracts") return "Missing signed contracts";
@@ -761,6 +798,67 @@ function resolvedSince(items: BriefActionItem[], previousBrief: AiDailyBrief | n
   return items.filter((item) => item.status === "Done" && item.resolved_at && new Date(item.resolved_at).getTime() >= since).length;
 }
 
+type BriefRevalidationState = "Current" | "Resolved since brief" | "Updated since brief" | "Source unavailable";
+type DynamicSourceQuery = {
+  select: (columns: string) => DynamicSourceQuery;
+  eq: (column: string, value: string) => DynamicSourceQuery;
+  maybeSingle: () => Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }>;
+};
+type DynamicSourceClient = { from: (table: string) => DynamicSourceQuery };
+
+async function revalidateBriefItems(items: BriefActionItem[]) {
+  const result: Record<number, BriefRevalidationState> = {};
+  await Promise.all(items.map(async (item) => {
+    const table = item.source_entity_type ? sourceTable(item.source_entity_type) : item.related_table;
+    const recordId = item.source_entity_id ?? item.related_record_id;
+    if (!table || !recordId || !item.attention_kind) {
+      result[item.id] = "Current";
+      return;
+    }
+    const select = table === "transactions" ? "*, payment_documents(id)" : table === "follow_up_tasks" ? "*, leads(id, pipeline_stage)" : "*";
+    const { data, error } = await (supabase as unknown as DynamicSourceClient).from(table).select(select).eq("id", recordId).maybeSingle();
+    if (error || !data) {
+      result[item.id] = "Source unavailable";
+      return;
+    }
+    const current = isOperationalAttentionCurrent(
+      { kind: item.attention_kind as Parameters<typeof isOperationalAttentionCurrent>[0]["kind"], dueAt: item.generated_due_at, currentStatus: item.generated_status ?? "" },
+      data as Record<string, unknown>,
+    );
+    if (!current) {
+      result[item.id] = "Resolved since brief";
+      return;
+    }
+    const generatedAt = item.generated_source_updated_at ? new Date(item.generated_source_updated_at).getTime() : 0;
+    const currentUpdatedAt = new Date(String((data as Record<string, unknown>).updated_at ?? "")).getTime();
+    result[item.id] = generatedAt && currentUpdatedAt > generatedAt ? "Updated since brief" : "Current";
+  }));
+  return result;
+}
+
+function sourceTable(entityType: string) {
+  const tableByType: Record<string, string> = {
+    lead: "leads",
+    follow_up_task: "follow_up_tasks",
+    site_visit: "site_visits",
+    application: "applications",
+    reservation: "lot_reservations",
+    payment: "transactions",
+    payment_request: "payment_requests",
+    customer: "customers",
+    post_sales_task: "post_sales_tasks",
+    post_sales_checklist: "post_sales_checklists",
+  };
+  return tableByType[entityType] ?? null;
+}
+
+function revalidationTone(state: BriefRevalidationState) {
+  if (state === "Current") return "green" as const;
+  if (state === "Resolved since brief") return "blue" as const;
+  if (state === "Source unavailable") return "red" as const;
+  return "amber" as const;
+}
+
 function countChangeLabel(current: number, previous: number) {
   const diff = current - previous;
   if (diff === 0) return `${current} open, no change`;
@@ -768,14 +866,18 @@ function countChangeLabel(current: number, previous: number) {
 }
 
 function relatedHref(item: BriefActionItem) {
+  if (item.destination_route) return item.destination_route;
   if (!item.related_table || !item.related_record_id) return null;
   if (item.related_table === "customers") return `/customers/${item.related_record_id}`;
   if (item.related_table === "contracts") return `/contracts/${item.related_record_id}`;
-  if (item.related_table === "applications") return "/applications";
-  if (item.related_table === "transactions") return "/payments";
+  if (item.related_table === "applications") return `/applications?application=${item.related_record_id}`;
+  if (item.related_table === "transactions") return `/payments?payment=${item.related_record_id}`;
   if (item.related_table === "parcels") return "/lots";
-  if (["follow_up_tasks", "lot_reservations", "leads"].includes(item.related_table)) return "/leads";
-  if (["post_sales_tasks", "post_sales_checklists", "payment_requests"].includes(item.related_table)) return item.related_record_id ? "/customers" : null;
+  if (item.related_table === "follow_up_tasks") return `/leads?focus=followups&followup=${item.related_record_id}`;
+  if (item.related_table === "lot_reservations") return `/leads?focus=reservations&reservation=${item.related_record_id}`;
+  if (item.related_table === "leads") return `/leads?lead=${item.related_record_id}`;
+  if (["post_sales_tasks", "post_sales_checklists"].includes(item.related_table)) return `/customers?tab=post-sales&record=${item.related_record_id}`;
+  if (item.related_table === "payment_requests") return `/customers?tab=requests&request=${item.related_record_id}`;
   return null;
 }
 

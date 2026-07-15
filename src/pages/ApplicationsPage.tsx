@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Field";
@@ -23,12 +23,14 @@ type LotOption = { id: number; lot_number: string | null; dimensions: string | n
 
 export function ApplicationsPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [selectedLots, setSelectedLots] = useState<Record<number, string>>({});
   const [selectedStatus, setSelectedStatus] = useState<ReviewFilter>("Pending Review");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedApplicationId, setSelectedApplicationId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [generatingReviewId, setGeneratingReviewId] = useState<number | null>(null);
+  const requestedApplicationId = searchParams.get("application");
   const { data: sessionProfile } = useQuery({
     queryKey: ["session-profile"],
     queryFn: getSessionAndProfile,
@@ -277,7 +279,11 @@ export function ApplicationsPage() {
   const canWriteSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const canGenerateAiReview = currentRole === "Super Admin" || currentRole === "Admin";
   const aiReviewEnabled = Boolean(aiSettings?.is_enabled && aiSettings.application_summary_enabled);
-  const applications = data ?? [];
+  const applications = useMemo(() => data ?? [], [data]);
+  useEffect(() => {
+    if (!requestedApplicationId || !applications.some((application) => String(application.id) === requestedApplicationId)) return;
+    setSelectedApplicationId(Number(requestedApplicationId));
+  }, [applications, requestedApplicationId]);
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredApplications = applications.filter((application) => {
     const matchesStatus = selectedStatus === "All" || application.status === selectedStatus;
@@ -292,11 +298,9 @@ export function ApplicationsPage() {
     ].join(" ").toLowerCase();
     return matchesStatus && (!normalizedSearch || searchable.includes(normalizedSearch));
   });
-  const selectedApplication =
-    applications.find((application) => application.id === selectedApplicationId) ??
-    filteredApplications[0] ??
-    applications[0] ??
-    null;
+  const selectedApplication = requestedApplicationId
+    ? applications.find((application) => String(application.id) === requestedApplicationId) ?? null
+    : applications.find((application) => application.id === selectedApplicationId) ?? filteredApplications[0] ?? applications[0] ?? null;
 
   return (
     <>
@@ -367,7 +371,7 @@ export function ApplicationsPage() {
           />
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
-            No applications match the current review filter.
+            {requestedApplicationId ? "The requested application is no longer available or you do not have access to it." : "No applications match the current review filter."}
           </div>
         )}
       </section>

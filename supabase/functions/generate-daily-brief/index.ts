@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isActiveContract, remainingLandBalance } from "../_shared/financial.ts";
+import { buildOperationalAttention, type OperationalAttentionItem } from "../_shared/operationalAttention.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -29,6 +30,14 @@ type CurrentIssue = {
   severity: "Info" | "Amber" | "Red";
   related_table: string | null;
   related_record_id: string | null;
+  attention_kind: string | null;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  related_entity_id: string | null;
+  generated_status: string | null;
+  generated_due_at: string | null;
+  generated_source_updated_at: string | null;
+  destination_route: string | null;
 };
 
 type OperationalData = {
@@ -296,7 +305,6 @@ function parsePeriod(periodStartInput?: string, periodEndInput?: string) {
 
 function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIssue[]): BriefOutput {
   const today = startOfDay(new Date());
-  const tomorrow = addDays(today, 1);
   const weekEnd = addDays(today, 7);
 
   const periodApplications = data.applications.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
@@ -322,11 +330,12 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
 
   const periodPayments = data.payments.filter((row) => row.status === "posted" && inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodPaymentDocuments = data.paymentDocuments.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
+  const attentionItems = currentIssues.filter((issue) => Boolean(issue.attention_kind));
   const collected = sum(periodPayments, "amount");
   const cashTotal = sum(periodPayments.filter((row) => row.collection_method === "Cash"), "amount");
   const transferTotal = sum(periodPayments.filter((row) => ["Online Transfer", "Bank Transfer"].includes(String(row.collection_method))), "amount");
-  const missingReceipts = data.payments.filter((row) => !row.manual_receipt_number);
-  const missingProof = data.payments.filter((row) => ["Online Transfer", "Bank Transfer"].includes(String(row.collection_method)) && !relationArray(row.payment_documents).length);
+  const missingReceipts = attentionItems.filter((issue) => issue.attention_kind === "missing_receipt");
+  const missingProof = attentionItems.filter((issue) => issue.attention_kind === "missing_transfer_proof");
   const duplicateRefs = duplicateBankReferences(data.payments);
   const incompletePayments = data.payments.filter((row) => !row.manual_receipt_number || (["Online Transfer", "Bank Transfer"].includes(String(row.collection_method)) && !row.bank_reference));
 
@@ -346,7 +355,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   const openPaymentRequests = data.paymentRequests.filter((row) => ["Draft", "Sent"].includes(String(row.status)));
   const periodPaymentRequests = data.paymentRequests.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodUpdatedPaymentRequests = data.paymentRequests.filter((row) => updatedInPeriod(row, data.periodStart, data.periodEnd));
-  const overduePaymentRequests = openPaymentRequests.filter((row) => isBefore(row.due_date, today));
+  const overduePaymentRequests = attentionItems.filter((issue) => issue.attention_kind === "collection_alert");
 
   const periodLeads = data.leads.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
   const periodUpdatedLeads = data.leads.filter((row) => updatedInPeriod(row, data.periodStart, data.periodEnd));
@@ -358,42 +367,37 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
     !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && Boolean(row.next_action)
   );
   const possibleDuplicateLeads = data.leads.filter((row) => Boolean(row.possible_duplicate));
-  const overdueLeadNextActions = data.leads.filter((row) =>
-    !["closed_won", "lost_inactive"].includes(String(row.pipeline_stage)) && isBefore(row.next_action_due_at, today)
-  );
+  const overdueLeadNextActions = attentionItems.filter((issue) => issue.attention_kind === "overdue_follow_up");
   const familyDecisionLeads = data.leads.filter((row) => row.pipeline_stage === "family_decision");
   const paymentPlanReviewLeads = data.leads.filter((row) => row.pipeline_stage === "payment_plan_review");
   const depositPendingLeads = data.leads.filter((row) => row.pipeline_stage === "deposit_pending");
 
   const openFollowUps = data.followUps.filter((row) => ["open", "in_progress"].includes(String(row.status)));
-  const dueTodayFollowUps = openFollowUps.filter((row) => isWithin(row.due_at, today, tomorrow));
-  const overdueFollowUps = openFollowUps.filter((row) => isBefore(row.due_at, today));
+  const dueTodayFollowUps = attentionItems.filter((issue) => issue.attention_kind === "follow_up_due_today");
+  const overdueFollowUps = attentionItems.filter((issue) => issue.attention_kind === "overdue_follow_up");
   const completedFollowUps = data.followUps.filter((row) => row.status === "completed" && inPeriod(row.completed_at ?? row.updated_at, data.periodStart, data.periodEnd));
   const urgentFollowUps = openFollowUps.filter((row) => ["high", "urgent"].includes(String(row.priority)));
 
-  const openSiteVisits = data.siteVisits.filter((row) => ["scheduled", "rescheduled"].includes(String(row.status)));
-  const siteVisitsToday = openSiteVisits.filter((row) => isWithin(row.scheduled_at, today, tomorrow));
-  const upcomingSiteVisits = openSiteVisits.filter((row) => isWithin(row.scheduled_at, today, weekEnd));
+  const siteVisitsToday = attentionItems.filter((issue) => issue.attention_kind === "site_visit_today");
+  const upcomingSiteVisits = attentionItems.filter((issue) => ["site_visit_today", "site_visit_upcoming"].includes(String(issue.attention_kind)));
   const completedSiteVisits = data.siteVisits.filter((row) => row.status === "completed" && inPeriod(row.completed_at ?? row.updated_at, data.periodStart, data.periodEnd));
   const missedSiteVisits = data.siteVisits.filter((row) => ["no_show", "cancelled"].includes(String(row.status)) && inPeriod(row.updated_at, data.periodStart, data.periodEnd));
 
   const activeReservations = data.reservations.filter((row) => activeReservationStatuses().has(String(row.status)));
   const periodReservations = data.reservations.filter((row) => inPeriod(row.created_at, data.periodStart, data.periodEnd));
-  const expiringSoonReservations = activeReservations.filter((row) => isWithinInclusive(row.expires_at, today, addDays(today, 3)));
+  const expiringSoonReservations = attentionItems.filter((issue) => issue.attention_kind === "reservation_expiring");
   const expiredReservations = activeReservations.filter((row) => isBefore(row.expires_at, today));
   const releasedCancelledReservations = data.reservations.filter((row) => ["released", "cancelled"].includes(String(row.status)) && inPeriod(row.updated_at, data.periodStart, data.periodEnd));
 
   const depositPendingReservations = activeReservations.filter((row) => row.deposit_status === "pending" || row.status === "deposit_pending");
-  const depositOverdueReservations = activeReservations.filter((row) =>
-    row.deposit_status === "overdue" || (row.deposit_status === "pending" && isBefore(row.deposit_due_at, today))
-  );
+  const depositOverdueReservations = attentionItems.filter((issue) => issue.attention_kind === "deposit_overdue");
   const proofSubmittedReservations = activeReservations.filter((row) => row.deposit_status === "proof_submitted");
   const depositConfirmedReservations = activeReservations.filter((row) => row.deposit_status === "confirmed" || row.status === "deposit_confirmed");
   const readyNextStepReservations = depositConfirmedReservations.filter((row) => !row.converted_application_id && !row.converted_contract_id);
 
   const openPostSalesTasks = data.postSalesTasks.filter((row) => ["open", "in_progress", "blocked"].includes(String(row.status)));
-  const overduePostSalesTasks = openPostSalesTasks.filter((row) => isBefore(row.due_at, today));
-  const blockedPostSalesChecklists = data.postSalesChecklists.filter((row) => row.status === "blocked");
+  const overduePostSalesTasks = attentionItems.filter((issue) => issue.attention_kind === "post_sales_task_overdue");
+  const blockedPostSalesChecklists = attentionItems.filter((issue) => issue.attention_kind === "post_sales_blocker");
   const agreementsReady = data.postSalesChecklists.filter((row) => ["ready_for_review", "sent_for_signature"].includes(String(row.agreement_status)));
   const documentsPending = data.postSalesChecklists.filter((row) => ["missing_documents", "pending_review"].includes(String(row.document_status)));
   const paymentSetupPending = data.postSalesChecklists.filter((row) => row.payment_setup_status === "pending");
@@ -454,26 +458,19 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   if (documentsPending.length) alerts.push(alert("amber", "Post-sales documents pending", `${documentsPending.length} checklists have missing or pending documents.`));
   if (handoffReady.length) alerts.push(alert("amber", "Collections handoff ready", `${handoffReady.length} customers are ready for collections handoff.`));
 
-  overdueFollowUps.slice(0, 5).forEach((row) => recommendedActions.push(action("Follow up on overdue lead task", String(row.title ?? "Sales follow-up task"), "follow_up_task", row.id)));
   possibleDuplicateLeads.slice(0, 5).forEach((row) => recommendedActions.push(action("Review possible duplicate lead", `${row.full_name ?? "Lead"}: ${row.duplicate_reason ?? "Possible duplicate detected."}`, "lead", row.id)));
   urgentFollowUps.slice(0, 5).forEach((row) => recommendedActions.push(action("Review high-priority buyer follow-up", String(row.title ?? "Sales follow-up task"), "follow_up_task", row.id)));
-  expiringSoonReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review reservation expiring soon", reservationLabel(row), "reservation", row.id)));
   expiredReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review expired active reservation", reservationLabel(row), "reservation", row.id)));
-  depositOverdueReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review overdue deposit readiness", reservationLabel(row), "reservation", row.id)));
   proofSubmittedReservations.slice(0, 5).forEach((row) => recommendedActions.push(action("Review deposit proof submission", reservationLabel(row), "reservation", row.id)));
-  overduePostSalesTasks.slice(0, 5).forEach((row) => recommendedActions.push(action("Review overdue post-sales task", String(row.title ?? "Post-sales task"), "post_sales_task", row.id)));
   documentsPending.slice(0, 5).forEach((row) => recommendedActions.push(action("Request or review post-sales documents", `Checklist #${row.id}`, "post_sales_checklist", row.id)));
   handoffReady.slice(0, 5).forEach((row) => recommendedActions.push(action("Hand off ready customer to collections", `Checklist #${row.id}`, "post_sales_checklist", row.id)));
-  overduePaymentRequests.slice(0, 5).forEach((row) => recommendedActions.push(action("Review overdue payment request", `${customerName(row.customers)} request #${row.id}`, "payment_request", row.id)));
   approvedWithoutPostSales.slice(0, 5).forEach((row) => recommendedActions.push(action("Start post-sales checklist when ready", applicantName(row), "application", row.id)));
   pendingApplications.slice(0, 5).forEach((row) => recommendedActions.push(action("Review pending application", applicantName(row), "application", row.id)));
   incompleteApplications.slice(0, 5).forEach((row) => recommendedActions.push(action("Request missing application information", `${applicantName(row)}: ${missingApplicationFields(row).join(", ")}`, "application", row.id)));
   conflictApplications.slice(0, 5).forEach((row) => recommendedActions.push(action("Resolve preferred lot conflict", applicantName(row), "application", row.id)));
-  missingReceipts.slice(0, 5).forEach((row) => recommendedActions.push(action("Enter manual receipt number", `${customerName(row.customers)} payment #${row.id}`, "payment", row.id)));
-  missingProof.slice(0, 5).forEach((row) => recommendedActions.push(action("Upload or confirm transfer proof", `${customerName(row.customers)} payment #${row.id}`, "payment", row.id)));
   missingSignedContracts.slice(0, 5).forEach((row) => recommendedActions.push(action("Upload signed contract", `${customerName(row.customers)} contract #${row.id}`, "contract", row.id)));
   overdue.slice(0, 5).forEach(({ contract }) => recommendedActions.push(action("Contact overdue customer", `${customerName(contract.customers)} on Lot ${nestedLot(contract)}`, "customer", contract.customer_id)));
-  currentIssues.forEach((issue) => recommendedActions.push(action(issue.title, issue.details, issue.related_table ?? issue.source_type, issue.related_record_id, issue.source_key)));
+  currentIssues.forEach((issue) => recommendedActions.push(sourceAction(issue)));
 
   if (!alerts.filter((item) => !isSection(item)).length) alerts.push(alert("green", "No urgent alerts", "No urgent operational alerts were detected from the available records."));
   if (!recommendedActions.length) recommendedActions.push(action("Monitor operations", "No immediate manual follow-up was detected for this period.", "brief"));
@@ -574,86 +571,61 @@ function summarizeForPrompt(data: OperationalData) {
 }
 
 function buildCurrentIssues(data: OperationalData): CurrentIssue[] {
+  const issues: CurrentIssue[] = buildOperationalAttention({
+    leads: data.leads,
+    followUps: data.followUps,
+    reservations: data.reservations,
+    applications: data.applications,
+    payments: data.payments,
+    paymentRequests: data.paymentRequests,
+    postSalesChecklists: data.postSalesChecklists,
+    postSalesTasks: data.postSalesTasks,
+    siteVisits: data.siteVisits,
+  }).map(attentionIssue);
+
+  // These legacy checks remain source-backed but are represented in the same
+  // action-item shape until their records are added to the shared attention
+  // inputs used by every surface.
   const today = startOfDay(new Date());
-  const issues: CurrentIssue[] = [];
   const activeContracts = data.contracts.filter((row) => Boolean(row.is_active));
   const activeApplications = data.applications.filter((row) => row.status === "Pending Review");
   const lotsById = new Map(data.lots.map((lot) => [Number(lot.id), lot]));
-
-  data.payments
-    .filter((row) => !String(row.manual_receipt_number ?? "").trim())
-    .forEach((row) => issues.push({
-      source_type: "Missing receipt numbers",
-      source_key: `missing-receipt-number:transaction:${row.id}`,
-      title: "Enter manual receipt number",
-      details: `${customerName(row.customers)} payment #${row.id}`,
-      severity: "Amber",
-      related_table: "transactions",
-      related_record_id: stringId(row.id),
-    }));
-
-  data.payments
-    .filter((row) => ["Online Transfer", "Bank Transfer"].includes(String(row.collection_method)) && !relationArray(row.payment_documents).length)
-    .forEach((row) => issues.push({
-      source_type: "Missing transfer proof",
-      source_key: `missing-proof:transaction:${row.id}`,
-      title: "Upload or confirm transfer proof",
-      details: `${customerName(row.customers)} payment #${row.id}`,
-      severity: "Amber",
-      related_table: "transactions",
-      related_record_id: stringId(row.id),
-    }));
-
-  activeContracts
-    .filter((row) => !String(row.signed_contract_file_path ?? "").trim())
-    .forEach((row) => issues.push({
-      source_type: "Missing signed contracts",
-      source_key: `missing-signed-contract:contract:${row.id}`,
-      title: "Upload signed contract",
-      details: `${customerName(row.customers)} contract #${row.id}`,
-      severity: "Amber",
-      related_table: "contracts",
-      related_record_id: stringId(row.id),
-    }));
-
-  activeApplications
-    .filter((row) => applicationHasUnavailableLot(row, data.lots))
-    .forEach((row) => issues.push({
-      source_type: "Lot conflicts",
-      source_key: `lot-conflict:application:${row.id}`,
-      title: "Resolve unavailable preferred lot",
-      details: `${applicantName(row)} selected ${preferredLotLabel(row, lotsById)}.`,
-      severity: "Red",
-      related_table: "applications",
-      related_record_id: stringId(row.id),
-    }));
-
-  activeContracts
-    .map((contract) => ({ contract, dueDate: dueDateForCurrentCycle(contract, today) }))
-    .filter((row) => row.dueDate < today && outstandingBalance(row.contract) > 0)
-    .forEach(({ contract }) => issues.push({
-      source_type: "Overdue accounts",
-      source_key: `overdue-account:customer:${contract.customer_id}:contract:${contract.id}`,
-      title: "Review overdue account",
-      details: `${customerName(contract.customers)} on Lot ${nestedLot(contract)} appears overdue.`,
-      severity: "Red",
-      related_table: "customers",
-      related_record_id: stringId(contract.customer_id),
-    }));
-
-  data.paymentRequests
-    .filter((row) => ["Draft", "Sent"].includes(String(row.status)))
-    .forEach((row) => issues.push({
-      source_type: "Open payment requests",
-      source_key: `open-payment-request:payment_request:${row.id}`,
-      title: "Review open payment request",
-      details: `${customerName(row.customers)} request #${row.id}`,
-      severity: isBefore(row.due_date, today) ? "Red" : "Info",
-      related_table: "payment_requests",
-      related_record_id: stringId(row.id),
-    }));
-
+  activeContracts.filter((row) => !String(row.signed_contract_file_path ?? "").trim()).forEach((row) => issues.push(issue({
+    source_type: "Missing signed contracts", source_key: `missing-signed-contract:contract:${row.id}`, title: "Upload signed contract", details: `${customerName(row.customers)} contract #${row.id}`, severity: "Amber", related_table: "contracts", related_record_id: stringId(row.id),
+  })));
+  activeApplications.filter((row) => applicationHasUnavailableLot(row, data.lots)).forEach((row) => issues.push(issue({
+    source_type: "Lot conflicts", source_key: `lot-conflict:application:${row.id}`, title: "Resolve unavailable preferred lot", details: `${applicantName(row)} selected ${preferredLotLabel(row, lotsById)}.`, severity: "Red", related_table: "applications", related_record_id: stringId(row.id),
+  })));
+  activeContracts.map((contract) => ({ contract, dueDate: dueDateForCurrentCycle(contract, today) })).filter((row) => row.dueDate < today && outstandingBalance(row.contract) > 0).forEach(({ contract }) => issues.push(issue({
+    source_type: "Overdue accounts", source_key: `overdue-account:customer:${contract.customer_id}:contract:${contract.id}`, title: "Review overdue account", details: `${customerName(contract.customers)} on Lot ${nestedLot(contract)} appears overdue.`, severity: "Red", related_table: "customers", related_record_id: stringId(contract.customer_id),
+  })));
   return dedupeIssues(issues);
+}
+
+function attentionIssue(item: OperationalAttentionItem): CurrentIssue {
+  const tableByType: Record<string, string> = { lead: "leads", follow_up_task: "follow_up_tasks", site_visit: "site_visits", application: "applications", reservation: "lot_reservations", payment: "transactions", payment_request: "payment_requests", customer: "customers", post_sales_task: "post_sales_tasks", post_sales_checklist: "post_sales_checklists" };
+  const severity = item.severity === "critical" ? "Red" : item.severity === "warning" ? "Amber" : "Info";
+  return {
+    source_type: item.kind,
+    source_key: item.id,
+    title: item.title,
+    details: item.summary,
+    severity,
+    related_table: tableByType[item.entityType] ?? item.entityType,
+    related_record_id: item.entityId,
+    attention_kind: item.kind,
+    source_entity_type: item.entityType,
+    source_entity_id: item.entityId,
+    related_entity_id: item.relatedEntityId,
+    generated_status: item.currentStatus,
+    generated_due_at: item.dueAt,
+    generated_source_updated_at: item.sourceUpdatedAt,
+    destination_route: item.route,
+  };
+}
+
+function issue(value: Omit<CurrentIssue, "attention_kind" | "source_entity_type" | "source_entity_id" | "related_entity_id" | "generated_status" | "generated_due_at" | "generated_source_updated_at" | "destination_route">): CurrentIssue {
+  return { ...value, attention_kind: null, source_entity_type: null, source_entity_id: null, related_entity_id: null, generated_status: null, generated_due_at: null, generated_source_updated_at: null, destination_route: null };
 }
 
 function dedupeIssues(issues: CurrentIssue[]) {
@@ -673,7 +645,7 @@ function withSourceActions(brief: BriefOutput, issues: CurrentIssue[]): BriefOut
   );
   const issueActions = issues
     .filter((issue) => !existingKeys.has(issue.source_key))
-    .map((issue) => action(issue.title, issue.details, issue.related_table ?? issue.source_type, issue.related_record_id, issue.source_key));
+    .map((issue) => sourceAction(issue));
   return { ...brief, recommended_actions: [...issueActions, ...brief.recommended_actions] };
 }
 
@@ -740,16 +712,6 @@ function isBefore(value: unknown, date: Date) {
   return !Number.isNaN(parsed.getTime()) && parsed < date;
 }
 
-function isWithin(value: unknown, start: Date, end: Date) {
-  const parsed = new Date(String(value ?? ""));
-  return !Number.isNaN(parsed.getTime()) && parsed >= start && parsed < end;
-}
-
-function isWithinInclusive(value: unknown, start: Date, end: Date) {
-  const parsed = new Date(String(value ?? ""));
-  return !Number.isNaN(parsed.getTime()) && parsed >= start && parsed <= end;
-}
-
 function sum(rows: Record<string, unknown>[], field: string) {
   return rows.reduce((total, row) => total + Number(row[field] ?? 0), 0);
 }
@@ -791,6 +753,20 @@ function nestedLot(contract: Record<string, unknown>) {
 
 function action(title: string, detail: string, recordType: string, recordId?: unknown, sourceKey?: string) {
   return { title, detail, record_type: recordType, record_id: recordId ?? null, source_key: sourceKey ?? null };
+}
+
+function sourceAction(issue: CurrentIssue) {
+  return {
+    ...action(issue.title, issue.details, issue.related_table ?? issue.source_type, issue.related_record_id, issue.source_key),
+    attention_kind: issue.attention_kind,
+    source_entity_type: issue.source_entity_type,
+    source_entity_id: issue.source_entity_id,
+    related_entity_id: issue.related_entity_id,
+    generated_status: issue.generated_status,
+    generated_due_at: issue.generated_due_at,
+    generated_source_updated_at: issue.generated_source_updated_at,
+    destination_route: issue.destination_route,
+  };
 }
 
 function alert(severity: string, title: string, detail: string) {
@@ -934,6 +910,14 @@ async function syncBriefActionItems(
           source_type: item.source_type,
           related_table: item.related_table,
           related_record_id: item.related_record_id,
+          attention_kind: item.attention_kind,
+          source_entity_type: item.source_entity_type,
+          source_entity_id: item.source_entity_id,
+          related_entity_id: item.related_entity_id,
+          generated_status: item.generated_status,
+          generated_due_at: item.generated_due_at,
+          generated_source_updated_at: item.generated_source_updated_at,
+          destination_route: item.destination_route,
           last_seen_on: seenDate,
         })
         .eq("id", existing.id)
@@ -972,6 +956,14 @@ function actionItemFromIssue(issue: CurrentIssue, brief: Record<string, unknown>
     status: "Open",
     related_table: issue.related_table,
     related_record_id: issue.related_record_id,
+    attention_kind: issue.attention_kind,
+    source_entity_type: issue.source_entity_type,
+    source_entity_id: issue.source_entity_id,
+    related_entity_id: issue.related_entity_id,
+    generated_status: issue.generated_status,
+    generated_due_at: issue.generated_due_at,
+    generated_source_updated_at: issue.generated_source_updated_at,
+    destination_route: issue.destination_route,
     first_seen_on: seenDate,
     last_seen_on: seenDate,
   };
@@ -986,6 +978,18 @@ function isManagedSourceKey(value: unknown) {
     "lot-conflict:",
     "overdue-account:",
     "open-payment-request:",
+    "overdue_follow_up:",
+    "follow_up_due_today:",
+    "reservation_expiring:",
+    "deposit_overdue:",
+    "application_review:",
+    "collection_alert:",
+    "missing_receipt:",
+    "missing_transfer_proof:",
+    "post_sales_blocker:",
+    "post_sales_task_overdue:",
+    "site_visit_today:",
+    "site_visit_upcoming:",
   ].some((prefix) => key.startsWith(prefix));
 }
 

@@ -18,7 +18,7 @@ test("release quality brand guard and metadata use the canonical name", async ()
 
 test("retired purge migration and application control cannot delete operational history", async () => {
   const [migration, panel] = await Promise.all([
-    read("supabase/migrations/20260714074603_release_quality_data_management.sql"),
+    read("supabase/migrations/20260714220603_20260714074603_release_quality_data_management.sql"),
     read("src/components/settings/DataManagementPanel.tsx"),
   ]);
   assert.match(migration, /NO-OP/);

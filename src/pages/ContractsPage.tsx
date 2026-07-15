@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useParams } from "react-router-dom";
 import { ContractForm } from "../components/forms/ContractForm";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent } from "../components/ui/Card";
@@ -32,6 +34,7 @@ function contractStatusTone(contract: Pick<Contract, "status" | "is_active">) {
 }
 
 export function ContractsPage() {
+  const { id: requestedContractId } = useParams<{ id?: string }>();
   const { data, isLoading, error } = useQuery({
     queryKey: ["contracts"],
     queryFn: async () => {
@@ -55,6 +58,11 @@ export function ContractsPage() {
     },
   });
   const pendingResolutionContractIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.contract_id));
+  useEffect(() => {
+    if (!requestedContractId || !data?.some((contract) => String(contract.id) === requestedContractId)) return;
+    const timer = window.setTimeout(() => document.querySelector<HTMLElement>(`[data-contract-id="${requestedContractId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+    return () => window.clearTimeout(timer);
+  }, [data, requestedContractId]);
   return (
     <section className="v2-page-shell">
       <div className="v2-page-header">
@@ -71,7 +79,7 @@ export function ContractsPage() {
             const paid = balance === null ? 0 : Number(contract.final_purchase_price) - balance;
             const archived = ["voided", "cancelled", "archived"].includes(contract.status);
             return (
-              <Card key={contract.id} className={archived ? "v2-archive-panel" : "v2-ledger-panel"}>
+              <Card key={contract.id} data-contract-id={contract.id} className={`${archived ? "v2-archive-panel" : "v2-ledger-panel"} ${requestedContractId === String(contract.id) ? "ring-2 ring-accent ring-offset-2" : ""}`}>
                 <CardContent className="grid gap-3 p-4 text-sm">
                   <div className="flex justify-between gap-3">
                     <div>

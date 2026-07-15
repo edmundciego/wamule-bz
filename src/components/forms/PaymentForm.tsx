@@ -23,11 +23,13 @@ const compatibleFeeTypes = ["Garbage Fee", "Road Maintenance"] as const;
 export function PaymentForm({
   customerId,
   correctionOfTransactionId,
+  landPaymentsEnabled = true,
   embedded = false,
   onSuccess,
 }: {
   customerId?: number;
   correctionOfTransactionId?: number | null;
+  landPaymentsEnabled?: boolean;
   embedded?: boolean;
   onSuccess?: () => void;
 }) {
@@ -40,7 +42,7 @@ export function PaymentForm({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
       customer_id: customerId ?? 0,
-      transaction_type: "Land Installment",
+      transaction_type: landPaymentsEnabled ? "Land Installment" : "Garbage Fee",
       collection_method: "Cash",
       document_type: "Bank Transfer Proof",
     },
@@ -93,7 +95,7 @@ export function PaymentForm({
     },
   });
   const collectionOptions = buildCollectionOptions(paymentMethods);
-  const transactionOptions = buildTransactionOptions(feeTypes);
+  const transactionOptions = buildTransactionOptions(feeTypes, landPaymentsEnabled);
   const selectedPaymentMethod = collectionOptions.find((option) => option.value === form.watch("collection_method"));
 
   async function onSubmit(values: PaymentValues) {
@@ -171,7 +173,7 @@ export function PaymentForm({
     setDocumentStatus(null);
     form.reset({
       customer_id: customerId ?? 0,
-      transaction_type: "Land Installment",
+      transaction_type: landPaymentsEnabled ? "Land Installment" : "Garbage Fee",
       collection_method: "Cash",
       document_type: "Bank Transfer Proof",
     });
@@ -336,9 +338,9 @@ function buildCollectionOptions(methods: PaymentMethod[] | undefined): Array<{ v
   return Array.from(options.values());
 }
 
-function buildTransactionOptions(feeTypes: FeeType[] | undefined) {
+function buildTransactionOptions(feeTypes: FeeType[] | undefined, landPaymentsEnabled = true) {
   const feeNames = feeTypes
     ?.map((feeType) => feeType.name)
     .filter((name): name is (typeof compatibleFeeTypes)[number] => compatibleFeeTypes.includes(name as (typeof compatibleFeeTypes)[number])) ?? compatibleFeeTypes;
-  return [...landTransactionTypes, ...feeNames];
+  return landPaymentsEnabled ? [...landTransactionTypes, ...feeNames] : feeNames;
 }

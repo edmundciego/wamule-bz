@@ -111,6 +111,11 @@ function SmartInsightItem({ insight, compact }: { insight: SmartInsight; compact
             </div>
           </div>
           <p className="mt-1 break-words text-muted-foreground">{insight.description}</p>
+          {insight.actionHref ? (
+            <a className="mt-2 inline-flex text-xs font-semibold text-primary underline-offset-2 hover:underline" href={insight.actionHref}>
+              {insight.actionLabel ?? "Open action"}
+            </a>
+          ) : null}
         </div>
       </div>
     </div>

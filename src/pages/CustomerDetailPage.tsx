@@ -1,6 +1,6 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Clipboard, CreditCard, FileText, Home, Landmark, RefreshCw, UserRound } from "lucide-react";
 import { ContractForm } from "../components/forms/ContractForm";
 import { PaymentForm } from "../components/forms/PaymentForm";
@@ -46,7 +46,7 @@ import type {
   Transaction,
 } from "../types/database";
 
-const customerSections = ["Overview", "Post-Sales", "Contract", "Payments", "Documents", "Requests", "Statement", "Smart Summary"] as const;
+const customerSections = ["Overview", "Financials", "Contracts", "Post-Sales", "Documents", "Requests", "Smart Summary"] as const;
 const requestStatuses: PaymentRequestStatus[] = ["Draft", "Sent", "Paid", "Cancelled"];
 const documentTypes: PaymentDocumentType[] = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Payment Note", "Other"];
 const postSalesTaskTypes: PostSalesTaskType[] = ["document", "agreement", "payment_setup", "customer_contact", "collections_handoff", "internal_review", "general"];
@@ -74,7 +74,7 @@ type CustomerDetail = {
   address: string | null;
   created_at: string;
   updated_at: string;
-  applications?: { parcels?: { lot_number: string | null; status?: string | null } | null } | null;
+  applications?: { id?: number; status?: string | null; parcel_id?: number | null; parcels?: { lot_number: string | null; status?: string | null } | null } | null;
   contracts?: CustomerContract[] | null;
   transactions?: CustomerTransaction[] | null;
   payment_documents?: PaymentDocumentWithTransaction[] | null;
@@ -103,9 +103,21 @@ type PostSalesTaskFormValues = {
 
 export function CustomerDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const customerId = Number(id);
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<CustomerSection>("Overview");
+  const requestedTab = searchParams.get("tab");
+  useEffect(() => {
+    const normalizedTab = String(requestedTab ?? "").toLowerCase();
+    const legacyTab = normalizedTab === "payments" || normalizedTab === "statement" || normalizedTab === "financials"
+      ? "Financials"
+      : normalizedTab === "contract"
+        ? "Contracts"
+        : requestedTab;
+    const matched = customerSections.find((section) => section.toLowerCase() === String(legacyTab ?? "").toLowerCase());
+    if (matched) setActiveSection(matched);
+  }, [requestedTab]);
   const [activeAction, setActiveAction] = useState<ActionModalKind>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -273,8 +285,12 @@ export function CustomerDetailPage() {
   const collectionsAiEnabled = Boolean(aiSettings?.is_enabled && aiSettings.collections_assistant_enabled);
   const latestAiSummary = latestSummary(data?.customer_ai_summaries ?? []);
   const latestLead = relatedLeads?.[0] ?? null;
-  const latestReservation = relatedReservations?.[0] ?? null;
+  const latestReservation = relatedReservations?.find((reservation) => isActiveReservation(reservation)) ?? null;
   const activeCustomerContract = data ? activeContract(data.contracts ?? []) : null;
+  const hasAuthorizedContractLot = Boolean(
+    latestReservation?.parcel_id
+      || (data?.applications?.status === "Approved" && data.applications.parcel_id),
+  );
   const landPayments = activeCustomerContract
     ? postedLandPaymentsForContract(data?.transactions ?? [], activeCustomerContract.id)
     : [];
@@ -549,7 +565,7 @@ export function CustomerDetailPage() {
   }
 
   function showStatement() {
-    setActiveSection("Statement");
+    setActiveSection("Financials");
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 50);
   }
 
@@ -581,6 +597,8 @@ export function CustomerDetailPage() {
             onCreateRequest={() => setActiveAction("request")}
             onUploadDocument={() => setActiveAction("document")}
             onStatement={showStatement}
+            hasAuthorizedContractLot={hasAuthorizedContractLot}
+            hasActiveContract={Boolean(activeCustomerContract)}
           />
           {contractVoidResolutions?.length ? (
             <div className="crm-warning-panel p-4 text-sm">
@@ -601,12 +619,14 @@ export function CustomerDetailPage() {
 
           <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] 2xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="grid min-w-0 gap-6">
-              <div className="crm-tabs">
-                <div className="crm-tab-list">
+              <div className="crm-tabs overflow-x-auto">
+                <div className="crm-tab-list min-w-max flex-nowrap">
                   {customerSections.map((section) => (
                     <button
                       key={section}
                       type="button"
+                      role="tab"
+                      aria-selected={activeSection === section}
                       className={cn(
                         "crm-tab shrink-0 font-semibold",
                         activeSection === section ? "crm-tab-active" : "",
@@ -647,7 +667,7 @@ export function CustomerDetailPage() {
                   onGenerateSummary={(checklistId) => void generatePostSalesSummary(checklistId)}
                 />
               ) : null}
-              {activeSection === "Contract" ? (
+              {activeSection === "Contracts" ? (
                 <ContractSection
                   contracts={data.contracts ?? []}
                   canVoid={canVoidContracts}
@@ -658,9 +678,9 @@ export function CustomerDetailPage() {
                   }}
                 />
               ) : null}
-              {activeSection === "Payments" ? (
+              {activeSection === "Financials" ? (
                 <>
-                  <Ledger title={activeCustomerContract ? "Posted Land Payment History" : "Historical Land Payments (no active contract)"} rows={historicalLandPayments} />
+                  <BalanceStatementSection customer={data} landPayments={landPayments} historicalLandPayments={historicalLandPayments} />
                   <Ledger title="Community Fee History" rows={communityPayments} />
                 </>
               ) : null}
@@ -675,9 +695,6 @@ export function CustomerDetailPage() {
                   }}
                 />
               ) : null}
-              {activeSection === "Statement" ? (
-                  <BalanceStatementSection customer={data} landPayments={landPayments} />
-              ) : null}
               {activeSection === "Smart Summary" ? (
                 <AiSummarySection
                   summary={latestAiSummary}
@@ -686,6 +703,8 @@ export function CustomerDetailPage() {
                   aiEnabled={collectionsAiEnabled}
                   generating={generatingSummary}
                   generatedByLabel={adminProfileLabel(generatedByProfile)}
+                  hasActiveContract={Boolean(activeCustomerContract)}
+                  requestedLot={data.applications?.parcels?.lot_number ?? null}
                   onGenerate={() => void generateAiSummary()}
                   onCopy={(message) => void copyFollowUpMessage(message)}
                 />
@@ -705,17 +724,22 @@ export function CustomerDetailPage() {
               aiEnabled={collectionsAiEnabled}
               generating={generatingSummary}
               onGenerate={() => void generateAiSummary()}
+              contractVoidResolutionPending={Boolean(contractVoidResolutions?.length)}
+              receiptReviewCount={historicalLandPayments.filter((transaction) => transaction.status === "posted" && !transaction.manual_receipt_number).length}
             />
           </div>
 
           <ActionModal
-            title="Record Payment"
-            description="Log a payment, receipt book number, bank reference, and optional supporting document."
+            title={activeCustomerContract ? "Record Payment" : "Record Community Fee"}
+            description={activeCustomerContract
+              ? "Record a contract-linked land payment or valid community fee with its receipt and supporting details."
+              : "No active contract is recorded. Land payments require an active contract; this form is for valid community-fee records only."}
             open={activeAction === "payment"}
             onClose={() => setActiveAction(null)}
           >
             <PaymentForm
               customerId={customerId}
+              landPaymentsEnabled={Boolean(activeCustomerContract)}
               embedded
               onSuccess={() => handleActionSuccess("Payment recorded.")}
             />
@@ -723,7 +747,9 @@ export function CustomerDetailPage() {
 
           <ActionModal
             title="Create Contract"
-            description="Create a customer contract using the standard installment plans or a custom agreement."
+            description={hasAuthorizedContractLot
+              ? "Create a customer contract using the authorized reservation or approved-application lot."
+              : "An active reservation or approved application lot is required before a contract can be created."}
             open={activeAction === "contract"}
             onClose={() => setActiveAction(null)}
           >
@@ -736,7 +762,9 @@ export function CustomerDetailPage() {
 
           <ActionModal
             title="New Payment Request"
-            description="Create a request for an upcoming or overdue customer payment."
+            description={activeCustomerContract
+              ? "Create a request for an upcoming or overdue payment linked to the active contract."
+              : "No active contract is recorded. Use an unlinked request only for a valid approved exception; it will not create a contract balance."}
             open={activeAction === "request"}
             onClose={() => setActiveAction(null)}
           >
@@ -842,6 +870,8 @@ function CustomerCommandProfile({
   onCreateRequest,
   onUploadDocument,
   onStatement,
+  hasAuthorizedContractLot,
+  hasActiveContract,
 }: {
   customer: CustomerDetail;
   landPayments: CustomerTransaction[];
@@ -854,6 +884,8 @@ function CustomerCommandProfile({
   onCreateRequest: () => void;
   onUploadDocument: () => void;
   onStatement: () => void;
+  hasAuthorizedContractLot: boolean;
+  hasActiveContract: boolean;
 }) {
   const contract = activeContract(customer.contracts ?? []);
   const latestReservation = reservations.find((reservation) => ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"].includes(reservation.status)) ?? null;
@@ -863,7 +895,13 @@ function CustomerCommandProfile({
   const totalPaid = contract ? totalAmount(landPayments) : 0;
   const remainingBalance = remainingLandBalance(contract, landPayments) ?? 0;
   const lastPayment = [...landPayments].sort((a, b) => safeDateTime(b.created_at) - safeDateTime(a.created_at))[0] ?? null;
-  const missingReceiptCount = customer.transactions?.filter((transaction) => !transaction.manual_receipt_number).length ?? 0;
+  const missingReceiptCount = historicalLandPayments.filter((transaction) => transaction.status === "posted" && !transaction.manual_receipt_number).length;
+  const historicalPostedLandPayments = historicalLandPayments.filter((transaction) => transaction.status === "posted");
+  const historicalActivityRows = contract
+    ? historicalLandPayments.filter((transaction) => !(transaction.status === "posted" && transaction.contract_id === contract.id))
+    : historicalLandPayments;
+  const historicalActivityPostedTotal = totalAmount(historicalActivityRows.filter((transaction) => transaction.status === "posted"));
+  const historicalMissingReceiptCount = historicalActivityRows.filter((transaction) => transaction.status === "posted" && !transaction.manual_receipt_number).length;
   const openRequests = openPaymentRequests(customer.payment_requests).length;
   const documentsCount = customer.payment_documents?.length ?? 0;
   const openPostSalesTasks = postSalesTasks.filter((task) => !["completed", "cancelled"].includes(task.status));
@@ -874,7 +912,7 @@ function CustomerCommandProfile({
 
   return (
     <section className="overflow-hidden rounded-xl border border-primary/15 bg-[linear-gradient(135deg,#fffaf0_0%,#f6f0df_46%,#ecf3e6_100%)] shadow-[0_24px_70px_rgba(45,35,23,0.12)]">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid items-start gap-0 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid gap-6 p-5 sm:p-6 xl:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
@@ -883,10 +921,9 @@ function CustomerCommandProfile({
                 {customer.first_name} {customer.last_name}
               </h1>
               <div className="mt-4 flex flex-wrap gap-2 text-sm text-muted-foreground">
-                {contractLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Contract lot {contractLot}</span> : null}
-                {!contractLot && reservedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Reserved lot {reservedLot}</span> : null}
-                {!contractLot && !reservedLot && requestedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />Requested lot {requestedLot}</span> : null}
-                {!contractLot && !reservedLot && !requestedLot ? <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2"><Home className="h-4 w-4 text-secondary" />No contract or reservation lot</span> : null}
+                <LotRelationshipChip label="Requested Lot" value={requestedLot} detail={customer.application_id ? `Application #${customer.application_id}` : undefined} />
+                <LotRelationshipChip label="Reserved Lot" value={reservedLot} />
+                <LotRelationshipChip label="Contract Lot" value={contractLot} />
                 <span className="inline-flex items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
                   <UserRound className="h-4 w-4 text-secondary" />
                   Customer since {formatDate(customer.created_at)}
@@ -894,7 +931,7 @@ function CustomerCommandProfile({
               </div>
               <div className="mt-4 grid min-w-0 gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                 <span className="min-w-0 break-words">{customer.phone || "No phone recorded"}</span>
-                <span className="min-w-0 break-all">{customer.email ?? "No email recorded"}</span>
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{customer.email ?? "No email recorded"}</span>
                 {customer.address ? <span className="min-w-0 break-words sm:col-span-2">{customer.address}</span> : null}
               </div>
             </div>
@@ -904,6 +941,8 @@ function CustomerCommandProfile({
               onCreateRequest={onCreateRequest}
               onUploadDocument={onUploadDocument}
               onStatement={onStatement}
+              hasAuthorizedContractLot={hasAuthorizedContractLot}
+              hasActiveContract={hasActiveContract}
             />
           </div>
 
@@ -923,7 +962,8 @@ function CustomerCommandProfile({
 
           <OperationalSummary
             contract={contract}
-            remainingBalance={remainingBalance}
+            historicalPaymentCount={historicalLandPayments.length}
+            documentsCount={documentsCount}
             openRequests={openRequests}
             latestReservation={latestReservation}
             postSalesChecklist={postSalesChecklist}
@@ -933,23 +973,46 @@ function CustomerCommandProfile({
           />
         </div>
 
-        <div className="border-t border-primary/10 bg-primary/95 p-5 text-primary-foreground lg:border-l lg:border-t-0 sm:p-6 xl:p-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/65">Account Ledger</p>
-          <div className="mt-5 grid gap-4">
-            <CommandLedgerMetric icon={Landmark} label="Purchase price" value={contract ? money(contract.final_purchase_price) : "N/A"} />
-            <CommandLedgerMetric icon={CreditCard} label={contract ? "Posted land payments" : "Historical land payments"} value={contract ? money(totalPaid) : money(totalAmount(historicalLandPayments))} />
-            <CommandLedgerMetric icon={FileText} label="Remaining balance" value={contract ? money(remainingBalance) : "N/A"} emphasis />
-            <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-primary-foreground/70">Next due date</span>
-                <span className="font-semibold tabular-nums">{contract ? formatDate(nextDueDate(contract)) : "N/A"}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <span className="text-primary-foreground/70">Monthly payment</span>
-                <span className="font-semibold tabular-nums">{contract ? money(contract.monthly_payment) : "N/A"}</span>
+        <div className={cn(
+          "self-start border-t border-primary/10 p-5 lg:border-l lg:border-t-0 sm:p-6 xl:p-7",
+          contract ? "bg-primary/95 text-primary-foreground" : "bg-card text-primary",
+        )}>
+          <p className={cn("text-xs font-semibold uppercase tracking-[0.18em]", contract ? "text-primary-foreground/65" : "text-secondary")}>Current Account Ledger</p>
+          {contract ? (
+            <div className="mt-5 grid gap-4">
+              <CommandLedgerMetric icon={Landmark} label="Purchase price" value={money(contract.final_purchase_price)} />
+              <CommandLedgerMetric icon={CreditCard} label="Posted land payments" value={money(totalPaid)} />
+              <CommandLedgerMetric icon={FileText} label="Remaining balance" value={money(remainingBalance)} emphasis />
+              <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-primary-foreground/70">Next due date</span>
+                  <span className="font-semibold tabular-nums">{formatDate(nextDueDate(contract))}</span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-primary-foreground/70">Monthly payment</span>
+                  <span className="font-semibold tabular-nums">{money(contract.monthly_payment)}</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-border bg-muted/25 p-4 text-sm">
+              <p className="font-semibold text-primary">No active contract</p>
+              <p className="mt-2 leading-6 text-muted-foreground">Purchase price, current balance, monthly payment, and next due date are unavailable until an active contract exists.</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <CommandLedgerMetric icon={CreditCard} label="Current land payments" value={money(0)} neutral />
+                <CommandLedgerMetric icon={FileText} label="Historical land payments" value={`${money(totalAmount(historicalPostedLandPayments))} · ${historicalLandPayments.length} record${historicalLandPayments.length === 1 ? "" : "s"}`} neutral />
+              </div>
+            </div>
+          )}
+          {contract && historicalActivityRows.length > 0 ? (
+            <div className="mt-4 rounded-lg border border-border bg-card p-4 text-sm">
+              <p className="font-semibold text-primary">Historical Financial Activity</p>
+              <div className="mt-2 grid gap-1 text-muted-foreground">
+                <span>{money(historicalActivityPostedTotal)} across {historicalActivityRows.length} transaction{historicalActivityRows.length === 1 ? "" : "s"}</span>
+                {historicalMissingReceiptCount > 0 ? <span className="text-warning">{historicalMissingReceiptCount} receipt review{historicalMissingReceiptCount === 1 ? "" : "s"} required</span> : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -962,20 +1025,36 @@ function PrimaryActionCluster({
   onCreateRequest,
   onUploadDocument,
   onStatement,
+  hasAuthorizedContractLot,
+  hasActiveContract,
 }: {
   onRecordPayment: () => void;
   onCreateContract: () => void;
   onCreateRequest: () => void;
   onUploadDocument: () => void;
   onStatement: () => void;
+  hasAuthorizedContractLot: boolean;
+  hasActiveContract: boolean;
 }) {
   return (
-    <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:max-w-sm lg:justify-end">
-      <Button type="button" onClick={onRecordPayment}>Record Payment</Button>
-      <Button type="button" variant="secondary" onClick={onCreateContract}>Create Contract</Button>
-      <Button type="button" variant="outline" onClick={onCreateRequest}>Create Request</Button>
-      <Button type="button" variant="outline" onClick={onUploadDocument}>Upload Document</Button>
-      <Button type="button" variant="ghost" onClick={onStatement}>Statement</Button>
+    <div className="w-full lg:w-auto lg:max-w-sm">
+      <div className="flex flex-wrap gap-2 lg:justify-end">
+        <Button type="button" onClick={onRecordPayment}>{hasActiveContract ? "Record Payment" : "Record Community Fee"}</Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onCreateContract}
+          disabled={!hasAuthorizedContractLot}
+          title={hasAuthorizedContractLot ? "Create a contract from the authorized lot." : "An active reservation or approved application lot is required."}
+        >
+          Create Contract
+        </Button>
+        <Button type="button" variant="outline" onClick={onCreateRequest}>Create Request</Button>
+        <Button type="button" variant="outline" onClick={onUploadDocument}>Upload Document</Button>
+        <Button type="button" variant="ghost" onClick={onStatement}>{hasActiveContract ? "Current Account" : "View Historical Payments"}</Button>
+      </div>
+      {!hasAuthorizedContractLot ? <p className="mt-2 text-right text-xs leading-5 text-muted-foreground">Create Contract becomes available after an active reservation or approved application lot is present.</p> : null}
+      {!hasActiveContract ? <p className="mt-1 text-right text-xs leading-5 text-muted-foreground">Land payments require an active contract.</p> : null}
     </div>
   );
 }
@@ -985,22 +1064,33 @@ function CommandLedgerMetric({
   label,
   value,
   emphasis = false,
+  neutral = false,
 }: {
   icon: typeof Landmark;
   label: string;
   value: string;
   emphasis?: boolean;
+  neutral?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.08] p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground/65">
+    <div className={cn("rounded-lg border p-4", neutral ? "border-border bg-card" : "border-primary-foreground/15 bg-primary-foreground/[0.08]")}>
+      <div className={cn("flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]", neutral ? "text-muted-foreground" : "text-primary-foreground/65")}>
         <Icon className="h-4 w-4" />
         {label}
       </div>
-      <p className={cn("mt-3 font-semibold tabular-nums", emphasis ? "text-2xl text-primary-foreground" : "text-xl text-primary-foreground/90")}>
+      <p className={cn("mt-3 font-semibold tabular-nums", emphasis ? "text-2xl" : "text-xl", neutral ? "text-primary" : emphasis ? "text-primary-foreground" : "text-primary-foreground/90")}>
         {value}
       </p>
     </div>
+  );
+}
+
+function LotRelationshipChip({ label, value, detail }: { label: string; value: string | null; detail?: string }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-primary/10 bg-card/70 px-3 py-2">
+      <Home className="h-4 w-4 shrink-0 text-secondary" />
+      <span className="min-w-0 break-words"><span className="font-semibold text-primary">{label}:</span> {value ? `Lot ${value}` : "None recorded"}{detail ? <span className="ml-1 text-xs text-muted-foreground">({detail})</span> : null}</span>
+    </span>
   );
 }
 
@@ -1039,7 +1129,7 @@ function CustomerStatusStrip({
       : openPostSalesTasks > 0
         ? `${openPostSalesTasks} open tasks`
         : postSalesChecklist
-          ? "No open tasks"
+          ? "Started — no tasks created"
           : "No checklist";
 
   return (
@@ -1118,7 +1208,8 @@ function StatusStripCell({
 
 function OperationalSummary({
   contract,
-  remainingBalance,
+  historicalPaymentCount,
+  documentsCount,
   openRequests,
   latestReservation,
   postSalesChecklist,
@@ -1127,7 +1218,8 @@ function OperationalSummary({
   missingReceiptCount,
 }: {
   contract: CustomerContract | null;
-  remainingBalance: number;
+  historicalPaymentCount: number;
+  documentsCount: number;
   openRequests: number;
   latestReservation: (LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }) | null;
   postSalesChecklist: PostSalesChecklist | null;
@@ -1135,30 +1227,35 @@ function OperationalSummary({
   overduePostSalesTasks: number;
   missingReceiptCount: number;
 }) {
-  const statements = [
-    contract ? `Contract #${contract.id} is ${contractStatusLabel(contract).toLowerCase()}.` : "No active contract is recorded.",
-    contract ? `Remaining land balance is ${money(remainingBalance)}.` : "Financial standing will appear when a contract exists.",
-    openRequests > 0 ? `${openRequests} payment request${openRequests === 1 ? "" : "s"} remain open.` : "No open payment requests.",
-    latestReservation ? `Latest reservation is ${statusLabel(latestReservation.status).toLowerCase()} with deposit status ${statusLabel(latestReservation.deposit_status).toLowerCase()}.` : "No current reservation is linked.",
-    postSalesChecklist
-      ? overduePostSalesTasks > 0
-        ? `${overduePostSalesTasks} post-sales task${overduePostSalesTasks === 1 ? "" : "s"} overdue.`
-        : `${openPostSalesTasks} post-sales task${openPostSalesTasks === 1 ? "" : "s"} open.`
-      : "Post-Sales checklist has not been started.",
-    missingReceiptCount > 0 ? `${missingReceiptCount} recorded payment${missingReceiptCount === 1 ? "" : "s"} need a manual receipt number.` : "",
-  ].filter(Boolean);
+  const postSalesFact = postSalesChecklist
+    ? overduePostSalesTasks > 0
+      ? `${overduePostSalesTasks} overdue task${overduePostSalesTasks === 1 ? "" : "s"}`
+      : openPostSalesTasks > 0
+        ? `${openPostSalesTasks} open task${openPostSalesTasks === 1 ? "" : "s"}`
+        : "Started — no tasks created"
+    : "Not started";
+  const needsReview = openRequests > 0 || overduePostSalesTasks > 0 || missingReceiptCount > 0;
+  const facts = [
+    ["Contract", contract ? `Active · #${contract.id}` : "No active contract"],
+    ["Reservation", latestReservation ? statusLabel(latestReservation.status) : "None"],
+    ["Current payment requests", String(openRequests)],
+    ["Historical payments", String(historicalPaymentCount)],
+    ["Receipt review", missingReceiptCount > 0 ? `${missingReceiptCount} required` : "None required"],
+    ["Post-Sales", postSalesFact],
+    ["Documents", `${documentsCount} uploaded`],
+  ];
 
   return (
     <div className="rounded-xl border border-secondary/25 bg-[#fff8e6] p-4 shadow-sm shadow-secondary/10">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Operational Summary</p>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-primary">
-            {statements.join(" ")}
-          </p>
+          <div className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {facts.map(([label, value]) => <div key={label} className="flex min-w-0 justify-between gap-3 border-b border-secondary/10 pb-2"><span className="text-muted-foreground">{label}</span><span className="min-w-0 break-words text-right font-semibold text-primary">{value}</span></div>)}
+          </div>
         </div>
-        <Badge tone={openRequests > 0 || overduePostSalesTasks > 0 || missingReceiptCount > 0 ? "amber" : "green"}>
-          {openRequests > 0 || overduePostSalesTasks > 0 || missingReceiptCount > 0 ? "Needs review" : "Current view"}
+        <Badge tone={needsReview ? "amber" : "green"}>
+          {needsReview ? "Needs review" : "Current view"}
         </Badge>
       </div>
     </div>
@@ -1178,6 +1275,8 @@ function CustomerCommandRail({
   aiEnabled,
   generating,
   onGenerate,
+  contractVoidResolutionPending,
+  receiptReviewCount,
 }: {
   customer: CustomerDetail;
   reservations: Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
@@ -1191,16 +1290,20 @@ function CustomerCommandRail({
   aiEnabled: boolean;
   generating: boolean;
   onGenerate: () => void;
+  contractVoidResolutionPending: boolean;
+  receiptReviewCount: number;
 }) {
-  const latestReservation = reservations[0] ?? null;
+  const latestReservation = reservations.find((reservation) => isActiveReservation(reservation)) ?? null;
+  const contract = activeContract(customer.contracts ?? []);
+  const requestedLot = customer.applications?.parcels?.lot_number ?? null;
   const upcomingVisit = siteVisits.find((visit) => safeDateTime(visit.scheduled_at) >= Date.now()) ?? null;
-  const recentTasks = postSalesTasks.slice(0, 3);
+  const openTasks = postSalesTasks.filter((task) => !["completed", "cancelled"].includes(task.status));
 
   return (
     <aside className="grid min-w-0 gap-4 self-start">
       <div className="rounded-xl border border-primary/15 bg-primary-soft/45 p-4 shadow-sm shadow-primary/5">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Current Workflow</p>
-        <div className="mt-4 grid gap-3">
+        <div className="mt-3 grid gap-2">
           {latestReservation ? (
             <div className="rounded-lg border border-primary/10 bg-card/80 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1215,10 +1318,14 @@ function CustomerCommandRail({
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-primary/20 bg-card/60 p-3 text-sm text-muted-foreground">
-              No linked reservation is currently shown for this customer.
-            </div>
+            <p className="rounded-md bg-card/60 px-3 py-2 text-sm text-muted-foreground">Reservation: None active</p>
           )}
+          <div className="flex items-center justify-between gap-3 rounded-md bg-card/60 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">Contract</span>
+            <span className="font-semibold text-primary">{contract ? `Active · #${contract.id}` : contractVoidResolutionPending ? "Voided · Resolution Required" : "No active contract"}</span>
+          </div>
+          {contractVoidResolutionPending ? <p className="rounded-md border border-warning/20 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">Lot and linked-payment review remains required.</p> : null}
+          {receiptReviewCount > 0 ? <p className="rounded-md border border-warning/20 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">{receiptReviewCount} payment receipt{receiptReviewCount === 1 ? "" : "s"} require review.</p> : null}
           {upcomingVisit ? (
             <div className="rounded-lg border border-primary/10 bg-card/80 p-3 text-sm">
               <p className="font-semibold text-primary">Upcoming Site Visit</p>
@@ -1232,7 +1339,7 @@ function CustomerCommandRail({
                 <p className="font-semibold text-primary">Post-Sales Work</p>
                 <Badge tone={postSalesStatusTone(postSalesChecklist.status)}>{statusLabel(postSalesChecklist.status)}</Badge>
               </div>
-              <p className="mt-2 text-muted-foreground">{recentTasks.length} recent task{recentTasks.length === 1 ? "" : "s"} visible in this rail.</p>
+              <p className="mt-2 text-muted-foreground">{openTasks.length > 0 ? `${openTasks.length} open task${openTasks.length === 1 ? "" : "s"}` : "Started — no tasks created"}</p>
             </div>
           ) : null}
         </div>
@@ -1244,15 +1351,16 @@ function CustomerCommandRail({
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Smart Summary</p>
             <p className="mt-1 text-sm text-muted-foreground">Advisory account guidance only.</p>
           </div>
-          {latestAiSummary ? <Badge tone={summaryIsStale ? "amber" : accountStatusTone(latestAiSummary.account_status)}>{summaryIsStale ? "Update available" : latestAiSummary.account_status}</Badge> : <Badge tone="gray">Not generated</Badge>}
+          {latestAiSummary ? <Badge tone={summaryIsStale ? "amber" : contract ? accountStatusTone(latestAiSummary.account_status) : "gray"}>{summaryIsStale ? "Update available" : contract ? latestAiSummary.account_status : "No Active Contract"}</Badge> : <Badge tone="gray">Not generated</Badge>}
         </div>
-        {latestAiSummary && !summaryIsStale ? (
+        {latestAiSummary && !summaryIsStale && contract ? (
           <p className="mt-4 line-clamp-5 text-sm leading-6 text-primary">{latestAiSummary.summary || "No summary text recorded."}</p>
         ) : latestAiSummary ? (
-          <p className="mt-4 text-sm leading-6 text-warning">Live customer, contract, payment, reservation, or post-sales data changed after this summary was generated. Regenerate it before relying on status or financial guidance.</p>
+          <p className="mt-4 text-sm leading-6 text-warning">{!contract ? "No active contract is recorded. This saved advisory summary cannot establish a current balance or overdue status." : "Live customer, contract, payment, reservation, or post-sales data changed after this summary was generated. Regenerate it before relying on status or financial guidance."}</p>
         ) : (
           <p className="mt-4 text-sm leading-6 text-muted-foreground">No smart customer account summary has been generated yet.</p>
         )}
+        {requestedLot ? <p className="mt-3 text-xs text-muted-foreground">Live relationship: Requested Lot {requestedLot} through Application #{customer.application_id}.</p> : null}
         <div className="mt-4 grid gap-1 text-xs text-muted-foreground">
           {latestAiSummary ? <span>Generated: {formatDate(latestAiSummary.updated_at || latestAiSummary.created_at)}</span> : null}
           {latestAiSummary ? <span>Generated by: {generatedByLabel}</span> : null}
@@ -1305,12 +1413,12 @@ function OverviewSection({
 }) {
   const openRequests = openPaymentRequests(customer.payment_requests).length;
   const latestLead = leads[0] ?? null;
-  const latestReservation = reservations[0] ?? null;
+  const latestReservation = reservations.find((reservation) => isActiveReservation(reservation)) ?? null;
   const contract = activeContract(customer.contracts ?? []);
   const landPayments = contract ? postedLandPaymentsForContract(customer.transactions ?? [], contract.id) : [];
   const remainingBalance = remainingLandBalance(contract, landPayments) ?? 0;
   const operationsInsights = customerOperationsInsights({
-    activeContract: contract?.is_active ? contract : null,
+    activeContract: contract,
     transactions: customer.transactions ?? [],
     paymentRequests: customer.payment_requests ?? [],
     leads,
@@ -1342,7 +1450,9 @@ function OverviewSection({
           <InfoItem label="Phone" value={customer.phone} />
           <InfoItem label="Email" value={customer.email ?? "Not provided"} />
           <InfoItem label="Address" value={customer.address ?? "Not provided"} />
-          <InfoItem label="Requested lot" value={customer.applications?.parcels?.lot_number ? `Lot ${customer.applications.parcels.lot_number}` : "Not recorded"} />
+          <InfoItem label="Requested Lot" value={customer.applications?.parcels?.lot_number ? `Lot ${customer.applications.parcels.lot_number}` : "Not recorded"} />
+          <InfoItem label="Reserved Lot" value={latestReservation?.parcels?.lot_number ? `Lot ${latestReservation.parcels.lot_number}` : "None active"} />
+          <InfoItem label="Contract Lot" value={contract?.parcels?.lot_number ? `Lot ${contract.parcels.lot_number}` : "None active"} />
           <InfoItem label="Open payment requests" value={String(openRequests)} />
         </CardContent>
       </Card>
@@ -1795,9 +1905,13 @@ function PostSalesTimeline({ activities }: { activities: PostSalesActivity[] }) 
 function Ledger({
   title,
   rows,
+  activeContractId,
+  emptyMessage = "No transactions recorded.",
 }: {
   title: string;
   rows: CustomerTransaction[];
+  activeContractId?: number | null;
+  emptyMessage?: string;
 }) {
   return (
     <Card className="v2-ledger-panel">
@@ -1805,13 +1919,16 @@ function Ledger({
         <CardTitle className="text-primary">{title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {rows.length === 0 ? <EmptyState message="No transactions recorded." /> : null}
+        {rows.length === 0 ? <EmptyState message={emptyMessage} /> : null}
         {rows.map((row) => (
           <div key={row.id} className="v2-ledger-row grid gap-3">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
-                <p className="font-medium text-primary">{row.transaction_type}</p>
-                <p className="text-muted-foreground">{formatDate(row.created_at)}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-primary">{row.transaction_type}</p>
+                  {activeContractId !== undefined ? <Badge tone={row.status === "posted" && row.contract_id === activeContractId ? "green" : row.status === "voided" || row.status === "reversed" ? "gray" : "amber"}>{row.status === "posted" && row.contract_id === activeContractId ? "Current" : row.status === "voided" ? "Voided" : row.status === "reversed" ? "Reversed" : "Historical"}</Badge> : null}
+                </div>
+                <p className="text-muted-foreground">{formatDate(row.created_at)}{row.contract_id ? ` · Contract #${row.contract_id}` : " · Unallocated"}</p>
               </div>
               <span className="font-semibold text-primary tabular-nums">{money(row.amount)}</span>
             </div>
@@ -1995,7 +2112,8 @@ function PaymentRequestForm({
   contracts: CustomerContract[];
   onSuccess: () => void;
 }) {
-  const [contractId, setContractId] = useState(String(contracts.find((contract) => isVoidableContract(contract))?.id ?? ""));
+  const activeContracts = contracts.filter((contract) => isVoidableContract(contract));
+  const [contractId, setContractId] = useState(String(activeContracts[0]?.id ?? ""));
   const [amountDue, setAmountDue] = useState("");
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("Monthly installment");
@@ -2040,7 +2158,7 @@ function PaymentRequestForm({
         <Field label="Contract">
           <Select value={contractId} onChange={(event) => setContractId(event.target.value)}>
             <option value="">No contract</option>
-            {contracts.map((contract) => (
+            {activeContracts.map((contract) => (
               <option key={contract.id} value={contract.id}>Contract #{contract.id}</option>
             ))}
           </Select>
@@ -2182,25 +2300,36 @@ function CustomerDocumentUploadForm({
 function BalanceStatementSection({
   customer,
   landPayments,
+  historicalLandPayments,
 }: {
   customer: CustomerDetail;
   landPayments: CustomerTransaction[];
+  historicalLandPayments: CustomerTransaction[];
 }) {
   const contract = activeContract(customer.contracts ?? []);
   const totalPaid = totalAmount(landPayments);
-  const remainingBalance = contract ? Math.max(Number(contract.final_purchase_price) - totalPaid, 0) : 0;
+  const remainingBalance = remainingLandBalance(contract, landPayments) ?? 0;
   const lastPayment = [...landPayments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+  const historicalRows = contract
+    ? historicalLandPayments.filter((row) => !(row.status === "posted" && row.contract_id === contract.id))
+    : historicalLandPayments;
 
   return (
     <Card className="v2-ledger-panel">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <CardTitle>Statement</CardTitle>
+          <CardTitle>Current Account Statement</CardTitle>
           <Button type="button" variant="outline" onClick={() => window.print()}>Print Statement</Button>
         </div>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {!contract ? (
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm">
+            <p className="font-semibold text-primary">Current statement unavailable</p>
+            <p className="mt-1 leading-6 text-muted-foreground">A current account statement requires an active contract. Historical transactions remain available below for review.</p>
+          </div>
+        ) : null}
+        {contract ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatementMetric label="Customer" value={`${customer.first_name} ${customer.last_name}`} />
           <StatementMetric label="Contract lot" value={contract?.parcels?.lot_number ? `Lot ${contract.parcels.lot_number}` : "N/A"} />
           <StatementMetric label="Contract summary" value={contract ? `Contract #${contract.id} (${contractStatusLabel(contract)})` : "No active contract"} />
@@ -2210,8 +2339,9 @@ function BalanceStatementSection({
           <StatementMetric label="Monthly installment" value={contract ? money(contract.monthly_payment) : "N/A"} />
           <StatementMetric label="Last payment date" value={lastPayment ? formatDate(lastPayment.created_at) : "No payments"} />
           <StatementMetric label="Next due date" value={contract ? formatDate(nextDueDate(contract)) : "N/A"} />
-        </div>
-        <Ledger title="Payment History" rows={landPayments} />
+        </div> : null}
+        {contract ? <Ledger title="Current Contract Payments" rows={landPayments} activeContractId={contract.id} emptyMessage="No current contract payments recorded." /> : null}
+        {historicalRows.length > 0 ? <Ledger title="Historical Transactions" rows={historicalRows} activeContractId={contract?.id ?? null} emptyMessage="No historical transactions recorded." /> : null}
       </CardContent>
     </Card>
   );
@@ -2224,6 +2354,8 @@ function AiSummarySection({
   aiEnabled,
   generating,
   generatedByLabel,
+  hasActiveContract,
+  requestedLot,
   onGenerate,
   onCopy,
 }: {
@@ -2233,6 +2365,8 @@ function AiSummarySection({
   aiEnabled: boolean;
   generating: boolean;
   generatedByLabel: string;
+  hasActiveContract: boolean;
+  requestedLot: string | null;
   onGenerate: () => void;
   onCopy: (message: string) => void;
 }) {
@@ -2291,13 +2425,16 @@ function AiSummarySection({
             </div>
 
             <SummaryBlock title="Buyer Insights" content={summary.summary} />
+            {requestedLot ? <p className="text-xs text-muted-foreground">Live relationship: Requested Lot {requestedLot} through the customer application.</p> : null}
             {isStale ? (
               <p className="crm-warning-panel p-3 text-sm">This summary predates live account changes. Financial and status assertions are hidden until it is regenerated; use the live ledger and statement above as the authoritative record.</p>
-            ) : (
+            ) : hasActiveContract ? (
               <div className="grid gap-4 lg:grid-cols-2">
                 <SummaryBlock title="Balance Summary" content={summary.balance_summary} />
                 <SummaryBlock title="Payment Summary" content={summary.payment_summary} />
               </div>
+            ) : (
+              <p className="crm-info-panel p-3 text-sm">No active contract is recorded. This advisory summary cannot establish a current purchase price, balance, payment schedule, or overdue status.</p>
             )}
 
             <div className="grid gap-4 lg:grid-cols-3">
@@ -2357,7 +2494,7 @@ function StatementMetric({ label, value }: { label: string; value: string }) {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-md border border-dashed bg-muted p-6 text-center text-sm text-muted-foreground">
+    <div className="rounded-md border border-dashed bg-muted px-4 py-4 text-center text-sm text-muted-foreground">
       {message}
     </div>
   );
@@ -2591,6 +2728,10 @@ function isVoidableContract(contract: Pick<Contract, "status" | "is_active">) {
 
 function activeContract(contracts: CustomerContract[]) {
   return canonicalActiveContract(contracts);
+}
+
+function isActiveReservation(reservation: Pick<LotReservation, "status"> | null | undefined) {
+  return Boolean(reservation && ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"].includes(reservation.status));
 }
 
 function nextDueDate(contract: Contract) {

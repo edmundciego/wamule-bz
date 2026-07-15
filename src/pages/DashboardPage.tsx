@@ -1,12 +1,11 @@
 import { useQueries } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   Banknote,
   CalendarDays,
   CircleDollarSign,
   ClipboardCheck,
-  Clock3,
-  FileWarning,
   HandCoins,
   Landmark,
   ListChecks,
@@ -19,7 +18,7 @@ import type { ReactNode } from "react";
 import { Badge } from "../components/ui/Badge";
 import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
-import { dashboardOperationsInsights } from "../lib/smartInsights";
+import { buildOperationalAttention, groupOperationalAttention, operationalAttentionInsights, type OperationalAttentionGroup, type OperationalAttentionItem } from "../lib/operationalAttention";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate, money } from "../lib/utils";
 import type { FollowUpTask, Lead, LotReservation, PostSalesChecklist, PostSalesTask, SiteVisit } from "../types/database";
@@ -29,7 +28,7 @@ export function DashboardPage() {
     queries: [
       { queryKey: ["parcels"], queryFn: async () => (await supabase.from("parcels").select("*")).data ?? [] },
       { queryKey: ["applications"], queryFn: async () => (await supabase.from("applications").select("*")).data ?? [] },
-      { queryKey: ["transactions"], queryFn: async () => (await supabase.from("transactions").select("*")).data ?? [] },
+      { queryKey: ["transactions"], queryFn: async () => (await supabase.from("transactions").select("*, customers(first_name, last_name), payment_documents(id)")).data ?? [] },
       { queryKey: ["balances"], queryFn: async () => (await supabase.from("contract_financial_summary").select("*")).data ?? [] },
       { queryKey: ["dashboard-sales-leads"], queryFn: async () => (await supabase.from("leads").select("*").order("updated_at", { ascending: false })).data as Lead[] ?? [] },
       { queryKey: ["dashboard-follow-ups"], queryFn: async () => (await supabase.from("follow_up_tasks").select("*").in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false })).data as FollowUpTask[] ?? [] },
@@ -37,6 +36,8 @@ export function DashboardPage() {
       { queryKey: ["dashboard-lot-reservations"], queryFn: async () => (await supabase.from("lot_reservations").select("*").order("updated_at", { ascending: false })).data as LotReservation[] ?? [] },
       { queryKey: ["dashboard-post-sales-tasks"], queryFn: async () => (await supabase.from("post_sales_tasks").select("*").in("status", ["open", "in_progress", "blocked"]).order("due_at", { ascending: true, nullsFirst: false })).data as PostSalesTask[] ?? [] },
       { queryKey: ["dashboard-post-sales-checklists"], queryFn: async () => (await supabase.from("post_sales_checklists").select("*").order("updated_at", { ascending: false })).data as PostSalesChecklist[] ?? [] },
+      { queryKey: ["dashboard-admin-profiles"], queryFn: async () => (await supabase.from("admin_profiles").select("user_id, full_name, email")).data ?? [] },
+      { queryKey: ["dashboard-payment-requests"], queryFn: async () => (await supabase.from("payment_requests").select("*, customers(first_name, last_name)")).data ?? [] },
     ],
   });
   const isLoading = results.some((result) => result.isLoading);
@@ -51,57 +52,34 @@ export function DashboardPage() {
   const reservations = results[7].data ?? [];
   const postSalesTasks = results[8].data ?? [];
   const postSalesChecklists = results[9].data ?? [];
+  const adminProfiles = results[10].data ?? [];
+  const paymentRequests = results[11].data ?? [];
+  const ownerNames = new Map<string, string>(adminProfiles.map((profile: { user_id: string; full_name?: string | null; email?: string | null }) => [profile.user_id, profile.full_name || profile.email || "Unassigned"]));
   const totalRevenue = transactions.filter((item) => item.status === "posted").reduce((sum, item) => sum + Number(item.amount), 0);
   const overdueBalance = balances.reduce((sum, item) => sum + Number(item.remaining_balance ?? 0), 0);
-  const salesSummary = salesDashboardSummary(leads, followUps, siteVisits);
-  const reservationSummary = reservationDashboardSummary(reservations);
-  const postSalesSummary = postSalesDashboardSummary(postSalesTasks, postSalesChecklists);
-  const pendingApplications = applications.filter((app) => app.status === "Pending Review").length;
+  const attentionItems = buildOperationalAttention({
+    leads,
+    followUps,
+    reservations,
+    applications,
+    transactions,
+    paymentRequests,
+    postSalesChecklists,
+    postSalesTasks,
+    siteVisits,
+    ownerNames,
+  });
+  const attentionGroups = groupOperationalAttention(attentionItems);
+  const salesSummary = salesDashboardSummary(leads, followUps, siteVisits, attentionGroups);
+  const reservationSummary = reservationDashboardSummary(reservations, attentionGroups);
+  const postSalesSummary = postSalesDashboardSummary(postSalesTasks, postSalesChecklists, attentionGroups);
+  const pendingApplications = attentionGroups.find((group) => group.kind === "application_review")?.count ?? 0;
   const availableLots = parcels.filter((lot) => lot.status === "Available").length;
   const reservedLots = parcels.filter((lot) => lot.status === "Reserved").length;
   const soldLots = parcels.filter((lot) => lot.status === "Sold").length;
   const communityDelinquency = balances.filter((row) => Number(row.community_paid) <= 0).length;
-  const operationsInsights = dashboardOperationsInsights({
-    overdueFollowUps: salesSummary.overdueFollowUps,
-    siteVisitsToday: salesSummary.siteVisitsToday,
-    upcomingSiteVisits: salesSummary.upcomingVisits,
-    reservationsExpiringSoon: reservationSummary.expiringSoon,
-    depositsOverdue: reservationSummary.depositOverdue,
-    postSalesTasksOverdue: postSalesSummary.overdueTasks,
-    documentsPendingReview: postSalesSummary.documentsPendingReview,
-    collectionsHandoffReady: postSalesSummary.handoffReady,
-  });
-  const attentionItems: AttentionItem[] = [
-    {
-      title: "Overdue follow-ups",
-      value: salesSummary.overdueFollowUps,
-      detail: `${salesSummary.dueTodayFollowUps} due today`,
-      tone: salesSummary.overdueFollowUps > 0 ? "danger" : "calm",
-      icon: Clock3,
-    },
-    {
-      title: "Reservations expiring",
-      value: reservationSummary.expiringSoon,
-      detail: "Next 3 days",
-      tone: reservationSummary.expiringSoon > 0 ? "warning" : "calm",
-      icon: MapPinned,
-    },
-    {
-      title: "Deposit overdue",
-      value: reservationSummary.depositOverdue,
-      detail: "CRM readiness follow-up",
-      tone: reservationSummary.depositOverdue > 0 ? "danger" : "calm",
-      icon: AlertTriangle,
-    },
-    {
-      title: "Post-sales blockers",
-      value: postSalesSummary.blockedCustomers + postSalesSummary.overdueTasks,
-      detail: `${postSalesSummary.blockedCustomers} blocked, ${postSalesSummary.overdueTasks} overdue`,
-      tone: postSalesSummary.blockedCustomers + postSalesSummary.overdueTasks > 0 ? "warning" : "calm",
-      icon: FileWarning,
-    },
-  ];
-  const primaryAttention = [...attentionItems].sort((a, b) => b.value - a.value)[0] ?? attentionItems[0];
+  const collectionAlerts = attentionGroups.find((group) => group.kind === "collection_alert")?.count ?? 0;
+  const primaryAttention = attentionGroups[0] ?? null;
 
   return (
     <div className="space-y-6">
@@ -110,17 +88,17 @@ export function DashboardPage() {
       {error ? <ErrorState message={error.message} /> : null}
       <AttentionBand
         primary={primaryAttention}
-        items={attentionItems}
+        groups={attentionGroups}
         pendingApplications={pendingApplications}
         siteVisitsToday={salesSummary.siteVisitsToday}
-        communityDelinquency={communityDelinquency}
+        communityDelinquency={collectionAlerts}
       />
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <div className="grid min-w-0 gap-5">
           <SalesMovement salesSummary={salesSummary} />
           <ReservationsReadiness reservationSummary={reservationSummary} />
         </div>
-        <AdvisorPanel insights={operationsInsights} />
+        <AdvisorPanel insights={operationalAttentionInsights(attentionItems)} />
       </section>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <FinancialSnapshot
@@ -141,16 +119,6 @@ export function DashboardPage() {
     </div>
   );
 }
-
-type AttentionTone = "danger" | "warning" | "calm";
-
-type AttentionItem = {
-  title: string;
-  value: number;
-  detail: string;
-  tone: AttentionTone;
-  icon: LucideIcon;
-};
 
 function DashboardHeader() {
   return (
@@ -173,23 +141,23 @@ function DashboardHeader() {
 
 function AttentionBand({
   primary,
-  items,
+  groups,
   pendingApplications,
   siteVisitsToday,
   communityDelinquency,
 }: {
-  primary: AttentionItem;
-  items: AttentionItem[];
+  primary: OperationalAttentionGroup | null;
+  groups: OperationalAttentionGroup[];
   pendingApplications: number;
   siteVisitsToday: number;
   communityDelinquency: number;
 }) {
   const supporting = [
-    { title: "Site visits today", value: siteVisitsToday, detail: "Scheduled or rescheduled", icon: CalendarDays, tone: "calm" as const },
-    { title: "Applications waiting", value: pendingApplications, detail: "Pending review", icon: ClipboardCheck, tone: pendingApplications > 0 ? "warning" as const : "calm" as const },
-    { title: "Collections alerts", value: communityDelinquency, detail: "Community follow-up", icon: HandCoins, tone: communityDelinquency > 0 ? "warning" as const : "calm" as const },
+    { title: "Site visits today", value: siteVisitsToday, detail: "Scheduled or rescheduled", icon: CalendarDays, tone: siteVisitsToday > 0 ? "warning" as const : "calm" as const, route: groups.find((group) => group.kind === "site_visit_today")?.viewAllRoute ?? "/leads?focus=site-visits" },
+    { title: "Applications waiting", value: pendingApplications, detail: "Pending review", icon: ClipboardCheck, tone: pendingApplications > 0 ? "warning" as const : "calm" as const, route: groups.find((group) => group.kind === "application_review")?.viewAllRoute ?? "/applications?status=Pending%20Review" },
+    { title: "Collections alerts", value: communityDelinquency, detail: "Community follow-up", icon: HandCoins, tone: communityDelinquency > 0 ? "warning" as const : "calm" as const, route: groups.find((group) => group.kind === "collection_alert")?.viewAllRoute ?? "/collections?focus=alerts" },
   ];
-  const PrimaryIcon = primary.icon;
+  const primaryItems = primary?.items.slice(0, 3) ?? [];
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
@@ -198,27 +166,26 @@ function AttentionBand({
         <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <div className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
-              <PrimaryIcon className="h-3.5 w-3.5" />
+              <AlertTriangle className="h-3.5 w-3.5" />
               Today's Attention
             </div>
             <h2 className="mt-5 max-w-2xl text-2xl font-semibold leading-tight sm:text-4xl">
-              {primary.value > 0 ? primary.title : "No major priority flags"}
+              {primary ? primary.label : "No major priority flags"}
             </h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/78">
-              {primary.value > 0
-                ? `${primary.detail}. Review this area first before moving into routine dashboard checks.`
+              {primary
+                ? `${primary.count} record${primary.count === 1 ? "" : "s"} need review. Open the source record below before moving into routine dashboard checks.`
                 : "Current dashboard rules are not showing overdue or expiring operational work."}
             </p>
           </div>
           <div className="rounded-lg border border-white/15 bg-white/10 p-4 text-right backdrop-blur-0">
-            <p className="text-5xl font-semibold tabular-nums sm:text-6xl">{primary.value}</p>
+            <p className="text-5xl font-semibold tabular-nums sm:text-6xl">{primary?.count ?? 0}</p>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-accent-soft">needs review</p>
           </div>
         </div>
-        <div className="relative mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {items.map((item) => (
-            <AttentionStatus key={item.title} item={item} />
-          ))}
+        <div className="relative mt-5 grid gap-2.5">
+          {primaryItems.length ? primaryItems.map((item) => <AttentionRecord key={item.id} item={item} />) : <p className="rounded-lg border border-white/15 bg-white/10 p-3 text-sm text-white/80">No source records require attention.</p>}
+          {primary ? <Link className="mt-1 inline-flex w-fit rounded-md border border-white/20 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10" to={primary.viewAllRoute}>View all {primary.label.toLowerCase()}</Link> : null}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
@@ -230,26 +197,28 @@ function AttentionBand({
   );
 }
 
-function AttentionStatus({ item }: { item: AttentionItem }) {
-  const Icon = item.icon;
+function AttentionRecord({ item }: { item: OperationalAttentionItem }) {
   return (
     <div className="rounded-lg border border-white/15 bg-white/10 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <Icon className="h-4 w-4 text-accent-soft" />
-        <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", item.tone === "danger" ? "bg-danger/90 text-white" : item.tone === "warning" ? "bg-accent text-foreground" : "bg-white/15 text-white")}>
-          {item.value}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="break-words text-sm font-semibold text-white">{item.title}</p>
+          <p className="mt-1 break-words text-xs text-white/80">{item.summary}</p>
+          <p className="mt-1 text-xs text-white/70">Owner: {item.ownerName} · Status: {item.currentStatus}</p>
+        </div>
+        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold", item.severity === "critical" ? "bg-danger/90 text-white" : item.severity === "warning" ? "bg-accent text-foreground" : "bg-white/15 text-white")}>
+          {item.dueAt ? formatDate(item.dueAt) : "Needs review"}
         </span>
       </div>
-      <p className="mt-3 text-sm font-semibold text-white">{item.title}</p>
-      <p className="mt-1 text-xs leading-5 text-white/70">{item.detail}</p>
+      <Link className="mt-2 inline-flex text-xs font-semibold text-accent-soft underline-offset-2 hover:underline" to={item.route}>Open action</Link>
     </div>
   );
 }
 
-function SupportingAttention({ item }: { item: { title: string; value: number; detail: string; icon: LucideIcon; tone: AttentionTone } }) {
+function SupportingAttention({ item }: { item: { title: string; value: number; detail: string; icon: LucideIcon; tone: "warning" | "calm"; route: string } }) {
   const Icon = item.icon;
-  return (
-    <div className="rounded-xl border border-primary/10 bg-primary-soft p-4 shadow-[var(--shadow-card)]">
+  const content = (
+    <div className="rounded-xl border border-primary/10 bg-primary-soft p-4 shadow-[var(--shadow-card)] transition hover:border-primary/30">
       <div className="flex items-start justify-between gap-3">
         <div className="rounded-md border border-primary/15 bg-card p-2 text-primary">
           <Icon className="h-4 w-4" />
@@ -260,6 +229,7 @@ function SupportingAttention({ item }: { item: { title: string; value: number; d
       <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
     </div>
   );
+  return item.value > 0 ? <Link to={item.route}>{content}</Link> : content;
 }
 
 function SalesMovement({ salesSummary }: { salesSummary: ReturnType<typeof salesDashboardSummary> }) {
@@ -271,10 +241,10 @@ function SalesMovement({ salesSummary }: { salesSummary: ReturnType<typeof sales
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(280px,0.55fr)]">
         <div className="grid gap-3 sm:grid-cols-2">
-          <WorkflowMetric title="Open follow-ups" value={salesSummary.openFollowUps} detail={`${salesSummary.overdueFollowUps} overdue, ${salesSummary.dueTodayFollowUps} due today`} tone={salesSummary.overdueFollowUps > 0 ? "danger" : "info"} />
-          <WorkflowMetric title="Upcoming visits" value={salesSummary.upcomingVisits} detail={salesSummary.nextVisit ? `Next ${formatDate(salesSummary.nextVisit.scheduled_at)}` : "No scheduled visits"} tone="info" />
-          <WorkflowMetric title="Deposit pending" value={salesSummary.depositPending} detail="Lead stage only" tone="warning" />
-          <WorkflowMetric title="Family decision" value={salesSummary.familyDecision} detail="Needs buyer support" tone="warning" />
+          <WorkflowMetric title="Open follow-ups" value={salesSummary.openFollowUps} detail={`${salesSummary.overdueFollowUps} overdue, ${salesSummary.dueTodayFollowUps} due today`} tone={salesSummary.overdueFollowUps > 0 ? "danger" : "info"} href="/leads?focus=followups" />
+          <WorkflowMetric title="Upcoming visits" value={salesSummary.upcomingVisits} detail={salesSummary.nextVisit ? `Next ${formatDate(salesSummary.nextVisit.scheduled_at)}` : "No scheduled visits"} tone="info" href="/leads?focus=site-visits" />
+          <WorkflowMetric title="Deposit pending" value={salesSummary.depositPending} detail="Lead stage only" tone="warning" href="/leads?focus=reservations" />
+          <WorkflowMetric title="Family decision" value={salesSummary.familyDecision} detail="Needs buyer support" tone="warning" href="/leads?stage=family_decision" />
         </div>
         <div className="rounded-lg border border-primary/10 bg-card/80 p-3">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Leads by stage</p>
@@ -291,10 +261,10 @@ function SalesMovement({ salesSummary }: { salesSummary: ReturnType<typeof sales
 
 function ReservationsReadiness({ reservationSummary }: { reservationSummary: ReturnType<typeof reservationDashboardSummary> }) {
   const steps = [
-    { title: "Active holds", value: reservationSummary.activeReservations, detail: "Reservation records", tone: "info" as const },
-    { title: "Expiring soon", value: reservationSummary.expiringSoon, detail: "Next 3 days", tone: reservationSummary.expiringSoon > 0 ? "warning" as const : "info" as const },
-    { title: "Deposit pending", value: reservationSummary.depositPending, detail: `${reservationSummary.depositOverdue} overdue`, tone: reservationSummary.depositOverdue > 0 ? "danger" as const : "warning" as const },
-    { title: "Ready next step", value: reservationSummary.depositConfirmed, detail: "Deposit readiness confirmed", tone: "success" as const },
+    { title: "Active holds", value: reservationSummary.activeReservations, detail: "Reservation records", tone: "info" as const, route: "/leads?focus=reservations" },
+    { title: "Expiring soon", value: reservationSummary.expiringSoon, detail: "Next 3 days", tone: reservationSummary.expiringSoon > 0 ? "warning" as const : "info" as const, route: "/leads?focus=reservations" },
+    { title: "Deposit pending", value: reservationSummary.depositPending, detail: `${reservationSummary.depositOverdue} overdue`, tone: reservationSummary.depositOverdue > 0 ? "danger" as const : "warning" as const, route: "/leads?focus=reservations" },
+    { title: "Ready next step", value: reservationSummary.depositConfirmed, detail: "Deposit readiness confirmed", tone: "success" as const, route: "/leads?focus=reservations" },
   ];
 
   return (
@@ -305,7 +275,7 @@ function ReservationsReadiness({ reservationSummary }: { reservationSummary: Ret
     >
       <div className="grid gap-3 lg:grid-cols-4">
         {steps.map((step, index) => (
-          <div key={step.title} className="relative rounded-lg border border-primary/10 bg-card/85 p-4">
+          <Link key={step.title} to={step.value > 0 ? step.route : "/leads?focus=reservations"} className="relative rounded-lg border border-primary/10 bg-card/85 p-4 transition hover:border-primary/30">
             {index < steps.length - 1 ? <div className="absolute right-[-14px] top-1/2 hidden h-px w-7 bg-primary/20 lg:block" /> : null}
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{step.title}</p>
             <div className="mt-4 flex items-end justify-between gap-3">
@@ -313,7 +283,7 @@ function ReservationsReadiness({ reservationSummary }: { reservationSummary: Ret
               <Badge tone={step.tone === "danger" ? "red" : step.tone === "warning" ? "amber" : step.tone === "success" ? "green" : "blue"}>{step.tone === "success" ? "Ready" : "Track"}</Badge>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{step.detail}</p>
-          </div>
+          </Link>
         ))}
       </div>
     </WorkflowPanel>
@@ -373,7 +343,7 @@ function PostSalesWork({ postSalesSummary }: { postSalesSummary: ReturnType<type
   );
 }
 
-function AdvisorPanel({ insights }: { insights: ReturnType<typeof dashboardOperationsInsights> }) {
+function AdvisorPanel({ insights }: { insights: ReturnType<typeof operationalAttentionInsights> }) {
   return (
     <aside className="rounded-xl border border-accent/30 bg-accent-soft/70 p-5 shadow-[0_6px_18px_rgba(138,90,53,0.07)]">
       <div className="mb-4 flex items-start gap-3">
@@ -448,8 +418,8 @@ function WorkflowPanel({
   );
 }
 
-function WorkflowMetric({ title, value, detail, tone }: { title: string; value: number; detail: string; tone: "danger" | "warning" | "info" | "success" }) {
-  return (
+function WorkflowMetric({ title, value, detail, tone, href }: { title: string; value: number; detail: string; tone: "danger" | "warning" | "info" | "success"; href?: string }) {
+  const content = (
     <div className="rounded-lg border border-primary/10 bg-card/85 p-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
@@ -459,6 +429,7 @@ function WorkflowMetric({ title, value, detail, tone }: { title: string; value: 
       <p className="mt-2 text-sm leading-5 text-muted-foreground">{detail}</p>
     </div>
   );
+  return href && value > 0 ? <Link to={href}>{content}</Link> : content;
 }
 
 function StageRow({ label, count, tone }: { label: string; count: number; tone: "green" | "amber" | "gray" | "blue" }) {
@@ -511,12 +482,13 @@ function StatusDot({ tone }: { tone: "danger" | "warning" | "info" | "success" }
   );
 }
 
-function postSalesDashboardSummary(tasks: PostSalesTask[], checklists: PostSalesChecklist[]) {
-  const today = startOfToday();
+function postSalesDashboardSummary(tasks: PostSalesTask[], checklists: PostSalesChecklist[], attentionGroups: OperationalAttentionGroup[]) {
+  const overdueTasks = attentionGroups.find((group) => group.kind === "post_sales_task_overdue")?.count ?? 0;
+  const blockedCustomers = attentionGroups.find((group) => group.kind === "post_sales_blocker")?.count ?? 0;
   return {
     openTasks: tasks.filter((task) => task.status === "open" || task.status === "in_progress" || task.status === "blocked").length,
-    overdueTasks: tasks.filter((task) => !["completed", "cancelled"].includes(task.status) && isBefore(task.due_at, today)).length,
-    blockedCustomers: checklists.filter((checklist) => checklist.status === "blocked").length,
+    overdueTasks,
+    blockedCustomers,
     agreementsReady: checklists.filter((checklist) => checklist.agreement_status === "ready_for_review" || checklist.agreement_status === "sent_for_signature").length,
     documentsPending: checklists.filter((checklist) => checklist.document_status === "missing_documents" || checklist.document_status === "pending_review").length,
     documentsPendingReview: checklists.filter((checklist) => checklist.document_status === "pending_review").length,
@@ -525,22 +497,21 @@ function postSalesDashboardSummary(tasks: PostSalesTask[], checklists: PostSales
   };
 }
 
-function salesDashboardSummary(leads: Lead[], followUps: FollowUpTask[], siteVisits: SiteVisit[]) {
-  const today = startOfToday();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
+function salesDashboardSummary(leads: Lead[], followUps: FollowUpTask[], siteVisits: SiteVisit[], attentionGroups: OperationalAttentionGroup[]) {
+  const today = new Date();
   const stageMap = new Map<Lead["pipeline_stage"], number>();
   leads.forEach((lead) => stageMap.set(lead.pipeline_stage, (stageMap.get(lead.pipeline_stage) ?? 0) + 1));
-  const upcomingSiteVisits = siteVisits.filter((visit) => {
-    const scheduledAt = parseDate(visit.scheduled_at);
-    return scheduledAt ? scheduledAt >= today : false;
-  });
+  const overdueFollowUps = attentionGroups.find((group) => group.kind === "overdue_follow_up")?.count ?? 0;
+  const dueTodayFollowUps = attentionGroups.find((group) => group.kind === "follow_up_due_today")?.count ?? 0;
+  const siteVisitsToday = attentionGroups.find((group) => group.kind === "site_visit_today")?.count ?? 0;
+  const upcomingSiteVisits = siteVisits.filter((visit) => ["scheduled", "rescheduled"].includes(visit.status) && (parseDate(visit.scheduled_at)?.getTime() ?? Number.POSITIVE_INFINITY) >= today.getTime());
+  const upcomingVisitCount = (attentionGroups.find((group) => group.kind === "site_visit_today")?.count ?? 0) + (attentionGroups.find((group) => group.kind === "site_visit_upcoming")?.count ?? 0);
   return {
     openFollowUps: followUps.length,
-    overdueFollowUps: followUps.filter((task) => isBefore(task.due_at, today)).length,
-    dueTodayFollowUps: followUps.filter((task) => isWithin(task.due_at, today, tomorrow)).length,
-    siteVisitsToday: upcomingSiteVisits.filter((visit) => isWithin(visit.scheduled_at, today, tomorrow)).length,
-    upcomingVisits: upcomingSiteVisits.length,
+    overdueFollowUps,
+    dueTodayFollowUps,
+    siteVisitsToday,
+    upcomingVisits: upcomingVisitCount,
     nextVisit: upcomingSiteVisits[0] ?? null,
     depositPending: leads.filter((lead) => lead.pipeline_stage === "deposit_pending").length,
     familyDecision: leads.filter((lead) => lead.pipeline_stage === "family_decision").length,
@@ -548,46 +519,22 @@ function salesDashboardSummary(leads: Lead[], followUps: FollowUpTask[], siteVis
   };
 }
 
-function reservationDashboardSummary(reservations: LotReservation[]) {
-  const today = startOfToday();
-  const expiringCutoff = new Date(today);
-  expiringCutoff.setDate(today.getDate() + 3);
+function reservationDashboardSummary(reservations: LotReservation[], attentionGroups: OperationalAttentionGroup[]) {
   const activeStatuses = new Set<LotReservation["status"]>(["draft", "reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"]);
   const activeReservations = reservations.filter((reservation) => activeStatuses.has(reservation.status));
   return {
     activeReservations: activeReservations.length,
-    expiringSoon: activeReservations.filter((reservation) => isWithinInclusive(reservation.expires_at, today, expiringCutoff)).length,
+    expiringSoon: attentionGroups.find((group) => group.kind === "reservation_expiring")?.count ?? 0,
     depositPending: activeReservations.filter((reservation) => reservation.deposit_status === "pending" || reservation.status === "deposit_pending").length,
-    depositOverdue: activeReservations.filter((reservation) => reservation.deposit_status === "overdue" || (reservation.deposit_status === "pending" && isBefore(reservation.deposit_due_at, today))).length,
+    depositOverdue: attentionGroups.find((group) => group.kind === "deposit_overdue")?.count ?? 0,
     depositConfirmed: activeReservations.filter((reservation) => reservation.deposit_status === "confirmed" || reservation.status === "deposit_confirmed").length,
   };
-}
-
-function startOfToday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
 }
 
 function parseDate(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isBefore(value: string | null | undefined, date: Date) {
-  const parsed = parseDate(value);
-  return parsed ? parsed < date : false;
-}
-
-function isWithin(value: string | null | undefined, start: Date, end: Date) {
-  const parsed = parseDate(value);
-  return parsed ? parsed >= start && parsed < end : false;
-}
-
-function isWithinInclusive(value: string | null | undefined, start: Date, end: Date) {
-  const parsed = parseDate(value);
-  return parsed ? parsed >= start && parsed <= end : false;
 }
 
 function leadStageLabel(stage: Lead["pipeline_stage"]) {

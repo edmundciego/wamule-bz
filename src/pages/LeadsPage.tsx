@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -8,7 +9,6 @@ import {
   ClipboardList,
   Clock3,
   Edit3,
-  Flag,
   History,
   MapPin,
   MessageSquareText,
@@ -26,6 +26,7 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
 import { getSessionAndProfile } from "../lib/data";
+import { buildOperationalAttention } from "../lib/operationalAttention";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
@@ -118,8 +119,11 @@ type ReservationFormValues = {
   notes: string;
 };
 
+type ActivityComposer = "followup" | "visit" | "note";
+
 export function LeadsPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<LeadPipelineStage | "all">("all");
   const [assignedFilter, setAssignedFilter] = useState("all");
@@ -129,9 +133,15 @@ export function LeadsPage() {
   const [editingLead, setEditingLead] = useState<LeadWithRelations | null>(null);
   const [creatingLead, setCreatingLead] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [activityComposer, setActivityComposer] = useState<ActivityComposer>("followup");
   const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+
+  const requestedLeadId = searchParams.get("lead");
+  const requestedFocus = searchParams.get("focus");
+  const requestedFollowUpId = searchParams.get("followup");
+  const requestedStage = searchParams.get("stage") as LeadPipelineStage | null;
 
   const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
   const { data: adminProfiles } = useQuery({
@@ -255,25 +265,51 @@ export function LeadsPage() {
   const currentRole = sessionProfile?.profile?.role;
   const canWrite = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
   const selectedLead = useMemo(
-    () => leads?.find((lead) => lead.id === selectedLeadId) ?? leads?.[0] ?? null,
-    [leads, selectedLeadId],
+    () => requestedLeadId
+      ? leads?.find((lead) => lead.id === requestedLeadId) ?? null
+      : leads?.find((lead) => lead.id === selectedLeadId) ?? leads?.[0] ?? null,
+    [leads, requestedLeadId, selectedLeadId],
   );
-  const now = new Date();
+  useEffect(() => {
+    if (!requestedLeadId || !leads?.some((lead) => lead.id === requestedLeadId)) return;
+    setSelectedLeadId(requestedLeadId);
+    setMobileDetailOpen(true);
+  }, [leads, requestedLeadId]);
+  useEffect(() => {
+    if (requestedStage && pipelineStages.some((stage) => stage.value === requestedStage)) setStageFilter(requestedStage);
+  }, [requestedStage]);
+  useEffect(() => {
+    if (!selectedLead || !requestedFocus) return;
+    const timer = window.setTimeout(() => {
+      const focusTarget = requestedFocus === "reservations" ? "reservation" : requestedFocus === "activity" || requestedFocus === "activity-timeline" ? "timeline" : requestedFocus;
+      const target = requestedFocus === "followups" && requestedFollowUpId
+        ? Array.from(document.querySelectorAll<HTMLElement>("[data-focus-id]" )).find((node) => node.dataset.focusId === requestedFollowUpId)
+        : document.querySelector<HTMLElement>(`[data-focus-target="${focusTarget}"]`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("ring-2", "ring-accent", "ring-offset-2");
+      window.setTimeout(() => target.classList.remove("ring-2", "ring-accent", "ring-offset-2"), 1800);
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [requestedFocus, requestedFollowUpId, selectedLead]);
+  const now = useMemo(() => new Date(), []);
+  const attentionItems = useMemo(() => buildOperationalAttention({ leads: leads ?? [], followUps: tasks ?? [] }, now), [leads, now, tasks]);
+  const overdueLeadIds = useMemo(() => new Set(attentionItems.filter((item) => item.kind === "overdue_follow_up").map((item) => item.entityId)), [attentionItems]);
+  const dueTodayLeadIds = useMemo(() => new Set(attentionItems.filter((item) => item.kind === "follow_up_due_today").map((item) => item.entityId)), [attentionItems]);
   const filteredLeads = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (leads ?? []).filter((lead) => {
       const assigned = assignedFilter === "all" || lead.assigned_to === assignedFilter;
       const stage = stageFilter === "all" || lead.pipeline_stage === stageFilter;
-      const dueDate = lead.next_action_due_at ? new Date(lead.next_action_due_at) : null;
       const due =
         dueFilter === "all" ||
-        (dueFilter === "due" && dueDate && isToday(dueDate)) ||
-        (dueFilter === "overdue" && dueDate && dueDate < startOfToday());
+        (dueFilter === "due" && dueTodayLeadIds.has(lead.id)) ||
+        (dueFilter === "overdue" && overdueLeadIds.has(lead.id));
       const duplicate = duplicateFilter === "all" || Boolean(lead.possible_duplicate);
       const matchesSearch = !q || `${lead.full_name} ${lead.phone ?? ""} ${lead.email ?? ""} ${lead.source ?? ""} ${lead.duplicate_reason ?? ""}`.toLowerCase().includes(q);
       return assigned && stage && due && duplicate && matchesSearch;
     });
-  }, [assignedFilter, dueFilter, duplicateFilter, leads, search, stageFilter]);
+  }, [assignedFilter, dueFilter, duplicateFilter, dueTodayLeadIds, leads, overdueLeadIds, search, stageFilter]);
   const selectedActivities = activities?.filter((activity) => activity.lead_id === selectedLead?.id) ?? [];
   const selectedTasks = tasks?.filter((task) => task.lead_id === selectedLead?.id) ?? [];
   const selectedVisits = visits?.filter((visit) => visit.lead_id === selectedLead?.id) ?? [];
@@ -645,8 +681,8 @@ export function LeadsPage() {
         onStageSelect={(stage) => setStageFilter(stage)}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(330px,0.38fr)_minmax(0,0.62fr)]">
-        <section className={cn("min-w-0 xl:block", mobileDetailOpen && "hidden")}>
+      <div className="grid gap-6 xl:grid-cols-[minmax(288px,320px)_minmax(0,1fr)]">
+        <section className={cn("min-w-0", mobileDetailOpen ? "hidden xl:block" : "block")}>
           <BuyerQueue
             search={search}
             stageFilter={stageFilter}
@@ -669,7 +705,7 @@ export function LeadsPage() {
           />
         </section>
 
-        <section className={cn("min-w-0 xl:block", !mobileDetailOpen && "hidden")}>
+        <section className={cn("min-w-0", mobileDetailOpen ? "block" : "hidden xl:block")}>
           {selectedLead ? (
             <div className="grid content-start gap-4">
               <Button type="button" variant="ghost" className="w-fit xl:hidden" onClick={() => setMobileDetailOpen(false)}>
@@ -685,9 +721,9 @@ export function LeadsPage() {
                 canWrite={canWrite}
                 onEdit={() => { setEditingLead(selectedLead); setCreatingLead(false); }}
               />
-              <section className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)]">
+              <NextActionPanel lead={selectedLead} adminProfiles={adminProfiles ?? []} tasks={selectedTasks} now={now} />
+              <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.42fr)]">
                 <div className="grid min-w-0 content-start gap-4">
-                  <NextActionPanel lead={selectedLead} adminProfiles={adminProfiles ?? []} tasks={selectedTasks} now={now} />
                   <TasksCard tasks={selectedTasks} canWrite={canWrite} onUpdate={updateTaskStatus} />
                   <VisitsCard visits={selectedVisits} canWrite={canWrite} onUpdate={updateVisitStatus} />
                   <ReservationsCard
@@ -716,19 +752,23 @@ export function LeadsPage() {
                     generating={generatingSummaryId === selectedLead.id}
                     onGenerate={() => void generateLeadSummary(selectedLead.id)}
                   />
-                  <TimelineCard activities={selectedActivities} />
                 </div>
               </section>
+              <TimelineCard activities={selectedActivities} />
               {canWrite ? (
-                <section className="grid gap-4 lg:grid-cols-3">
-                  <TaskForm key={`task-${selectedLead.id}`} adminProfiles={adminProfiles ?? []} lead={selectedLead} onSubmit={(values) => void createTask(values)} />
-                  <VisitForm key={`visit-${selectedLead.id}`} adminProfiles={adminProfiles ?? []} lead={selectedLead} onSubmit={(values) => void createVisit(values)} />
-                  <ActivityForm key={`activity-${selectedLead.id}`} onSubmit={(values) => void createTimelineNote(values)} />
-                </section>
+                <ActivityComposerPanel
+                  active={activityComposer}
+                  lead={selectedLead}
+                  adminProfiles={adminProfiles ?? []}
+                  onChange={setActivityComposer}
+                  onCreateTask={(values) => void createTask(values)}
+                  onCreateVisit={(values) => void createVisit(values)}
+                  onCreateNote={(values) => void createTimelineNote(values)}
+                />
               ) : null}
             </div>
           ) : (
-            <EmptyState title="No lead selected" detail="Select a lead to view buyer details, follow-ups, visits, and timeline notes." />
+            <EmptyState title={requestedLeadId ? "Lead unavailable" : "No lead selected"} detail={requestedLeadId ? "The requested lead is no longer available or you do not have access to it." : "Select a lead to view buyer details, follow-ups, visits, and timeline notes."} />
           )}
         </section>
       </div>
@@ -868,13 +908,13 @@ function PipelineStrip({
 }) {
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
   return (
-    <section className="overflow-hidden rounded-xl border border-primary/10 bg-primary-soft/70 shadow-[var(--shadow-card)]">
-      <div className="flex items-center gap-2 overflow-x-auto p-2">
+    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm shadow-primary/5">
+      <div className="flex items-stretch gap-2 overflow-x-auto p-2" aria-label="Lead pipeline stages">
         <button
           type="button"
           onClick={() => onStageSelect("all")}
           className={cn(
-            "min-w-[118px] rounded-lg border px-3 py-2 text-left transition",
+            "min-h-[72px] min-w-[118px] rounded-lg border px-3 py-2 text-left transition focus-ring",
             activeStage === "all" ? "border-primary bg-primary text-white shadow-sm" : "border-primary/10 bg-card text-slate hover:border-primary/30 hover:bg-card",
           )}
         >
@@ -887,11 +927,11 @@ function PipelineStrip({
             type="button"
             onClick={() => onStageSelect(stage.value)}
             className={cn(
-              "min-w-[142px] rounded-lg border px-3 py-2 text-left transition",
+              "min-h-[72px] min-w-[150px] rounded-lg border px-3 py-2 text-left transition focus-ring",
               activeStage === stage.value ? "border-primary bg-primary text-white shadow-sm" : "border-primary/10 bg-card text-slate hover:border-primary/30 hover:bg-card",
             )}
           >
-            <span className="block truncate text-xs font-semibold uppercase tracking-[0.12em] opacity-75">{stage.label}</span>
+            <span className="block whitespace-normal text-xs font-semibold leading-4 tracking-[0.1em] opacity-75">{stage.label}</span>
             <span className="mt-1 block text-xl font-semibold tabular-nums">{counts.get(stage.value) ?? 0}</span>
           </button>
         ))}
@@ -934,23 +974,23 @@ function BuyerQueue({
   onSelect: (leadId: string) => void;
 }) {
   return (
-    <div className="grid content-start gap-4 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-hidden">
-      <section className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
-        <div className="mb-4 flex items-start justify-between gap-3">
+    <div className="grid content-start gap-3 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-hidden">
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm shadow-primary/5">
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Buyer Queue</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Filtered sales worklist for active buyer conversations.</p>
+            <h2 className="text-base font-semibold text-foreground">Buyer Queue</h2>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">Filtered worklist for active buyer conversations.</p>
           </div>
           <Badge tone="brown">{leads.length}</Badge>
         </div>
-        <div className="grid gap-3">
+        <div className="grid gap-2.5">
           <Field label="Search leads">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input className="pl-9" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Name, phone, email, source" />
             </div>
           </Field>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <div className="grid min-w-0 gap-2.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             <Field label="Pipeline stage">
               <Select value={stageFilter} onChange={(event) => onStageFilter(event.target.value as LeadPipelineStage | "all")}>
                 <option value="all">All stages</option>
@@ -982,7 +1022,7 @@ function BuyerQueue({
         </div>
       </section>
 
-      <section className="grid gap-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+      <section className="grid gap-2.5 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
         {leads.length ? leads.map((lead) => (
           <LeadQueueCard
             key={lead.id}
@@ -1019,21 +1059,21 @@ function LeadQueueCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full rounded-xl border p-4 text-left shadow-[var(--shadow-card)] transition hover:border-primary/30 hover:bg-primary-soft/50",
-        selected ? "border-primary/35 bg-primary-soft" : "border-border bg-card",
+        "focus-ring w-full rounded-lg border p-3 text-left shadow-sm shadow-primary/5 transition hover:border-primary/30 hover:bg-primary-soft/35",
+        selected ? "border-primary/45 bg-primary-soft/55 ring-1 ring-primary/15" : "border-border bg-card",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="break-words text-base font-semibold text-foreground">{lead.full_name}</p>
-          <p className="mt-1 break-words text-sm text-muted-foreground">{leadInterestLabel(lead)}</p>
+          <p className="line-clamp-2 break-words text-[0.95rem] font-semibold leading-5 text-foreground">{lead.full_name}</p>
+          <p className="mt-0.5 line-clamp-1 break-words text-sm text-muted-foreground">{leadInterestLabel(lead)}</p>
         </div>
-        <PipelineBadge stage={lead.pipeline_stage} />
+        <div className="shrink-0"><PipelineBadge stage={lead.pipeline_stage} /></div>
       </div>
-      <div className="mt-4 grid gap-2 text-sm">
+      <div className="mt-3 grid gap-2 text-sm">
         <div className="flex items-start gap-2">
           <Clock3 className={cn("mt-0.5 h-4 w-4 shrink-0", overdue ? "text-danger" : "text-primary")} />
-          <span className="min-w-0 break-words text-slate">{lead.next_action || "No next action recorded"}</span>
+          <span className="min-w-0 line-clamp-2 break-words leading-5 text-slate">{lead.next_action || "No next action recorded"}</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>{lead.next_action_due_at ? formatDate(lead.next_action_due_at) : "No due date"}</span>
@@ -1067,18 +1107,17 @@ function SelectedLeadWorkbench({
   const activeReservation = reservations.find((reservation) => activeReservationStatuses.has(reservation.status)) ?? null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-primary/15 bg-card shadow-[0_12px_28px_rgba(31,41,51,0.08)]">
-      <div className="relative bg-primary p-5 text-white sm:p-6">
-        <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(135deg,rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(45deg,rgba(214,168,79,.18)_1px,transparent_1px)] [background-size:28px_28px]" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+    <section className="overflow-hidden rounded-xl border border-primary/15 bg-card shadow-sm shadow-primary/10">
+      <div className="bg-primary px-4 py-4 text-white sm:px-5 sm:py-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-soft">Selected buyer</p>
-            <h2 className="mt-2 break-words text-3xl font-semibold leading-tight sm:text-4xl">{lead.full_name}</h2>
-            <p className="mt-2 break-words text-sm text-white/75">{leadInterestLabel(lead)}</p>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/80">
+            <h2 className="mt-1.5 break-words text-2xl font-semibold leading-tight sm:text-3xl">{lead.full_name}</h2>
+            <p className="mt-1.5 break-words text-sm leading-5 text-white/75">{leadInterestLabel(lead)}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-sm text-white/85">
               {lead.phone ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">{lead.phone}</span> : null}
               {lead.whatsapp ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">WhatsApp {lead.whatsapp}</span> : null}
-              {lead.email ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">{lead.email}</span> : null}
+              {lead.email ? <span className="max-w-full break-all rounded-md border border-white/15 bg-white/10 px-2.5 py-1">{lead.email}</span> : null}
               {!lead.phone && !lead.whatsapp && !lead.email ? <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1">No contact details</span> : null}
             </div>
           </div>
@@ -1094,9 +1133,8 @@ function SelectedLeadWorkbench({
           </div>
         </div>
       </div>
-      <div className="grid gap-3 border-b border-border bg-primary-soft/50 p-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 border-b border-border bg-muted/40 p-4 md:grid-cols-3">
         <WorkbenchStatus label="Owner" value={adminLabelById(adminProfiles, lead.assigned_to)} icon={UserRound} />
-        <WorkbenchStatus label="Next action" value={lead.next_action || "No next action"} icon={Flag} />
         <WorkbenchStatus label="Follow-ups" value={`${openTasks} open`} icon={MessageSquareText} />
         <WorkbenchStatus label="Reservation" value={activeReservation ? reservationStatusLabel(activeReservation.status) : "No active hold"} icon={MapPin} />
       </div>
@@ -1134,12 +1172,12 @@ function PublicInquiryContext({ lead }: { lead: LeadWithRelations }) {
 
 function WorkbenchStatus({ label, value, icon: Icon }: { label: string; value: string; icon: typeof UserRound }) {
   return (
-    <div className="min-w-0 rounded-lg border border-primary/10 bg-card/85 p-3">
+    <div className="min-w-0">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         <Icon className="h-3.5 w-3.5 text-primary" />
         {label}
       </div>
-      <p className="mt-2 break-words text-sm font-semibold text-foreground">{value}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -1162,18 +1200,18 @@ function NextActionPanel({ lead, adminProfiles, tasks, now }: { lead: LeadWithRe
   const priority = nextTask?.priority ?? "normal";
 
   return (
-    <section className="rounded-xl border border-primary/10 bg-primary-soft/80 p-5 shadow-[var(--shadow-card)]">
+    <section className={cn("rounded-xl border p-4 shadow-sm shadow-primary/5", overdue ? "border-danger/25 bg-danger/5" : "border-primary/20 bg-primary-soft/55")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next Action</p>
-          <h3 className="mt-2 break-words text-xl font-semibold text-foreground">{title}</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          <h3 className="mt-1.5 break-words text-lg font-semibold text-foreground">{title}</h3>
+          <p className="mt-1.5 text-sm leading-5 text-muted-foreground">
             {nextTask?.description || "Use this as the buyer's immediate sales follow-up context."}
           </p>
         </div>
         <Badge tone={overdue ? "red" : priorityTone(priority)}>{overdue ? "Overdue" : taskPriorityLabel(priority)}</Badge>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <Meta label="Due" value={due ? formatDate(due) : "No due date"} />
         <Meta label="Owner" value={adminLabelById(adminProfiles, nextTask?.assigned_to ?? lead.assigned_to)} />
         <Meta label="Status" value={nextTask ? taskStatusLabel(nextTask.status) : stageLabel(lead.pipeline_stage)} />
@@ -1204,18 +1242,18 @@ function AdvisorRegion({
   onGenerate: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-accent/30 bg-accent-soft/70 p-4 shadow-[0_6px_18px_rgba(138,90,53,0.07)]">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-md border border-accent/30 bg-card p-2 text-secondary">
+    <section data-focus-target="smart-summary" className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+      <div className="mb-3 flex items-start gap-3">
+        <div className="rounded-md border border-accent/25 bg-accent-soft/60 p-2 text-secondary">
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Staff guidance</p>
           <h3 className="mt-1 text-lg font-semibold text-foreground">Buyer Insights</h3>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">Assistive guidance from current lead, follow-up, visit, and reservation records.</p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">Advisory guidance from current lead, follow-up, visit, and reservation records.</p>
         </div>
       </div>
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         <SmartInsightList insights={leadSmartInsights(lead, tasks, visits, reservations)} compact />
         <LeadSmartSummaryPanel
           summary={summary}
@@ -1248,45 +1286,49 @@ function LeadSmartSummaryPanel({
   const summaryText = safeString(summary?.summary, "No summary text recorded.");
 
   return (
-    <div className="rounded-lg border border-accent/25 bg-card/80">
-      <div className="flex flex-col gap-3 border-b border-accent/20 p-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="rounded-lg border border-border bg-muted/30">
+      <div className="flex flex-col gap-2 border-b border-border/80 p-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Brain className="h-4 w-4 text-secondary" />
             <h4 className="font-semibold text-foreground">Lead Smart Summary</h4>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
             This summary is generated from platform data to support staff review. Staff should verify details before making decisions.
           </p>
+          {summary ? <p className="mt-1 text-xs text-muted-foreground">Generated {safeFormatDate(summary.generated_at)} · {safeString(summary.provider, "Provider not recorded")}</p> : null}
         </div>
         {summary?.readiness_status ? <Badge tone={readinessTone(summary.readiness_status)}>{readinessLabel(summary.readiness_status)}</Badge> : <Badge tone="gray">Not generated</Badge>}
       </div>
-      <div className="grid gap-4 p-4">
+      <div className="grid gap-3 p-3">
         {summary ? (
           <>
-            <div className="rounded-md border border-accent/25 bg-accent-soft/60 p-3 text-sm leading-6 text-slate">
+            <div className="rounded-md border border-border bg-card p-3 text-sm leading-6 text-slate">
               {summaryText}
             </div>
             <SummaryList title="Risk Flags" items={risks} empty="No risk flags listed." tone="red" />
-            <SummaryList title="Missing Information" items={missing} empty="No missing information listed." tone="amber" />
-            <SummaryList title="Recommended Actions" items={actions} empty="No recommended actions listed." tone="blue" />
             {summary.next_best_action ? (
-              <div className="crm-subpanel text-sm">
+              <div className="rounded-md border border-primary/15 bg-primary-soft/45 p-3 text-sm">
                 <p className="font-semibold text-primary">Next Best Action</p>
                 <p className="mt-1 break-words text-muted-foreground">{summary.next_best_action}</p>
               </div>
             ) : null}
-            {summary.confidence_notes ? (
-              <div className="crm-subpanel text-sm">
-                <p className="font-semibold text-primary">Confidence Notes</p>
-                <p className="mt-1 break-words text-muted-foreground">{summary.confidence_notes}</p>
+            <details className="rounded-md border border-border bg-card/70 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-primary">More advisory detail</summary>
+              <div className="mt-3 grid gap-3">
+                <SummaryList title="Missing Information" items={missing} empty="No missing information listed." tone="amber" />
+                <SummaryList title="Recommended Actions" items={actions} empty="No recommended actions listed." tone="blue" />
+                {summary.confidence_notes ? (
+                  <div className="text-sm">
+                    <p className="font-semibold text-primary">Confidence Notes</p>
+                    <p className="mt-1 break-words text-muted-foreground">{summary.confidence_notes}</p>
+                  </div>
+                ) : null}
+                <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                  <span className="break-words">Model: {safeString(summary.model, "Not recorded")}</span>
+                </div>
               </div>
-            ) : null}
-            <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-              <span className="break-words">Generated: {safeFormatDate(summary.generated_at)}</span>
-              <span className="break-words">Provider: {safeString(summary.provider, "Not recorded")}</span>
-              <span className="break-words">Model: {safeString(summary.model, "Not recorded")}</span>
-            </div>
+            </details>
           </>
         ) : (
           <div className="crm-subpanel text-sm text-muted-foreground">
@@ -1316,7 +1358,7 @@ function SummaryList({ title, items, empty, tone }: { title: string; items: stri
     <div className="grid gap-2 text-sm">
       <p className="font-semibold text-primary">{title}</p>
       {items.length ? items.map((item) => (
-        <div key={item} className="flex items-start gap-2 rounded-md border border-border bg-card p-2 shadow-sm shadow-primary/5">
+        <div key={item} className="flex items-start gap-2 rounded-md border border-border bg-card p-2">
           <Badge tone={tone}>{title === "Recommended Actions" ? "Action" : "Note"}</Badge>
           <span className="min-w-0 break-words text-muted-foreground">{item}</span>
         </div>
@@ -1351,6 +1393,7 @@ function ReservationsCard({
   reservationSettings: ReservationWorkflowSettings;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [creatingReservation, setCreatingReservation] = useState(false);
   const [releasePrimaryId, setReleasePrimaryId] = useState<string | null>(null);
   const [releaseSelectedIds, setReleaseSelectedIds] = useState<string[]>([]);
   const [releaseReason, setReleaseReason] = useState("");
@@ -1387,7 +1430,7 @@ function ReservationsCard({
   }
 
   return (
-    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
+    <section data-focus-target="reservation" className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -1396,14 +1439,28 @@ function ReservationsCard({
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {reservationSettings.show_reservation_explanations
-              ? "Reservations are internal lot holds or buyer-interest records. They help the team track serious interest in a specific lot while deposit, application, or contract next steps are handled."
+              ? "Internal lot holds and deposit-readiness tracking. A reservation does not create a payment or replace the payment ledger."
               : "Internal lot holds and buyer-interest records."}
           </p>
         </div>
         {activeReservation ? <ReservationBadge status={activeReservation.status} /> : <Badge tone="gray">No active hold</Badge>}
       </div>
-      <div className="mt-4 grid gap-4">
-        {canWrite && !activeReservation && !editingReservation ? (
+      <div className="mt-3 grid gap-3">
+        {canWrite && !activeReservation && !editingReservation && !creatingReservation ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/20 bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">No active reservation for this buyer.</p>
+            <Button type="button" variant="outline" className="shrink-0" onClick={() => setCreatingReservation(true)}>
+              <Plus className="h-4 w-4" />
+              Create Reservation
+            </Button>
+          </div>
+        ) : null}
+        {canWrite && !activeReservation && !editingReservation && creatingReservation ? (
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-foreground">Create Reservation</p>
+              <Button type="button" variant="ghost" className="h-9" onClick={() => setCreatingReservation(false)}>Close</Button>
+            </div>
           <ReservationForm
             key={`new-reservation-${lead.id}`}
             lead={lead}
@@ -1413,10 +1470,11 @@ function ReservationsCard({
             reservationSettings={reservationSettings}
             onSubmit={(values) => onSave(null, values)}
           />
+          </div>
         ) : null}
-        {reservations.length === 0 ? <p className="text-sm text-muted-foreground">No reservations recorded for this lead.</p> : null}
+        {reservations.length === 0 && (activeReservation || !canWrite) ? <p className="text-sm text-muted-foreground">No reservations recorded for this lead.</p> : null}
         {reservations.map((reservation) => (
-          <div key={reservation.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
+          <div key={reservation.id} className="grid gap-3 rounded-lg border border-border bg-muted/25 p-3 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="break-words font-medium text-primary">
@@ -1588,9 +1646,9 @@ function ReservationForm({
   }
 
   return (
-    <form className="grid gap-3 rounded-md border border-primary/10 bg-primary-soft/40 p-3" onSubmit={(event) => { event.preventDefault(); onSubmit(values); }}>
+    <form className="grid gap-4 rounded-lg border border-border bg-card p-4" onSubmit={(event) => { event.preventDefault(); onSubmit(values); }}>
       {reservationSettings.show_reservation_explanations ? (
-        <div className="crm-info-panel p-3 text-sm">
+        <div className="rounded-md border border-primary/15 bg-primary-soft/45 p-3 text-sm text-primary">
           Deposit Readiness tracks whether a deposit is pending, submitted, confirmed, waived, overdue, or cancelled. It does not create payments, change balances, confirm proof, or replace the payment ledger.
         </div>
       ) : null}
@@ -1720,6 +1778,61 @@ type TaskFormValues = {
   assigned_to: string;
 };
 
+function ActivityComposerPanel({
+  active,
+  lead,
+  adminProfiles,
+  onChange,
+  onCreateTask,
+  onCreateVisit,
+  onCreateNote,
+}: {
+  active: ActivityComposer;
+  lead: LeadWithRelations;
+  adminProfiles: AdminProfile[];
+  onChange: (value: ActivityComposer) => void;
+  onCreateTask: (values: TaskFormValues) => void;
+  onCreateVisit: (values: VisitFormValues) => void;
+  onCreateNote: (values: ActivityFormValues) => void;
+}) {
+  const options: Array<{ value: ActivityComposer; label: string }> = [
+    { value: "followup", label: "Follow-up" },
+    { value: "visit", label: "Site Visit" },
+    { value: "note", label: "Timeline Note" },
+  ];
+
+  return (
+    <section className="grid gap-3" aria-label="Add activity">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-foreground">Add Activity</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Open one form at a time to keep the buyer record focused.</p>
+        </div>
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1" role="tablist" aria-label="Activity type">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={active === option.value}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "focus-ring shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                active === option.value ? "bg-primary text-white" : "text-muted-foreground hover:bg-primary-soft hover:text-primary",
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {active === "followup" ? <TaskForm key={`task-${lead.id}`} adminProfiles={adminProfiles} lead={lead} onSubmit={onCreateTask} /> : null}
+      {active === "visit" ? <VisitForm key={`visit-${lead.id}`} adminProfiles={adminProfiles} lead={lead} onSubmit={onCreateVisit} /> : null}
+      {active === "note" ? <ActivityForm key={`activity-${lead.id}`} onSubmit={onCreateNote} /> : null}
+    </section>
+  );
+}
+
 function TaskForm({ adminProfiles, lead, onSubmit }: { adminProfiles: AdminProfile[]; lead: Lead; onSubmit: (values: TaskFormValues) => void }) {
   const [values, setValues] = useState<TaskFormValues>({ title: lead.next_action ?? "", description: "", due_at: toDateTimeLocal(lead.next_action_due_at), priority: "normal", assigned_to: lead.assigned_to ?? "" });
   return (
@@ -1821,15 +1934,15 @@ function ActivityForm({ onSubmit }: { onSubmit: (values: ActivityFormValues) => 
 
 function TasksCard({ tasks, canWrite, onUpdate }: { tasks: FollowUpTask[]; canWrite: boolean; onUpdate: (task: FollowUpTask, status: FollowUpTaskStatus) => void }) {
   return (
-    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
-      <div className="mb-4 flex items-center gap-2">
+    <section data-focus-target="followups" className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+      <div className="mb-3 flex items-center gap-2">
         <MessageSquareText className="h-4 w-4 text-primary" />
         <h3 className="text-lg font-semibold text-foreground">Follow-ups</h3>
       </div>
       <div className="grid gap-3">
-        {tasks.length === 0 ? <p className="text-sm text-muted-foreground">No follow-ups recorded.</p> : null}
+        {tasks.length === 0 ? <div className="rounded-lg border border-dashed border-border bg-muted/25 px-3 py-2.5 text-sm text-muted-foreground">No follow-ups recorded. Add one from the activity area below.</div> : null}
         {tasks.map((task) => (
-          <div key={task.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
+          <div key={task.id} data-focus-id={task.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="break-words font-medium text-primary">{task.title}</p>
@@ -1856,8 +1969,8 @@ function TasksCard({ tasks, canWrite, onUpdate }: { tasks: FollowUpTask[]; canWr
 
 function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWrite: boolean; onUpdate: (visit: SiteVisit, status: SiteVisitStatus) => void }) {
   return (
-    <section className="rounded-xl border border-primary/10 bg-primary-soft/70 p-5 shadow-[var(--shadow-card)]">
-      <div className="mb-4">
+    <section data-focus-target="site-visits" className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+      <div className="mb-3">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">Site Visits</h3>
@@ -1866,13 +1979,13 @@ function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWr
       </div>
       <div className="grid gap-3">
         {visits.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-primary/20 bg-card/60 p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border bg-muted/25 px-3 py-2.5 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">No site visit scheduled</p>
             <p className="mt-1">Site Visits are appointments to view a project or lot. They do not reserve a lot.</p>
           </div>
         ) : null}
         {visits.map((visit) => (
-          <div key={visit.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
+          <div key={visit.id} data-focus-id={visit.id} className="grid gap-3 rounded-lg border border-primary/10 bg-card/85 p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="break-words font-medium text-primary">{visit.visit_type ?? "Site Visit"}</p>
@@ -1898,13 +2011,13 @@ function VisitsCard({ visits, canWrite, onUpdate }: { visits: SiteVisit[]; canWr
 
 function TimelineCard({ activities }: { activities: LeadActivity[] }) {
   return (
-    <section className="rounded-xl border border-border bg-muted/60 p-5">
-      <div className="mb-4 flex items-center gap-2">
+    <section data-focus-target="timeline" className="rounded-xl border border-border bg-card p-4 shadow-sm shadow-primary/5">
+      <div className="mb-3 flex items-center gap-2">
         <History className="h-4 w-4 text-slate" />
         <h3 className="text-lg font-semibold text-foreground">Activity Timeline</h3>
       </div>
       <div className="grid gap-3">
-        {activities.length === 0 ? <p className="text-sm text-muted-foreground">No activity has been recorded yet.</p> : null}
+        {activities.length === 0 ? <div className="rounded-lg border border-dashed border-border bg-muted/25 px-3 py-2.5 text-sm text-muted-foreground">No activity has been recorded yet.</div> : null}
         {activities.map((activity) => (
           <div key={activity.id} className="border-b border-border pb-3 text-sm last:border-0 last:pb-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1927,9 +2040,9 @@ function PipelineBadge({ stage }: { stage: LeadPipelineStage }) {
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="crm-subpanel">
+    <div className="min-w-0 border-t border-primary/15 pt-2 first:border-t-0 sm:first:border-t">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-1 break-words text-foreground">{value}</p>
+      <p className="mt-1 break-words text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }
@@ -2160,19 +2273,6 @@ function alternateReservationsForPrimary(primary: ReservationWithRelations, rese
 
 function isOverdue(value: string | null, now: Date) {
   return Boolean(value && new Date(value) < now);
-}
-
-function isToday(date: Date) {
-  const today = startOfToday();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  return date >= today && date < tomorrow;
-}
-
-function startOfToday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
 }
 
 function toDateTimeLocal(value: string | null | undefined) {

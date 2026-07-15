@@ -8,6 +8,7 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { exportCsv, reportFileName } from "../lib/csv";
 import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
+import { buildOperationalAttention } from "../lib/operationalAttention";
 import { supabase } from "../lib/supabase";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
@@ -472,8 +473,8 @@ export function ReportsPage() {
         />
       ) : null}
       {activeTab === "Balances" ? <BalancesReport rows={balanceRows} /> : null}
-      {activeTab === "Sales" ? <SalesPipelineReport rows={filteredLeads} allRows={leadsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} sourceOptions={sourceOptions} staffOptions={staffOptions} profileById={profileById} /> : null}
-      {activeTab === "Follow-ups" ? <FollowUpsReport rows={filteredFollowUps} allRows={followUpsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
+      {activeTab === "Sales" ? <SalesPipelineReport rows={filteredLeads} allRows={leadsQuery.data ?? []} followUps={followUpsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} sourceOptions={sourceOptions} staffOptions={staffOptions} profileById={profileById} /> : null}
+      {activeTab === "Follow-ups" ? <FollowUpsReport rows={filteredFollowUps} allRows={followUpsQuery.data ?? []} leads={leadsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
       {activeTab === "Site Visits" ? <SiteVisitsReport rows={filteredSiteVisits} allRows={siteVisitsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
       {activeTab === "Reservations" ? <ReservationsReport rows={filteredReservations} allRows={reservationsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
       {activeTab === "Applications" ? <ApplicationsReport rows={applicationsQuery.data ?? []} allRows={applicationsQuery.data ?? []} parcelNameById={parcelNameById} lotById={lotById} postSalesChecklists={postSalesChecklistsQuery.data ?? []} leads={leadsQuery.data ?? []} dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo} /> : null}
@@ -659,6 +660,7 @@ function BalancesReport({ rows }: { rows: Array<ContractReportRow & { totalPaid:
 function SalesPipelineReport({
   rows,
   allRows,
+  followUps,
   filters,
   onFiltersChange,
   sourceOptions,
@@ -667,6 +669,7 @@ function SalesPipelineReport({
 }: {
   rows: LeadReportRow[];
   allRows: LeadReportRow[];
+  followUps: FollowUpTask[];
   filters: ReportFilters;
   onFiltersChange: ReportFilterSetters;
   sourceOptions: string[];
@@ -674,7 +677,9 @@ function SalesPipelineReport({
   profileById: Map<string, AdminProfile>;
 }) {
   const stageCounts = countBy(rows, (row) => leadStageLabel(row.pipeline_stage));
-  const overdue = rows.filter((row) => isBeforeToday(row.next_action_due_at));
+  const attention = buildOperationalAttention({ leads: allRows, followUps });
+  const overdueLeadIds = new Set(attention.filter((item) => item.kind === "overdue_follow_up").map((item) => item.relatedEntityId));
+  const overdue = rows.filter((row) => overdueLeadIds.has(row.id));
   const unassigned = rows.filter((row) => !row.assigned_to && !["closed_won", "lost_inactive"].includes(row.pipeline_stage));
 
   function exportSales() {
@@ -729,6 +734,7 @@ function SalesPipelineReport({
 function FollowUpsReport({
   rows,
   allRows,
+  leads,
   filters,
   onFiltersChange,
   staffOptions,
@@ -736,13 +742,16 @@ function FollowUpsReport({
 }: {
   rows: FollowUpTask[];
   allRows: FollowUpTask[];
+  leads: LeadReportRow[];
   filters: ReportFilters;
   onFiltersChange: ReportFilterSetters;
   staffOptions: Array<[string, string]>;
   profileById: Map<string, AdminProfile>;
 }) {
   const open = rows.filter((row) => ["open", "in_progress"].includes(row.status));
-  const overdue = open.filter((row) => isBeforeToday(row.due_at));
+  const attention = buildOperationalAttention({ leads, followUps: allRows });
+  const overdueTaskIds = new Set(attention.filter((item) => item.kind === "overdue_follow_up").map((item) => item.entityId));
+  const overdue = open.filter((row) => overdueTaskIds.has(row.id));
   const dueSoon = open.filter((row) => isTodayOrUpcoming(row.due_at, 7));
 
   function exportFollowUps() {
@@ -805,6 +814,8 @@ function SiteVisitsReport({
   staffOptions: Array<[string, string]>;
   profileById: Map<string, AdminProfile>;
 }) {
+  const visitAttention = buildOperationalAttention({ siteVisits: allRows });
+  const upcomingVisitIds = new Set(visitAttention.filter((item) => ["site_visit_today", "site_visit_upcoming"].includes(item.kind)).map((item) => item.entityId));
   function exportVisits() {
     exportCsv({
       filename: reportFileName("site-visits-report"),
@@ -826,7 +837,7 @@ function SiteVisitsReport({
       <VisitFilters filters={filters} onFiltersChange={onFiltersChange} staffOptions={staffOptions} />
       <MetricGrid metrics={[
         ["Scheduled", rows.filter((row) => ["scheduled", "rescheduled"].includes(row.status)).length],
-        ["Upcoming", rows.filter((row) => isTodayOrUpcoming(row.scheduled_at, 7)).length],
+        ["Upcoming", rows.filter((row) => upcomingVisitIds.has(row.id)).length],
         ["Completed", rows.filter((row) => row.status === "completed").length],
         ["Cancelled / No-show", rows.filter((row) => ["cancelled", "no_show"].includes(row.status)).length],
       ]} />
@@ -864,9 +875,12 @@ function ReservationsReport({
   profileById: Map<string, AdminProfile>;
 }) {
   const active = rows.filter((row) => activeReservationStatuses.has(row.status));
-  const expiring = active.filter((row) => isTodayOrUpcoming(row.expires_at, 3));
+  const reservationAttention = buildOperationalAttention({ reservations: allRows });
+  const expiringIds = new Set(reservationAttention.filter((item) => item.kind === "reservation_expiring").map((item) => item.entityId));
+  const depositOverdueIds = new Set(reservationAttention.filter((item) => item.kind === "deposit_overdue").map((item) => item.entityId));
+  const expiring = active.filter((row) => expiringIds.has(row.id));
   const expired = active.filter((row) => isBeforeToday(row.expires_at));
-  const depositOverdue = active.filter((row) => row.deposit_status === "overdue" || (row.deposit_status === "pending" && isBeforeToday(row.deposit_due_at)));
+  const depositOverdue = active.filter((row) => depositOverdueIds.has(row.id));
   const expectedTotal = rows.reduce((sum, row) => sum + Number(row.expected_deposit_amount ?? 0), 0);
 
   function exportReservations() {
@@ -1071,7 +1085,9 @@ function PostSalesReport({
   profileById: Map<string, AdminProfile>;
 }) {
   const openTasks = tasks.filter((row) => ["open", "in_progress", "blocked"].includes(row.status));
-  const overdueTasks = openTasks.filter((row) => isBeforeToday(row.due_at));
+  const postSalesAttention = buildOperationalAttention({ postSalesTasks: allTasks, postSalesChecklists: allChecklists });
+  const overdueTaskIds = new Set(postSalesAttention.filter((item) => item.kind === "post_sales_task_overdue").map((item) => item.entityId));
+  const overdueTasks = openTasks.filter((row) => overdueTaskIds.has(row.id));
 
   function exportPostSales() {
     exportCsv({

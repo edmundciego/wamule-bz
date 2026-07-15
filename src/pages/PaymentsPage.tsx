@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PaymentForm } from "../components/forms/PaymentForm";
 import { PaymentDocumentLinks } from "../components/payments/PaymentDocumentLinks";
 import { Badge } from "../components/ui/Badge";
@@ -18,8 +19,10 @@ const documentTypes = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Pa
 
 export function PaymentsPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [receiptSearch, setReceiptSearch] = useState("");
   const [correctionOfTransactionId, setCorrectionOfTransactionId] = useState<number | null>(null);
+  const requestedPaymentId = searchParams.get("payment");
   const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
   const canRemovePayments = currentRole === "Super Admin" || currentRole === "Admin";
@@ -43,6 +46,11 @@ export function PaymentsPage() {
       ) ?? []
     );
   }, [data, receiptSearch]);
+  useEffect(() => {
+    if (!requestedPaymentId || !data?.some((payment) => String(payment.id) === requestedPaymentId)) return;
+    const timer = window.setTimeout(() => document.querySelector<HTMLElement>(`[data-payment-id="${requestedPaymentId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+    return () => window.clearTimeout(timer);
+  }, [data, requestedPaymentId]);
 
   return (
     <section className="v2-page-shell">
@@ -63,7 +71,7 @@ export function PaymentsPage() {
             </CardContent>
           </Card>
           {filteredPayments.map((payment) => (
-            <Card key={payment.id} className="v2-ledger-panel">
+            <Card key={payment.id} data-payment-id={payment.id} className={`v2-ledger-panel ${requestedPaymentId === String(payment.id) ? "ring-2 ring-accent ring-offset-2" : ""}`}>
               <CardContent className="grid gap-3 p-4 text-sm">
                 <div className="flex flex-wrap justify-between gap-3">
                   <div>

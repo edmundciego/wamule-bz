@@ -7,9 +7,9 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("critical correctness migration replaces hard-delete payment correction paths", async () => {
   const [migration, retiredPaymentMigration, retiredPurgeMigration] = await Promise.all([
-    read("supabase/migrations/20260714210447_critical_correctness_batch_1.sql"),
-    read("supabase/migrations/20260714203000_controlled_payment_removal.sql"),
-    read("supabase/migrations/20260714074603_release_quality_data_management.sql"),
+    read("supabase/migrations/20260714223959_20260714210447_critical_correctness_batch_1.sql"),
+    read("supabase/migrations/20260714220611_20260714203000_controlled_payment_removal.sql"),
+    read("supabase/migrations/20260714220603_20260714074603_release_quality_data_management.sql"),
   ]);
   assert.match(migration, /drop policy if exists "Transactions deletable by admins"/);
   assert.match(migration, /Internal writers can create transactions/);
@@ -28,7 +28,7 @@ test("critical correctness migration replaces hard-delete payment correction pat
 });
 
 test("critical correctness migration preserves lot authorization and void resolution controls", async () => {
-  const migration = await read("supabase/migrations/20260714210447_critical_correctness_batch_1.sql");
+  const migration = await read("supabase/migrations/20260714223959_20260714210447_critical_correctness_batch_1.sql");
   for (const requirement of [
     "contract_void_resolutions",
     "Lot resolution is required before another contract can use this parcel",
