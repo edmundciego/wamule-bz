@@ -10,11 +10,21 @@ export function LoadingState({ label = "Loading data" }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, detail }: { title: string; detail?: string }) {
+export function EmptyState({
+  title,
+  detail,
+  description,
+}: {
+  title: string;
+  detail?: string;
+  description?: string;
+}) {
+  const supportingText = detail ?? description;
+
   return (
     <Card className="border-dashed p-6 text-center">
       <p className="font-medium">{title}</p>
-      {detail ? <p className="mt-1 text-sm text-muted-foreground">{detail}</p> : null}
+      {supportingText ? <p className="mt-1 text-sm text-muted-foreground">{supportingText}</p> : null}
     </Card>
   );
 }

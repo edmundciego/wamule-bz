@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
+import { featureFlags } from "./lib/featureFlags";
 import { ApplicationPage } from "./pages/ApplicationPage";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { AuditTrailPage } from "./pages/AuditTrailPage";
@@ -12,6 +13,8 @@ import { DailyBriefsPage } from "./pages/DailyBriefsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { EmailsPage } from "./pages/EmailsPage";
+import { InformationCenterPage } from "./pages/InformationCenterPage";
+import { InformationPackDocumentPage } from "./pages/InformationPackDocumentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { LotsPage } from "./pages/LotsPage";
 import { LeadsPage } from "./pages/LeadsPage";
@@ -36,6 +39,16 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      {featureFlags.informationCentre ? (
+        <Route
+          path="/information-packs/:id/print"
+          element={
+            <ProtectedRoute>
+              <InformationPackDocumentPage />
+            </ProtectedRoute>
+          }
+        />
+      ) : null}
       <Route
         element={
           <ProtectedRoute>
@@ -47,6 +60,7 @@ export default function App() {
         <Route path="/briefs" element={<DailyBriefsPage />} />
         <Route path="/emails" element={<EmailsPage />} />
         <Route path="/leads" element={<LeadsPage />} />
+        {featureFlags.informationCentre ? <Route path="/information-centre" element={<InformationCenterPage />} /> : null}
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
