@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   build:
@@ -27,10 +29,29 @@ jobs:
         run: npm ci
 
       - name: Typecheck and build
+        id: application-build
+        continue-on-error: true
+        shell: bash
+        run: npm run build > build.log 2>&1
+
+      - name: Report build failure
+        if: steps.application-build.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -o pipefail
-          npm run build 2>&1 | tail -120
+          {
+            echo '### Application build failed'
+            echo
+            echo '```text'
+            tail -100 build.log
+            echo '```'
+          } > build-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file build-comment.md
+
+      - name: Stop after build failure
+        if: steps.application-build.outcome == 'failure'
+        run: exit 1
 
       - name: Run tests
         run: npm test
