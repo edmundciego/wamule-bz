@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  BookOpenText,
   Bot,
   ClipboardList,
   CreditCard,
@@ -22,6 +23,7 @@ import { Button } from "../ui/Button";
 import { Field, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
 import { getSessionAndProfile } from "../../lib/data";
+import { featureFlags } from "../../lib/featureFlags";
 import { edgeFunctionErrorMessage } from "../../lib/functions";
 import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
@@ -33,6 +35,9 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
   { href: "/briefs", label: "Daily Brief", icon: Bot },
   { href: "/emails", label: "Email Center", icon: Mail, adminOnly: true },
   { href: "/leads", label: "Leads", icon: UserRoundSearch },
+  ...(featureFlags.informationCentre
+    ? [{ href: "/information-centre", label: "Information Centre", icon: BookOpenText }]
+    : []),
   { href: "/lots", label: "Lots", icon: Map },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },
