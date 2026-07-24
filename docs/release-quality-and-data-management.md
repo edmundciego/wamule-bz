@@ -148,3 +148,11 @@ Not performed because no safe environment existed:
 8. Document recovery options and any rollback limitations before considering production approval.
 
 Until these checks are completed in an isolated environment, the database migration chain is **not certified safe for production application**.
+
+## Staging rehearsal follow-up — 2026-07-23
+
+The follow-up was stopped before any database command on branch `release-hardening-reconcile` at commit `fd63ed7069db263f73ec45cdef6faa387359b9df`. No explicitly approved disposable staging project reference, URL/domain, database credential, backup, or reset strategy was available. The only local Supabase project metadata identifies the existing `Wamule` project; it was treated as production and was not contacted.
+
+Accordingly, no `supabase migration list`, `supabase db reset`, SQL query, schema diff, migration application, backup restore, or remote schema inspection was performed. `npx --no-install supabase --version` also could not return a version because the CLI exited while attempting to write restricted telemetry under `~/.supabase`; the CLI version remains environment-bound and unresolved.
+
+The repository-only checks still pass (`npm run verify` and `git diff --check`). There are no runtime migration, view/function/trigger, RLS, financial-scenario, Edge Function dependency, Storage, or recovery results to report from this attempt. The exact prerequisite remains an approved disposable staging project or a configured local Supabase/Docker environment, plus a sanitized backup or deterministic fixtures and a documented reset/recovery path.
