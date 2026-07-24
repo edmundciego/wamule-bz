@@ -169,3 +169,13 @@ Containment if an issue is found: stop client deployment, keep the database migr
 - RPC tests for payment void and contract resolution decisions.
 - Browser checks of the Payment, Contract, Customer Detail, Lots, and Contracts surfaces.
 - Review of any existing inconsistent financial/lot records identified by the queries above.
+
+## Safe rehearsal update — 2026-07-23
+
+The requested migration rehearsal was stopped before SQL execution because this checkout has no approved non-production Supabase project, no preview branch, no local `supabase/config.toml`, no sanitized backup, and no Docker daemon. The linked Supabase metadata points to the Wamule production project and was not used for migration inspection or application.
+
+Static review confirms that the current Batch 1 file already contains the `customer_balance_view` compatibility correction: `land_paid`, `community_paid`, and `land_balance` remain unconstrained `numeric` columns. Runtime creation, PostgreSQL view-column compatibility, function compilation, RLS behavior, existing-data comparison, and rollback/recovery remain unverified until an isolated database is available.
+
+The repository also contains `supabase/functions/purge-contact-record`, but the timestamp-preserving release-quality migration is a no-op and does not create its referenced purge RPCs or cleanup table. The repository has chosen Path B: the Settings panel is informational-only and the Edge Function is a disabled 503 endpoint. The historical implementation remains in git history for review, not deployment. The master-delete foundation therefore cannot be certified from the current migration chain without an approved database design/migration or a verified existing schema in the safe environment.
+
+The follow-up staging attempt remained blocked before database execution. Branch `release-hardening-reconcile` at `fd63ed7069db263f73ec45cdef6faa387359b9df` had no approved disposable staging reference, database credential, sanitized backup, or local reset strategy. The only linked local Supabase metadata identified the existing `Wamule` project, which was not contacted. Runtime verification of the corrected unconstrained `numeric` view columns, financial scenarios, RLS, functions, triggers, and recovery remains outstanding.

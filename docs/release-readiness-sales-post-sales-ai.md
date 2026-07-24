@@ -438,3 +438,11 @@ Run with valid admin credentials.
 - Run a real-data review for generated Lead and Post-Sales summaries.
 - Consider stale-summary indicators after staff confirm the summary workflow.
 - Defer Daily Operations Narrative and Reports Executive Summary until users validate the deterministic Daily Brief and Reports workflows.
+
+## Safe database rehearsal update — 2026-07-23
+
+The release-hardening rehearsal did not reach database execution. No approved Wamule staging project or preview branch was available, Docker was unavailable locally, and no sanitized backup was present. Production was not used.
+
+The repository-side checks remain green, and the incomplete purge implementation has been disabled in the application and Edge Function. Migration history comparison, clean reset, existing-data rehearsal, financial comparison, `customer_balance_view` runtime type verification, RLS/function/view compilation, any future purge-foundation verification, and rollback/recovery testing remain open release gates. Do not apply pending database work to production until those checks are completed in an isolated environment.
+
+The follow-up attempt on `release-hardening-reconcile` at `fd63ed7069db263f73ec45cdef6faa387359b9df` stopped at the same safety gate: no explicitly approved disposable staging project or URL/domain, database credential, sanitized backup, or reset/recovery path was available. The linked `Wamule` project metadata was not used. No remote migration, SQL, schema, RLS, Storage, Edge Function, or seeded-scenario check was run. `npm run verify` and `git diff --check` remained green locally.
