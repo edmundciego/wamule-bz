@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "node --test",
     "check:brand": "node scripts/check-brand.mjs",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Badge, statusBadgeTone } from "../components/ui/Badge";
+import { Badge } from "../components/ui/Badge";
+import { statusBadgeTone } from "../lib/statusBadgeTone";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";

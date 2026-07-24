@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
-import { Badge, statusBadgeTone } from "../components/ui/Badge";
+import { Badge } from "../components/ui/Badge";
+import { statusBadgeTone } from "../lib/statusBadgeTone";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select } from "../components/ui/Field";

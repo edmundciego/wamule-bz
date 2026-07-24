@@ -61,3 +61,15 @@ test("canonical financial definitions only count posted payments tied to the act
   assert.match(contractForm, /Active Reservation/);
   assert.match(contractForm, /Approved Application/);
 });
+
+test("customer balance view preserves the existing unconstrained numeric column types", async () => {
+  const migration = await read("supabase/migrations/20260714223959_20260714210447_critical_correctness_batch_1.sql");
+  const customerBalanceView = migration.match(/create or replace view public\.customer_balance_view[\s\S]*?grant select on public\.customer_balance_view/iu)?.[0];
+
+  assert.ok(customerBalanceView, "customer balance view definition should be present");
+  assert.match(customerBalanceView, /with \(security_invoker = true\)/i);
+  assert.match(customerBalanceView, /0::numeric\) as land_paid/i);
+  assert.match(customerBalanceView, /0::numeric\) as community_paid/i);
+  assert.match(customerBalanceView, /0::numeric\) as land_balance/i);
+  assert.doesNotMatch(customerBalanceView, /customer_balance_view[\s\S]*?numeric\(12,2\)/i);
+});

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Badge, statusBadgeTone, type BadgeTone } from "../components/ui/Badge";
+import { Badge, type BadgeTone } from "../components/ui/Badge";
+import { statusBadgeTone } from "../lib/statusBadgeTone";
 import { Button } from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Field";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
