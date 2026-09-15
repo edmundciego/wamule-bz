@@ -14,6 +14,11 @@ graphify-out/
 # Supabase local state
 supabase/.temp/
 
+# Standalone docusaurus docs site (was a broken submodule link with no
+# .gitmodules URL, which breaks Netlify clones; deployed separately to
+# docs.wamuledevelopment.com). Trailing space in dirname is escaped.
+documentation\ /
+
 # Logs
 *.log
 npm-debug.log*
