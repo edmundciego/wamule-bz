@@ -89,7 +89,7 @@ test("e2e payload contract matches the inquiry function", async () => {
   }
 });
 
-test("public lots endpoint returns tenant availability with open CORS", { skip: !LIVE && skipReason }, async (t) => {
+test("public lots endpoint returns tenant availability with open CORS", { skip: !LIVE && skipReason }, async () => {
   const response = await fetch(`${functionsUrl("get-public-lots")}?tenant=${staging.tenantSlug}`, {
     headers: anonHeaders(),
   });
@@ -103,7 +103,6 @@ test("public lots endpoint returns tenant availability with open CORS", { skip: 
     assert.ok(Array.isArray(parcel.map_polygon), `parcel ${parcel.lot_number} map_polygon is an array`);
     assert.ok(typeof parcel.price === "number", "price is numeric");
   }
-  t.context.parcels = body.parcels;
 });
 
 test("embed page serves without auth redirects", { skip: !LIVE && skipReason }, async () => {
