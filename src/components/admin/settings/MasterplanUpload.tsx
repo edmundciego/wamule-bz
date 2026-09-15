@@ -5,6 +5,9 @@ import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/Button";
 import { Field, Input } from "../../ui/Field";
 import { ErrorState } from "../../ui/State";
+import { MasterplanPreviewModal } from "./MasterplanPreviewModal";
+import { MasterplanVersionGallery } from "./MasterplanVersionGallery";
+import type { MasterplanVersion } from "../../../types/database";
 
 const ACCEPTED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const ACCEPT_ATTR = "image/jpeg,image/png,image/webp";
@@ -30,18 +33,8 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Best-effort extraction of the storage object path from a public URL. */
-function objectPathFromPublicUrl(url: string): string | null {
-  const marker = "/business-assets/";
-  const index = url.indexOf(marker);
-  if (index === -1) return null;
-  return decodeURIComponent(url.slice(index + marker.length).split("?")[0]) || null;
-}
-
 export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanUploadProps) {
   const queryClient = useQueryClient();
-  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
-  const [loadingCurrent, setLoadingCurrent] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -49,34 +42,9 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadCurrent() {
-      if (!tenantId) {
-        setCurrentUrl(null);
-        setLoadingCurrent(false);
-        return;
-      }
-      setLoadingCurrent(true);
-      const { data, error: queryError } = await supabase
-        .from("organizations")
-        .select("masterplan_image_url")
-        .eq("id", tenantId)
-        .maybeSingle();
-      if (cancelled) return;
-      setLoadingCurrent(false);
-      if (queryError) {
-        setError(queryError.message);
-        return;
-      }
-      setCurrentUrl((data as { masterplan_image_url: string | null } | null)?.masterplan_image_url ?? null);
-    }
-    void loadCurrent();
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const [pendingVersion, setPendingVersion] = useState<MasterplanVersion | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!file) {
@@ -108,43 +76,17 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
       return;
     }
     setFile(candidate);
-    setStatus("Map image ready to upload.");
+    setStatus("Map image ready. Upload to preview alignment before publishing.");
   }, []);
 
-  async function persistUrl(url: string | null, previousUrl: string | null) {
-    if (!tenantId) {
-      setError("No tenant context. Sign in again before managing the masterplan.");
-      return;
-    }
-    const { error: rpcError } = await supabase.rpc("set_tenant_masterplan", {
-      p_organization_id: tenantId,
-      p_masterplan_image_url: url,
-    });
-    if (rpcError) throw new Error(rpcError.message);
-
-    // Backward-compatibility mirror for readers of business_settings.
-    const { data: session } = await supabase.auth.getSession();
-    const { error: settingsError } = await supabase.from("business_settings").upsert({
-      key: "masterplan_image_url",
-      value: { url },
-      updated_by: session.session?.user.id ?? null,
-    });
-    if (settingsError) throw new Error(settingsError.message);
-
-    // Best-effort cleanup of the replaced object; the DB update already won.
-    const previousPath = previousUrl ? objectPathFromPublicUrl(previousUrl) : null;
-    if (previousPath && previousPath !== (url ? objectPathFromPublicUrl(url) : null)) {
-      await supabase.storage.from("business-assets").remove([previousPath]);
-    }
-
-    setCurrentUrl(url);
-    setFile(null);
+  async function refreshTenantCaches(url: string | null) {
     onChanged?.(url);
     await queryClient.invalidateQueries({ queryKey: ["tenant-masterplan", tenantId] });
     await queryClient.invalidateQueries({ queryKey: ["lot-board-masterplan"] });
   }
 
-  async function handleUpload() {
+  /** Uploads the file, stores it as an inactive version, and opens alignment preview. */
+  async function handleUploadNew() {
     if (!file || !tenantId) return;
     setError(null);
     setSaving(true);
@@ -159,9 +101,25 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
       });
       if (uploadError) throw new Error(uploadError.message);
       const { data } = supabase.storage.from("business-assets").getPublicUrl(path);
-      const previousUrl = currentUrl;
-      await persistUrl(data.publicUrl, previousUrl);
-      setStatus("Masterplan map saved.");
+
+      const { data: version, error: insertError } = await supabase
+        .from("masterplan_versions")
+        .insert({
+          tenant_id: tenantId,
+          image_url: data.publicUrl,
+          file_name: file.name,
+          is_active: false,
+        })
+        .select("*")
+        .single();
+      if (insertError || !version) throw new Error(insertError?.message ?? "Version record failed.");
+
+      setFile(null);
+      setRefreshSignal((signal) => signal + 1);
+      // Activation trigger assigns the version number; refetch for the preview label.
+      const created = version as MasterplanVersion;
+      setPendingVersion(created);
+      setStatus("Map uploaded as a draft. Verify alignment, then publish.");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
@@ -169,34 +127,52 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
     }
   }
 
-  async function handleRemove() {
-    if (!currentUrl || !tenantId) return;
+  /** Deactivates the live version and clears the tenant map (rollback to no map). */
+  async function handleRemoveActive() {
+    if (!tenantId) return;
     setError(null);
-    setSaving(true);
-    setStatus("Removing map...");
+    setRemoving(true);
     try {
-      const previousUrl = currentUrl;
-      await persistUrl(null, previousUrl);
-      setStatus("Masterplan map removed.");
+      const { data: active, error: activeError } = await supabase
+        .from("masterplan_versions")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (activeError) throw new Error(activeError.message);
+      if (active) {
+        const { error: updateError } = await supabase
+          .from("masterplan_versions")
+          .update({ is_active: false })
+          .eq("id", (active as { id: string }).id);
+        if (updateError) throw new Error(updateError.message);
+      }
+      const { error: rpcError } = await supabase.rpc("set_tenant_masterplan", {
+        p_organization_id: tenantId,
+        p_masterplan_image_url: null,
+      });
+      if (rpcError) throw new Error(rpcError.message);
+      setRefreshSignal((signal) => signal + 1);
+      await refreshTenantCaches(null);
+      setStatus("Masterplan map removed. Previous versions remain available below.");
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : "Remove failed.");
     } finally {
-      setSaving(false);
+      setRemoving(false);
     }
   }
 
-  const shownUrl = previewUrl ?? currentUrl;
   const aspect = dimensions ? `${dimensions.width} × ${dimensions.height}px (${(dimensions.width / dimensions.height).toFixed(2)}:1)` : null;
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-4">
       {error ? <ErrorState message={error} /> : null}
-      {loadingCurrent ? <p className="text-sm text-muted-foreground">Loading current masterplan…</p> : null}
-      {shownUrl ? (
+
+      {previewUrl ? (
         <div className="overflow-hidden rounded-md border border-border">
           <img
-            src={shownUrl}
-            alt={previewUrl ? "New masterplan preview" : "Current masterplan"}
+            src={previewUrl}
+            alt="New masterplan preview"
             className="block max-h-64 w-full object-contain bg-muted"
             onLoad={(event) => {
               const img = event.currentTarget;
@@ -204,17 +180,13 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
             }}
           />
         </div>
-      ) : !loadingCurrent ? (
-        <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">
-          No masterplan uploaded yet. Parcel boundaries will render on an empty grid until a map is set.
-        </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {aspect ? <span>{aspect}</span> : null}
         {file ? <span>{file.name} · {formatBytes(file.size)}</span> : null}
-        {currentUrl && !previewUrl ? <span className="truncate">Current map saved for this tenant.</span> : null}
       </div>
-      <Field label={currentUrl ? "Replace masterplan map" : "Upload masterplan map"}>
+
+      <Field label="Upload new masterplan map">
         <div
           className={cn(
             "grid gap-2 rounded-md border border-dashed p-3 transition",
@@ -241,26 +213,43 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
               event.target.value = "";
             }}
           />
-          <p className="text-xs text-muted-foreground">Drag and drop an image here, or use the file picker. JPG, PNG, or WEBP up to 10MB.</p>
+          <p className="text-xs text-muted-foreground">Drag and drop an image here, or use the file picker. JPG, PNG, or WEBP up to 10MB. Uploads open an alignment preview before anything goes live.</p>
         </div>
       </Field>
       {status ? <p className="text-sm text-muted-foreground" role="status">{status}</p> : null}
       <div className="flex flex-wrap gap-2">
-        {!currentUrl ? (
-          <Button type="button" disabled={!canManage || !file || saving || !tenantId} onClick={() => void handleUpload()}>
-            {saving ? "Uploading…" : "Upload New Map"}
-          </Button>
-        ) : (
-          <>
-            <Button type="button" disabled={!canManage || !file || saving || !tenantId} onClick={() => void handleUpload()}>
-              {saving ? "Uploading…" : "Replace Map"}
-            </Button>
-            <Button type="button" variant="outline" disabled={!canManage || saving || !tenantId} onClick={() => void handleRemove()}>
-              Remove Map
-            </Button>
-          </>
-        )}
+        <Button type="button" disabled={!canManage || !file || saving || !tenantId} onClick={() => void handleUploadNew()}>
+          {saving ? "Uploading…" : "Upload New Map"}
+        </Button>
+        <Button type="button" variant="outline" disabled={!canManage || removing || !tenantId} onClick={() => void handleRemoveActive()}>
+          {removing ? "Removing…" : "Remove Map"}
+        </Button>
       </div>
+
+      <MasterplanVersionGallery
+        tenantId={tenantId}
+        canManage={canManage}
+        refreshSignal={refreshSignal}
+        onChanged={(url) => {
+          void refreshTenantCaches(url);
+        }}
+      />
+
+      <MasterplanPreviewModal
+        open={pendingVersion !== null}
+        tenantId={tenantId}
+        draftImageUrl={pendingVersion?.image_url ?? null}
+        draftLabel={pendingVersion ? `New upload alignment check${pendingVersion.version_number ? ` (Version ${pendingVersion.version_number})` : ""}` : ""}
+        draftVersionId={pendingVersion?.id ?? null}
+        canManage={canManage}
+        onClose={() => setPendingVersion(null)}
+        onPublished={(url) => {
+          setPendingVersion(null);
+          setRefreshSignal((signal) => signal + 1);
+          void refreshTenantCaches(url);
+          setStatus("Masterplan published and live.");
+        }}
+      />
     </div>
   );
 }

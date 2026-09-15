@@ -21,22 +21,27 @@ test("masterplan migration adds column, bucket, and tenant-scoped policies", asy
   assert.match(migration, /set_tenant_masterplan/);
 });
 
-test("masterplan upload workflow uses tenant paths and syncs tenant records", async () => {
-  const [component, settings] = await Promise.all([
+test("masterplan upload workflow uses tenant paths and versioned publishing", async () => {
+  const [component, settings, versioningMigration] = await Promise.all([
     read("src/components/admin/settings/MasterplanUpload.tsx"),
     read("src/pages/SettingsPage.tsx"),
+    read("supabase/migrations/20260919000000_masterplan_versioning.sql"),
   ]);
   assert.match(component, /image\/jpeg.*image\/png.*image\/webp/s);
   assert.match(component, /10 \* 1024 \* 1024/);
   assert.match(component, /masterplan-\$\{Date\.now\(\)\}/);
   assert.match(component, /from\("business-assets"\)/);
   assert.match(component, /getPublicUrl/);
-  assert.match(component, /set_tenant_masterplan/);
-  assert.match(component, /business_settings/);
-  assert.match(component, /masterplan_image_url/);
+  assert.match(component, /from\("masterplan_versions"\)/);
+  assert.match(component, /is_active: false/);
+  assert.match(component, /MasterplanVersionGallery/);
+  assert.match(component, /MasterplanPreviewModal/);
   assert.match(component, /Upload New Map/);
-  assert.match(component, /Replace Map/);
   assert.match(component, /Remove Map/);
+  // Tenant record sync moved into the activation trigger; remove path still
+  // clears the tenant URL through the single-column RPC.
+  assert.match(component, /set_tenant_masterplan/);
+  assert.match(versioningMigration, /insert into public\.business_settings/);
   assert.match(settings, /MasterplanUpload/);
   assert.match(settings, /Site Masterplan Map/);
 });

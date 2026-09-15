@@ -881,6 +881,17 @@ export type InformationRequestTopic = {
   created_at: string;
 };
 
+export type MasterplanVersion = {
+  id: string;
+  tenant_id?: string | null;
+  version_number: number;
+  image_url: string;
+  file_name: string;
+  is_active: boolean;
+  created_at: string;
+  created_by: string | null;
+};
+
 export type InformationPack = {
   id: string;
   tenant_id?: string | null;
@@ -1156,6 +1167,12 @@ export type Database = {
         Row: InformationPack;
         Insert: Omit<InformationPack, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<InformationPack, "id" | "created_at" | "updated_at">>;
+      };
+      masterplan_versions: {
+        Row: MasterplanVersion;
+        Insert: Omit<MasterplanVersion, "id" | "created_at" | "version_number"> &
+          Partial<Pick<MasterplanVersion, "version_number">>;
+        Update: Partial<Omit<MasterplanVersion, "id" | "created_at">>;
       };
     };
     Views: {
