@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  renderDailyBriefHtml,
+  type DailyBriefEmailData,
+  type DailyBriefPriority,
+} from "../_shared/daily-brief-template.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -16,6 +21,8 @@ type EmailNotification = {
   subject: string;
   body: string;
   notification_type: string;
+  related_table: string | null;
+  related_record_id: string | null;
   status: string;
 };
 
@@ -85,9 +92,10 @@ Deno.serve(async (request) => {
   if (!emails?.length) return json({ sent: 0, failed: 0, results: [] });
 
   const branding = await loadEmailBranding(supabase, { fromName, fromAddress });
+  const siteUrl = (Deno.env.get("PUBLIC_SITE_URL") ?? Deno.env.get("SITE_URL") ?? "https://wamule-staging.netlify.app").replace(/\/$/, "");
   const results = [];
   for (const email of emails as EmailNotification[]) {
-    const result = await sendEmail(email, { resendApiKey, fromAddress, fromName, replyTo, branding });
+    const result = await sendEmail(email, { resendApiKey, fromAddress, fromName, replyTo, branding, dashboardUrl: `${siteUrl}/briefs`, supabase });
     results.push(result);
     if (result.ok) {
       await supabase
@@ -111,9 +119,18 @@ Deno.serve(async (request) => {
 
 async function sendEmail(
   email: EmailNotification,
-  config: { resendApiKey: string; fromAddress: string; fromName: string; replyTo: string; branding: EmailBranding },
+  config: {
+    resendApiKey: string;
+    fromAddress: string;
+    fromName: string;
+    replyTo: string;
+    branding: EmailBranding;
+    dashboardUrl: string;
+    supabase: ReturnType<typeof createClient>;
+  },
 ) {
   try {
+    const html = await renderEmailHtmlForNotification(email, config);
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -125,7 +142,7 @@ async function sendEmail(
         to: [formatRecipient(email.recipient_name, email.recipient_email)],
         subject: email.subject,
         text: email.body,
-        html: renderEmailHtml(email, config.branding),
+        html,
         reply_to: config.replyTo || undefined,
       }),
     });
@@ -157,6 +174,110 @@ async function loadEmailBranding(
     contactEmail: cleanText(value.contact_email, fallback.fromAddress),
     locationAddress: cleanText(value.location_address, "Dangriga Town, Belize"),
   };
+}
+
+type DailyBriefRow = {
+  summary: string | null;
+  applications_summary: string | null;
+  lots_summary: string | null;
+  payments_summary: string | null;
+  contracts_summary: string | null;
+  collections_summary: string | null;
+  alerts: unknown;
+  recommended_actions: unknown;
+  brief_date: string | null;
+  period_start: string | null;
+  period_end: string | null;
+};
+
+async function renderEmailHtmlForNotification(
+  email: EmailNotification,
+  config: { branding: EmailBranding; dashboardUrl: string; supabase: ReturnType<typeof createClient> },
+): Promise<string> {
+  if (email.notification_type === "Daily Brief" && email.related_table === "ai_daily_briefs" && email.related_record_id) {
+    try {
+      const { data: brief } = await config.supabase
+        .from("ai_daily_briefs")
+        .select("summary, applications_summary, lots_summary, payments_summary, contracts_summary, collections_summary, alerts, recommended_actions, brief_date, period_start, period_end")
+        .eq("id", Number(email.related_record_id))
+        .maybeSingle();
+      if (brief) {
+        const data = await buildDailyBriefEmailData(config.supabase, brief as DailyBriefRow, email.subject);
+        return renderDailyBriefHtml(data, {
+          companyName: config.branding.companyName,
+          locationAddress: config.branding.locationAddress,
+        }, config.dashboardUrl);
+      }
+    } catch (error) {
+      console.error("Daily Brief template failed, using generic wrapper", error instanceof Error ? error.message : error);
+    }
+  }
+  return renderEmailHtml(email, config.branding);
+}
+
+async function buildDailyBriefEmailData(
+  supabase: ReturnType<typeof createClient>,
+  brief: DailyBriefRow,
+  subject: string,
+): Promise<DailyBriefEmailData> {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const { data: items } = await supabase
+    .from("brief_action_items")
+    .select("title, details, severity, status")
+    .in("status", ["Open", "In Progress"])
+    .order("last_seen_on", { ascending: false })
+    .limit(10);
+  const { count: resolvedCount } = await supabase
+    .from("brief_action_items")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "Done");
+
+  const openItems = ((items ?? []) as Array<{ title: string; details: string | null; severity: string | null; status: string }>)
+    .map((item) => ({
+      title: text(item.title) || "Action item",
+      detail: text(item.details),
+      severity: String(item.severity).toLowerCase().includes("red") ? "red" as const : "amber" as const,
+    }));
+
+  return {
+    subject,
+    periodCovered: [text(brief.period_start), text(brief.period_end)].filter(Boolean).join(" to ") || text(brief.brief_date) || "Latest period",
+    generatedAt: text(brief.brief_date) || "today",
+    summary: text(brief.summary),
+    metrics: {
+      newApplications: firstCount(brief.applications_summary, /(\d[\d,]*)\s+new applications/i),
+      paymentsLogged: firstDollar(brief.payments_summary) ?? firstCount(brief.payments_summary, /(\d[\d,]*)\s+payments? logged/i),
+      newContracts: firstCount(brief.contracts_summary, /(\d[\d,]*)\s+(new\s+)?contracts?/i),
+      openActionItems: String(openItems.length),
+      resolvedItems: String(resolvedCount ?? 0),
+      outstandingBalance: firstDollar(brief.collections_summary) ?? "—",
+    },
+    priorities: openItems as DailyBriefPriority[],
+    activity: {
+      applications: firstLine(brief.applications_summary),
+      lots: firstLine(brief.lots_summary),
+      contracts: firstLine(brief.contracts_summary),
+      payments: firstLine(brief.payments_summary),
+    },
+    collections: text(brief.collections_summary),
+  };
+}
+
+function firstDollar(text: unknown): string | null {
+  if (typeof text !== "string") return null;
+  const match = text.match(/\$[\d,]+(?:\.\d{2})?/);
+  return match ? match[0] : null;
+}
+
+function firstCount(text: unknown, pattern: RegExp): string {
+  if (typeof text !== "string") return "—";
+  const match = text.match(pattern);
+  return match?.[1] ? match[1] : "—";
+}
+
+function firstLine(text: unknown): string {
+  if (typeof text !== "string") return "";
+  return text.split(/\r?\n/).map((line) => line.trim()).find((line) => line) ?? "";
 }
 
 function renderEmailHtml(email: EmailNotification, branding: EmailBranding) {
