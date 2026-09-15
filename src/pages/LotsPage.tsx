@@ -1,12 +1,17 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ParcelDrawer } from "../components/admin/parcels/ParcelDrawer";
+import type { CanvasParcel } from "../components/admin/parcels/ParcelMapCanvas";
 import { Badge } from "../components/ui/Badge";
 import { statusBadgeTone } from "../lib/statusBadgeTone";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
-import type { LotReservation } from "../types/database";
+import type { LotReservation, Parcel } from "../types/database";
 
 export function LotsPage() {
+  const [selectedParcelId, setSelectedParcelId] = useState<number | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ["lot-board"],
     queryFn: async () => {
@@ -39,6 +44,20 @@ export function LotsPage() {
   });
   const activeReservationByParcel = new Map((reservations ?? []).filter((reservation) => reservation.parcel_id).map((reservation) => [reservation.parcel_id, reservation]));
   const pendingResolutionParcelIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.parcel_id));
+  const canvasParcels: CanvasParcel[] = (data ?? []).map((lot) => ({
+    id: lot.id,
+    lot_number: lot.lot_number,
+    status: lot.status,
+    base_price: Number(lot.base_price ?? 0),
+    dimensions: lot.dimensions ?? null,
+    map_polygon: Array.isArray(lot.map_polygon) ? lot.map_polygon : null,
+  }));
+  const selectedParcel = (data ?? []).find((lot) => lot.id === selectedParcelId) ?? null;
+
+  function openDrawer(parcelId: number) {
+    setSelectedParcelId(parcelId);
+    setDrawerOpen(true);
+  }
 
   return (
     <section className="v2-page-shell">
@@ -69,10 +88,12 @@ export function LotsPage() {
             const activeReservation = activeReservationByParcel.get(lot.id);
             const resolutionRequired = pendingResolutionParcelIds.has(lot.id);
             return (
-              <div
+              <button
                 key={lot.id}
+                type="button"
+                onClick={() => openDrawer(lot.id)}
                 className={cn(
-                  "aspect-[1.35] rounded-md border p-3 text-sm shadow-sm transition hover:-translate-y-px hover:shadow-[var(--shadow-button)]",
+                  "aspect-[1.35] rounded-md border p-3 text-left text-sm shadow-sm transition hover:-translate-y-px hover:shadow-[var(--shadow-button)]",
                   lot.status === "Available" && "border-success/25 bg-success/10",
                   lot.status === "Reserved" && "border-warning/25 bg-accent-soft",
                   lot.status === "Sold" && "border-slate/20 bg-slate/10",
@@ -88,11 +109,19 @@ export function LotsPage() {
                     {resolutionRequired ? <Badge tone="red">Resolution Required</Badge> : null}
                   </span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
+      <ParcelDrawer
+        parcel={selectedParcel as Parcel | null}
+        parcels={canvasParcels}
+        tenantId={selectedParcel?.tenant_id ?? null}
+        masterplanImageUrl={null}
+        open={drawerOpen && selectedParcel !== null}
+        onClose={() => setDrawerOpen(false)}
+      />
     </section>
   );
 }
