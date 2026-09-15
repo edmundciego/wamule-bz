@@ -26,6 +26,7 @@ type InquiryBody = {
   specific_lot_id?: unknown;
   message?: unknown;
   page_url?: unknown;
+  tenant?: unknown;
 };
 
 type ParcelOption = {
@@ -54,6 +55,10 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // Optional embed caller tenant (slug or inbound alias). When absent, the
+  // tenant-default trigger assigns rows to the default tenant as before.
+  const tenantId = await resolveTenantId(supabase, input.tenantSlug);
+
   const specificLot = input.specificLotId
     ? await loadPublicLotOption(supabase, input.specificLotId)
     : null;
@@ -74,6 +79,7 @@ Deno.serve(async (request) => {
   const { data: lead, error: leadError } = await supabase
     .from("leads")
     .insert({
+      tenant_id: tenantId,
       full_name: input.name,
       email: input.email,
       phone: input.phone || null,
@@ -101,6 +107,7 @@ Deno.serve(async (request) => {
 
   const leadId = String(lead.id);
   const { error: activityError } = await supabase.from("lead_activities").insert({
+    tenant_id: tenantId,
     lead_id: leadId,
     activity_type: "note",
     title: duplicateReason ? "Public information request received - possible duplicate" : "Public information request received",
@@ -118,6 +125,7 @@ Deno.serve(async (request) => {
   if (activityError) console.error("Public inquiry activity insert failed", safeError(activityError));
 
   const { error: taskError } = await supabase.from("follow_up_tasks").insert({
+    tenant_id: tenantId,
     lead_id: leadId,
     title: duplicateReason ? "Review possible duplicate public inquiry" : "Follow up on public project information inquiry",
     description: duplicateReason
@@ -134,7 +142,7 @@ Deno.serve(async (request) => {
     return json({ error: "Your inquiry was saved, but the follow-up task could not be created." }, 500);
   }
 
-  const company = await loadCompanyContext(supabase);
+  const company = await loadCompanyContext(supabase, tenantId);
   const emailResult = await sendConfirmationEmail({
     toEmail: input.email,
     toName: input.name,
@@ -144,6 +152,7 @@ Deno.serve(async (request) => {
   });
 
   await supabase.from("lead_activities").insert({
+    tenant_id: tenantId,
     lead_id: leadId,
     activity_type: "email",
     title: emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
@@ -175,6 +184,7 @@ function validateInquiry(body: InquiryBody) {
   const phone = cleanText(body.phone, 40);
   const message = cleanText(body.message, 1000);
   const pageUrl = cleanText(body.page_url, 1000);
+  const tenantSlug = cleanText(body.tenant, 160).toLowerCase() || null;
   const interests = Array.isArray(body.interests)
     ? [...new Set(body.interests.map((item) => cleanText(item, 80)).filter(Boolean))]
     : [];
@@ -188,7 +198,29 @@ function validateInquiry(body: InquiryBody) {
   if (invalidInterest) return { error: "Select a valid inquiry interest." };
   if (specificLotId !== null && (!Number.isInteger(specificLotId) || specificLotId <= 0)) return { error: "Select a valid lot." };
 
-  return { name, email, phone, message, interests, specificLotId, pageUrl };
+  return { name, email, phone, message, interests, specificLotId, pageUrl, tenantSlug };
+}
+
+async function resolveTenantId(
+  supabase: ReturnType<typeof createClient>,
+  slug: string | null,
+): Promise<string | null> {
+  if (!slug) return null;
+  const bySlug = await supabase
+    .from("organizations")
+    .select("id")
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (bySlug.data) return String((bySlug.data as { id: string }).id);
+  const byAlias = await supabase
+    .from("organizations")
+    .select("id")
+    .eq("inbound_alias", slug)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (byAlias.error) console.error("Inquiry tenant alias lookup failed", safeError(byAlias.error));
+  return byAlias.data ? String((byAlias.data as { id: string }).id) : null;
 }
 
 async function loadPublicLotOption(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
@@ -262,10 +294,16 @@ function buildInquiryNotes(input: Exclude<ReturnType<typeof validateInquiry>, { 
   ].filter(Boolean).join("\n");
 }
 
-async function loadCompanyContext(supabase: ReturnType<typeof createClient>) {
+async function loadCompanyContext(supabase: ReturnType<typeof createClient>, tenantId: string | null = null) {
+  const companyQuery = supabase.from("business_settings").select("value").eq("key", "company_profile");
+  const publicQuery = supabase.from("business_settings").select("value").eq("key", "public_application");
+  if (tenantId) {
+    companyQuery.eq("tenant_id", tenantId);
+    publicQuery.eq("tenant_id", tenantId);
+  }
   const [{ data: companySetting }, { data: publicSetting }] = await Promise.all([
-    supabase.from("business_settings").select("value").eq("key", "company_profile").maybeSingle(),
-    supabase.from("business_settings").select("value").eq("key", "public_application").maybeSingle(),
+    companyQuery.maybeSingle(),
+    publicQuery.maybeSingle(),
   ]);
   const company = valueObject(companySetting?.value);
   const publicApplication = valueObject(publicSetting?.value);

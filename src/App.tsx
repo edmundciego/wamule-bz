@@ -16,6 +16,7 @@ import { EmailsPage } from "./pages/EmailsPage";
 import { InformationCenterPage } from "./pages/InformationCenterPage";
 import { InformationPackDocumentPage } from "./pages/InformationPackDocumentPage";
 import { LoginPage } from "./pages/LoginPage";
+import { EmbeddableMapPage } from "./pages/public/EmbeddableMapPage";
 import { LotsPage } from "./pages/LotsPage";
 import { LeadsPage } from "./pages/LeadsPage";
 import { LogoutPage } from "./pages/LogoutPage";
@@ -28,6 +29,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<ApplicationPage />} />
       <Route path="/apply" element={<ApplicationPage />} />
+      <Route path="/embed/:tenant_slug" element={<EmbeddableMapPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/logout" element={<LogoutPage />} />
       <Route path="/admin" element={<Navigate to="/dashboard" replace />} />

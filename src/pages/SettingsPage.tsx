@@ -8,6 +8,7 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
+import { WordPressEmbedSnippet } from "../components/admin/settings/WordPressEmbedSnippet";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
@@ -37,7 +38,7 @@ import type {
 const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
 const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
 const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
-const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles", "Data Management"] as const;
+const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles", "Website Integration & Embeds", "Data Management"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
 type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
@@ -507,6 +508,17 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+        ) : null}
+        {activeSection === "Website Integration & Embeds" ? (
+          <Card className="v2-workflow-panel">
+            <CardHeader><CardTitle>Website Integration & Embeds</CardTitle></CardHeader>
+            <CardContent>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Embed your live lot map on WordPress, Webflow, or any website with an iframe snippet.
+              </p>
+              <WordPressEmbedSnippet />
+            </CardContent>
+          </Card>
         ) : null}
         {activeSection === "Data Management" ? <DataManagementPanel isSuperAdmin={isSuperAdmin} /> : null}
 
