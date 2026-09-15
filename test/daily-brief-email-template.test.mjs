@@ -60,6 +60,28 @@ test("brief template covers summary, priorities, activity, and collections", asy
   assert.match(template, /Outstanding Collections & Balances/);
 });
 
+test("brief template formats header dates as human-readable strings", async () => {
+  const [template, dispatcher] = await Promise.all([
+    read("supabase/functions/_shared/daily-brief-template.ts"),
+    read("supabase/functions/send-notification-email/index.ts"),
+  ]);
+  assert.match(template, /export function formatBriefDate/);
+  assert.match(template, /export function formatBriefPeriod/);
+  assert.match(template, /"Sept"/);
+  assert.match(template, /\$\{Number\(match\[3\]\)\}-\$\{month\}-\$\{match\[1\]\}/);
+  assert.match(dispatcher, /formatBriefPeriod\(brief\.period_start, brief\.period_end\)/);
+  assert.match(dispatcher, /formatBriefDate\(brief\.brief_date\)/);
+});
+
+test("activity and collections read as normal-weight text with bold figures", async () => {
+  const template = await read("supabase/functions/_shared/daily-brief-template.ts");
+  assert.match(template, /emphasizeFigures/);
+  assert.match(template, /bulletedValue/);
+  assert.match(template, /color:#334155; font-size:13px; font-weight:400/);
+  assert.match(template, /• \$\{/);
+  assert.match(template, /<strong>\$1<\/strong>/);
+});
+
 test("brief template ends with dashboard CTA and Belize footer", async () => {
   const template = await read("supabase/functions/_shared/daily-brief-template.ts");
   assert.match(template, /Open CRM Dashboard/);

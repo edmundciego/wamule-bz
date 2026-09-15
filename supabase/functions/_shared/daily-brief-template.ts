@@ -50,6 +50,52 @@ export function escapeBriefHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
+const BRIEF_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+
+/** "2026-09-15" (or ISO datetime) -> "15-Sept-2026". Falls back to trimmed input. */
+export function formatBriefDate(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value.trim().slice(0, 32);
+  const month = BRIEF_MONTHS[Number(match[2]) - 1];
+  if (!month) return value.trim().slice(0, 32);
+  return `${Number(match[3])}-${month}-${match[1]}`;
+}
+
+/** ("2026-09-14", "2026-09-15") -> "14-Sept to 15-Sept-2026". */
+export function formatBriefPeriod(start: unknown, end: unknown): string {
+  const first = formatBriefDate(start);
+  const second = formatBriefDate(end);
+  if (first && second) {
+    if (first === second) return first;
+    const firstParts = first.split("-");
+    const secondParts = second.split("-");
+    if (firstParts.length === 3 && secondParts.length === 3 && firstParts[2] === secondParts[2]) {
+      return `${firstParts[0]}-${firstParts[1]} to ${second}`;
+    }
+    return `${first} to ${second}`;
+  }
+  return first || second;
+}
+
+/**
+ * Inline-bold key figures (dollar amounts, leading counts) inside
+ * already-escaped HTML. Entity-safe: `$` never appears in entities and the
+ * leading-count anchor avoids them.
+ */
+export function emphasizeFigures(escapedHtml: string): string {
+  return escapedHtml
+    .replace(/(\$[\d,]+(?:\.\d{2})?)/g, "<strong>$1</strong>")
+    .replace(/^(\d[\d,]*)/, "<strong>$1</strong>");
+}
+
+/** Multi-sentence values become • bulleted lines; single lines pass through. */
+export function bulletedValue(text: string): string {
+  const sentences = text.split(/(?<=\.)\s+/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.length <= 1) return escapeBriefHtml(text);
+  return sentences.map((sentence) => `• ${escapeBriefHtml(sentence)}`).join("<br>");
+}
+
 function paragraphs(text: string): string {
   return text
     .split(/\n{2,}/)
@@ -84,9 +130,10 @@ function sectionCard(title: string, innerHtml: string): string {
 }
 
 function activityRow(label: string, value: string): string {
+  const body = value ? emphasizeFigures(bulletedValue(value)) : "—";
   return `<tr>
-    <td style="padding:8px 0; border-bottom:1px solid #f1f5f9; color:#64748b; font-size:13px;">${escapeBriefHtml(label)}</td>
-    <td align="right" style="padding:8px 0; border-bottom:1px solid #f1f5f9; color:#0f172a; font-size:13px; font-weight:600;">${escapeBriefHtml(value || "—")}</td>
+    <td style="padding:8px 0; border-bottom:1px solid #f1f5f9; color:#64748b; font-size:13px; vertical-align:top;">${escapeBriefHtml(label)}</td>
+    <td style="padding:8px 0 8px 16px; border-bottom:1px solid #f1f5f9; color:#334155; font-size:13px; font-weight:400; line-height:1.65;">${body}</td>
   </tr>`;
 }
 
@@ -129,8 +176,11 @@ export function renderDailyBriefHtml(
     + activityRow("Contracts", data.activity.contracts)
     + activityRow("Payments", data.activity.payments)
     + "</table>";
-  const collectionsHtml = "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"background:#f1f5f9; border-radius:8px; padding:12px 16px; color:#0f172a; font-size:14px; font-weight:700;\">"
-    + escapeBriefHtml(data.collections || "No outstanding balance reported.")
+  const collectionsBody = data.collections
+    ? emphasizeFigures(bulletedValue(data.collections))
+    : "No outstanding balance reported.";
+  const collectionsHtml = "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"background:#f1f5f9; border-radius:8px; padding:12px 16px; color:#334155; font-size:13px; font-weight:400; line-height:1.65;\">"
+    + collectionsBody
     + "</td></tr></table>";
   return `<!doctype html>
 <html>

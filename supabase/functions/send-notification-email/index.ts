@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  formatBriefDate,
+  formatBriefPeriod,
   renderDailyBriefHtml,
   type DailyBriefEmailData,
   type DailyBriefPriority,
@@ -241,8 +243,8 @@ async function buildDailyBriefEmailData(
 
   return {
     subject,
-    periodCovered: [text(brief.period_start), text(brief.period_end)].filter(Boolean).join(" to ") || text(brief.brief_date) || "Latest period",
-    generatedAt: text(brief.brief_date) || "today",
+    periodCovered: formatBriefPeriod(brief.period_start, brief.period_end) || formatBriefDate(brief.brief_date) || "Latest period",
+    generatedAt: formatBriefDate(brief.brief_date) || "today",
     summary: text(brief.summary),
     metrics: {
       newApplications: firstCount(brief.applications_summary, /(\d[\d,]*)\s+new applications/i),
