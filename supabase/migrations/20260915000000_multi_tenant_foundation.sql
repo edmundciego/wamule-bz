@@ -560,7 +560,10 @@ grant select on public.organizations to authenticated;
 -- -----------------------------------------------------------------------------
 -- 8. TENANT-AWARE VIEWS (frontend filtering without breaking grants)
 -- -----------------------------------------------------------------------------
-create or replace view public.public_parcel_options as
+-- DROP + CREATE (not OR REPLACE): Postgres forbids reordering/inserting view
+-- columns positionally via CREATE OR REPLACE (42P16).
+drop view if exists public.public_parcel_options cascade;
+create view public.public_parcel_options as
 select
   p.id,
   p.tenant_id,
@@ -577,7 +580,8 @@ where p.lot_number ~ '^[0-9]{2}$'
   and p.status = 'Available'
 order by p.lot_number;
 
-create or replace view public.parcel_board_view as
+drop view if exists public.parcel_board_view cascade;
+create view public.parcel_board_view as
 select
   p.id,
   p.tenant_id,
