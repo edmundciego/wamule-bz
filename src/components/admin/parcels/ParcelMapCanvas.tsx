@@ -245,9 +245,9 @@ export function ParcelMapCanvas({
                 <polygon
                   points={pointsToSvgPoints(polygon)}
                   fill={style.fill}
-                  fillOpacity={isActive ? 0.45 : 0.35}
+                  fillOpacity={isActive ? 0.45 : 0.15}
                   stroke={style.stroke}
-                  strokeWidth={isActive ? 0.6 : 0.4}
+                  strokeWidth={isActive ? 0.6 : 0.25}
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                   style={{ cursor: mode === "view" ? "pointer" : undefined }}

@@ -44,6 +44,28 @@ export function LotsPage() {
   });
   const activeReservationByParcel = new Map((reservations ?? []).filter((reservation) => reservation.parcel_id).map((reservation) => [reservation.parcel_id, reservation]));
   const pendingResolutionParcelIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.parcel_id));
+  const { data: masterplanImageUrl } = useQuery({
+    queryKey: ["lot-board-masterplan"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return null;
+      const { data: profile, error: profileError } = await supabase
+        .from("admin_profiles")
+        .select("tenant_id")
+        .eq("user_id", sessionData.session.user.id)
+        .maybeSingle();
+      if (profileError) throw profileError;
+      const tenantId = (profile as { tenant_id: string | null } | null)?.tenant_id;
+      if (!tenantId) return null;
+      const { data: org, error: orgError } = await supabase
+        .from("organizations")
+        .select("masterplan_image_url")
+        .eq("id", tenantId)
+        .maybeSingle();
+      if (orgError) throw orgError;
+      return (org as { masterplan_image_url: string | null } | null)?.masterplan_image_url ?? null;
+    },
+  });
   const canvasParcels: CanvasParcel[] = (data ?? []).map((lot) => ({
     id: lot.id,
     lot_number: lot.lot_number,
@@ -118,7 +140,7 @@ export function LotsPage() {
         parcel={selectedParcel as Parcel | null}
         parcels={canvasParcels}
         tenantId={selectedParcel?.tenant_id ?? null}
-        masterplanImageUrl={null}
+        masterplanImageUrl={masterplanImageUrl ?? null}
         open={drawerOpen && selectedParcel !== null}
         onClose={() => setDrawerOpen(false)}
       />

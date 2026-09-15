@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
+import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
@@ -117,7 +118,7 @@ export function SettingsPage() {
     queryFn: async () => {
       const { data, error: profileError } = await supabase
         .from("admin_profiles")
-        .select("role")
+        .select("role, tenant_id")
         .eq("user_id", sessionData?.user.id)
         .maybeSingle();
       if (profileError) throw profileError;
@@ -469,6 +470,19 @@ export function SettingsPage() {
                   <Textarea value={company.short_description} onChange={(event) => setCompany({ ...company, short_description: event.target.value })} disabled={!canManageConfig} />
                 </Field>
                 <SectionSaveButton disabled={!canManageConfig} saving={savingSection === "Company profile"} onClick={() => void saveBusinessSetting("company_profile", company, "Company profile")} />
+              </CardContent>
+            </Card>
+
+            <Card className="v2-workflow-panel">
+              <CardHeader><CardTitle>Site Masterplan Map</CardTitle></CardHeader>
+              <CardContent>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Aerial photo used as the background when drawing parcel boundaries on the Lots board. One map per tenant.
+                </p>
+                <MasterplanUpload
+                  tenantId={(currentProfile as { tenant_id?: string | null } | null)?.tenant_id ?? null}
+                  canManage={canManageConfig}
+                />
               </CardContent>
             </Card>
 

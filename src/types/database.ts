@@ -47,7 +47,8 @@ export type BusinessSettingKey =
   | "public_application"
   | "payment_settings"
   | "lot_phase"
-  | "reservation_workflow_settings";
+  | "reservation_workflow_settings"
+  | "masterplan_image_url";
 export type LeadPipelineStage =
   | "new_lead"
   | "contacted"
@@ -196,6 +197,7 @@ export type Organization = {
   slug: string;
   inbound_alias: string | null;
   gemini_api_key: string | null;
+  masterplan_image_url: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
