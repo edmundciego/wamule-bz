@@ -23,6 +23,9 @@ export function DailyBriefsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkedActions, setCheckedActions] = useState<Record<string, boolean>>({});
   const [showAllPriorities, setShowAllPriorities] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [briefEmail, setBriefEmail] = useState("badmanshalker@gmail.com");
+  const [emailSending, setEmailSending] = useState(false);
   const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
 
   const { data: sessionProfile } = useQuery({
@@ -117,6 +120,46 @@ export function DailyBriefsPage() {
     }
   }
 
+  async function emailBrief() {
+    if (!selectedBrief) return;
+    const recipient = briefEmail.trim();
+    if (!recipient) {
+      setActionError("Enter a recipient email for the brief.");
+      return;
+    }
+    setActionError(null);
+    setActionMessage(null);
+    setEmailSending(true);
+    try {
+      const { data: queued, error: queueError } = await supabase
+        .from("email_notifications")
+        .insert({
+          recipient_email: recipient,
+          recipient_name: "Daily Brief Recipient",
+          subject: `Daily Brief — ${selectedBrief.brief_date}`,
+          body: formatBriefForClipboard(selectedBrief),
+          notification_type: "Daily Brief",
+          related_table: "ai_daily_briefs",
+          related_record_id: String(selectedBrief.id),
+          status: "Pending",
+        })
+        .select("id")
+        .single();
+      if (queueError || !queued) throw new Error(queueError?.message ?? "Could not queue the brief email.");
+      const { data, error: functionError } = await supabase.functions.invoke("send-notification-email", {
+        body: { email_notification_id: (queued as { id: number }).id },
+      });
+      if (functionError) throw new Error(functionError.message);
+      if (data?.error) throw new Error(String(data.error));
+      setActionMessage(`Brief email processing complete. Sent: ${data?.sent ?? 0}. Failed: ${data?.failed ?? 0}.`);
+      setShowEmailForm(false);
+    } catch (emailError) {
+      setActionError(emailError instanceof Error ? emailError.message : "Brief email failed.");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
   return (
     <section className="v2-page-shell">
       <div className="v2-page-header flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -136,10 +179,12 @@ export function DailyBriefsPage() {
               <Clipboard className="h-4 w-4" />
               Copy Brief
             </Button>
-            <Button type="button" variant="outline" disabled>
-              <Mail className="h-4 w-4" />
-              Email Brief
-            </Button>
+            {canGenerateBrief ? (
+              <Button type="button" variant="outline" disabled={!selectedBrief} onClick={() => setShowEmailForm((current) => !current)}>
+                <Mail className="h-4 w-4" />
+                Email Brief
+              </Button>
+            ) : null}
           </div>
       </div>
 
@@ -156,6 +201,28 @@ export function DailyBriefsPage() {
         <div className="v2-advisor-panel p-4 text-sm text-primary">
           The Daily Operations Brief summarizes sales, reservations, applications, post-sales, payments, and recommended priorities for staff review.
         </div>
+        {showEmailForm && canGenerateBrief ? (
+          <Card className="v2-workflow-panel">
+            <CardHeader>
+              <CardTitle>Email This Brief</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <Field label="Recipient email">
+                <Input
+                  type="email"
+                  value={briefEmail}
+                  onChange={(event) => setBriefEmail(event.target.value)}
+                  placeholder="testing@example.com"
+                  maxLength={254}
+                />
+              </Field>
+              <Button type="button" disabled={emailSending || !selectedBrief} onClick={() => void emailBrief()}>
+                <Mail className="h-4 w-4" />
+                {emailSending ? "Sending…" : "Send Brief Email"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {canGenerateBrief ? (
           <Card className="v2-workflow-panel">
