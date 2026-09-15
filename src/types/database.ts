@@ -9,7 +9,7 @@ export type TransactionType =
   | "Road Maintenance";
 export type CollectionMethod = "Cash" | "Online Transfer";
 export type ContractStatus = "active" | "voided" | "cancelled" | "archived";
-export type TransactionStatus = "posted" | "voided" | "reversed";
+export type TransactionStatus = "posted" | "voided" | "reversed" | "needs_review";
 export type PaymentDocumentType =
   | "Bank Transfer Proof"
   | "Manual Receipt Photo"
@@ -190,17 +190,39 @@ export type AuditAction =
   | "reviewed"
   | "settings_changed";
 
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  inbound_alias: string | null;
+  gemini_api_key: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export const DEFAULT_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+
 export type AdminProfile = {
   user_id: string;
   email: string | null;
   full_name: string | null;
   role: AppRole;
+  // Optional during staged rollout: DB allows NULL only for Super Admin;
+  // existing app reads may omit it until tenant-aware queries land.
+  tenant_id?: string | null;
   created_at: string;
   updated_at: string;
 };
 
+export type ParcelMapPoint = {
+  x: number;
+  y: number;
+};
+
 export type Parcel = {
   id: number;
+  tenant_id?: string | null;
   lot_number: string;
   dimensions: string;
   lot_size_id: number | null;
@@ -208,12 +230,14 @@ export type Parcel = {
   zoning: ParcelZoning;
   status: ParcelStatus;
   base_price: number;
+  map_polygon: ParcelMapPoint[] | null;
   created_at: string;
   updated_at: string;
 };
 
 export type Application = {
   id: number;
+  tenant_id?: string | null;
   first_name: string;
   last_name: string;
   applicant_full_name: string | null;
@@ -242,6 +266,7 @@ export type Application = {
 
 export type Customer = {
   id: number;
+  tenant_id?: string | null;
   application_id: number;
   first_name: string;
   last_name: string;
@@ -255,6 +280,7 @@ export type Customer = {
 
 export type Contract = {
   id: number;
+  tenant_id?: string | null;
   customer_id: number;
   parcel_id: number;
   final_purchase_price: number;
@@ -278,6 +304,7 @@ export type Contract = {
 
 export type Transaction = {
   id: number;
+  tenant_id?: string | null;
   receipt_number: string;
   customer_id: number;
   contract_id: number | null;
@@ -285,7 +312,7 @@ export type Transaction = {
   transaction_type: TransactionType;
   collection_method: CollectionMethod;
   bank_reference: string | null;
-  authorized_by: string;
+  authorized_by: string | null;
   receipt_file_path: string | null;
   manual_receipt_number: string | null;
   receipt_date: string | null;
@@ -304,17 +331,21 @@ export type Transaction = {
 
 export type PaymentDocument = {
   id: number;
+  tenant_id?: string | null;
   transaction_id: number | null;
   customer_id: number;
   document_type: PaymentDocumentType;
   file_path: string;
   original_file_name: string;
-  uploaded_by: string;
+  uploaded_by: string | null;
+  parsed_metadata: Record<string, unknown> | null;
+  ai_confidence: number | null;
   created_at: string;
 };
 
 export type PaymentRequest = {
   id: number;
+  tenant_id?: string | null;
   customer_id: number;
   contract_id: number | null;
   amount_due: number;
@@ -328,6 +359,7 @@ export type PaymentRequest = {
 };
 
 export type BusinessSetting = {
+  tenant_id?: string | null;
   key: BusinessSettingKey;
   value: Record<string, unknown>;
   updated_by: string | null;
@@ -337,6 +369,7 @@ export type BusinessSetting = {
 
 export type Lead = {
   id: string;
+  tenant_id?: string | null;
   full_name: string;
   email: string | null;
   phone: string | null;
@@ -366,6 +399,7 @@ export type Lead = {
 
 export type LeadActivity = {
   id: string;
+  tenant_id?: string | null;
   lead_id: string;
   activity_type: LeadActivityType;
   title: string;
@@ -377,6 +411,7 @@ export type LeadActivity = {
 
 export type FollowUpTask = {
   id: string;
+  tenant_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -395,6 +430,7 @@ export type FollowUpTask = {
 
 export type SiteVisit = {
   id: string;
+  tenant_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -413,6 +449,7 @@ export type SiteVisit = {
 
 export type LotReservation = {
   id: string;
+  tenant_id?: string | null;
   reservation_code: string | null;
   lead_id: string | null;
   application_id: number | null;
@@ -438,6 +475,7 @@ export type LotReservation = {
 
 export type ReservationActivity = {
   id: string;
+  tenant_id?: string | null;
   reservation_id: string;
   activity_type: ReservationActivityType;
   title: string;
@@ -454,6 +492,7 @@ export type ReleaseAlternateReservationsResult = {
 
 export type PostSalesChecklist = {
   id: string;
+  tenant_id?: string | null;
   customer_id: number | null;
   application_id: number | null;
   contract_id: number | null;
@@ -475,6 +514,7 @@ export type PostSalesChecklist = {
 
 export type PostSalesTask = {
   id: string;
+  tenant_id?: string | null;
   customer_id: number | null;
   application_id: number | null;
   contract_id: number | null;
@@ -496,6 +536,7 @@ export type PostSalesTask = {
 
 export type PostSalesActivity = {
   id: string;
+  tenant_id?: string | null;
   checklist_id: string | null;
   task_id: string | null;
   customer_id: number | null;
@@ -511,6 +552,7 @@ export type PostSalesActivity = {
 
 export type InstallmentPlan = {
   id: number;
+  tenant_id?: string | null;
   name: string;
   description: string | null;
   reservation_fee: number;
@@ -526,6 +568,7 @@ export type InstallmentPlan = {
 
 export type PaymentMethod = {
   id: number;
+  tenant_id?: string | null;
   name: string;
   method_type: PaymentMethodType;
   bank_name: string | null;
@@ -542,6 +585,7 @@ export type PaymentMethod = {
 
 export type LotSize = {
   id: number;
+  tenant_id?: string | null;
   name: string;
   dimensions: string;
   default_price: number;
@@ -554,6 +598,7 @@ export type LotSize = {
 
 export type FeeType = {
   id: number;
+  tenant_id?: string | null;
   name: string;
   description: string | null;
   default_amount: number;
@@ -567,6 +612,7 @@ export type FeeType = {
 
 export type AiSetting = {
   id: number;
+  tenant_id?: string | null;
   provider: "Gemini";
   model: string;
   is_enabled: boolean;
@@ -580,6 +626,7 @@ export type AiSetting = {
 
 export type ApplicationAiReview = {
   id: number;
+  tenant_id?: string | null;
   application_id: number;
   summary: string;
   completeness_status: ApplicationAiCompletenessStatus;
@@ -594,6 +641,7 @@ export type ApplicationAiReview = {
 
 export type AiDailyBrief = {
   id: number;
+  tenant_id?: string | null;
   brief_date: string;
   period_start: string;
   period_end: string;
@@ -616,6 +664,7 @@ export type AiDailyBrief = {
 
 export type CustomerAiSummary = {
   id: number;
+  tenant_id?: string | null;
   customer_id: number;
   summary: string;
   account_status: CustomerAiAccountStatus;
@@ -633,6 +682,7 @@ export type CustomerAiSummary = {
 
 export type LeadAiSummary = {
   id: string;
+  tenant_id?: string | null;
   lead_id: string;
   summary: string;
   readiness_status: string | null;
@@ -652,6 +702,7 @@ export type LeadAiSummary = {
 
 export type PostSalesAiSummary = {
   id: string;
+  tenant_id?: string | null;
   checklist_id: string;
   customer_id: number | null;
   application_id: number | null;
@@ -676,6 +727,7 @@ export type PostSalesAiSummary = {
 
 export type BriefActionItem = {
   id: number;
+  tenant_id?: string | null;
   brief_id: number | null;
   source_type: string;
   source_key: string;
@@ -704,6 +756,7 @@ export type BriefActionItem = {
 
 export type EmailNotification = {
   id: number;
+  tenant_id?: string | null;
   recipient_email: string;
   recipient_name: string | null;
   subject: string;
@@ -721,6 +774,7 @@ export type EmailNotification = {
 
 export type NotificationSetting = {
   id: number;
+  tenant_id?: string | null;
   notification_type: EmailNotificationType;
   send_to_admin: boolean;
   send_to_customer: boolean;
@@ -732,6 +786,7 @@ export type NotificationSetting = {
 
 export type DeveloperFeedback = {
   id: number;
+  tenant_id?: string | null;
   submitted_by: string | null;
   submitted_by_email: string | null;
   feedback_type: DeveloperFeedbackType;
@@ -746,6 +801,7 @@ export type DeveloperFeedback = {
 
 export type AuditEvent = {
   id: string;
+  tenant_id?: string | null;
   entity_type: AuditEntityType;
   entity_id: string | null;
   action: AuditAction;
@@ -760,9 +816,85 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type ReceiptJob = {
+  id: number;
+  tenant_id?: string | null;
+  transaction_id: number;
+  status: string;
+  attempts: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CommunityFeeSettings = {
+  tenant_id?: string | null;
+  id: boolean;
+  garbage_fee_amount: number;
+  road_maintenance_amount: number;
+  due_day: number;
+  updated_at: string;
+};
+
+export type ContractVoidResolution = {
+  id: string;
+  tenant_id?: string | null;
+  contract_id: number | null;
+  parcel_id: number | null;
+  customer_id: number | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InformationTopic = {
+  id: string;
+  tenant_id?: string | null;
+  code: string;
+  name: string;
+  description: string | null;
+  default_content: string;
+  sort_order: number;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InformationRequest = {
+  id: string;
+  tenant_id?: string | null;
+  lead_id: string;
+  parcel_id: number | null;
+  project_name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InformationRequestTopic = {
+  request_id: string;
+  topic_id: string;
+  tenant_id?: string | null;
+  created_at: string;
+};
+
+export type InformationPack = {
+  id: string;
+  tenant_id?: string | null;
+  request_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
+      organizations: {
+        Row: Organization;
+        Insert: Omit<Organization, "created_at" | "updated_at">;
+        Update: Partial<Omit<Organization, "id" | "created_at" | "updated_at">>;
+      };
       admin_profiles: {
         Row: AdminProfile;
         Insert: Omit<AdminProfile, "created_at" | "updated_at">;
@@ -988,11 +1120,46 @@ export type Database = {
         Insert: Omit<DeveloperFeedback, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<DeveloperFeedback, "id" | "created_at" | "updated_at">>;
       };
+      receipt_jobs: {
+        Row: ReceiptJob;
+        Insert: Omit<ReceiptJob, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ReceiptJob, "id" | "created_at" | "updated_at">>;
+      };
+      community_fee_settings: {
+        Row: CommunityFeeSettings;
+        Insert: Omit<CommunityFeeSettings, "updated_at">;
+        Update: Partial<Omit<CommunityFeeSettings, "tenant_id" | "updated_at">>;
+      };
+      contract_void_resolutions: {
+        Row: ContractVoidResolution;
+        Insert: Omit<ContractVoidResolution, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ContractVoidResolution, "id" | "created_at" | "updated_at">>;
+      };
+      information_topics: {
+        Row: InformationTopic;
+        Insert: Omit<InformationTopic, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<InformationTopic, "id" | "created_at" | "updated_at">>;
+      };
+      information_requests: {
+        Row: InformationRequest;
+        Insert: Omit<InformationRequest, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<InformationRequest, "id" | "created_at" | "updated_at">>;
+      };
+      information_request_topics: {
+        Row: InformationRequestTopic;
+        Insert: Omit<InformationRequestTopic, "created_at">;
+        Update: Partial<InformationRequestTopic>;
+      };
+      information_packs: {
+        Row: InformationPack;
+        Insert: Omit<InformationPack, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<InformationPack, "id" | "created_at" | "updated_at">>;
+      };
     };
     Views: {
       parcel_board_view: { Row: Parcel & { customer_name: string | null; contract_id: number | null; customer_id: number | null } };
       public_parcel_options: {
-        Row: Pick<Parcel, "id" | "lot_number" | "dimensions" | "zoning" | "status" | "base_price" | "lot_size_id"> & {
+        Row: Pick<Parcel, "id" | "tenant_id" | "lot_number" | "dimensions" | "zoning" | "status" | "base_price" | "lot_size_id"> & {
           lot_size_name: string | null;
         };
       };
