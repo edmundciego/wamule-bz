@@ -1,0 +1,11 @@
+{
+  "_readme": "Per-development registry for the interactive lot-map pipeline. Each development (a plat/map) belongs to exactly one tenant (an organizations.slug). Scripts accept --development <slug> and resolve tenant/source/tiers/out-dir from here, so Hopkins Grove lots can never be published into another tenant's account — and onboarding Sagana Heights (or any future plat) is one entry plus its tiers file. Explicit flags (--tenant/--source/--tiers/--out/--dir) override the registry, except a --tenant that conflicts with the registry is refused.",
+  "developments": {
+    "hopkins-grove": {
+      "tenant": "wamule",
+      "name": "Hopkins Grove",
+      "source": "2026 Hopkins Map.pdf",
+      "tiers": "hopkins.tiers.json"
+    }
+  }
+}

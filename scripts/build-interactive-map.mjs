@@ -38,6 +38,9 @@ function usage() {
   --active-width/--active-height: dims of the live masterplan image. When given,
     aspect drift >2% fails closed. When omitted, a warning is recorded and the
     operator must verify alignment in the preview modal before publishing.
+  --development <slug>: shorthand resolving tenant/source/tiers/out from
+    map-input/developments.json. E.g. --development hopkins-grove replaces
+    all four flags (explicit flags win, except a conflicting --tenant).
   --alignment-min: interior-sample agreement rate below which the build
     refuses (default 0.8). --skip-alignment-check bypasses it for iteration.`;
 }
@@ -63,6 +66,26 @@ function parseArgs(argv) {
 function fail(msg) {
   console.error(`error: ${msg}`);
   process.exit(2);
+}
+
+/** Fill --tenant/--source/--tiers/--out from map-input/developments.json via --development. */
+function applyDevelopment(args) {
+  if (!args.development) return args;
+  const regPath = resolve("map-input/developments.json");
+  if (!existsSync(regPath)) fail(`--development needs ${regPath} (run from the repo root)`);
+  const reg = JSON.parse(readFileSync(regPath, "utf8"));
+  const dev = reg.developments?.[args.development];
+  if (!dev) fail(`unknown development ${JSON.stringify(args.development)} — see map-input/developments.json`);
+  if (args.tenant && args.tenant.trim().toLowerCase() !== dev.tenant) {
+    fail(`--tenant ${JSON.stringify(args.tenant)} conflicts with registry tenant ${JSON.stringify(dev.tenant)} for development ${JSON.stringify(args.development)}`);
+  }
+  return {
+    ...args,
+    tenant: dev.tenant,
+    source: args.source || dev.source,
+    tiers: args.tiers || (dev.tiers ? `map-input/${dev.tiers}` : undefined),
+    out: args.out || `out/${args.development}`,
+  };
 }
 
 function num(value, name) {
@@ -464,6 +487,7 @@ async function main() {
   } catch (e) {
     fail(e.message);
   }
+  args = applyDevelopment(args);
   if (args.help || args.h) {
     console.log(usage());
     return;

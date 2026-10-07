@@ -372,16 +372,147 @@ export function PublicLotMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
+  // Probe the masterplan's intrinsic aspect so the viewBox matches it.
+  // (The image itself lives *inside* the SVG below, so zoom/pan move the
+  // whole map — background plus lots — as one layer.)
+  useEffect(() => {
+    const url = payload?.masterplan_image_url;
+    if (!url) {
+      setImageAspect(null);
+      return;
+    }
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (!cancelled && probe.naturalWidth && probe.naturalHeight) {
+        setImageAspect(probe.naturalWidth / probe.naturalHeight);
+      }
+    };
+    probe.src = url;
+    return () => {
+      cancelled = true;
+    };
+  }, [payload?.masterplan_image_url]);
+
   const highlighted = selectedIds ?? (internalSelectedId !== null ? [internalSelectedId] : []);
-  const focusLot = payload?.parcels.find((parcel) => parcel.id === (hoveredId ?? highlighted[0])) ?? null;
+  // Selection-locked detail card: hover NEVER drives this. Hover only
+  // affects polygon styling; the card follows the locked selection.
+  const focusLot = payload?.parcels.find((parcel) => parcel.id === highlighted[0]) ?? null;
 
   const viewBoxH = imageAspect ? 100 / imageAspect : 100;
   const yScale = viewBoxH / 100;
+  // Pan stays in full-space units so zooming keeps the current centre
+  // instead of jumping back to the top-left corner.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
+  // Active pointers for drag-pan (1) vs pinch-zoom (2); pinch suppresses click.
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ startDist: number; startZoom: number; startPan: { x: number; y: number }; center: { x: number; y: number } } | null>(null);
+  const suppressClickRef = useRef(false);
+  const wheelAccum = useRef(0);
+  const wheelClient = useRef<{ x: number; y: number } | null>(null);
+
+  function clampPan(x: number, y: number, z: number): { x: number; y: number } {
+    const w = 100 / z;
+    const h = viewBoxH / z;
+    return {
+      x: Math.min(Math.max(0, 100 - w), Math.max(0, x)),
+      y: Math.min(Math.max(0, viewBoxH - h), Math.max(0, y)),
+    };
+  }
+
   const viewBox = useMemo(() => {
     const w = 100 / zoom;
     const h = viewBoxH / zoom;
-    return `0 0 ${w} ${h}`;
-  }, [zoom, viewBoxH]);
+    const p = clampPan(pan.x, pan.y, zoom);
+    return `${p.x} ${p.y} ${w} ${h}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, viewBoxH, pan]);
+
+  function zoomBy(delta: number) {
+    zoomTo(zoom + delta);
+  }
+
+  /** Zoom keeping the given full-space point fixed under the cursor. */
+  function zoomTo(next: number, cx: number = 50, cy: number = viewBoxH / 2) {
+    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    if (clamped === zoom) return;
+    const sx = 100 / clamped / (100 / zoom);
+    const sy = viewBoxH / clamped / (viewBoxH / zoom);
+    setZoom(clamped);
+    setPan(clampPan(cx - (cx - pan.x) * sx, cy - (cy - pan.y) * sy, clamped));
+  }
+
+  function resetZoom() {
+    setZoom(MIN_ZOOM);
+    setPan({ x: 0, y: 0 });
+  }
+
+  function centroidOf(parcel: PublicLotParcel): { x: number; y: number } | null {
+    const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+    if (polygon.length < 3) return null;
+    return {
+      x: polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length,
+      y: (polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length) * yScale,
+    };
+  }
+
+  function focusParcel(parcel: PublicLotParcel) {
+    const c = centroidOf(parcel);
+    if (!c) return;
+    const next = Math.max(zoom, 2.5);
+    setZoom(next);
+    setPan(clampPan(c.x - 100 / next / 2, c.y - viewBoxH / next / 2, next));
+  }
+
+  function toViewBox(clientX: number, clientY: number): { x: number; y: number } | null {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+      x: pan.x + ((clientX - rect.left) / rect.width) * (100 / zoom),
+      y: pan.y + ((clientY - rect.top) / rect.height) * (viewBoxH / zoom),
+    };
+  }
+
+  // Damped Ctrl/Cmd+wheel zoom around the cursor (plain wheel keeps
+  // scrolling the page — same contract as embedded Google Maps). Native
+  // listener so preventDefault actually works; rAF-batched for trackpads.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      const acc = wheelAccum.current;
+      wheelAccum.current = 0;
+      if (!acc) return;
+      const client = wheelClient.current;
+      const rect = svg.getBoundingClientRect();
+      let cx = 50;
+      let cy = viewBoxH / 2;
+      if (client && rect.width && rect.height) {
+        cx = pan.x + ((client.x - rect.left) / rect.width) * (100 / zoom);
+        cy = pan.y + ((client.y - rect.top) / rect.height) * (viewBoxH / zoom);
+      }
+      zoomTo(zoom * Math.exp(-acc * 0.0015), cx, cy);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      wheelAccum.current += event.deltaY;
+      wheelClient.current = { x: event.clientX, y: event.clientY };
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      svg.removeEventListener("wheel", onWheel);
+      if (raf) cancelAnimationFrame(raf);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, pan, viewBoxH]);
 
   function handleParcelClick(parcel: PublicLotParcel) {
     setInternalSelectedId(parcel.id);
@@ -530,25 +661,106 @@ export function PublicLotMap({
         ) : null}
         {!loading && !error && payload ? (
           <>
-            {payload.masterplan_image_url ? (
-              <img
-                src={payload.masterplan_image_url}
-                alt={`${payload.tenant.name} site map`}
-                className="absolute inset-0 h-full w-full object-contain"
-                draggable={false}
-                onLoad={(event) => {
-                  const img = event.currentTarget;
-                  if (img.naturalWidth && img.naturalHeight) {
-                    setImageAspect(img.naturalWidth / img.naturalHeight);
-                  }
-                }}
-              />
-            ) : (
+            {payload.masterplan_image_url ? null : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-muted-foreground">
                 No site map image published yet.
               </div>
             )}
-            <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full">
+            <svg
+              ref={svgRef}
+              viewBox={viewBox}
+              preserveAspectRatio="xMidYMid meet"
+              className={cn("absolute inset-0 h-full w-full", zoom > MIN_ZOOM && "touch-none")}
+              style={{ cursor: dragRef.current?.moved ? "grabbing" : "grab" }}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+                pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                if (pointersRef.current.size === 2) {
+                  // Second finger down: switch from pan to pinch-zoom.
+                  const [a, b] = [...pointersRef.current.values()];
+                  pinchRef.current = {
+                    startDist: Math.hypot(a.x - b.x, a.y - b.y),
+                    startZoom: zoom,
+                    startPan: { ...pan },
+                    center: toViewBox((a.x + b.x) / 2, (a.y + b.y) / 2) ?? { x: 50, y: viewBoxH / 2 },
+                  };
+                  dragRef.current = null;
+                } else {
+                  const point = toViewBox(event.clientX, event.clientY);
+                  if (!point) return;
+                  dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
+                }
+              }}
+              onPointerMove={(event) => {
+                const pointers = pointersRef.current;
+                if (!pointers.has(event.pointerId)) return;
+                pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                if (pointers.size === 2 && pinchRef.current) {
+                  const [a, b] = [...pointers.values()];
+                  const dist = Math.hypot(a.x - b.x, a.y - b.y);
+                  const pinch = pinchRef.current;
+                  if (pinch.startDist > 0 && dist > 0) {
+                    suppressClickRef.current = true;
+                    zoomTo((pinch.startZoom * dist) / pinch.startDist, pinch.center.x, pinch.center.y);
+                  }
+                  return;
+                }
+                const drag = dragRef.current;
+                if (!drag) return;
+                const svg = svgRef.current;
+                if (!svg) return;
+                const rect = svg.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                const dx = ((event.clientX - drag.startX) / rect.width) * (100 / zoom);
+                const dy = ((event.clientY - drag.startY) / rect.height) * (viewBoxH / zoom);
+                if (Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 4) drag.moved = true;
+                if (drag.moved) setPan(clampPan(drag.panX - dx, drag.panY - dy, zoom));
+              }}
+              onPointerUp={(event) => {
+                pointersRef.current.delete(event.pointerId);
+                if (pinchRef.current) {
+                  pinchRef.current = null;
+                  window.setTimeout(() => {
+                    suppressClickRef.current = false;
+                  }, 50);
+                }
+                // Click-vs-drag: a drag leaves moved=true so the parcel
+                // onClick below ignores the release as a selection.
+                window.setTimeout(() => {
+                  if (dragRef.current && !dragRef.current.moved) dragRef.current = null;
+                  else if (dragRef.current) dragRef.current.moved = false;
+                }, 0);
+              }}
+              onPointerCancel={(event) => {
+                pointersRef.current.delete(event.pointerId);
+                pinchRef.current = null;
+                dragRef.current = null;
+              }}
+              onPointerLeave={() => {
+                pointersRef.current.clear();
+                pinchRef.current = null;
+                dragRef.current = null;
+              }}
+              onClick={() => {
+                // Empty-map click clears the locked selection. Polygon
+                // clicks stopPropagation, so this is background-only.
+                // Drags/pinches are suppressed; picks belong to the parent.
+                if (suppressClickRef.current || dragRef.current?.moved) return;
+                setHoveredId(null);
+                if (!pickMode) setInternalSelectedId(null);
+              }}
+            >
+              <title>Drag to pan • Ctrl+scroll or pinch to zoom • double-click a lot to focus</title>
+              {payload.masterplan_image_url ? (
+                <image
+                  href={payload.masterplan_image_url}
+                  x={0}
+                  y={0}
+                  width={100}
+                  height={viewBoxH}
+                  preserveAspectRatio="none"
+                />
+              ) : null}
               {visibleParcels.map((parcel) => {
                 const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                 if (polygon.length < 3) return null;
@@ -561,7 +773,7 @@ export function PublicLotMap({
                     <polygon
                       points={pointsAttr(polygon, yScale)}
                       fill={style.fill}
-                      fillOpacity={focused ? 0.55 : 0.35}
+                      fillOpacity={focused ? 0.5 : 0.28}
                       stroke={picked ? "#1d4ed8" : style.stroke}
                       strokeWidth={focused ? 0.7 : 0.4}
                       vectorEffect="non-scaling-stroke"
@@ -577,13 +789,54 @@ export function PublicLotMap({
                       style={{ cursor: tappable ? "pointer" : "default" }}
                       onMouseEnter={() => setHoveredId(parcel.id)}
                       onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
-                      onClick={() => handleParcelClick(parcel)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (suppressClickRef.current || dragRef.current?.moved) return;
+                        handleParcelClick(parcel);
+                      }}
+                      onDoubleClick={() => focusParcel(parcel)}
                     >
-                      <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""}`}</title>
+                      <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""} (double-click to zoom)`}</title>
                     </polygon>
                   </g>
                 );
               })}
+              {zoom >= 2
+                ? visibleParcels.map((parcel) => {
+                    const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                    if (polygon.length < 3) return null;
+                    const xs = polygon.map((p) => p.x);
+                    const ys = polygon.map((p) => p.y * yScale);
+                    const lotW = Math.max(...xs) - Math.min(...xs);
+                    const lotH = Math.max(...ys) - Math.min(...ys);
+                    // Label fitted to its own lot on both axes: height-capped
+                    // at half the lot height, width-capped so the full lot
+                    // number fits inside the lot width. Lots that would
+                    // render below a readable size are skipped until deeper
+                    // zoom (fs is viewBox units; fs*zoom ≈ screen size / 15).
+                    const label = parcel.lot_number;
+                    const fs = Math.min(lotH * 0.5, lotW / (Math.max(label.length, 1) * 0.62));
+                    if (!(fs > 0) || fs * zoom < 1.1) return null;
+                    return (
+                      <text
+                        key={`label-${parcel.id}`}
+                        x={(Math.max(...xs) + Math.min(...xs)) / 2}
+                        y={(Math.max(...ys) + Math.min(...ys)) / 2}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={fs}
+                        fontWeight={700}
+                        fill="#1f2937"
+                        stroke="#ffffff"
+                        strokeWidth={fs * 0.18}
+                        paintOrder="stroke"
+                        pointerEvents="none"
+                      >
+                        {parcel.lot_number}
+                      </text>
+                    );
+                  })
+                : null}
             </svg>
             <div className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !expanded ? "bottom-48 sm:bottom-3" : "bottom-3")}>
               <button
@@ -608,7 +861,7 @@ export function PublicLotMap({
                 type="button"
                 aria-label="Zoom in"
                 disabled={zoom >= MAX_ZOOM}
-                onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + 0.5))}
+                onClick={() => zoomBy(0.5)}
                 className="h-8 w-8 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
                 +
@@ -617,7 +870,7 @@ export function PublicLotMap({
                 type="button"
                 aria-label="Zoom out"
                 disabled={zoom <= MIN_ZOOM}
-                onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - 0.5))}
+                onClick={() => zoomBy(-0.5)}
                 className="h-8 w-8 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
                 −
@@ -625,7 +878,7 @@ export function PublicLotMap({
               <button
                 type="button"
                 aria-label="Reset zoom"
-                onClick={() => setZoom(MIN_ZOOM)}
+                onClick={() => resetZoom()}
                 className="h-8 w-8 rounded-md border border-border bg-card/95 text-xs font-bold shadow"
               >
                 ⟲
@@ -659,11 +912,26 @@ export function PublicLotMap({
               >
                 <div className="flex items-center justify-between gap-2">
                   <strong className="text-primary">Lot {focusLot.lot_number}</strong>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
-                    style={{ backgroundColor: (STATUS_STYLE[focusLot.status] ?? STATUS_STYLE.Available).fill }}
-                  >
-                    {focusLot.status}
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                      style={{ backgroundColor: (STATUS_STYLE[focusLot.status] ?? STATUS_STYLE.Available).fill }}
+                    >
+                      {focusLot.status}
+                    </span>
+                    {!pickMode ? (
+                      <button
+                        type="button"
+                        aria-label={`Close details for Lot ${focusLot.lot_number}`}
+                        onClick={() => {
+                          setHoveredId(null);
+                          setInternalSelectedId(null);
+                        }}
+                        className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
                   </span>
                 </div>
                 {focusLot.tier_label ? <p className="mt-1 text-muted-foreground">{focusLot.tier_label}</p> : null}

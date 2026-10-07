@@ -21,12 +21,31 @@ import { join, resolve } from "node:path";
 function usage() {
   return `Usage:
   node scripts/audit-plot-counts.mjs --tenant <slug> --dir <out-dir>
-    [--supabase-url <url>] [--service-key <key>] [--svg <name>]`;
+    [--supabase-url <url>] [--service-key <key>] [--svg <name>]
+
+  Shorthand: --development <slug> resolves tenant + dir from
+    map-input/developments.json (explicit flags win, except a conflicting
+    --tenant is refused). E.g.:
+    node scripts/audit-plot-counts.mjs --development hopkins-grove`;
 }
 
 function fail(msg) {
   console.error(`error: ${msg}`);
   process.exit(2);
+}
+
+/** Fill --tenant/--dir from map-input/developments.json via --development. */
+function applyDevelopment(args) {
+  if (!args.development) return args;
+  const regPath = resolve("map-input/developments.json");
+  if (!existsSync(regPath)) fail(`--development needs ${regPath} (run from the repo root)`);
+  const reg = JSON.parse(readFileSync(regPath, "utf8"));
+  const dev = reg.developments?.[args.development];
+  if (!dev) fail(`unknown development ${JSON.stringify(args.development)} — see map-input/developments.json`);
+  if (args.tenant && args.tenant.trim().toLowerCase() !== dev.tenant) {
+    fail(`--tenant ${JSON.stringify(args.tenant)} conflicts with registry tenant ${JSON.stringify(dev.tenant)} for development ${JSON.stringify(args.development)}`);
+  }
+  return { ...args, tenant: dev.tenant, dir: args.dir || `out/${args.development}` };
 }
 
 function parseArgs(argv) {
@@ -97,7 +116,8 @@ async function auditDb(supabaseUrl, serviceKey, tenant) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const raw = parseArgs(process.argv.slice(2));
+  const args = applyDevelopment(raw);
   const tenant = ((args.tenant || "").trim() || "").toLowerCase();
   if (!tenant) fail(`--tenant is required\n${usage()}`);
   if (!args.dir) fail(`--dir is required\n${usage()}`);

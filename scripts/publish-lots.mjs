@@ -37,6 +37,11 @@ function usage() {
   node scripts/publish-lots.mjs --tenant <slug> --dir <out-dir> (--dry-run | --apply)
     [--supabase-url <url>] [--service-key <key>] [--batch-size 100]
 
+  Shorthand: --development <slug> resolves tenant + dir from
+    map-input/developments.json (explicit flags win, except a conflicting
+    --tenant is refused). E.g.:
+    node scripts/publish-lots.mjs --development hopkins-grove --dry-run
+
   Credentials default to SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env vars.`;
 }
 
@@ -61,6 +66,20 @@ function parseArgs(argv) {
 function fail(msg) {
   console.error(`error: ${msg}`);
   process.exit(2);
+}
+
+/** Fill --tenant/--dir from map-input/developments.json via --development. */
+function applyDevelopment(args) {
+  if (!args.development) return args;
+  const regPath = resolve("map-input/developments.json");
+  if (!existsSync(regPath)) fail(`--development needs ${regPath} (run from the repo root)`);
+  const reg = JSON.parse(readFileSync(regPath, "utf8"));
+  const dev = reg.developments?.[args.development];
+  if (!dev) fail(`unknown development ${JSON.stringify(args.development)} — see map-input/developments.json`);
+  if (args.tenant && args.tenant.trim().toLowerCase() !== dev.tenant) {
+    fail(`--tenant ${JSON.stringify(args.tenant)} conflicts with registry tenant ${JSON.stringify(dev.tenant)} for development ${JSON.stringify(args.development)}`);
+  }
+  return { ...args, tenant: dev.tenant, dir: args.dir || `out/${args.development}` };
 }
 
 function validateLots(lots, expectedMin = 1, expectedMax = 100000) {
@@ -165,6 +184,7 @@ async function main() {
   } catch (e) {
     fail(e.message);
   }
+  args = applyDevelopment(args);
   if (args.help || args.h) {
     console.log(usage());
     return;
