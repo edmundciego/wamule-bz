@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, CheckCircle2, HelpCircle, MapPin, Send, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "react-router-dom";
 import type { z } from "zod";
@@ -10,6 +10,7 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
 import { applicationSchema } from "../lib/schemas";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
@@ -72,6 +73,7 @@ const defaultApplicationSettings = {
     `By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by ${CANONICAL_COMPANY_NAME}; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.`,
   show_lot_prices_publicly: true,
   show_available_lot_count_publicly: true,
+  lot_map_tenant_slug: "",
   default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
 };
 
@@ -154,6 +156,36 @@ export function ApplicationPage() {
   const selectedLotIds = form.watch("preferred_parcel_ids") ?? [];
   const intendedUse = form.watch("intended_use");
   const watchedValues = form.watch();
+  // Lots picked on the visual map resolve here so the review step and summary
+  // can name them even when they are absent from the legacy card list.
+  const [mapParcels, setMapParcels] = useState<Map<number, { lot_number: string; base_price: number; dimensions: string | null }>>(new Map());
+
+  function handleMapParcelsLoaded(loaded: PublicLotParcel[]) {
+    setMapParcels((previous) => {
+      const next = new Map(previous);
+      for (const parcel of loaded) {
+        next.set(parcel.id, { lot_number: parcel.lot_number, base_price: parcel.price, dimensions: parcel.dimensions });
+      }
+      return next;
+    });
+  }
+
+  function toggleMapLot(parcel: PublicLotParcel) {
+    const current = (form.getValues("preferred_parcel_ids") ?? []).map(Number);
+    const next = current.includes(parcel.id) ? current.filter((id) => id !== parcel.id) : [...current, parcel.id];
+    form.setValue("preferred_parcel_ids", next, { shouldValidate: true });
+  }
+
+  const allParcelOptions = useMemo(() => {
+    const base = [...(parcels ?? [])];
+    const ids = new Set(base.map((parcel) => parcel.id));
+    for (const [id, meta] of mapParcels) {
+      if (!ids.has(id)) {
+        base.push({ id, lot_number: meta.lot_number, status: "Available", base_price: meta.base_price, dimensions: meta.dimensions });
+      }
+    }
+    return base;
+  }, [parcels, mapParcels]);
 
   useEffect(() => {
     if (location.pathname === "/apply") {
@@ -227,7 +259,7 @@ export function ApplicationPage() {
     activeStep,
     values: watchedValues,
     selectedLotIds,
-    parcels: parcels ?? [],
+    parcels: allParcelOptions,
   });
 
   // The public page must never flash a bundled brand before the admin-managed
@@ -479,6 +511,23 @@ export function ApplicationPage() {
 
                     {activeStep === 2 ? (
                       <FormStep title="Choose Your Preferred Lot" goal={applicationSteps[2].goal}>
+                        {applicationSettings.lot_map_tenant_slug || import.meta.env.DEV ? (
+                          <div className="grid gap-2">
+                            <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
+                              <PublicLotMap
+                                tenantSlug={applicationSettings.lot_map_tenant_slug || "demo"}
+                                selectedIds={selectedLotIds.map(Number)}
+                                onToggleLot={toggleMapLot}
+                                showPrices={applicationSettings.show_lot_prices_publicly}
+                                onParcelsLoaded={handleMapParcelsLoaded}
+                                demoDataUrl={applicationSettings.lot_map_tenant_slug ? undefined : "/demo-map"}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Tap an available lot on the map to add it to your preferences. Selected lots also appear below.
+                            </p>
+                          </div>
+                        ) : null}
                         <Field label="Preferred lots" error={form.formState.errors.preferred_parcel_ids?.message}>
                           {isLoading ? (
                             <LoadingState label="Loading available lots" />
@@ -572,7 +621,7 @@ export function ApplicationPage() {
                       <FormStep title="Review & Acknowledge" goal={applicationSteps[4].goal}>
                         <ReviewSummary
                           values={watchedValues}
-                          parcels={parcels ?? []}
+                          parcels={allParcelOptions}
                           showPrices={applicationSettings.show_lot_prices_publicly}
                           onEdit={setActiveStep}
                         />

@@ -62,6 +62,7 @@ type PublicApplicationSettings = {
   application_acknowledgment_text: string;
   show_lot_prices_publicly: boolean;
   show_available_lot_count_publicly: boolean;
+  lot_map_tenant_slug: string;
   default_confirmation_message: string;
 };
 
@@ -78,6 +79,7 @@ const defaultApplication: PublicApplicationSettings = {
     "By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot.",
   show_lot_prices_publicly: true,
   show_available_lot_count_publicly: true,
+  lot_map_tenant_slug: "",
   default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
 };
 
@@ -497,6 +499,14 @@ export function SettingsPage() {
                 </div>
                 <Field label="Public notice text">
                   <Textarea value={application.public_notice_text} onChange={(event) => setApplication({ ...application, public_notice_text: event.target.value })} disabled={!canManageConfig} />
+                </Field>
+                <Field label="Homepage lot map tenant slug (empty hides the map picker)">
+                  <Input
+                    value={application.lot_map_tenant_slug ?? ""}
+                    placeholder="hopkins-grove"
+                    onChange={(event) => setApplication({ ...application, lot_map_tenant_slug: event.target.value.trim().toLowerCase() })}
+                    disabled={!canManageConfig}
+                  />
                 </Field>
                 <Field label="Application acknowledgment text">
                   <Textarea value={application.application_acknowledgment_text} onChange={(event) => setApplication({ ...application, application_acknowledgment_text: event.target.value })} disabled={!canManageConfig} />

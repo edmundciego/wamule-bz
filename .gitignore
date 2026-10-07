@@ -10,6 +10,8 @@
 node_modules/
 dist/
 graphify-out/
+out/
+public/demo-map/
 
 # Supabase local state
 supabase/.temp/

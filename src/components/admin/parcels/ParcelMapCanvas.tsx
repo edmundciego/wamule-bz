@@ -19,6 +19,9 @@ export interface CanvasParcel {
   base_price: number;
   dimensions: string | null;
   map_polygon: MapPoint[] | null;
+  tier_key?: string | null;
+  tier_label?: string | null;
+  needs_review?: boolean;
 }
 
 interface ParcelMapCanvasProps {
@@ -30,6 +33,8 @@ interface ParcelMapCanvasProps {
   snapEnabled: boolean;
   selectedVertex: number | null;
   saving?: boolean;
+  /** Review mode: low-confidence lots render with a magenta dashed outline. */
+  reviewMode?: boolean;
   onModeChange: (mode: ParcelMapMode) => void;
   onSnapChange: (enabled: boolean) => void;
   onAddPoint: (point: MapPoint) => void;
@@ -63,6 +68,7 @@ export function ParcelMapCanvas({
   snapEnabled,
   selectedVertex,
   saving = false,
+  reviewMode = false,
   onModeChange,
   onSnapChange,
   onAddPoint,
@@ -240,15 +246,17 @@ export function ParcelMapCanvas({
             if (!polygon.length) return null;
             const style = styleFor(parcel.status);
             const isActive = parcel.id === activeParcelId;
+            const flagged = reviewMode && parcel.needs_review === true;
             return (
               <g key={parcel.id}>
                 <polygon
                   points={pointsToSvgPoints(polygon)}
-                  fill={style.fill}
-                  fillOpacity={isActive ? 0.45 : 0.15}
-                  stroke={style.stroke}
+                  fill={flagged ? "#c026d3" : style.fill}
+                  fillOpacity={isActive ? 0.45 : flagged ? 0.3 : 0.15}
+                  stroke={flagged ? "#a21caf" : style.stroke}
                   strokeWidth={isActive ? 0.6 : 0.25}
                   strokeLinejoin="round"
+                  strokeDasharray={flagged ? "1.2 0.8" : undefined}
                   vectorEffect="non-scaling-stroke"
                   style={{ cursor: mode === "view" ? "pointer" : undefined }}
                   onClick={(event) => {
@@ -257,7 +265,7 @@ export function ParcelMapCanvas({
                     onSelectParcel(parcel.id);
                   }}
                 >
-                  <title>{`Lot ${parcel.lot_number} — ${parcel.status}`}</title>
+                  <title>{`Lot ${parcel.lot_number} — ${parcel.status}${parcel.tier_label ? ` — ${parcel.tier_label}` : ""}${parcel.needs_review ? " — NEEDS REVIEW" : ""}`}</title>
                 </polygon>
                 {isActive && (mode === "draw" || mode === "edit")
                   ? polygon.map((point, index) => (
@@ -300,6 +308,12 @@ export function ParcelMapCanvas({
               {STATUS_STYLE[status].label}
             </span>
           ))}
+          {reviewMode ? (
+            <span className="rounded-full bg-card/90 px-2 py-1 text-xs font-semibold text-foreground shadow-sm">
+              <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#c026d3" }} />
+              Needs review
+            </span>
+          ) : null}
         </div>
       </div>
 

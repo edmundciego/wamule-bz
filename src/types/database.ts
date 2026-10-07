@@ -233,6 +233,41 @@ export type Parcel = {
   status: ParcelStatus;
   base_price: number;
   map_polygon: ParcelMapPoint[] | null;
+  tier_key: string | null;
+  tier_label?: string | null;
+  tier_color_hex?: string | null;
+  tier_price_cents?: number | null;
+  is_corner: boolean;
+  price_override_cents: number | null;
+  effective_price_cents?: number | null;
+  geometry_source: string;
+  confidence: number | null;
+  needs_review: boolean;
+  masterplan_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LotTier = {
+  id: string;
+  tenant_id: string;
+  tier_key: string;
+  label: string;
+  price_cents: number;
+  corner_premium_cents: number;
+  color_hex: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DevelopmentUpdate = {
+  id: string;
+  tenant_id: string;
+  date: string;
+  tag: string;
+  body: string;
   created_at: string;
   updated_at: string;
 };

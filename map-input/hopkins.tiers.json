@@ -1,0 +1,55 @@
+{
+  "tenant": "hopkins-grove",
+  "notes": "Tier catalogue for Hopkins Grove raster detection. `legend` is the display swatch from the PoC HTML; `fill` is the saturated map-polygon fill sampled from the extracted raster (fills render MORE saturated than legend swatches due to anti-aliasing/JPEG). Detection anchors on `fill` with per-tier RGB euclidean `tolerance`.",
+  "tiers": {
+    "standard": {
+      "label": "Standard Interior",
+      "price": 25000,
+      "legend": "#f4e27a",
+      "fill": "#fff798",
+      "tolerance": 55
+    },
+    "premium": {
+      "label": "Premium Interior",
+      "price": 30000,
+      "legend": "#f0c9bd",
+      "fill": "#f6cabb",
+      "tolerance": 55
+    },
+    "boulevard": {
+      "label": "Premium Boulevard",
+      "price": 35000,
+      "legend": "#2fd32f",
+      "fill": "#12ff00",
+      "tolerance": 90
+    },
+    "creek": {
+      "label": "Creekview / Reserve",
+      "price": 35000,
+      "legend": "#19d3e8",
+      "fill": "#19d3e8",
+      "tolerance": 80
+    },
+    "orange": {
+      "label": "Access Road (1/2 ac)",
+      "price": 60000,
+      "legend": "#ffa319",
+      "fill": "#ffa319",
+      "tolerance": 70
+    },
+    "purple": {
+      "label": "Access Road (1/2 ac)",
+      "price": 50000,
+      "legend": "#a56ae6",
+      "fill": "#a56ae6",
+      "tolerance": 70
+    },
+    "red": {
+      "label": "Highway Front",
+      "price": 125000,
+      "legend": "#e0241d",
+      "fill": "#e0241d",
+      "tolerance": 80
+    }
+  }
+}

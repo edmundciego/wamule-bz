@@ -66,7 +66,17 @@ Deno.serve(async (request) => {
     return json({ error: "Method not allowed." }, 405);
   }
 
-  const body = (await request.json().catch(() => ({}))) as InboundBody;
+  // -- 0. Webhook signature verification (anti-forgery) -----------------------
+  // The raw body must be captured before JSON parsing: the HMAC signature is
+  // computed over the exact request bytes, so re-serializing would break it.
+  const rawBody = await request.text();
+
+  const verification = await verifyResendWebhookSignature(request, rawBody);
+  if (!verification.ok) {
+    return json({ error: verification.error }, verification.status);
+  }
+
+  const body = JSON.parse(rawBody) as InboundBody;
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -404,6 +414,92 @@ async function createReconciliationLead(
     next_action: "Reconcile inbound receipt sender",
     notes: `${input.reason} Subject: ${input.subject || "(none)"}`.slice(0, 2000),
   });
+}
+
+// -- Webhook signature verification (Svix/Resend standard) ----------------------
+// Resend delivers inbound webhooks with Svix-style headers:
+//   svix-id:        unique message id
+//   svix-timestamp: unix epoch seconds
+//   svix-signature: space-separated list of "v1,<base64 hmac>" signatures
+// The signed payload is `${id}.${timestamp}.${rawBody}`, HMAC-SHA256 with the
+// webhook secret. The secret may be stored with or without the `whsec_` prefix.
+// Signature check ordering is constant-time via crypto.subtle.verify to avoid
+// timing leaks.
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
+
+async function verifyResendWebhookSignature(
+  request: Request,
+  rawBody: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const environment = (Deno.env.get("ENVIRONMENT") ?? "").trim().toLowerCase();
+  const secret = (Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "").trim();
+
+  if (!secret) {
+    // Local/staging bypass: ONLY allowed when ENVIRONMENT is explicitly
+    // "development". Production and staging must never process unsigned input.
+    if (environment === "development") {
+      console.warn("receive-inbound-email: signature bypass active (ENVIRONMENT=development)");
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error: "Webhook signature verification is not configured.",
+      status: 401,
+    };
+  }
+
+  const svixId = request.headers.get("svix-id")?.trim() ?? "";
+  const svixTimestamp = request.headers.get("svix-timestamp")?.trim() ?? "";
+  const svixSignatureHeader = request.headers.get("svix-signature")?.trim() ?? "";
+
+  if (!svixId || !svixTimestamp || !svixSignatureHeader) {
+    return { ok: false, error: "Missing webhook signature headers.", status: 401 };
+  }
+
+  const timestampSeconds = Number(svixTimestamp);
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
+    return { ok: false, error: "Invalid webhook timestamp.", status: 401 };
+  }
+
+  const ageSeconds = Math.abs(Date.now() / 1000 - timestampSeconds);
+  if (ageSeconds > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
+    return { ok: false, error: "Webhook timestamp outside tolerance window (replay rejected).", status: 401 };
+  }
+
+  const normalizedSecret = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+  const secretBytes = base64Decode(normalizedSecret);
+  if (!secretBytes.length) {
+    return { ok: false, error: "Webhook signature verification is not configured.", status: 401 };
+  }
+  const signedContent = `${svixId}.${svixTimestamp}.${rawBody}`;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const signedBytes = new TextEncoder().encode(signedContent);
+  const expectedMac = await crypto.subtle.sign("HMAC", key, signedBytes);
+
+  for (const candidate of svixSignatureHeader.split(" ")) {
+    const entry = candidate.trim();
+    if (!entry.startsWith("v1,")) continue;
+    const providedSignature = entry.slice("v1,".length);
+    const providedBytes = base64Decode(providedSignature);
+    if (!providedBytes.length || providedBytes.length !== expectedMac.byteLength) continue;
+
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      providedBytes,
+      signedBytes,
+    );
+    if (valid) return { ok: true };
+  }
+
+  return { ok: false, error: "Webhook signature verification failed.", status: 401 };
 }
 
 // -- Vision ---------------------------------------------------------------------

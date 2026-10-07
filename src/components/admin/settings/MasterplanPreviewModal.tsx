@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { pointsToSvgPoints, sanitizePolygon, type MapPoint } from "../../../hooks/useParcelMap";
+import { calculateAspectDrift } from "../../../lib/masterplan";
 import type { ParcelStatus } from "../../../types/database";
 import { Button } from "../../ui/Button";
 import { ErrorState } from "../../ui/State";
@@ -50,6 +51,8 @@ export function MasterplanPreviewModal({
   const [showBaseline, setShowBaseline] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeImageDims, setActiveImageDims] = useState<{ width: number; height: number } | null>(null);
+  const [draftImageDims, setDraftImageDims] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (!open || !tenantId) return;
@@ -76,16 +79,44 @@ export function MasterplanPreviewModal({
     }
     setError(null);
     setShowBaseline(false);
+    setActiveImageDims(null);
+    setDraftImageDims(null);
     void loadContext();
     return () => {
       cancelled = true;
     };
   }, [open, tenantId]);
 
+  // Probe intrinsic dimensions of both maps to detect aspect-ratio drift.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const probe = (url: string | null, set: (dims: { width: number; height: number } | null) => void) => {
+      if (!url) {
+        set(null);
+        return;
+      }
+      const image = new Image();
+      image.onload = () => {
+        if (!cancelled) set({ width: image.naturalWidth, height: image.naturalHeight });
+      };
+      image.onerror = () => {
+        if (!cancelled) set(null);
+      };
+      image.src = url;
+    };
+    probe(activeImageUrl, setActiveImageDims);
+    probe(draftImageUrl, setDraftImageDims);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeImageUrl, draftImageUrl]);
+
   if (!open) return null;
 
   const backgroundUrl = showBaseline ? activeImageUrl : draftImageUrl;
   const alignedCount = polygons.filter((p) => (p.map_polygon ?? []).length >= 3).length;
+  const ratioDrift = calculateAspectDrift(draftImageDims, activeImageDims);
 
   async function handlePublish() {
     if (!tenantId || !canManage || (!draftVersionId && !draftUpload)) return;
@@ -136,6 +167,15 @@ export function MasterplanPreviewModal({
         </div>
 
         {error ? <ErrorState message={error} /> : null}
+
+        {ratioDrift ? (
+          <div
+            role="alert"
+            className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm leading-5 text-warning"
+          >
+            <p className="font-semibold">Warning: Draft map aspect ratio differs from active map by {ratioDrift.toFixed(1)}%. Polygon shapes may require repositioning.</p>
+          </div>
+        ) : null}
 
         <div className="relative overflow-hidden rounded-md border border-border bg-muted">
           {backgroundUrl ? (

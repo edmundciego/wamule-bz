@@ -54,13 +54,14 @@ test("tenant masterplan url flows to lots board and parcel drawer", async () => 
   ]);
   assert.match(lots, /from\("organizations"\)/);
   assert.match(lots, /masterplan_image_url/);
-  assert.match(lots, /lot-board-masterplan/);
-  assert.match(lots, /masterplanImageUrl=\{masterplanImageUrl \?\? null\}/);
+  assert.match(lots, /lot-board-tenant/);
+  assert.match(lots, /masterplanImageUrl=\{tenantContext\?\.masterplanImageUrl \?\? null\}/);
   assert.match(drawer, /masterplanImageUrl/);
   assert.match(types, /masterplan_image_url: string \| null/);
 });
 
 test("sibling parcels render subtly behind the active boundary", async () => {
   const canvas = await read("src/components/admin/parcels/ParcelMapCanvas.tsx");
-  assert.match(canvas, /fillOpacity=\{isActive \? 0\.45 : 0\.15\}/);
+  // Review-flagged lots get a stronger magenta pass; everything else stays faint.
+  assert.match(canvas, /fillOpacity=\{isActive \? 0\.45 : flagged \? 0\.3 : 0\.15\}/);
 });

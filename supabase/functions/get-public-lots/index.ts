@@ -12,6 +12,94 @@ const corsHeaders = {
 
 type MapPoint = { x: number; y: number };
 
+// Public payload allowlist: ONLY these keys may ever appear in a parcel
+// object returned by this endpoint. Tier display fields (tier_key, label,
+// colour) plus the effective price are public; QA/ops columns
+// (price_override_cents, confidence, needs_review, geometry_source,
+// masterplan_version_id) and everything else (AI provider keys,
+// authorization metadata, internal notes, creator columns, tenant scoping,
+// zoning, ...) are stripped by toPublicParcel before serialization.
+const PUBLIC_PARCEL_FIELDS = [
+  "id",
+  "lot_number",
+  "status",
+  "price",
+  "dimensions",
+  "map_polygon",
+  "tier_key",
+  "tier_label",
+  "tier_color_hex",
+  "is_corner",
+  "effective_price_cents",
+] as const;
+
+type TierRow = {
+  tier_key: string;
+  label: string;
+  price_cents: number;
+  corner_premium_cents: number;
+  color_hex: string;
+};
+
+/**
+ * Effective lot price in cents. TypeScript mirror of SQL
+ * public.parcel_effective_price_cents(bigint, bigint, bigint, boolean, numeric):
+ * per-lot override wins, else tier price (+ corner premium for corner lots),
+ * else legacy base_price fallback so unclassified rows keep serving.
+ */
+function computeEffectivePriceCents(input: {
+  priceOverrideCents: number | null;
+  tierPriceCents: number | null;
+  tierCornerPremiumCents: number | null;
+  isCorner: boolean;
+  basePrice: number;
+}): number {
+  if (input.priceOverrideCents !== null && Number.isFinite(input.priceOverrideCents)) {
+    return Math.round(input.priceOverrideCents);
+  }
+  if (input.tierPriceCents !== null && Number.isFinite(input.tierPriceCents)) {
+    const premium = input.isCorner ? Math.round(input.tierCornerPremiumCents ?? 0) : 0;
+    return Math.round(input.tierPriceCents) + premium;
+  }
+  return Math.round(Number(input.basePrice ?? 0) * 100);
+}
+
+function toPublicParcel(parcel: Record<string, unknown>, tiersByKey: Map<string, TierRow>) {
+  const tierKey = typeof parcel.tier_key === "string" ? parcel.tier_key : null;
+  const tier = (tierKey && tiersByKey.get(tierKey)) || null;
+  const isCorner = parcel.is_corner === true;
+  const overrideRaw = parcel.price_override_cents;
+  const effectiveCents = computeEffectivePriceCents({
+    priceOverrideCents: typeof overrideRaw === "number" ? overrideRaw : null,
+    tierPriceCents: tier ? Number(tier.price_cents) : null,
+    tierCornerPremiumCents: tier ? Number(tier.corner_premium_cents) : null,
+    isCorner,
+    basePrice: Number(parcel.base_price ?? 0),
+  });
+  const source: Record<string, unknown> = {
+    id: parcel.id,
+    lot_number: parcel.lot_number,
+    status: parcel.status,
+    // Legacy `price` key (dollars) is now the effective price so catalogue
+    // edits flow to embeds without re-ingest.
+    price: Number((effectiveCents / 100).toFixed(2)),
+    dimensions: parcel.dimensions,
+    map_polygon: sanitizePolygon(parcel.map_polygon),
+    tier_key: tierKey,
+    tier_label: tier ? tier.label : null,
+    tier_color_hex: tier ? tier.color_hex : null,
+    is_corner: isCorner,
+    effective_price_cents: effectiveCents,
+  };
+  // Defensive allowlist serialization: strips any key not in
+  // PUBLIC_PARCEL_FIELDS regardless of how it arrived.
+  const output: Record<string, unknown> = {};
+  for (const field of PUBLIC_PARCEL_FIELDS) {
+    output[field] = source[field];
+  }
+  return output;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -38,13 +126,15 @@ Deno.serve(async (request) => {
     return json({ error: "Tenant not found or inactive." }, 404);
   }
 
-  const [{ data: parcels, error: parcelsError }, branding] = await Promise.all([
+  const [{ data: parcels, error: parcelsError }, branding, tiersByKey, activeVersionId] = await Promise.all([
     supabase
       .from("parcels")
-      .select("id, lot_number, status, base_price, dimensions, zoning, map_polygon")
+      .select("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id")
       .eq("tenant_id", organization.id)
       .order("lot_number", { ascending: true }),
     loadBranding(supabase, organization),
+    loadTiers(supabase, organization.id),
+    loadActiveVersionId(supabase, organization.id),
   ]);
 
   if (parcelsError) {
@@ -52,18 +142,20 @@ Deno.serve(async (request) => {
     return json({ error: "Could not load lot availability." }, 500);
   }
 
+  // Version scoping: rows aligned to a superseded map stay hidden; NULL
+  // (legacy/unversioned) rows always stay visible so existing tenants' maps
+  // never blank on deploy. Strict equality alone would hide every legacy lot.
+  const visible = (parcels ?? []).filter(
+    (parcel) =>
+      (parcel as Record<string, unknown>).masterplan_version_id == null ||
+      (parcel as Record<string, unknown>).masterplan_version_id === activeVersionId,
+  );
+
   return json({
     tenant: { name: organization.name, slug: organization.slug },
     masterplan_image_url: branding.masterplanImageUrl,
     branding: branding.public,
-    parcels: (parcels ?? []).map((parcel) => ({
-      id: parcel.id,
-      lot_number: parcel.lot_number,
-      status: parcel.status,
-      price: Number(parcel.base_price ?? 0),
-      dimensions: parcel.dimensions,
-      map_polygon: sanitizePolygon(parcel.map_polygon),
-    })),
+    parcels: visible.map((parcel) => toPublicParcel(parcel as Record<string, unknown>, tiersByKey)),
   });
 });
 
@@ -131,6 +223,43 @@ async function loadBranding(supabase: ReturnType<typeof createClient>, org: Orga
       short_description: text(companyProfile.short_description),
     },
   };
+}
+
+async function loadTiers(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<Map<string, TierRow>> {
+  // Tier select is display-safe only: no tenant_id, no audit/creator columns.
+  const { data, error } = await supabase
+    .from("lot_tiers")
+    .select("tier_key, label, price_cents, corner_premium_cents, color_hex")
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true);
+  if (error) {
+    // Graceful degradation for deploy ordering (function before migration):
+    // fall back to legacy base_price instead of 500ing the public map.
+    console.error("get-public-lots tiers query failed", error.message);
+    return new Map();
+  }
+  return new Map((data ?? []).map((row) => [(row as TierRow).tier_key, row as TierRow]));
+}
+
+async function loadActiveVersionId(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("masterplan_versions")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (error) {
+    console.error("get-public-lots active version lookup failed", error.message);
+    return null;
+  }
+  const id = (data as { id?: unknown } | null)?.id;
+  return typeof id === "string" ? id : null;
 }
 
 function sanitizePolygon(value: unknown): MapPoint[] {

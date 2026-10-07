@@ -60,6 +60,27 @@ There are four access levels. Most day-to-day work happens as **Staff**; user ma
 
 In the lot editor's **Details** tab, set the **status** (Available / Reserved / Sold), **base price**, and **dimensions**, then **Save details**. Prices marked visible in *Public Application Settings* appear on your website map automatically.
 
+### Bulk lot import (survey plat → live map)
+
+For large subdivisions, lots are detected from the survey plat automatically instead of drawn by hand:
+
+1. Your administrator runs the map builder on the plat file. It produces a lot file plus a preview page showing every detected boundary over the map image.
+2. Open **Lots → Bulk Ingest** and upload the lot file. You get a per-tier breakdown, a low-confidence count, and a preview of what would be **created vs updated** — nothing is written from this screen. The builder also refuses automatically if the detected boundaries disagree with the map image (wrong export), so a bad pairing can never reach the live map.
+3. The administrator applies the import from the command line (`map:publish --dry-run` first, then `--apply`). New lots arrive as **Available** with their detected tier and price; existing lots keep their status and only gain corrected geometry.
+4. Upload the matching map image from the **Site Masterplan Map** card and **Publish & Activate** it, then check the live embed (Part 3).
+
+### Reviewing low-confidence lots
+
+Auto-detected lots carry a confidence score. Uncertain outlines are flagged **Needs Review**:
+
+1. On **Lots**, tick **Needs review only** to isolate the flagged cohort (combine with the tier filter to work through one product type at a time).
+2. Flagged lots show a magenta dashed outline on the map and a **Needs Review** badge on their tile.
+3. Open a lot, fix its boundary in the **Map Boundary** tab if needed, then untick **Needs review** in **Details** and save. Cleared lots flow to the public map on the next publish.
+
+### Managing tier prices
+
+Open **Lots → Tier Catalogue** to rename tiers, change base prices, adjust the corner-lot premium, or recolor a tier. Website prices update immediately — no re-import needed. A per-lot **price override** in the lot editor still wins over the tier price when set, and corner lots automatically add the tier's corner premium.
+
 ---
 
 ## Part 3 — Website Embeds & Public Integration
@@ -78,7 +99,9 @@ In the lot editor's **Details** tab, set the **status** (Available / Reserved / 
 
 ### What your website visitors experience
 
-Visitors see your aerial map with color-coded lots, a legend, and an **All Lots / Available Only** switch. Hovering or tapping a lot shows its number, size, price, and status. Tapping an **available** lot opens a short inquiry form (*"Inquire About Lot …"*) pre-addressed to that lot — name, email, optional phone, and a pre-written message they can edit.
+Visitors see your aerial map with color-coded lots, a legend, and an **All Lots / Available Only** switch. The **Status colours / Tier colours** toggle repaints the map by product tier (e.g. Standard, Creekview, Highway Front); tapping a tier chip hides or shows that tier. The **search box** finds lots by number, tier, or status, and zoom buttons magnify dense blocks. Hovering or tapping a lot shows its number, tier, size, price, and status. Tapping an **available** lot opens a short inquiry form (*"Inquire About Lot …"*) pre-addressed to that lot — name, email, optional phone, and a pre-written message they can edit.
+
+Tip: a link ending in `?lot=L-142` opens the map with that lot pre-selected — handy for pointing a buyer at a specific lot from an email or ad.
 
 ### Where those inquiries go
 

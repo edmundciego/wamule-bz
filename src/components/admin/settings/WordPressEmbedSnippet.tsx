@@ -67,7 +67,7 @@ export function WordPressEmbedSnippet() {
 
   const baseUrl = window.location.origin;
   const snippet = slug
-    ? `<iframe src="${baseUrl}/embed/${slug}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen></iframe>`
+    ? `<iframe src="${baseUrl}/embed/${slug}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
     : "";
 
   async function handleCopy() {
@@ -140,6 +140,7 @@ export function WordPressEmbedSnippet() {
           <p className="text-xs leading-5 text-muted-foreground">
             Live map for tenant <strong>{slug}</strong>. Works in WordPress, Webflow, or any site that accepts iframes.
             Inquiries submitted inside the embed route to your tenant pipeline automatically.
+            The snippet allows fullscreen mode; older embeds need <code>allow=&quot;fullscreen&quot;</code> added to the iframe tag for it to work.
           </p>
         </>
       ) : null}

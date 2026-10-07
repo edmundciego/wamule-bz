@@ -24,16 +24,23 @@ test("embed route mounts publicly without auth or admin chrome", async () => {
 });
 
 test("embed polygons render responsively from percentage coordinates", async () => {
-  const page = await read("src/pages/public/EmbeddableMapPage.tsx");
-  assert.match(page, /viewBox="0 0 100 100"/);
-  assert.match(page, /<polygon/);
-  assert.match(page, /map_polygon/);
-  assert.match(page, /#22c55e/);
-  assert.match(page, /#f59e0b/);
-  assert.match(page, /#ef4444/);
-  assert.match(page, /All Lots/);
-  assert.match(page, /Available Only/);
-  assert.match(page, /get-public-lots\?tenant=/);
+  const [page, map] = await Promise.all([
+    read("src/pages/public/EmbeddableMapPage.tsx"),
+    read("src/components/public/PublicLotMap.tsx"),
+  ]);
+  // Route wrapper stays thin and public; rendering lives in PublicLotMap.
+  assert.match(page, /PublicLotMap/);
+  assert.match(page, /tenantSlug=\{tenant_slug\}/);
+  // Percentage-space rendering; zoom narrows the same 0..100 box dynamically.
+  assert.match(map, /viewBox=\{viewBox\}/);
+  assert.match(map, /<polygon/);
+  assert.match(map, /map_polygon/);
+  assert.match(map, /#22c55e/);
+  assert.match(map, /#f59e0b/);
+  assert.match(map, /#ef4444/);
+  assert.match(map, /All Lots/);
+  assert.match(map, /Available Only/);
+  assert.match(map, /get-public-lots\?tenant=/);
 });
 
 test("available lots open a tenant-tagged inquiry without leaving the iframe", async () => {
