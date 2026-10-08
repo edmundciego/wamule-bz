@@ -1,0 +1,24 @@
+{
+ "tiers": {
+  "standard": {
+   "label": "Standard",
+   "price": 20000,
+   "legend": "#4ade80"
+  },
+  "premium": {
+   "label": "Premium",
+   "price": 30000,
+   "legend": "#60a5fa"
+  },
+  "estate": {
+   "label": "Estate",
+   "price": 45000,
+   "legend": "#fbbf24"
+  },
+  "reserve": {
+   "label": "Reserve",
+   "price": 60000,
+   "legend": "#2dd4bf"
+  }
+ }
+}

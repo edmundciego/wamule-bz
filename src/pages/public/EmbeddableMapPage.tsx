@@ -8,10 +8,13 @@ export function EmbeddableMapPage() {
   const initialFilter: PublicLotFilter = searchParams.get("filter") === "available" ? "available" : "all";
   const initialView: PublicLotColourView = searchParams.get("view") === "tier" ? "tier" : "status";
   const initialLot = searchParams.get("lot") ?? undefined;
-  // ?demo=1 serves the static /demo-map fixture (lots.json + tiers.json +
-  // masterplan_background.webp) instead of the live API. Used by Playwright:
-  // hermetic, zero DB writes. Never linked in production UI.
-  const demoDataUrl = searchParams.get("demo") ? "/demo-map" : undefined;
+  // ?demo=1 serves the static /demo-map fixture (dev/test only: the vite
+  // fixture plugin serves it in `serve` mode and DEMO-gating below is
+  // eliminated from production bundles, so neither the files nor this
+  // branch can reach dist/). Hermetic Playwright runs, zero DB writes.
+  // Local-only runs against real pipeline output:
+  // E2E_FIXTURE_DIR=e2e/fixtures/hopkins. Never linked in production UI.
+  const demoDataUrl = import.meta.env.DEV && searchParams.get("demo") ? "/demo-map" : undefined;
 
   return (
     <main className="flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>

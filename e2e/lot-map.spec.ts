@@ -55,12 +55,12 @@ async function lotCount(page: Page): Promise<number> {
 }
 
 function selectedLotCard(page: Page): Locator {
-  return page.locator("strong", { hasText: /^Lot L-/ }).first();
+  return page.locator("strong", { hasText: /^Lot S-/ }).first();
 }
 
 test.beforeEach(async ({ page }) => {
   await page.goto(DEMO_URL);
-  await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(700);
+  await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
   // Wait for the aspect probe: the viewBox snaps from square to the real
   // image ratio on load, shifting every polygon on screen. Clicking before
   // that settles misses (this bit us — real users never click that fast,
@@ -72,7 +72,7 @@ test.beforeEach(async ({ page }) => {
 
 test("demo map loads lots over the background", async ({ page }) => {
   await expect(page.locator("main svg image")).toBeAttached();
-  expect(await lotCount(page)).toBeGreaterThan(700);
+  expect(await lotCount(page)).toBeGreaterThan(50);
 });
 
 test("mouse click selects a lot and locks the card", async ({ page }) => {
@@ -141,27 +141,16 @@ test("Zoom to lot works in fullscreen", async ({ page }) => {
 });
 
 test("selecting a lot behind the detail card pans it into view", async ({ page }) => {
-  // Zoom to 3x first: near 1x there is little pan room and the pan clamp
-  // can strand bottom-row lots behind the tall bottom-sheet card no matter
-  // how correct the reveal math is (verified by measurement). At 3x there
-  // is room to reveal by panning. No card is open yet, so predict where it
-  // WILL appear (bottom sheet on small screens, bottom-right w-64 on sm+)
-  // and tap a visible lot inside that region — outside the zoom-control
-  // column — with a real click. The opening card covers the lot, so
-  // selection must pan (never zoom) until uncovered.
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.waitForTimeout(300);
+  // At 1x with no selection the pan range is zero, but selecting grants
+  // card padding (bottom sheet ~= card height), so there is room to reveal
+  // by panning without touching zoom. Tap the bottom-most visible lot with
+  // a real click: on phone viewports the opening bottom sheet covers it and
+  // selection must pan until uncovered; elsewhere it is already visible and
+  // this asserts the invariant (visible, zoom unchanged).
   const lotId = await page.evaluate(() => {
     const svg = document.querySelector("main svg") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const rect = svg.getBoundingClientRect();
-    const small = window.innerWidth < 640;
-    const card = small
-      ? { left: rect.left, right: rect.right, top: rect.bottom - 280 }
-      : { left: rect.right - 340, right: rect.right, top: rect.bottom - 280 };
     let best: { id: number; y: number } | null = null;
     for (const poly of svg.querySelectorAll('polygon[fill="transparent"]')) {
       const el = poly as SVGPolygonElement;
@@ -170,12 +159,11 @@ test("selecting a lot behind the detail card pans it into view", async ({ page }
       if (!ctm) continue;
       const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(ctm);
       if (pt.x < rect.left + 4 || pt.x > rect.right - 4 || pt.y < rect.top + 4 || pt.y > rect.bottom - 4) continue;
-      if (pt.x < card.left || pt.x > card.right || pt.y < card.top) continue;
       // Keep clear of the floating zoom-control column (bottom-right).
       if (pt.x > rect.right - 70 && pt.y > rect.bottom - 180) continue;
       if (!best || pt.y > best.y) best = { id: Number(el.getAttribute("data-lot-id")), y: pt.y };
     }
-    if (!best) throw new Error("no visible lot inside the future card region");
+    if (!best) throw new Error("no visible lot found");
     return best.id;
   });
   const center = await page.evaluate((id) => {
@@ -218,7 +206,6 @@ test("zoom buttons keep working after pan", async ({ page }) => {
   const pt = await hitCenterVisible(page);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
-  await page.screenshot({ path: "test-results/labels-2x.png" });
 });
 
 test("fullscreen lot click selects", async ({ page }) => {
@@ -228,77 +215,223 @@ test("fullscreen lot click selects", async ({ page }) => {
   await expect(selectedLotCard(page)).toBeVisible();
 });
 
-test("label sizes stay consistent and inside lots at 1x/2x/4x", async ({ page }) => {
-  async function labelStats() {
-    return page.evaluate(() => {
-      const svg = document.querySelector("main svg") as SVGSVGElement | null;
-      if (!svg) throw new Error("no svg");
-      const hits = [...svg.querySelectorAll('polygon[fill="transparent"]')];
-      const vis = [...svg.querySelectorAll("polygon:not([fill='transparent'])")];
-      const boxes = vis.map((p, i) => {
-        const b = (p as SVGPolygonElement).getBBox();
-        const title = hits[i]?.querySelector("title")?.textContent ?? "";
-        const lot = /Lot (\S+)/.exec(title)?.[1] ?? "";
-        return { lot, x: b.x, y: b.y, w: b.width, h: b.height };
-      });
-      const labels = [...svg.querySelectorAll("text")].map((t) => {
-        const el = t as SVGTextElement;
-        const tb = el.getBBox();
-        // getBBox() on <text> includes side bearings, and Firefox reports
-        // them systematically wider (~0.13 units/side here) than
-        // Chromium/WebKit — same pixels, different rulers. getComputedText-
-        // Length() is the sum of glyph advances (font-table derived, stable
-        // across engines), so center the advance box inside the bbox and
-        // test *that* against the lot: tighter and engine-robust.
-        const advance = el.getComputedTextLength();
-        const inkX = tb.x + (tb.width - advance) / 2;
-        return { lot: t.textContent ?? "", w: advance, h: tb.height, x: inkX, y: tb.y };
-      });
-      return { labels, boxes };
-    });
+test("lot numbers show on hover/selection and fit inside their lots", async ({ page }, testInfo) => {
+  // mouse.wheel is unsupported in mobile WebKit, so the hold-2x gate check
+  // below is skipped there; the 4x check uses Zoom to Lot (exact on all).
+  const canWheel = testInfo.project.name !== "webkit-mobile";
+  // Overlay numbers render only for the hovered/selected lot (the plat
+  // raster already prints every number); the hit layer stays active for all.
+  async function screenCenterOf(id: number): Promise<{ x: number; y: number }> {
+    return page.evaluate((lotId) => {
+      const el = document.querySelector(`main svg polygon[data-lot-id="${lotId}"]`) as SVGPolygonElement | null;
+      if (!el?.getScreenCTM()) throw new Error("lot not found");
+      const box = el.getBBox();
+      const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(el.getScreenCTM()!);
+      return { x: pt.x, y: pt.y };
+    }, id);
   }
 
+  /** Advance-box containment of a lot's label inside its polygon (5% tol). */
+  async function labelFits(id: number, lot: string): Promise<{ ok: boolean; detail: string }> {
+    return page.evaluate(
+      ({ lotId, lotNumber }) => {
+        const svg = document.querySelector("main svg") as SVGSVGElement | null;
+        if (!svg) throw new Error("no svg");
+        const poly = svg.querySelector(`polygon[data-lot-id="${lotId}"]`) as SVGPolygonElement | null;
+        const label = [...svg.querySelectorAll("text")].find((t) => t.textContent === lotNumber) as
+          | SVGTextElement
+          | undefined;
+        if (!poly || !label) return { ok: false, detail: `missing poly=${!!poly} label=${!!label}` };
+        const b = poly.getBBox();
+        const tb = label.getBBox();
+        // Advance-based ink box (engine-robust across getBBox rulers).
+        const advance = label.getComputedTextLength();
+        const x = tb.x + (tb.width - advance) / 2;
+        const tol = 0.05;
+        const ok =
+          x >= b.x - b.width * tol &&
+          tb.y >= b.y - b.height * tol &&
+          x + advance <= b.x + b.width * (1 + tol) &&
+          tb.y + tb.height <= b.y + b.height * (1 + tol);
+        return {
+          ok,
+          detail: `label@${x.toFixed(2)},${tb.y.toFixed(2)} ${advance.toFixed(2)}x${tb.height.toFixed(2)} vs lot@${b.x.toFixed(2)},${b.y.toFixed(2)} ${b.width.toFixed(2)}x${b.height.toFixed(2)}`,
+        };
+      },
+      { lotId: id, lotNumber: lot },
+    );
+  }
+
+  // No hover/selection yet: zero overlay labels.
+  await expect(page.locator("main svg text")).toHaveCount(0);
   await page.screenshot({ path: "test-results/labels-1x.png" });
-  const z1 = await labelStats();
-  expect(Array.isArray(z1.labels)).toBe(true);
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.waitForTimeout(300);
-  const z2 = await labelStats();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: "test-results/labels-4x.png" });
-  const z4 = await labelStats();
 
-  // At 1x most lots are too small for labels; from 2x up labels must exist
-  // and every label must fit inside its own polygon box (5% tolerance).
-  expect(z2.labels.length).toBeGreaterThan(100);
-  expect(z4.labels.length).toBeGreaterThan(300);
-  for (const [tag, stats] of [["2x", z2], ["4x", z4]] as const) {
-    const boxByLot = new Map(stats.boxes.filter((b) => b.lot).map((b) => [b.lot, b]));
-    let inside = 0;
-    const offenders: string[] = [];
-    for (const label of stats.labels) {
-      const b = boxByLot.get(label.lot);
-      if (!b) continue;
-      const tol = 0.05;
-      if (label.x >= b.x - b.w * tol && label.y >= b.y - b.h * tol &&
-          label.x + label.w <= b.x + b.w * (1 + tol) && label.y + label.h <= b.y + b.h * (1 + tol)) {
-        inside++;
-      } else if (offenders.length < 15) {
-        offenders.push(
-          `${label.lot}: label@${label.x.toFixed(2)},${label.y.toFixed(2)} ${label.w.toFixed(2)}x${label.h.toFixed(2)} vs lot@${b.x.toFixed(2)},${b.y.toFixed(2)} ${b.w.toFixed(2)}x${b.h.toFixed(2)}`,
-        );
-      }
-    }
-    const ratio = inside / Math.max(stats.labels.length, 1);
-    console.log(`[labels@${tag}] ${inside}/${stats.labels.length} inside (ratio ${ratio.toFixed(3)})`);
-    if (offenders.length) {
-      console.log(`[labels@${tag}] offenders:\n  - ${offenders.join("\n  - ")}`);
-    }
-    expect(ratio).toBeGreaterThan(0.9);
+  // Sample by geometry at 1x (full view): smallest (tiny), largest (huge).
+  const sample = await page.evaluate(() => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    if (!svg) throw new Error("no svg");
+    const rows = [...svg.querySelectorAll('polygon[fill="transparent"]')].map((p) => {
+      const el = p as SVGPolygonElement;
+      const b = el.getBBox();
+      const title = el.querySelector("title")?.textContent ?? "";
+      return {
+        id: Number(el.getAttribute("data-lot-id")),
+        lot: /Lot (\S+)/.exec(title)?.[1] ?? "",
+        area: b.width * b.height,
+      };
+    });
+    const sorted = [...rows].sort((a, b) => a.area - b.area);
+    return { smallest: sorted[0], largest: sorted[sorted.length - 1] };
+  });
+
+  // 2x: hover targets must be inside the current window (zoom recenters, so
+  // re-sample visibility in this view, not the 1x one).
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(300);
+  const visible2x = await page.evaluate(() => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    if (!svg) throw new Error("no svg");
+    const rect = svg.getBoundingClientRect();
+    const rows = [...svg.querySelectorAll('polygon[fill="transparent"]')]
+      .map((p) => {
+        const el = p as SVGPolygonElement;
+        const b = el.getBBox();
+        const ctm = el.getScreenCTM();
+        if (!ctm) return null;
+        const pt = new DOMPoint(b.x + b.width / 2, b.y + b.height / 2).matrixTransform(ctm);
+        const title = el.querySelector("title")?.textContent ?? "";
+        return {
+          id: Number(el.getAttribute("data-lot-id")),
+          lot: /Lot (\S+)/.exec(title)?.[1] ?? "",
+          area: b.width * b.height,
+          onScreen: pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null && r.onScreen)
+      .sort((a, b) => a.area - b.area);
+    if (!rows.length) throw new Error("no on-screen lot at 2x");
+    return { median: rows[Math.floor(rows.length / 2)], largest: rows[rows.length - 1] };
+  });
+  for (const s of [visible2x.median, visible2x.largest]) {
+    const pt = await screenCenterOf(s.id);
+    await page.mouse.move(pt.x, pt.y);
+    await expect(page.locator("main svg text", { hasText: s.lot })).toBeVisible();
+    const fit = await labelFits(s.id, s.lot);
+    expect(fit.ok, `2x hover label fit for ${s.lot}: ${fit.detail}`).toBe(true);
   }
+  {
+    const pt = await screenCenterOf(visible2x.median.id);
+    await page.mouse.move(pt.x, pt.y);
+    await page.screenshot({ path: "test-results/labels-2x.png" });
+  }
+
+  // Screen-size cap: the huge lot via Zoom to Lot must not render at its
+  // fitted size (fs ~= 10 units — billboard). The cap forces fs far below
+  // the fit on every viewport; screen height stays sane.
+  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await page.waitForTimeout(300);
+  {
+    const pt = await screenCenterOf(sample.largest.id);
+    await page.mouse.click(pt.x, pt.y);
+    await expect(selectedLotCard(page)).toBeVisible();
+    await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
+    await page.waitForTimeout(400);
+    const m = await page.evaluate((lotNumber) => {
+      const svg = document.querySelector("main svg") as SVGSVGElement | null;
+      const label = [...(svg?.querySelectorAll("text") ?? [])].find((t) => t.textContent === lotNumber) as
+        | SVGTextElement
+        | undefined;
+      if (!svg || !label) return null;
+      const vb = svg.getAttribute("viewBox")!.split(" ").map(Number);
+      const rect = svg.getBoundingClientRect();
+      const tb = label.getBBox();
+      return {
+        fs: Number(label.getAttribute("font-size")),
+        screenH: tb.height * (rect.height / vb[3]),
+      };
+    }, sample.largest.lot);
+    expect(m).not.toBeNull();
+    expect(m!.fs).toBeLessThan(5);
+    expect(m!.screenH).toBeLessThanOrEqual(60);
+    const fit = await labelFits(sample.largest.id, sample.largest.lot);
+    expect(fit.ok, `capped label fit for ${sample.largest.lot}: ${fit.detail}`).toBe(true);
+  }
+
+  /** Lot actually locked in the detail card (hit padding overlaps on tiny
+   *  lots, so a tap can select the topmost neighbor — use reality, not the
+   *  aim point, for the assertions below). */
+  async function selectedLot(): Promise<{ id: number; lot: string }> {
+    const cardText = (await selectedLotCard(page).textContent()) ?? "";
+    const lot = /Lot (\S+)/.exec(cardText)?.[1] ?? "";
+    const id = await page.evaluate((lotNumber) => {
+      const els = [...document.querySelectorAll('main svg polygon[fill="transparent"]')];
+      const hit = els.find((p) => (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lotNumber} `));
+      return hit ? Number((hit as SVGPolygonElement).getAttribute("data-lot-id")) : -1;
+    }, lot);
+    return { id, lot };
+  }
+
+  // Tiny lot: close any open card (on phones the open sheet covers the
+  // Reset control), reset, select the tiny row at 1x (zoom gate hides even
+  // selected labels), then Ctrl+wheel zoom around the cursor so it stays put.
+  {
+    const close = page.getByRole("button", { name: /^Close details/ });
+    if (await close.count()) await close.click();
+  }
+  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await page.waitForTimeout(300);
+  // Tap the tiny row; the ACTUAL selection may be the topmost neighbor
+  // (hit padding overlaps at 1x), so read it back from the card.
+  {
+    const pt = await screenCenterOf(sample.smallest.id);
+    await page.mouse.click(pt.x, pt.y);
+    await expect(selectedLotCard(page)).toBeVisible();
+    expect(await page.locator("main svg text").count()).toBe(0);
+  }
+  const tiny = await selectedLot();
+
+  /** Ctrl+wheel zoom around the stationary cursor until viewBox width <= max. */
+  async function wheelZoomTo(maxWidth: number) {
+    await page.keyboard.down("Control");
+    try {
+      await expect
+        .poll(async () => {
+          const vb = await page.locator("main svg").first().getAttribute("viewBox");
+          const w = Number(vb?.split(" ")[2]);
+          if (w <= maxWidth) return w;
+          await page.mouse.wheel(0, -240);
+          await page.waitForTimeout(150);
+          return w;
+        }, { timeout: 15000 })
+        .toBeLessThanOrEqual(maxWidth);
+    } finally {
+      await page.keyboard.up("Control");
+    }
+  }
+
+  // ~2x: the tiny lot's label is still gated off (selected, but too small).
+  // Wheel-zoom holds the cursor (and the lot) put; buttons would recenter.
+  if (canWheel) {
+    await wheelZoomTo(51);
+    await expect(page.locator("main svg text", { hasText: tiny.lot })).toHaveCount(0);
+  }
+
+  // ~4x via Zoom to Lot (exact fit+center on every engine): the tiny lot's
+  // label appears and fits.
+  await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
+  await page.waitForTimeout(400);
+  await expect(page.locator("main svg text", { hasText: tiny.lot })).toBeVisible();
+  {
+    const fit = await labelFits(tiny.id, tiny.lot);
+    expect(fit.ok, `4x label fit for ${tiny.lot}: ${fit.detail}`).toBe(true);
+  }
+  await page.screenshot({ path: "test-results/labels-4x.png" });
+
+  // Selection locks the label: move away, the tiny label persists alone.
+  await page.mouse.move(5, 5);
+  await expect(page.locator("main svg text", { hasText: tiny.lot })).toBeVisible();
+  expect(await page.locator("main svg text").count()).toBe(1);
 });
 
 test("tap selects a lot (touch)", async ({ page }, testInfo) => {

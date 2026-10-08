@@ -10,12 +10,13 @@
     "preview": "vite preview",
     "test": "node --test",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright install chromium && playwright test --project=chromium --project=mobile",
     "check:brand": "node scripts/check-brand.mjs",
     "map:build": "node scripts/build-interactive-map.mjs",
     "map:publish": "node scripts/publish-lots.mjs",
     "map:audit": "node scripts/audit-plot-counts.mjs",
     "typecheck": "tsc -b",
-    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run build"
+    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e:smoke && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

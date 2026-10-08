@@ -105,17 +105,36 @@ function exitActiveFullscreen(): Promise<void> {
   }
 }
 
+/**
+ * Dev/test-only static fixture preview. import.meta.env.DEV is replaced with
+ * `false` in production builds, so the bundler drops every branch below —
+ * loadDemo, its URLs, and the badge never reach dist/. The fixture files
+ * themselves live outside public/ and are served by a serve-only vite
+ * plugin, so they can't be copied to dist/ either.
+ */
+const DEMO_PREVIEW = import.meta.env.DEV;
+
 function pointsAttr(polygon: Array<{ x: number; y: number }>, yScale = 1): string {
   return polygon.map((p) => `${p.x},${p.y * yScale}`).join(" ");
 }
 
+/** Extra pan range (viewBox units) beyond the map edges, one per side. */
+interface PanPads {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+const NO_PADS: PanPads = { left: 0, right: 0, top: 0, bottom: 0 };
+
 /** Pure pan clamp in full-space units (shared by render + gesture paths). */
-function clampPanTo(x: number, y: number, z: number, vbH: number): { x: number; y: number } {
+function clampPanTo(x: number, y: number, z: number, vbH: number, pads: PanPads = NO_PADS): { x: number; y: number } {
   const w = 100 / z;
   const h = vbH / z;
   return {
-    x: Math.min(Math.max(0, 100 - w), Math.max(0, x)),
-    y: Math.min(Math.max(0, vbH - h), Math.max(0, y)),
+    x: Math.min(Math.max(0, 100 - w) + pads.right, Math.max(-pads.left, x)),
+    y: Math.min(Math.max(0, vbH - h) + pads.bottom, Math.max(-pads.top, y)),
   };
 }
 
@@ -330,7 +349,7 @@ export function PublicLotMap({
         if (!cancelled) setLoading(false);
       }
     }
-    if (demoDataUrl) {
+    if (DEMO_PREVIEW && demoDataUrl) {
       void loadDemo(demoDataUrl);
       return () => {
         cancelled = true;
@@ -414,35 +433,64 @@ export function PublicLotMap({
   const focusLot = payload?.parcels.find((parcel) => parcel.id === highlighted[0]) ?? null;
   const focusLotId = focusLot?.id ?? null;
 
-  // Reveal-on-select: if the selected lot's center is hidden behind the
-  // detail card, pan just enough to uncover it. Zoom is never touched, and
-  // this runs only when the selection or zoom changes — never while the
-  // user pans, so it can't fight manual gestures.
+  // Reveal-on-select with card padding: while a lot is selected, the pan
+  // clamp gains room equal to the card's overlap on each edge it touches
+  // (a bottom sheet adds bottom padding ~= card height), so the map can
+  // shift even at 1x where the unpadded pan range is zero. If the selected
+  // lot's center is hidden behind the card, pan just enough to uncover it.
+  // Zoom is never touched, and this runs only when selection/zoom/layout
+  // changes — never while the user pans, so it can't fight manual gestures.
   useEffect(() => {
-    if (focusLotId == null) return;
+    const cur = cardPadRef.current;
+    if (focusLotId == null) {
+      if (cur.left !== 0 || cur.right !== 0 || cur.top !== 0 || cur.bottom !== 0) {
+        setCardPad(NO_PADS);
+      }
+      return;
+    }
     const svg = svgRef.current;
     const card = cardRef.current;
     if (!svg || !card) return;
     const lot = payload?.parcels.find((parcel) => parcel.id === focusLotId) ?? null;
     const polygon = lot && Array.isArray(lot.map_polygon) ? lot.map_polygon : [];
     if (polygon.length < 3) return;
-    const vbH = viewBoxHRef.current;
-    const z = zoomRef.current;
-    const p = clampPanTo(panRef.current.x, panRef.current.y, z, vbH);
-    const cx = polygon.reduce((sum, pt) => sum + pt.x, 0) / polygon.length;
-    const cy = (polygon.reduce((sum, pt) => sum + pt.y, 0) / polygon.length) * (vbH / 100);
-    // viewBox -> screen mapping under preserveAspectRatio="meet".
     const rect = svg.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
+    const vbH = viewBoxHRef.current;
+    const z = zoomRef.current;
     const vbW = 100 / z;
     const vbHView = vbH / z;
+    // viewBox -> screen mapping under preserveAspectRatio="meet".
     const scale = Math.min(rect.width / vbW, rect.height / vbHView);
     if (!(scale > 0)) return;
+    const cardRect = card.getBoundingClientRect();
+    // The card floats (bottom-3/left-3/right-3 = 12px gaps), so "touching"
+    // an edge means within 16px — otherwise pads stay zero and 1x reveal
+    // has no room (this exact miss stranded bottom-row lots on phones).
+    const edge = 16;
+    const pads: PanPads = { ...NO_PADS };
+    if (cardRect.left <= rect.left + edge) {
+      pads.left = Math.max(0, Math.min(cardRect.right, rect.right) - rect.left) / scale;
+    }
+    if (cardRect.right >= rect.right - edge) {
+      pads.right = Math.max(0, rect.right - Math.max(cardRect.left, rect.left)) / scale;
+    }
+    if (cardRect.top <= rect.top + edge) {
+      pads.top = Math.max(0, Math.min(cardRect.bottom, rect.bottom) - rect.top) / scale;
+    }
+    if (cardRect.bottom >= rect.bottom - edge) {
+      pads.bottom = Math.max(0, rect.bottom - Math.max(cardRect.top, rect.top)) / scale;
+    }
+    if (pads.left !== cur.left || pads.right !== cur.right || pads.top !== cur.top || pads.bottom !== cur.bottom) {
+      setCardPad(pads);
+    }
+    const p = clampPanTo(panRef.current.x, panRef.current.y, z, vbH, pads);
+    const cx = polygon.reduce((sum, pt) => sum + pt.x, 0) / polygon.length;
+    const cy = (polygon.reduce((sum, pt) => sum + pt.y, 0) / polygon.length) * (vbH / 100);
     const offX = rect.left + (rect.width - vbW * scale) / 2;
     const offY = rect.top + (rect.height - vbHView * scale) / 2;
     const sx = offX + (cx - p.x) * scale;
     const sy = offY + (cy - p.y) * scale;
-    const cardRect = card.getBoundingClientRect();
     const margin = 12;
     const insideX = sx > cardRect.left - margin && sx < cardRect.right + margin;
     const insideY = sy > cardRect.top - margin && sy < cardRect.bottom + margin;
@@ -476,15 +524,18 @@ export function PublicLotMap({
     const moveX = best.horizontal ? best.shift / scale : 0;
     const moveY = best.horizontal ? 0 : best.shift / scale;
     // Moving the map opposite to the desired screen shift of the point.
-    setPan(clampPanTo(p.x - moveX, p.y - moveY, z, vbH));
+    setPan(clampPanTo(p.x - moveX, p.y - moveY, z, vbH, pads));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusLotId, zoom]);
+  }, [focusLotId, zoom, expanded]);
 
   const viewBoxH = imageAspect ? 100 / imageAspect : 100;
   const yScale = viewBoxH / 100;
   // Pan stays in full-space units so zooming keeps the current centre
   // instead of jumping back to the top-left corner.
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Extra pan range granted while a lot is selected, so a card/sheet
+  // covering the lot can be escaped even at 1x (unpadded range is zero).
+  const [cardPad, setCardPad] = useState<PanPads>(NO_PADS);
   const svgRef = useRef<SVGSVGElement | null>(null);
   // Gesture model: NO setPointerCapture anywhere (capture retargets the
   // follow-up click to the capturing element, which broke selection).
@@ -506,6 +557,8 @@ export function PublicLotMap({
   zoomRef.current = zoom;
   const panRef = useRef(pan);
   panRef.current = pan;
+  const cardPadRef = useRef(cardPad);
+  cardPadRef.current = cardPad;
   const viewBoxHRef = useRef(viewBoxH);
   viewBoxHRef.current = viewBoxH;
   const pickModeRef = useRef(pickMode);
@@ -516,7 +569,7 @@ export function PublicLotMap({
   const wheelClient = useRef<{ x: number; y: number } | null>(null);
 
   function clampPan(x: number, y: number, z: number): { x: number; y: number } {
-    return clampPanTo(x, y, z, viewBoxH);
+    return clampPanTo(x, y, z, viewBoxH, cardPad);
   }
 
   const viewBox = useMemo(() => {
@@ -525,7 +578,7 @@ export function PublicLotMap({
     const p = clampPan(pan.x, pan.y, zoom);
     return `${p.x} ${p.y} ${w} ${h}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, viewBoxH, pan]);
+  }, [zoom, viewBoxH, pan, cardPad]);
 
   function zoomBy(delta: number) {
     zoomTo(zoom + delta);
@@ -629,7 +682,7 @@ export function PublicLotMap({
         const sx = 100 / clamped / (100 / z);
         const sy = vbH / clamped / (vbH / z);
         setZoom(clamped);
-        setPan(clampPanTo(pinch.center.x - (pinch.center.x - panRef.current.x) * sx, pinch.center.y - (pinch.center.y - panRef.current.y) * sy, clamped, vbH));
+        setPan(clampPanTo(pinch.center.x - (pinch.center.x - panRef.current.x) * sx, pinch.center.y - (pinch.center.y - panRef.current.y) * sy, clamped, vbH, cardPadRef.current));
       }
       return;
     }
@@ -640,7 +693,7 @@ export function PublicLotMap({
     const dx = ((event.clientX - g.startX) / rect.width) * (100 / z);
     const dy = ((event.clientY - g.startY) / rect.height) * (vbH / z);
     if (Math.abs(event.clientX - g.startX) + Math.abs(event.clientY - g.startY) > 6) g.moved = true;
-    if (g.moved) setPan(clampPanTo(g.panX - dx, g.panY - dy, z, vbH));
+    if (g.moved) setPan(clampPanTo(g.panX - dx, g.panY - dy, z, vbH, cardPadRef.current));
   }
 
   function onGestureUp(event: PointerEvent) {
@@ -769,7 +822,7 @@ export function PublicLotMap({
         <strong className="mr-auto truncate text-sm text-primary">
           {payload ? payload.branding.company_name || payload.tenant.name : "Lot availability"}
         </strong>
-        {demoDataUrl ? (
+        {DEMO_PREVIEW && demoDataUrl ? (
           <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
             Preview data
           </span>
@@ -942,8 +995,18 @@ export function PublicLotMap({
                   </g>
                 );
               })}
-              {zoom >= 2
-                ? visibleParcels.map((parcel) => {
+              {visibleParcels.map((parcel) => {
+                    // Overlay numbers render only for the hovered/selected
+                    // lot: the plat raster already prints every lot number,
+                    // so always-on overlays double-label. The transparent hit
+                    // layer stays active for all lots regardless. A selected
+                    // lot labels at any zoom (you tapped it, you get its
+                    // number); hover labels need zoom >= 2 against clutter.
+                    // Lots that would render below a readable size are still
+                    // skipped until deeper zoom (fs*zoom gate below).
+                    const selected = highlighted.includes(parcel.id);
+                    if (!selected && parcel.id !== hoveredId) return null;
+                    if (!selected && zoom < 2) return null;
                     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                     if (polygon.length < 3) return null;
                     const xs = polygon.map((p) => p.x);
@@ -983,8 +1046,7 @@ export function PublicLotMap({
                         {parcel.lot_number}
                       </text>
                     );
-                  })
-                : null}
+                  })}
             </svg>
             <div className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !expanded ? "bottom-48 sm:bottom-3" : "bottom-3")}>
               <button

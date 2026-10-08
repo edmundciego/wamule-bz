@@ -11,7 +11,7 @@ node_modules/
 dist/
 graphify-out/
 out/
-public/demo-map/
+e2e/fixtures/hopkins/
 
 # Supabase local state
 supabase/.temp/

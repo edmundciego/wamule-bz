@@ -520,7 +520,11 @@ export function ApplicationPage() {
                                 onToggleLot={toggleMapLot}
                                 showPrices={applicationSettings.show_lot_prices_publicly}
                                 onParcelsLoaded={handleMapParcelsLoaded}
-                                demoDataUrl={applicationSettings.lot_map_tenant_slug ? undefined : "/demo-map"}
+                                demoDataUrl={
+                                  applicationSettings.lot_map_tenant_slug || !import.meta.env.DEV
+                                    ? undefined
+                                    : "/demo-map"
+                                }
                               />
                             </div>
                             <p className="text-xs text-muted-foreground">

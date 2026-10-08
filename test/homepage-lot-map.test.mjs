@@ -17,9 +17,11 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   assert.match(map, /\/lots\.json/);
   assert.match(map, /masterplan_background\.webp/);
   assert.match(map, /Preview data/);
-  // Pick mode toggles Available lots; inquiry mode opens the modal instead.
+  // Pick mode toggles Available lots; selection never opens the inquiry
+  // modal (it opens solely from the card's Inquire button).
   assert.match(map, /pickMode/);
-  assert.match(map, /if \(parcel\.status === "Available"\) onToggleLot\(parcel\)/);
+  assert.match(map, /if \(pickMode && parcel\.status === "Available"\) onToggleLot\(parcel\)/);
+  assert.doesNotMatch(map, /setTimeout\(\(\) => setInquiryLot/);
   assert.match(map, /Remove Lot/);
   assert.match(map, /PublicInquiryModal/);
 });

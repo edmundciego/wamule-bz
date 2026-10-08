@@ -25,5 +25,9 @@ export default defineConfig({
     url: "http://localhost:5174",
     reuseExistingServer: true,
     timeout: 120000,
+    // Fixture served at /demo-map by the serve-only vite plugin. Default is
+    // the committed synthetic fixture; local-only runs against real
+    // pipeline output: E2E_FIXTURE_DIR=e2e/fixtures/hopkins.
+    env: { E2E_FIXTURE_DIR: process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic" },
   },
 });
