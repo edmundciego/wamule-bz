@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   ALLOWED_INQUIRY_INTERESTS,
   buildInquiryPayload,
+  decideLeadTenant,
+  sameInquiryAs,
   validateInquiryPayload,
 } from "../supabase/functions/_shared/inquiry-contract.ts";
 
@@ -51,6 +53,69 @@ test("application inquiry payload validates without tenant", () => {
   assert.ok(!("error" in result));
   assert.equal(result.tenantSlug, null);
   assert.equal(result.specificLotId, null);
+});
+
+test("lot-authoritative tenant decision covers every case", () => {
+  const T = "tenant-1";
+  // Lot with tenant + matching slug -> lot tenant wins.
+  assert.deepEqual(
+    decideLeadTenant({ lotRequested: true, lotTenantId: T, slugProvided: true, slugTenantId: T }),
+    { tenantId: T },
+  );
+  // Lot with tenant, no slug at all -> lot tenant.
+  assert.deepEqual(
+    decideLeadTenant({ lotRequested: true, lotTenantId: T, slugProvided: false, slugTenantId: null }),
+    { tenantId: T },
+  );
+  // Lot with tenant + mismatching slug -> 400.
+  assert.equal(
+    decideLeadTenant({ lotRequested: true, lotTenantId: T, slugProvided: true, slugTenantId: "tenant-2" }).error,
+    "That lot belongs to a different development.",
+  );
+  // Lot with tenant + unresolvable slug -> 400.
+  assert.equal(
+    decideLeadTenant({ lotRequested: true, lotTenantId: T, slugProvided: true, slugTenantId: null }).error,
+    "Unknown development. Please check the listing link.",
+  );
+  // Tenantless lot + resolving slug -> slug tenant.
+  assert.deepEqual(
+    decideLeadTenant({ lotRequested: true, lotTenantId: null, slugProvided: true, slugTenantId: T }),
+    { tenantId: T },
+  );
+  // Tenantless lot, no slug -> 400, no default fallback.
+  assert.equal(
+    decideLeadTenant({ lotRequested: true, lotTenantId: null, slugProvided: false, slugTenantId: null }).error,
+    "A development identifier is required.",
+  );
+  // No lot + resolving slug -> slug tenant.
+  assert.deepEqual(
+    decideLeadTenant({ lotRequested: false, lotTenantId: null, slugProvided: true, slugTenantId: T }),
+    { tenantId: T },
+  );
+  // No lot, no slug -> 400, no default fallback.
+  assert.equal(
+    decideLeadTenant({ lotRequested: false, lotTenantId: null, slugProvided: false, slugTenantId: null }).error,
+    "A development identifier is required.",
+  );
+  // No lot + unresolvable slug -> 400.
+  assert.equal(
+    decideLeadTenant({ lotRequested: false, lotTenantId: null, slugProvided: true, slugTenantId: null }).error,
+    "Unknown development. Please check the listing link.",
+  );
+});
+
+test("same-key fingerprint: identical, case/order-insensitive, null wildcard", () => {
+  const base = { name: "Amara Test", email: "amara@example.com", phone: "+5015550100", parcelId: 49, interests: ["Available lots", "A specific lot"] };
+  assert.equal(sameInquiryAs(base, { ...base }), true);
+  assert.equal(sameInquiryAs(base, { ...base, email: "AMARA@EXAMPLE.COM" }), true);
+  assert.equal(sameInquiryAs(base, { ...base, interests: ["A specific lot", "Available lots"] }), true);
+  assert.equal(sameInquiryAs(base, { ...base, interests: null }), true);
+  assert.equal(sameInquiryAs({ ...base, interests: null }, base), true);
+  assert.equal(sameInquiryAs(base, { ...base, name: "Someone Else" }), false);
+  assert.equal(sameInquiryAs(base, { ...base, email: "other@example.com" }), false);
+  assert.equal(sameInquiryAs(base, { ...base, phone: "" }), false);
+  assert.equal(sameInquiryAs(base, { ...base, parcelId: 50 }), false);
+  assert.equal(sameInquiryAs(base, { ...base, interests: ["Available lots"] }), false);
 });
 
 test("schema rejects bad interest, email, name, lot, and reference", () => {

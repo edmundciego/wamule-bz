@@ -86,6 +86,21 @@ test("500 shows the server message, logs status/body, keeps the form", async ({ 
   expect(errors.some((text) => text.includes("[edge-function]") && text.includes("500"))).toBe(true);
 });
 
+test("409 conflict shows the server message, never library text", async ({ page }) => {
+  await page.route(FN, (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }),
+    }),
+  );
+  await openInquiryModal(page);
+  await submitOnce(page);
+  await expect(page.getByText("This request conflicts with an earlier submission.")).toBeVisible();
+  await expect(page.getByText(LIBRARY_TEXT)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send Inquiry", exact: true })).toBeVisible();
+});
+
 test("retry reuses the idempotency key and fires once per submit", async ({ page }) => {
   const bodies: Array<Record<string, unknown>> = [];
   let calls = 0;

@@ -133,3 +133,75 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
 
   return { name, email, phone, message, interests, specificLotId, pageUrl, tenantSlug, clientReferenceId };
 }
+
+/**
+ * Lot-authoritative tenant decision (pure; DB lookups stay in the caller).
+ * The lead's tenant derives from the parcel. A provided tenant slug must
+ * resolve to that same tenant. Without a lot, the slug must resolve — there
+ * is no default fallback.
+ */
+export type TenantDecision = { tenantId: string } | { error: string };
+
+export function decideLeadTenant(input: {
+  lotRequested: boolean;
+  /** Parcel's tenant_id (null when no lot requested or parcel tenantless). */
+  lotTenantId: string | null;
+  /** Whether the caller sent a tenant slug/alias at all. */
+  slugProvided: boolean;
+  /** Resolved id for the slug, or null when absent/unresolvable. */
+  slugTenantId: string | null;
+}): TenantDecision {
+  if (input.lotRequested) {
+    if (input.lotTenantId) {
+      if (input.slugProvided) {
+        if (!input.slugTenantId) return { error: "Unknown development. Please check the listing link." };
+        if (input.slugTenantId !== input.lotTenantId) {
+          return { error: "That lot belongs to a different development." };
+        }
+      }
+      return { tenantId: input.lotTenantId };
+    }
+    if (!input.slugProvided || !input.slugTenantId) {
+      return {
+        error: !input.slugProvided
+          ? "A development identifier is required."
+          : "Unknown development. Please check the listing link.",
+      };
+    }
+    return { tenantId: input.slugTenantId };
+  }
+  if (!input.slugProvided || !input.slugTenantId) {
+    return {
+      error: !input.slugProvided
+        ? "A development identifier is required."
+        : "Unknown development. Please check the listing link.",
+    };
+  }
+  return { tenantId: input.slugTenantId };
+}
+
+/** Identifying core of a submission (message/page URL may vary on retry). */
+export interface InquiryFingerprint {
+  name: string;
+  email: string;
+  phone: string;
+  parcelId: number | null;
+  /** Null = unknown (e.g. activity metadata missing): never conflicts. */
+  interests: string[] | null;
+}
+
+/**
+ * Same key, same inquiry? Email case-insensitive, interests order-free.
+ * Unknown prior interests can't conflict.
+ */
+export function sameInquiryAs(a: InquiryFingerprint, b: InquiryFingerprint): boolean {
+  return (
+    a.name === b.name &&
+    a.email.toLowerCase() === b.email.toLowerCase() &&
+    a.phone === b.phone &&
+    a.parcelId === b.parcelId &&
+    (a.interests === null ||
+      b.interests === null ||
+      (a.interests.length === b.interests.length && a.interests.every((interest) => b.interests!.includes(interest))))
+  );
+}

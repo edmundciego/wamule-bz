@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  decideLeadTenant,
+  sameInquiryAs,
   validateInquiryPayload,
+  type InquiryFingerprint,
   type InquiryPayload,
   type ValidInquiry,
 } from "../_shared/inquiry-contract.ts";
@@ -41,27 +44,9 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Optional embed caller tenant (slug or inbound alias). When absent, the
-  // tenant-default trigger assigns rows to the default tenant as before.
-  const tenantId = await resolveTenantId(supabase, input.tenantSlug);
-
-  // Idempotency: a retry (user double-submit, network retry after a 500)
-  // carries the same client_reference_id and must not create a second lead.
-  if (input.clientReferenceId) {
-    const { data: existing } = await supabase
-      .from("leads")
-      .select("id")
-      .eq("client_reference_id", input.clientReferenceId)
-      .maybeSingle();
-    if (existing && typeof (existing as { id: unknown }).id !== "undefined") {
-      return json({
-        ok: true,
-        deduplicated: true,
-        leadId: String((existing as { id: unknown }).id),
-        message: "Your request was already received. Our team will follow up using the contact information you provided.",
-      });
-    }
-  }
+  // Optional embed caller tenant (slug or inbound alias). The lead's tenant
+  // is authoritative from here on — see decideLeadTenant below.
+  const slugTenantId = await resolveTenantId(supabase, input.tenantSlug);
 
   // The lot must be one the public map actually shows: Available in parcels
   // (any lot number), not just the legacy two-digit public view.
@@ -69,8 +54,25 @@ Deno.serve(async (request) => {
   if (input.specificLotId && !specificLot) {
     return json({ error: "Select an available public lot for this inquiry." }, 400);
   }
-  if (tenantId && specificLot?.tenant_id && String(specificLot.tenant_id) !== tenantId) {
-    return json({ error: "That lot belongs to a different development." }, 400);
+
+  // Lot-authoritative tenant: the lead inherits the parcel's tenant; a
+  // provided slug must resolve to that same tenant. Without a lot, the slug
+  // must resolve — there is no default fallback.
+  const decision = decideLeadTenant({
+    lotRequested: input.specificLotId !== null,
+    lotTenantId: specificLot?.tenant_id ? String(specificLot.tenant_id) : null,
+    slugProvided: input.tenantSlug !== null,
+    slugTenantId,
+  });
+  if ("error" in decision) return json({ error: decision.error }, 400);
+  const tenantId = decision.tenantId;
+
+  // Idempotency: a retry (user double-submit, network retry after a 500)
+  // carries the same client_reference_id and must not create a second lead.
+  // Same key + divergent payload is a 409, never a second row.
+  if (input.clientReferenceId) {
+    const dedup = await checkDuplicateSubmission(supabase, tenantId, input);
+    if (dedup) return dedup;
   }
 
   const duplicateReason = await duplicateReasonForInquiry(supabase, {
@@ -109,22 +111,12 @@ Deno.serve(async (request) => {
     .single();
 
   if (leadError || !lead) {
-    // Lost race: same idempotency key inserted concurrently — return it.
+    // Lost race: same idempotency key inserted concurrently — resolve it the
+    // same way (dedup or 409), never a second row.
     const code = (leadError as { code?: string } | null)?.code;
     if (code === "23505" && input.clientReferenceId) {
-      const { data: raced } = await supabase
-        .from("leads")
-        .select("id")
-        .eq("client_reference_id", input.clientReferenceId)
-        .maybeSingle();
-      if (raced && typeof (raced as { id: unknown }).id !== "undefined") {
-        return json({
-          ok: true,
-          deduplicated: true,
-          leadId: String((raced as { id: unknown }).id),
-          message: "Your request was already received. Our team will follow up using the contact information you provided.",
-        });
-      }
+      const dedup = await checkDuplicateSubmission(supabase, tenantId, input);
+      if (dedup) return dedup;
     }
     console.error("Public inquiry lead insert failed", safeError(leadError));
     return json({ error: "We could not save your inquiry. Please try again." }, 500);
@@ -243,6 +235,80 @@ async function loadAvailableLot(supabase: ReturnType<typeof createClient>, lotId
   const row = data as ParcelOption | null;
   if (!row || row.status !== "Available") return null;
   return row;
+}
+
+type LeadRow = {
+  id: unknown;
+  tenant_id: unknown;
+  full_name: unknown;
+  email: unknown;
+  phone: unknown;
+  parcel_id: unknown;
+};
+
+/**
+ * Idempotency resolution for a client_reference_id. Same key + same
+ * identifying payload → dedup success (no existing lead data is returned).
+ * Same key + divergent payload, or a row owned by another tenant → 409.
+ * Null when no prior row exists. Interests come from the recorded activity;
+ * when unavailable the core fields alone decide (never 409 on doubt).
+ */
+async function checkDuplicateSubmission(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  input: ValidInquiry,
+): Promise<Response | null> {
+  const { data: existing } = await supabase
+    .from("leads")
+    .select("id, tenant_id, full_name, email, phone, parcel_id")
+    .eq("client_reference_id", input.clientReferenceId)
+    .maybeSingle();
+  const row = (existing ?? null) as LeadRow | null;
+  if (row === null || typeof row.id === "undefined" || row.id === null) return null;
+  if (String(row.tenant_id ?? "") !== tenantId) {
+    return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
+  }
+  const prior: InquiryFingerprint = {
+    name: typeof row.full_name === "string" ? row.full_name : "",
+    email: typeof row.email === "string" ? row.email : "",
+    phone: typeof row.phone === "string" ? row.phone : "",
+    parcelId: typeof row.parcel_id === "number" ? row.parcel_id : null,
+    interests: await priorInquiryInterests(supabase, String(row.id)),
+  };
+  const current: InquiryFingerprint = {
+    name: input.name,
+    email: input.email,
+    phone: input.phone,
+    parcelId: input.specificLotId,
+    interests: input.interests,
+  };
+  if (!sameInquiryAs(prior, current)) {
+    return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
+  }
+  return json({
+    ok: true,
+    deduplicated: true,
+    message: "Your request was already received. Our team will follow up using the contact information you provided.",
+  });
+}
+
+async function priorInquiryInterests(supabase: ReturnType<typeof createClient>, leadId: string): Promise<string[] | null> {
+  try {
+    const { data } = await supabase
+      .from("lead_activities")
+      .select("metadata")
+      .eq("lead_id", leadId)
+      .eq("activity_type", "note")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const metadata = (data as { metadata?: unknown } | null)?.metadata;
+    const list =
+      metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).interests : undefined;
+    return Array.isArray(list) ? list.map(String) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function duplicateReasonForInquiry(

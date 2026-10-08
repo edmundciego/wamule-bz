@@ -167,6 +167,23 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   const retryResult = await retry.json();
   assert.equal(retryResult.ok, true);
   assert.equal(retryResult.deduplicated, true);
+  assert.ok(!("leadId" in retryResult), "dedupe response carries no lead data");
+
+  // Same key, divergent payload: 409, still a single row.
+  const conflict = await fetch(functionsUrl("submit-public-inquiry"), {
+    method: "POST",
+    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, name: "Someone Else" }),
+  });
+  assert.equal(conflict.status, 409);
+
+  // Unknown tenant slug with no usable fallback: 400, no row.
+  const unknownTenant = await fetch(functionsUrl("submit-public-inquiry"), {
+    method: "POST",
+    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, tenant: "no-such-development", client_reference_id: `live-${Date.now()}-unknown` }),
+  });
+  assert.equal(unknownTenant.status, 400);
 
   const leads = dbRows("select id, tenant_id, email from public.leads where email = %s", [email]);
   assert.equal(leads.length, 1, "exactly one lead row for the test buyer");
