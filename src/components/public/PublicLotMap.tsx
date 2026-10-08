@@ -673,7 +673,13 @@ export function PublicLotMap({
               className={cn("absolute inset-0 h-full w-full", zoom > MIN_ZOOM && "touch-none")}
               style={{ cursor: dragRef.current?.moved ? "grabbing" : "grab" }}
               onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture?.(event.pointerId);
+                // Pointer capture keeps touch/pen streams flowing to the map
+                // mid-gesture. Mouse is deliberately excluded: capturing a
+                // mouse pointer retargets the follow-up click to the SVG root
+                // in Chrome, which silently breaks lot selection.
+                if (event.pointerType !== "mouse") {
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
+                }
                 pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
                 if (pointersRef.current.size === 2) {
                   // Second finger down: switch from pan to pinch-zoom.
