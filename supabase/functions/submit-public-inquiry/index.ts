@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  validateInquiryPayload,
+  type InquiryPayload,
+  type ValidInquiry,
+} from "../_shared/inquiry-contract.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -9,28 +14,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const allowedInterests = new Set([
-  "Available lots",
-  "Lot pricing",
-  "Payment options",
-  "Site visit",
-  "Buying process",
-  "A specific lot",
-]);
-
-type InquiryBody = {
-  name?: unknown;
-  email?: unknown;
-  phone?: unknown;
-  interests?: unknown;
-  specific_lot_id?: unknown;
-  message?: unknown;
-  page_url?: unknown;
-  tenant?: unknown;
-};
-
 type ParcelOption = {
   id: number;
+  tenant_id: string | null;
   lot_number: string | null;
   dimensions: string | null;
   base_price: number | null;
@@ -46,8 +32,8 @@ Deno.serve(async (request) => {
     return json({ error: "Method not allowed." }, 405);
   }
 
-  const body = await request.json().catch(() => ({})) as InquiryBody;
-  const input = validateInquiry(body);
+  const body = (await request.json().catch(() => ({}))) as InquiryPayload;
+  const input = validateInquiryPayload(body);
   if ("error" in input) return json({ error: input.error }, 400);
   const safePageUrl = safePublicPageUrl(input.pageUrl, request.headers.get("origin"));
 
@@ -59,11 +45,32 @@ Deno.serve(async (request) => {
   // tenant-default trigger assigns rows to the default tenant as before.
   const tenantId = await resolveTenantId(supabase, input.tenantSlug);
 
-  const specificLot = input.specificLotId
-    ? await loadPublicLotOption(supabase, input.specificLotId)
-    : null;
+  // Idempotency: a retry (user double-submit, network retry after a 500)
+  // carries the same client_reference_id and must not create a second lead.
+  if (input.clientReferenceId) {
+    const { data: existing } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("client_reference_id", input.clientReferenceId)
+      .maybeSingle();
+    if (existing && typeof (existing as { id: unknown }).id !== "undefined") {
+      return json({
+        ok: true,
+        deduplicated: true,
+        leadId: String((existing as { id: unknown }).id),
+        message: "Your request was already received. Our team will follow up using the contact information you provided.",
+      });
+    }
+  }
+
+  // The lot must be one the public map actually shows: Available in parcels
+  // (any lot number), not just the legacy two-digit public view.
+  const specificLot = input.specificLotId ? await loadAvailableLot(supabase, input.specificLotId) : null;
   if (input.specificLotId && !specificLot) {
     return json({ error: "Select an available public lot for this inquiry." }, 400);
+  }
+  if (tenantId && specificLot?.tenant_id && String(specificLot.tenant_id) !== tenantId) {
+    return json({ error: "That lot belongs to a different development." }, 400);
   }
 
   const duplicateReason = await duplicateReasonForInquiry(supabase, {
@@ -84,6 +91,7 @@ Deno.serve(async (request) => {
       email: input.email,
       phone: input.phone || null,
       parcel_id: input.specificLotId,
+      client_reference_id: input.clientReferenceId,
       source: "public_inquiry",
       pipeline_stage: "new_lead",
       buyer_journey_stage: "Public Information Request",
@@ -101,6 +109,23 @@ Deno.serve(async (request) => {
     .single();
 
   if (leadError || !lead) {
+    // Lost race: same idempotency key inserted concurrently — return it.
+    const code = (leadError as { code?: string } | null)?.code;
+    if (code === "23505" && input.clientReferenceId) {
+      const { data: raced } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("client_reference_id", input.clientReferenceId)
+        .maybeSingle();
+      if (raced && typeof (raced as { id: unknown }).id !== "undefined") {
+        return json({
+          ok: true,
+          deduplicated: true,
+          leadId: String((raced as { id: unknown }).id),
+          message: "Your request was already received. Our team will follow up using the contact information you provided.",
+        });
+      }
+    }
     console.error("Public inquiry lead insert failed", safeError(leadError));
     return json({ error: "We could not save your inquiry. Please try again." }, 500);
   }
@@ -178,29 +203,6 @@ Deno.serve(async (request) => {
   });
 });
 
-function validateInquiry(body: InquiryBody) {
-  const name = cleanText(body.name, 120);
-  const email = cleanText(body.email, 254).toLowerCase();
-  const phone = cleanText(body.phone, 40);
-  const message = cleanText(body.message, 1000);
-  const pageUrl = cleanText(body.page_url, 1000);
-  const tenantSlug = cleanText(body.tenant, 160).toLowerCase() || null;
-  const interests = Array.isArray(body.interests)
-    ? [...new Set(body.interests.map((item) => cleanText(item, 80)).filter(Boolean))]
-    : [];
-  const invalidInterest = interests.find((interest) => !allowedInterests.has(interest));
-  const specificLotId = body.specific_lot_id === null || body.specific_lot_id === undefined || body.specific_lot_id === ""
-    ? null
-    : Number(body.specific_lot_id);
-
-  if (!name) return { error: "Name is required." };
-  if (!email || !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email)) return { error: "Enter a valid email address." };
-  if (invalidInterest) return { error: "Select a valid inquiry interest." };
-  if (specificLotId !== null && (!Number.isInteger(specificLotId) || specificLotId <= 0)) return { error: "Select a valid lot." };
-
-  return { name, email, phone, message, interests, specificLotId, pageUrl, tenantSlug };
-}
-
 async function resolveTenantId(
   supabase: ReturnType<typeof createClient>,
   slug: string | null,
@@ -223,17 +225,24 @@ async function resolveTenantId(
   return byAlias.data ? String((byAlias.data as { id: string }).id) : null;
 }
 
-async function loadPublicLotOption(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
+/**
+ * The lot must be one the public map actually shows: Available in parcels
+ * (any lot number — the legacy two-digit public_parcel_options view excludes
+ * real published lots like L-001, which 400'd every genuine inquiry).
+ */
+async function loadAvailableLot(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
   const { data, error } = await supabase
-    .from("public_parcel_options")
-    .select("id, lot_number, dimensions, base_price, status")
+    .from("parcels")
+    .select("id, tenant_id, lot_number, dimensions, base_price, status")
     .eq("id", lotId)
     .maybeSingle();
   if (error) {
     console.error("Public lot validation failed", safeError(error));
     return null;
   }
-  return data as ParcelOption | null;
+  const row = data as ParcelOption | null;
+  if (!row || row.status !== "Available") return null;
+  return row;
 }
 
 async function duplicateReasonForInquiry(
@@ -284,7 +293,7 @@ async function duplicateReasonForInquiry(
   return reasons.length ? reasons.join(" ") : null;
 }
 
-function buildInquiryNotes(input: Exclude<ReturnType<typeof validateInquiry>, { error: string }>, lot: ParcelOption | null) {
+function buildInquiryNotes(input: ValidInquiry, lot: ParcelOption | null) {
   return [
     "Public project information inquiry.",
     input.interests.length ? `Interests: ${input.interests.join(", ")}` : null,

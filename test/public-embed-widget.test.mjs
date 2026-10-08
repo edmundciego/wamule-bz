@@ -44,9 +44,10 @@ test("embed polygons render responsively from percentage coordinates", async () 
 });
 
 test("available lots open a tenant-tagged inquiry without leaving the iframe", async () => {
-  const [modal, inquiryFunction] = await Promise.all([
+  const [modal, inquiryFunction, contract] = await Promise.all([
     read("src/components/public/PublicInquiryModal.tsx"),
     read("supabase/functions/submit-public-inquiry/index.ts"),
+    read("supabase/functions/_shared/inquiry-contract.ts"),
   ]);
   assert.match(modal, /Inquire About Lot/);
   assert.match(modal, /Note \/ Message/);
@@ -54,7 +55,7 @@ test("available lots open a tenant-tagged inquiry without leaving the iframe", a
   assert.match(modal, /submit-public-inquiry/);
   assert.match(modal, /tenant: tenantSlug/);
   assert.match(modal, /Inquiry Sent!/);
-  assert.match(inquiryFunction, /tenant\?: unknown/);
+  assert.match(contract, /tenant\?: unknown/);
   assert.match(inquiryFunction, /resolveTenantId/);
   assert.match(inquiryFunction, /tenant_id: tenantId/);
 });

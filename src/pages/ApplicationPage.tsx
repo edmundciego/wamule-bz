@@ -12,6 +12,8 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
 import { applicationSchema } from "../lib/schemas";
+import { resolveInquirySubmitError } from "../lib/functions";
+import { buildInquiryPayload } from "../../supabase/functions/_shared/inquiry-contract";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
@@ -37,6 +39,18 @@ const inquiryInterests = [
 
 type InquiryInterest = (typeof inquiryInterests)[number];
 const specificLotInterest: InquiryInterest = "A specific lot";
+
+function fallbackUuid(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `xxxxxxxx-xxxx-4xxx-yxxx-${Date.now().toString(16)}`.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const intendedUseOptions = [
   "Residential",
@@ -711,6 +725,8 @@ function PublicInquiryPanel({
   const [submitted, setSubmitted] = useState(false);
   const [emailSent, setEmailSent] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Idempotency key, stable for this form instance (see PublicInquiryModal).
+  const [clientReferenceId] = useState(() => fallbackUuid());
   const specificLotSelected = interests.includes(specificLotInterest);
 
   function toggleInterest(interest: InquiryInterest) {
@@ -740,20 +756,25 @@ function PublicInquiryPanel({
 
     setSubmitting(true);
     const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-      body: {
+      body: buildInquiryPayload({
         name,
         email,
         phone,
         interests,
-        specific_lot_id: specificLotSelected && specificLotId ? Number(specificLotId) : null,
+        specificLotId: specificLotSelected && specificLotId ? Number(specificLotId) : null,
         message,
-        page_url: window.location.href,
-      },
+        pageUrl: window.location.href,
+        clientReferenceId,
+      }),
     });
     setSubmitting(false);
 
     if (functionError || data?.error) {
-      setError(String(data?.error ?? functionError?.message ?? "We could not submit your request. Please try again."));
+      setError(
+        functionError
+          ? await resolveInquirySubmitError(functionError)
+          : String(data?.error ?? "We could not submit your request. Please try again."),
+      );
       return;
     }
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
-import { edgeFunctionErrorMessage } from "../../lib/functions";
+import { resolveInquirySubmitError } from "../../lib/functions";
+import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
 import { Button } from "../ui/Button";
 import { Field, Input, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
@@ -13,6 +14,18 @@ interface PublicInquiryModalProps {
   onClose: () => void;
 }
 
+function fallbackUuid(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `xxxxxxxx-xxxx-4xxx-yxxx-${Date.now().toString(16)}`.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, onClose }: PublicInquiryModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,6 +34,9 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, o
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  // Idempotency key, stable for this form instance: retries after an error
+  // resubmit the same key, so the endpoint can't create a duplicate lead.
+  const [clientReferenceId] = useState(() => fallbackUuid());
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -32,18 +48,19 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, o
     setSubmitting(true);
     try {
       const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-        body: {
+        body: buildInquiryPayload({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
           interests: ["Available lots", "A specific lot"],
-          specific_lot_id: lotId,
+          specificLotId: lotId,
           message: message.trim() || undefined,
-          page_url: window.location.href,
+          pageUrl: window.location.href,
           tenant: tenantSlug,
-        },
+          clientReferenceId,
+        }),
       });
-      if (functionError) throw new Error(edgeFunctionErrorMessage(functionError));
+      if (functionError) throw new Error(await resolveInquirySubmitError(functionError));
       if (data?.error) throw new Error(String(data.error));
       setSent(true);
     } catch (submitError) {

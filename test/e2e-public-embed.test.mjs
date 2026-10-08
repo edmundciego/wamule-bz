@@ -82,10 +82,14 @@ function dbRows(sql, params = []) {
 }
 
 test("e2e payload contract matches the inquiry function", async () => {
-  // Guards spec-vs-API drift: the function requires these exact keys.
+  // Guards spec-vs-API drift: the function validates via the shared contract
+  // module, whose keys are covered by test/inquiry-contract.test.mjs.
   const source = read("supabase/functions/submit-public-inquiry/index.ts");
+  assert.ok(source.includes("../_shared/inquiry-contract.ts"), "function must use the shared inquiry contract");
+  assert.ok(source.includes("validateInquiryPayload"), "function must validate via the shared schema");
+  const contract = read("supabase/functions/_shared/inquiry-contract.ts");
   for (const key of ["name?: unknown", "specific_lot_id?: unknown", "tenant?: unknown"]) {
-    assert.ok(source.includes(key), `InquiryBody must declare ${key}`);
+    assert.ok(contract.includes(key), `shared contract must declare ${key}`);
   }
 });
 
@@ -124,27 +128,45 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   });
   assert.equal(lotsResponse.status, 200);
   const lots = await lotsResponse.json();
-  const available = lots.parcels.find((parcel) => parcel.status === "Available");
+  // Regression guard: prefer a real published lot number (L-001 style).
+  // The legacy two-digit view used to 400 every genuine inquiry.
+  const available =
+    lots.parcels.find((parcel) => parcel.status === "Available" && !/^[0-9]{2}$/.test(parcel.lot_number ?? "")) ??
+    lots.parcels.find((parcel) => parcel.status === "Available");
   assert.ok(available, "staging has an Available lot to inquire about");
 
+  const referenceId = `live-${Date.now()}-inquiry`;
+  const payload = {
+    name: "Integration Tester",
+    email,
+    phone: "+501-600-0000",
+    interests: ["Available lots", "A specific lot"],
+    specific_lot_id: available.id,
+    message: "Testing public map inquiry submission.",
+    page_url: `${staging.site}/embed/${staging.tenantSlug}`,
+    tenant: staging.tenantSlug,
+    client_reference_id: referenceId,
+  };
   const submit = await fetch(functionsUrl("submit-public-inquiry"), {
     method: "POST",
     headers: { ...anonHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "Integration Tester",
-      email,
-      phone: "+501-600-0000",
-      interests: ["Available lots", "A specific lot"],
-      specific_lot_id: available.id,
-      message: "Testing public map inquiry submission.",
-      page_url: `${staging.site}/embed/${staging.tenantSlug}`,
-      tenant: staging.tenantSlug,
-    }),
+    body: JSON.stringify(payload),
   });
   assert.equal(submit.status, 200);
   const result = await submit.json();
   assert.equal(result.ok, true);
   assert.equal(result.leadCreated, true);
+
+  // Retry with the same idempotency key: no duplicate lead.
+  const retry = await fetch(functionsUrl("submit-public-inquiry"), {
+    method: "POST",
+    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(retry.status, 200);
+  const retryResult = await retry.json();
+  assert.equal(retryResult.ok, true);
+  assert.equal(retryResult.deduplicated, true);
 
   const leads = dbRows("select id, tenant_id, email from public.leads where email = %s", [email]);
   assert.equal(leads.length, 1, "exactly one lead row for the test buyer");
