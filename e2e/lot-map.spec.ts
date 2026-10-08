@@ -101,23 +101,115 @@ test("hit-layer edge click still selects", async ({ page }) => {
   await expect(selectedLotCard(page)).toBeVisible();
 });
 
-test("double-click zooms the map (click-to-zoom)", async ({ page }, testInfo) => {
-  // Firefox's slower synthetic input pipeline can stretch the two clicks
-  // past the 250ms inquiry-modal delay: the modal opens mid-gesture, steals
-  // the second click, and no dblclick ever reaches the lot. Real
-  // slow-device users can hit the same race. Pending the click-to-zoom
-  // redesign (Q1: explicit zoom control instead of the modal delay), this
-  // path is covered on chromium/webkit/mobile.
-  test.skip(
-    testInfo.project.name === "firefox",
-    "double-click races the 250ms inquiry-modal timer on Firefox input timing",
-  );
-  const before = await page.locator("main svg").first().getAttribute("viewBox");
+test("Zoom to lot button zooms to the lot (mouse)", async ({ page }) => {
   const pt = await hitCenter(page, 5);
-  await page.mouse.dblclick(pt.x, pt.y);
+  await page.mouse.click(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  // Selection opens the card only — no inquiry modal on tap.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
   await expect
     .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
     .not.toBe(before);
+  await expect(selectedLotCard(page)).toBeVisible();
+});
+
+test("Zoom to lot button works with touch", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.use.hasTouch, "touch input needs a hasTouch project");
+  const pt = await hitCenter(page, 5);
+  await page.touchscreen.tap(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  await page.getByRole("button", { name: /^Zoom to Lot/ }).tap();
+  await expect
+    .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
+    .not.toBe(before);
+});
+
+test("Zoom to lot works in fullscreen", async ({ page }) => {
+  await page.getByRole("button", { name: "Enter fullscreen" }).click();
+  const pt = await hitCenter(page, 5);
+  await page.mouse.click(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
+  await expect
+    .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
+    .not.toBe(before);
+  await expect(selectedLotCard(page)).toBeVisible();
+});
+
+test("selecting a lot behind the detail card pans it into view", async ({ page }) => {
+  // Zoom to 3x first: near 1x there is little pan room and the pan clamp
+  // can strand bottom-row lots behind the tall bottom-sheet card no matter
+  // how correct the reveal math is (verified by measurement). At 3x there
+  // is room to reveal by panning. No card is open yet, so predict where it
+  // WILL appear (bottom sheet on small screens, bottom-right w-64 on sm+)
+  // and tap a visible lot inside that region — outside the zoom-control
+  // column — with a real click. The opening card covers the lot, so
+  // selection must pan (never zoom) until uncovered.
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(300);
+  const lotId = await page.evaluate(() => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    if (!svg) throw new Error("map svg not found");
+    const rect = svg.getBoundingClientRect();
+    const small = window.innerWidth < 640;
+    const card = small
+      ? { left: rect.left, right: rect.right, top: rect.bottom - 280 }
+      : { left: rect.right - 340, right: rect.right, top: rect.bottom - 280 };
+    let best: { id: number; y: number } | null = null;
+    for (const poly of svg.querySelectorAll('polygon[fill="transparent"]')) {
+      const el = poly as SVGPolygonElement;
+      const box = el.getBBox();
+      const ctm = el.getScreenCTM();
+      if (!ctm) continue;
+      const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(ctm);
+      if (pt.x < rect.left + 4 || pt.x > rect.right - 4 || pt.y < rect.top + 4 || pt.y > rect.bottom - 4) continue;
+      if (pt.x < card.left || pt.x > card.right || pt.y < card.top) continue;
+      // Keep clear of the floating zoom-control column (bottom-right).
+      if (pt.x > rect.right - 70 && pt.y > rect.bottom - 180) continue;
+      if (!best || pt.y > best.y) best = { id: Number(el.getAttribute("data-lot-id")), y: pt.y };
+    }
+    if (!best) throw new Error("no visible lot inside the future card region");
+    return best.id;
+  });
+  const center = await page.evaluate((id) => {
+    const el = document.querySelector(`main svg polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+    if (!el?.getScreenCTM()) throw new Error("lot not found");
+    const box = el.getBBox();
+    const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(el.getScreenCTM()!);
+    return { x: pt.x, y: pt.y };
+  }, lotId);
+  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  await page.mouse.click(center.x, center.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  // Zoom must not have changed (reveal pans only): viewBox width encodes zoom.
+  const viewBoxWidth = async () => (await page.locator("main svg").first().getAttribute("viewBox"))?.split(" ")[2];
+  expect(await viewBoxWidth()).toBe(before.split(" ")[2]);
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const el = document.querySelector(`main svg polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+          if (!el?.getScreenCTM()) return "no-lot";
+          const box = el.getBBox();
+          const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(
+            el.getScreenCTM()!,
+          );
+          const hit = document.elementFromPoint(pt.x, pt.y);
+          const card = [...document.querySelectorAll("main div")].find(
+            (d) => typeof d.className === "string" && d.className.includes("bottom-3") && d.textContent?.includes("Zoom to Lot"),
+          );
+          if (!card) return "no-card";
+          return card.contains(hit) ? "covered" : "visible";
+        }, lotId),
+      { timeout: 5000 },
+    ).toBe("visible");
 });
 
 test("zoom buttons keep working after pan", async ({ page }) => {
@@ -210,7 +302,7 @@ test("label sizes stay consistent and inside lots at 1x/2x/4x", async ({ page })
 });
 
 test("tap selects a lot (touch)", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "mobile", "touch runs in the mobile project");
+  test.skip(!testInfo.project.use.hasTouch, "touch input needs a hasTouch project");
   const pt = await hitCenter(page, 5);
   await page.touchscreen.tap(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();

@@ -167,6 +167,7 @@ export function PublicLotMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const wasExpandedRef = useRef(false);
   const pseudoRef = useRef(false);
   const previousOverflowRef = useRef("");
@@ -411,6 +412,73 @@ export function PublicLotMap({
   // Selection-locked detail card: hover NEVER drives this. Hover only
   // affects polygon styling; the card follows the locked selection.
   const focusLot = payload?.parcels.find((parcel) => parcel.id === highlighted[0]) ?? null;
+  const focusLotId = focusLot?.id ?? null;
+
+  // Reveal-on-select: if the selected lot's center is hidden behind the
+  // detail card, pan just enough to uncover it. Zoom is never touched, and
+  // this runs only when the selection or zoom changes — never while the
+  // user pans, so it can't fight manual gestures.
+  useEffect(() => {
+    if (focusLotId == null) return;
+    const svg = svgRef.current;
+    const card = cardRef.current;
+    if (!svg || !card) return;
+    const lot = payload?.parcels.find((parcel) => parcel.id === focusLotId) ?? null;
+    const polygon = lot && Array.isArray(lot.map_polygon) ? lot.map_polygon : [];
+    if (polygon.length < 3) return;
+    const vbH = viewBoxHRef.current;
+    const z = zoomRef.current;
+    const p = clampPanTo(panRef.current.x, panRef.current.y, z, vbH);
+    const cx = polygon.reduce((sum, pt) => sum + pt.x, 0) / polygon.length;
+    const cy = (polygon.reduce((sum, pt) => sum + pt.y, 0) / polygon.length) * (vbH / 100);
+    // viewBox -> screen mapping under preserveAspectRatio="meet".
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const vbW = 100 / z;
+    const vbHView = vbH / z;
+    const scale = Math.min(rect.width / vbW, rect.height / vbHView);
+    if (!(scale > 0)) return;
+    const offX = rect.left + (rect.width - vbW * scale) / 2;
+    const offY = rect.top + (rect.height - vbHView * scale) / 2;
+    const sx = offX + (cx - p.x) * scale;
+    const sy = offY + (cy - p.y) * scale;
+    const cardRect = card.getBoundingClientRect();
+    const margin = 12;
+    const insideX = sx > cardRect.left - margin && sx < cardRect.right + margin;
+    const insideY = sy > cardRect.top - margin && sy < cardRect.bottom + margin;
+    if (!insideX || !insideY) return;
+    // Minimal exit: shift along whichever axis clears the card sooner —
+    // but the landing point must stay inside the SVG viewport itself
+    // (shifting just past a full-width bottom sheet can otherwise push the
+    // lot a few pixels off the visible map). If no exit keeps it on-map
+    // (tiny viewport, huge card), leave the pan alone.
+    const exitUp = cardRect.top - margin - sy;
+    const exitDown = cardRect.bottom + margin - sy;
+    const exitLeft = cardRect.left - margin - sx;
+    const exitRight = cardRect.right + margin - sx;
+    const inset = 8;
+    const candidates = [exitUp, exitDown, exitLeft, exitRight]
+      .map((shift, axis) => {
+        const horizontal = axis >= 2;
+        const qx = sx + (horizontal ? shift : 0);
+        const qy = sy + (horizontal ? 0 : shift);
+        const onMap =
+          qx >= rect.left + inset &&
+          qx <= rect.right - inset &&
+          qy >= rect.top + inset &&
+          qy <= rect.bottom - inset;
+        return { shift, horizontal, onMap };
+      })
+      .filter((c) => c.onMap)
+      .sort((a, b) => Math.abs(a.shift) - Math.abs(b.shift));
+    if (!candidates.length) return;
+    const best = candidates[0];
+    const moveX = best.horizontal ? best.shift / scale : 0;
+    const moveY = best.horizontal ? 0 : best.shift / scale;
+    // Moving the map opposite to the desired screen shift of the point.
+    setPan(clampPanTo(p.x - moveX, p.y - moveY, z, vbH));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLotId, zoom]);
 
   const viewBoxH = imageAspect ? 100 / imageAspect : 100;
   const yScale = viewBoxH / 100;
@@ -446,7 +514,6 @@ export function PublicLotMap({
   visibleRef.current = visibleParcels;
   const wheelAccum = useRef(0);
   const wheelClient = useRef<{ x: number; y: number } | null>(null);
-  const inquiryTimer = useRef(0);
 
   function clampPan(x: number, y: number, z: number): { x: number; y: number } {
     return clampPanTo(x, y, z, viewBoxH);
@@ -479,23 +546,30 @@ export function PublicLotMap({
     setPan({ x: 0, y: 0 });
   }
 
-  function centroidOf(parcel: PublicLotParcel): { x: number; y: number } | null {
+  function boundsOf(parcel: PublicLotParcel): { x: number; y: number; w: number; h: number } | null {
     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
     if (polygon.length < 3) return null;
-    return {
-      x: polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length,
-      y: (polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length) * yScale,
-    };
+    const xs = polygon.map((p) => p.x);
+    const ys = polygon.map((p) => p.y * yScale);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    return { x: x0, y: y0, w: Math.max(x1 - x0, 0.01), h: Math.max(y1 - y0, 0.01) };
   }
 
-  function focusParcel(parcel: PublicLotParcel) {
-    window.clearTimeout(inquiryTimer.current);
-    setInquiryLot(null);
-    const c = centroidOf(parcel);
-    if (!c) return;
-    const next = Math.max(zoom, 2.5);
+  /** Explicit zoom control (detail-card button): fit the lot's bounds with
+   *  padding, capped at MAX_ZOOM so tiny lots don't over-zoom. Replaces the
+   *  old double-click-to-zoom, which raced the inquiry modal and had no
+   *  touch/keyboard path. */
+  function zoomToParcel(parcel: PublicLotParcel) {
+    const b = boundsOf(parcel);
+    if (!b) return;
+    const pad = 1.6;
+    const fit = Math.min(100 / (b.w * pad), viewBoxH / (b.h * pad));
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit));
     setZoom(next);
-    setPan(clampPan(c.x - 100 / next / 2, c.y - viewBoxH / next / 2, next));
+    setPan(clampPan(b.x + b.w / 2 - 100 / next / 2, b.y + b.h / 2 - viewBoxH / next / 2, next));
   }
 
   function lotIdAtPoint(clientX: number, clientY: number): number | null {
@@ -664,20 +738,12 @@ export function PublicLotMap({
   }, [zoom, pan, viewBoxH]);
 
   function handleParcelClick(parcel: PublicLotParcel) {
+    // Selection only opens the detail card. The inquiry modal opens solely
+    // from the card's Inquire button — never as a side effect of selection,
+    // so tapping a lot can never be swallowed by a modal.
     setInternalSelectedId(parcel.id);
     onSelectLot?.(parcel);
-    if (pickMode) {
-      if (parcel.status === "Available") onToggleLot(parcel);
-      return;
-    }
-    // Defer the inquiry modal past the double-click window so a
-    // double-click-to-zoom doesn't also pop the modal. focusParcel clears
-    // the pending timer (see below).
-    if (parcel.status === "Available" && enableInquiry) {
-      window.clearTimeout(inquiryTimer.current);
-      const target = parcel;
-      inquiryTimer.current = window.setTimeout(() => setInquiryLot(target), 250);
-    }
+    if (pickMode && parcel.status === "Available") onToggleLot(parcel);
   }
 
   return (
@@ -830,7 +896,7 @@ export function PublicLotMap({
               style={{ cursor: "grab" }}
               onPointerDown={beginGesture}
             >
-              <title>Drag to pan • Ctrl+scroll or pinch to zoom • double-click a lot to focus</title>
+              <title>Drag to pan • Ctrl+scroll or pinch to zoom</title>
               {payload.masterplan_image_url ? (
                 <image
                   href={payload.masterplan_image_url}
@@ -870,9 +936,8 @@ export function PublicLotMap({
                       style={{ cursor: tappable ? "pointer" : "default" }}
                       onMouseEnter={() => setHoveredId(parcel.id)}
                       onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
-                      onDoubleClick={() => focusParcel(parcel)}
                     >
-                      <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""} (double-click to zoom)`}</title>
+                      <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""}`}</title>
                     </polygon>
                   </g>
                 );
@@ -988,6 +1053,7 @@ export function PublicLotMap({
             ) : null}
             {focusLot ? (
               <div
+                ref={cardRef}
                 className={cn(
                   "absolute bottom-3 left-3 right-3 rounded-md border bg-card/95 p-3 text-sm shadow-lg sm:left-auto sm:right-14 sm:w-64",
                   expanded && "max-h-[50dvh] overflow-auto md:bottom-auto md:right-3 md:top-14 md:w-72",
@@ -1020,6 +1086,14 @@ export function PublicLotMap({
                 {focusLot.tier_label ? <p className="mt-1 text-muted-foreground">{focusLot.tier_label}</p> : null}
                 <p className="mt-1 text-muted-foreground">{focusLot.dimensions ?? "Size TBC"}</p>
                 {showPrices ? <p className="mt-1 font-semibold text-primary">{money(focusLot.price)}</p> : null}
+                <button
+                  type="button"
+                  aria-label={`Zoom to Lot ${focusLot.lot_number}`}
+                  onClick={() => zoomToParcel(focusLot)}
+                  className="mt-2 w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-primary hover:bg-muted"
+                >
+                  Zoom to Lot
+                </button>
                 {pickMode && focusLot.status === "Available" ? (
                   <button
                     type="button"
