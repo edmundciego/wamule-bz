@@ -63,6 +63,9 @@ const MAX_ZOOM = 4;
 /** Transparent pointer padding (px, non-scaling) so small lots stay tappable. */
 const HIT_STROKE_PX = 14;
 
+/** Lot-label ceiling on screen so giant lots don't get billboard text. */
+const MAX_LABEL_PX = 26;
+
 type FullscreenHostElement = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
 };
@@ -104,6 +107,16 @@ function exitActiveFullscreen(): Promise<void> {
 
 function pointsAttr(polygon: Array<{ x: number; y: number }>, yScale = 1): string {
   return polygon.map((p) => `${p.x},${p.y * yScale}`).join(" ");
+}
+
+/** Pure pan clamp in full-space units (shared by render + gesture paths). */
+function clampPanTo(x: number, y: number, z: number, vbH: number): { x: number; y: number } {
+  const w = 100 / z;
+  const h = vbH / z;
+  return {
+    x: Math.min(Math.max(0, 100 - w), Math.max(0, x)),
+    y: Math.min(Math.max(0, vbH - h), Math.max(0, y)),
+  };
 }
 
 function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {
@@ -405,21 +418,38 @@ export function PublicLotMap({
   // instead of jumping back to the top-left corner.
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
-  // Active pointers for drag-pan (1) vs pinch-zoom (2); pinch suppresses click.
+  // Gesture model: NO setPointerCapture anywhere (capture retargets the
+  // follow-up click to the capturing element, which broke selection).
+  // pointerdown records target+position, window-level move/up listeners run
+  // the pan, and selection is decided at pointerup under a drag threshold —
+  // no click events involved, so drag/pinch can never select.
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const pinchRef = useRef<{ startDist: number; startZoom: number; startPan: { x: number; y: number }; center: { x: number; y: number } } | null>(null);
-  const suppressClickRef = useRef(false);
+  const gestureRef = useRef<null | {
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+    downLotId: number | null;
+    moved: boolean;
+  }>(null);
+  const pinchRef = useRef<null | { startDist: number; startZoom: number; center: { x: number; y: number } }>(null);
+  // Fresh-state mirrors: window listeners outlive the render that attached them.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const viewBoxHRef = useRef(viewBoxH);
+  viewBoxHRef.current = viewBoxH;
+  const pickModeRef = useRef(pickMode);
+  pickModeRef.current = pickMode;
+  const visibleRef = useRef<PublicLotParcel[]>([]);
+  visibleRef.current = visibleParcels;
   const wheelAccum = useRef(0);
   const wheelClient = useRef<{ x: number; y: number } | null>(null);
+  const inquiryTimer = useRef(0);
 
   function clampPan(x: number, y: number, z: number): { x: number; y: number } {
-    const w = 100 / z;
-    const h = viewBoxH / z;
-    return {
-      x: Math.min(Math.max(0, 100 - w), Math.max(0, x)),
-      y: Math.min(Math.max(0, viewBoxH - h), Math.max(0, y)),
-    };
+    return clampPanTo(x, y, z, viewBoxH);
   }
 
   const viewBox = useMemo(() => {
@@ -459,6 +489,8 @@ export function PublicLotMap({
   }
 
   function focusParcel(parcel: PublicLotParcel) {
+    window.clearTimeout(inquiryTimer.current);
+    setInquiryLot(null);
     const c = centroidOf(parcel);
     if (!c) return;
     const next = Math.max(zoom, 2.5);
@@ -466,15 +498,132 @@ export function PublicLotMap({
     setPan(clampPan(c.x - 100 / next / 2, c.y - viewBoxH / next / 2, next));
   }
 
-  function toViewBox(clientX: number, clientY: number): { x: number; y: number } | null {
+  function lotIdAtPoint(clientX: number, clientY: number): number | null {
+    const el = document.elementFromPoint(clientX, clientY)?.closest?.("[data-lot-id]");
+    const id = el?.getAttribute("data-lot-id");
+    return id != null && id !== "" ? Number(id) : null;
+  }
+
+  function selectLotById(lotId: number) {
+    const parcel = visibleRef.current.find((p) => p.id === lotId) ?? null;
+    if (parcel) handleParcelClick(parcel);
+  }
+
+  function endGestureListeners() {
+    window.removeEventListener("pointermove", onGestureMove);
+    window.removeEventListener("pointerup", onGestureUp);
+    window.removeEventListener("pointercancel", onGestureUp);
+  }
+
+  function viewportCenter(): { x: number; y: number } {
+    const z = zoomRef.current;
+    const vbH = viewBoxHRef.current;
+    const p = panRef.current;
+    const pts = [...pointersRef.current.values()];
     const svg = svgRef.current;
-    if (!svg) return null;
-    const rect = svg.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
+    const rect = svg?.getBoundingClientRect();
+    if (pts.length < 2 || !rect?.width || !rect.height) return { x: 50, y: vbH / 2 };
+    const cxPx = (pts[0].x + pts[1].x) / 2;
+    const cyPx = (pts[0].y + pts[1].y) / 2;
     return {
-      x: pan.x + ((clientX - rect.left) / rect.width) * (100 / zoom),
-      y: pan.y + ((clientY - rect.top) / rect.height) * (viewBoxH / zoom),
+      x: p.x + ((cxPx - rect.left) / rect.width) * (100 / z),
+      y: p.y + ((cyPx - rect.top) / rect.height) * (vbH / z),
     };
+  }
+
+  function onGestureMove(event: PointerEvent) {
+    const pointers = pointersRef.current;
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const g = gestureRef.current;
+    if (!g) return;
+    const z = zoomRef.current;
+    const vbH = viewBoxHRef.current;
+    if (pointers.size >= 2) {
+      if (!pinchRef.current) {
+        pinchRef.current = { startDist: 0, startZoom: z, center: viewportCenter() };
+        const [a, b] = [...pointers.values()];
+        pinchRef.current.startDist = Math.hypot(a.x - b.x, a.y - b.y);
+      }
+      const pinch = pinchRef.current;
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch.startDist > 0 && dist > 0) {
+        g.moved = true;
+        const next = (pinch.startZoom * dist) / pinch.startDist;
+        const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+        const sx = 100 / clamped / (100 / z);
+        const sy = vbH / clamped / (vbH / z);
+        setZoom(clamped);
+        setPan(clampPanTo(pinch.center.x - (pinch.center.x - panRef.current.x) * sx, pinch.center.y - (pinch.center.y - panRef.current.y) * sy, clamped, vbH));
+      }
+      return;
+    }
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const dx = ((event.clientX - g.startX) / rect.width) * (100 / z);
+    const dy = ((event.clientY - g.startY) / rect.height) * (vbH / z);
+    if (Math.abs(event.clientX - g.startX) + Math.abs(event.clientY - g.startY) > 6) g.moved = true;
+    if (g.moved) setPan(clampPanTo(g.panX - dx, g.panY - dy, z, vbH));
+  }
+
+  function onGestureUp(event: PointerEvent) {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size > 0) {
+      // Pinch lifting one finger: re-base the surviving single-finger pan
+      // and never select after a multi-touch gesture.
+      pinchRef.current = null;
+      const remaining = [...pointersRef.current.values()][0];
+      const g = gestureRef.current;
+      if (g) {
+        g.startX = remaining.x;
+        g.startY = remaining.y;
+        g.panX = panRef.current.x;
+        g.panY = panRef.current.y;
+        g.moved = true;
+        g.downLotId = null;
+      }
+      return;
+    }
+    endGestureListeners();
+    const g = gestureRef.current;
+    gestureRef.current = null;
+    pinchRef.current = null;
+    if (!g || g.moved) return;
+    // Tap/click with no drag: decide at pointerup. Prefer the lot under the
+    // release point (finger slop), fall back to the down-target lot, else an
+    // empty release clears the unlocked selection. No click events involved.
+    const upLot = lotIdAtPoint(event.clientX, event.clientY);
+    const target = upLot ?? g.downLotId;
+    if (target != null) {
+      selectLotById(target);
+    } else if (!pickModeRef.current) {
+      setInternalSelectedId(null);
+      setHoveredId(null);
+    } else {
+      setHoveredId(null);
+    }
+  }
+
+  function beginGesture(event: React.PointerEvent<SVGSVGElement>) {
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!gestureRef.current) {
+      const target = event.target as Element | null;
+      const id = target?.closest?.("[data-lot-id]")?.getAttribute("data-lot-id");
+      gestureRef.current = {
+        startX: event.clientX,
+        startY: event.clientY,
+        panX: panRef.current.x,
+        panY: panRef.current.y,
+        downLotId: id != null && id !== "" ? Number(id) : null,
+        moved: false,
+      };
+      window.addEventListener("pointermove", onGestureMove);
+      window.addEventListener("pointerup", onGestureUp);
+      window.addEventListener("pointercancel", onGestureUp);
+    }
   }
 
   // Damped Ctrl/Cmd+wheel zoom around the cursor (plain wheel keeps
@@ -521,7 +670,14 @@ export function PublicLotMap({
       if (parcel.status === "Available") onToggleLot(parcel);
       return;
     }
-    if (parcel.status === "Available" && enableInquiry) setInquiryLot(parcel);
+    // Defer the inquiry modal past the double-click window so a
+    // double-click-to-zoom doesn't also pop the modal. focusParcel clears
+    // the pending timer (see below).
+    if (parcel.status === "Available" && enableInquiry) {
+      window.clearTimeout(inquiryTimer.current);
+      const target = parcel;
+      inquiryTimer.current = window.setTimeout(() => setInquiryLot(target), 250);
+    }
   }
 
   return (
@@ -671,90 +827,8 @@ export function PublicLotMap({
               viewBox={viewBox}
               preserveAspectRatio="xMidYMid meet"
               className={cn("absolute inset-0 h-full w-full", zoom > MIN_ZOOM && "touch-none")}
-              style={{ cursor: dragRef.current?.moved ? "grabbing" : "grab" }}
-              onPointerDown={(event) => {
-                // Pointer capture keeps touch/pen streams flowing to the map
-                // mid-gesture. Mouse is deliberately excluded: capturing a
-                // mouse pointer retargets the follow-up click to the SVG root
-                // in Chrome, which silently breaks lot selection.
-                if (event.pointerType !== "mouse") {
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
-                }
-                pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-                if (pointersRef.current.size === 2) {
-                  // Second finger down: switch from pan to pinch-zoom.
-                  const [a, b] = [...pointersRef.current.values()];
-                  pinchRef.current = {
-                    startDist: Math.hypot(a.x - b.x, a.y - b.y),
-                    startZoom: zoom,
-                    startPan: { ...pan },
-                    center: toViewBox((a.x + b.x) / 2, (a.y + b.y) / 2) ?? { x: 50, y: viewBoxH / 2 },
-                  };
-                  dragRef.current = null;
-                } else {
-                  const point = toViewBox(event.clientX, event.clientY);
-                  if (!point) return;
-                  dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
-                }
-              }}
-              onPointerMove={(event) => {
-                const pointers = pointersRef.current;
-                if (!pointers.has(event.pointerId)) return;
-                pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-                if (pointers.size === 2 && pinchRef.current) {
-                  const [a, b] = [...pointers.values()];
-                  const dist = Math.hypot(a.x - b.x, a.y - b.y);
-                  const pinch = pinchRef.current;
-                  if (pinch.startDist > 0 && dist > 0) {
-                    suppressClickRef.current = true;
-                    zoomTo((pinch.startZoom * dist) / pinch.startDist, pinch.center.x, pinch.center.y);
-                  }
-                  return;
-                }
-                const drag = dragRef.current;
-                if (!drag) return;
-                const svg = svgRef.current;
-                if (!svg) return;
-                const rect = svg.getBoundingClientRect();
-                if (!rect.width || !rect.height) return;
-                const dx = ((event.clientX - drag.startX) / rect.width) * (100 / zoom);
-                const dy = ((event.clientY - drag.startY) / rect.height) * (viewBoxH / zoom);
-                if (Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 4) drag.moved = true;
-                if (drag.moved) setPan(clampPan(drag.panX - dx, drag.panY - dy, zoom));
-              }}
-              onPointerUp={(event) => {
-                pointersRef.current.delete(event.pointerId);
-                if (pinchRef.current) {
-                  pinchRef.current = null;
-                  window.setTimeout(() => {
-                    suppressClickRef.current = false;
-                  }, 50);
-                }
-                // Click-vs-drag: a drag leaves moved=true so the parcel
-                // onClick below ignores the release as a selection.
-                window.setTimeout(() => {
-                  if (dragRef.current && !dragRef.current.moved) dragRef.current = null;
-                  else if (dragRef.current) dragRef.current.moved = false;
-                }, 0);
-              }}
-              onPointerCancel={(event) => {
-                pointersRef.current.delete(event.pointerId);
-                pinchRef.current = null;
-                dragRef.current = null;
-              }}
-              onPointerLeave={() => {
-                pointersRef.current.clear();
-                pinchRef.current = null;
-                dragRef.current = null;
-              }}
-              onClick={() => {
-                // Empty-map click clears the locked selection. Polygon
-                // clicks stopPropagation, so this is background-only.
-                // Drags/pinches are suppressed; picks belong to the parent.
-                if (suppressClickRef.current || dragRef.current?.moved) return;
-                setHoveredId(null);
-                if (!pickMode) setInternalSelectedId(null);
-              }}
+              style={{ cursor: "grab" }}
+              onPointerDown={beginGesture}
             >
               <title>Drag to pan • Ctrl+scroll or pinch to zoom • double-click a lot to focus</title>
               {payload.masterplan_image_url ? (
@@ -786,6 +860,7 @@ export function PublicLotMap({
                       pointerEvents="none"
                     />
                     <polygon
+                      data-lot-id={parcel.id}
                       points={pointsAttr(polygon, yScale)}
                       fill="transparent"
                       stroke="rgba(0,0,0,0)"
@@ -795,11 +870,6 @@ export function PublicLotMap({
                       style={{ cursor: tappable ? "pointer" : "default" }}
                       onMouseEnter={() => setHoveredId(parcel.id)}
                       onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (suppressClickRef.current || dragRef.current?.moved) return;
-                        handleParcelClick(parcel);
-                      }}
                       onDoubleClick={() => focusParcel(parcel)}
                     >
                       <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""} (double-click to zoom)`}</title>
@@ -817,11 +887,18 @@ export function PublicLotMap({
                     const lotH = Math.max(...ys) - Math.min(...ys);
                     // Label fitted to its own lot on both axes: height-capped
                     // at half the lot height, width-capped so the full lot
-                    // number fits inside the lot width. Lots that would
-                    // render below a readable size are skipped until deeper
-                    // zoom (fs is viewBox units; fs*zoom ≈ screen size / 15).
+                    // number fits inside the lot width — plus a screen-pixel
+                    // cap so labels on very large lots (creek/commercial)
+                    // don't blow up to billboard size at high zoom. Lots that
+                    // would render below a readable size are skipped until
+                    // deeper zoom (fs is viewBox units; fs*zoom ≈ screen/15).
                     const label = parcel.lot_number;
-                    const fs = Math.min(lotH * 0.5, lotW / (Math.max(label.length, 1) * 0.62));
+                    const pxPerUnit = (svgRef.current?.clientWidth || 800) / (100 / zoom);
+                    const fs = Math.min(
+                      lotH * 0.5,
+                      lotW / (Math.max(label.length, 1) * 0.62),
+                      MAX_LABEL_PX / pxPerUnit,
+                    );
                     if (!(fs > 0) || fs * zoom < 1.1) return null;
                     return (
                       <text

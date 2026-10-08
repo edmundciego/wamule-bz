@@ -9,12 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test",
+    "test:e2e": "playwright test",
     "check:brand": "node scripts/check-brand.mjs",
     "map:build": "node scripts/build-interactive-map.mjs",
     "map:publish": "node scripts/publish-lots.mjs",
     "map:audit": "node scripts/audit-plot-counts.mjs",
     "typecheck": "tsc -b",
-    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run build"
+    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
+    "@playwright/test": "^1.64.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
