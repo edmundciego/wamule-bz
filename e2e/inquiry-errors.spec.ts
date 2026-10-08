@@ -86,8 +86,7 @@ test("500 shows the server message, logs status/body, keeps the form", async ({ 
   expect(errors.some((text) => text.includes("[edge-function]") && text.includes("500"))).toBe(true);
 });
 
-test("409 conflict shows the server message, never library text", async ({ page }) => {
-  await page.route(FN, (route) =>
+test("409 conflict shows the server message, never library text", async ({ page }) => {  await page.route(FN, (route) =>
     route.fulfill({
       status: 409,
       contentType: "application/json",
@@ -99,6 +98,32 @@ test("409 conflict shows the server message, never library text", async ({ page 
   await expect(page.getByText("This request conflicts with an earlier submission.")).toBeVisible();
   await expect(page.getByText(LIBRARY_TEXT)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send Inquiry", exact: true })).toBeVisible();
+});
+
+test("waitlist flow: Reserved lot offers Join Waitlist, no availability promise", async ({ page }) => {
+  await page.route(FN, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, waitlist: true }) }),
+  );
+  const pt = await page.evaluate(() => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    if (!svg) throw new Error("map svg not found");
+    const poly = [...svg.querySelectorAll('polygon[fill="transparent"]')].find((p) =>
+      (p.querySelector("title")?.textContent ?? "").includes("Lot S-059 "),
+    ) as SVGPolygonElement | undefined;
+    if (!poly?.getScreenCTM()) throw new Error("S-059 not found");
+    const box = poly.getBBox();
+    const c = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(poly.getScreenCTM()!);
+    return { x: c.x, y: c.y };
+  });
+  await page.mouse.click(pt.x, pt.y);
+  await page.getByRole("button", { name: "Join Waitlist for Lot S-059" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText("Join the Waitlist for Lot S-059", { exact: true })).toBeVisible();
+  await page.getByLabel("Full Name").fill("Amara Test");
+  await page.getByLabel("Email Address").fill("amara@example.com");
+  await page.getByRole("button", { name: "Join Waitlist", exact: true }).click();
+  await expect(page.getByText("You're on the Waitlist!")).toBeVisible();
+  await expect(page.getByText(LIBRARY_TEXT)).toHaveCount(0);
 });
 
 test("retry reuses the idempotency key and fires once per submit", async ({ page }) => {

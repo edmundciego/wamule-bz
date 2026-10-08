@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   decideLeadTenant,
+  lotDisposition,
   sameInquiryAs,
   validateInquiryPayload,
   type InquiryFingerprint,
@@ -48,12 +49,17 @@ Deno.serve(async (request) => {
   // is authoritative from here on — see decideLeadTenant below.
   const slugTenantId = await resolveTenantId(supabase, input.tenantSlug);
 
-  // The lot must be one the public map actually shows: Available in parcels
-  // (any lot number), not just the legacy two-digit public view.
-  const specificLot = input.specificLotId ? await loadAvailableLot(supabase, input.specificLotId) : null;
+  // The lot must be one the public map actually shows (any lot number),
+  // not just the legacy two-digit public view. Reserved lots are accepted
+  // as waitlist requests; anything not Available/Reserved is declined.
+  const specificLot = input.specificLotId ? await loadLotById(supabase, input.specificLotId) : null;
   if (input.specificLotId && !specificLot) {
     return json({ error: "Select an available public lot for this inquiry." }, 400);
   }
+  if (specificLot && lotDisposition(specificLot.status) === "unavailable") {
+    return json({ error: "That lot is no longer available." }, 400);
+  }
+  const waitlist = !!specificLot && lotDisposition(specificLot.status) === "waitlist";
 
   // Lot-authoritative tenant: the lead inherits the parcel's tenant; a
   // provided slug must resolve to that same tenant. Without a lot, the slug
@@ -83,7 +89,7 @@ Deno.serve(async (request) => {
   });
   const now = new Date();
   const dueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-  const inquiryNotes = buildInquiryNotes(input, specificLot);
+  const inquiryNotes = buildInquiryNotes(input, specificLot, waitlist);
 
   const { data: lead, error: leadError } = await supabase
     .from("leads")
@@ -123,11 +129,12 @@ Deno.serve(async (request) => {
   }
 
   const leadId = String(lead.id);
+  const receivedTitle = waitlist ? "Waitlist request received" : "Public information request received";
   const { error: activityError } = await supabase.from("lead_activities").insert({
     tenant_id: tenantId,
     lead_id: leadId,
     activity_type: "note",
-    title: duplicateReason ? "Public information request received - possible duplicate" : "Public information request received",
+    title: duplicateReason ? `${receivedTitle} - possible duplicate` : receivedTitle,
     description: duplicateReason ? `${inquiryNotes}\n\nPossible duplicate: ${duplicateReason}` : inquiryNotes,
     metadata: {
       source: "public_inquiry",
@@ -141,13 +148,17 @@ Deno.serve(async (request) => {
   });
   if (activityError) console.error("Public inquiry activity insert failed", safeError(activityError));
 
+  const followUpTitle = waitlist ? "Follow up on waitlist request" : "Follow up on public project information inquiry";
+  const followUpDescription = waitlist
+    ? "Contact the buyer about their waitlist request. The lot is currently Reserved: make no availability promise."
+    : "Contact the buyer about their public project information request and answer their questions.";
   const { error: taskError } = await supabase.from("follow_up_tasks").insert({
     tenant_id: tenantId,
     lead_id: leadId,
-    title: duplicateReason ? "Review possible duplicate public inquiry" : "Follow up on public project information inquiry",
+    title: duplicateReason ? "Review possible duplicate public inquiry" : followUpTitle,
     description: duplicateReason
       ? `Review this public project information inquiry for possible duplicate records. ${duplicateReason}`
-      : "Contact the buyer about their public project information request and answer their questions.",
+      : followUpDescription,
     due_at: dueAt,
     status: "open",
     priority: duplicateReason ? "high" : "normal",
@@ -166,6 +177,7 @@ Deno.serve(async (request) => {
     companyName: company.companyName,
     projectName: company.projectName,
     publicLink: safePageUrl || company.publicLink,
+    waitlist,
   });
 
   await supabase.from("lead_activities").insert({
@@ -189,9 +201,14 @@ Deno.serve(async (request) => {
     leadCreated: true,
     followUpCreated: true,
     emailSent: emailResult.ok,
+    waitlist,
     message: emailResult.ok
-      ? "Your request was received and a confirmation email was sent."
-      : "Your request was received. Our team will follow up using the contact information you provided.",
+      ? waitlist
+        ? "You're on the waitlist. A confirmation email was sent."
+        : "Your request was received and a confirmation email was sent."
+      : waitlist
+        ? "You're on the waitlist. Our team will contact you if this lot becomes available."
+        : "Your request was received. Our team will follow up using the contact information you provided.",
   });
 });
 
@@ -218,11 +235,10 @@ async function resolveTenantId(
 }
 
 /**
- * The lot must be one the public map actually shows: Available in parcels
- * (any lot number — the legacy two-digit public_parcel_options view excludes
- * real published lots like L-001, which 400'd every genuine inquiry).
+ * Load any published lot by id (status checked by the caller: Available →
+ * inquiry, Reserved → waitlist, anything else → friendly 400).
  */
-async function loadAvailableLot(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
+async function loadLotById(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
   const { data, error } = await supabase
     .from("parcels")
     .select("id, tenant_id, lot_number, dimensions, base_price, status")
@@ -232,9 +248,7 @@ async function loadAvailableLot(supabase: ReturnType<typeof createClient>, lotId
     console.error("Public lot validation failed", safeError(error));
     return null;
   }
-  const row = data as ParcelOption | null;
-  if (!row || row.status !== "Available") return null;
-  return row;
+  return (data as ParcelOption | null) ?? null;
 }
 
 type LeadRow = {
@@ -359,11 +373,15 @@ async function duplicateReasonForInquiry(
   return reasons.length ? reasons.join(" ") : null;
 }
 
-function buildInquiryNotes(input: ValidInquiry, lot: ParcelOption | null) {
+function buildInquiryNotes(input: ValidInquiry, lot: ParcelOption | null, waitlist: boolean) {
   return [
-    "Public project information inquiry.",
+    waitlist ? "Waitlist request for a reserved lot." : "Public project information inquiry.",
     input.interests.length ? `Interests: ${input.interests.join(", ")}` : null,
-    lot ? `Specific lot interest: Lot ${lot.lot_number}${lot.dimensions ? ` - ${lot.dimensions}` : ""}` : null,
+    lot
+      ? waitlist
+        ? `Waitlist lot: Lot ${lot.lot_number}${lot.dimensions ? ` - ${lot.dimensions}` : ""} (currently Reserved — no availability promise)`
+        : `Specific lot interest: Lot ${lot.lot_number}${lot.dimensions ? ` - ${lot.dimensions}` : ""}`
+      : null,
     input.phone ? `Phone / WhatsApp: ${input.phone}` : null,
     input.message ? `Buyer message: ${input.message}` : null,
   ].filter(Boolean).join("\n");
@@ -390,7 +408,7 @@ async function loadCompanyContext(supabase: ReturnType<typeof createClient>, ten
   };
 }
 
-async function sendConfirmationEmail(input: { toEmail: string; toName: string; companyName: string; projectName: string; publicLink: string }) {
+async function sendConfirmationEmail(input: { toEmail: string; toName: string; companyName: string; projectName: string; publicLink: string; waitlist: boolean }) {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
   const fromName = Deno.env.get("EMAIL_FROM_NAME") ?? input.companyName;
@@ -399,13 +417,19 @@ async function sendConfirmationEmail(input: { toEmail: string; toName: string; c
     return { ok: false, error: "Email provider is not configured." };
   }
 
-  const subject = `We received your ${input.projectName} information request`;
+  const subject = input.waitlist
+    ? `You're on the waitlist for ${input.projectName}`
+    : `We received your ${input.projectName} information request`;
   const body = [
     `Hi ${input.toName},`,
     "",
-    `Thank you for your interest in ${input.projectName}. We received your request for project information.`,
+    input.waitlist
+      ? `Thanks — we've added you to the waitlist for ${input.projectName}.`
+      : `Thank you for your interest in ${input.projectName}. We received your request for project information.`,
     "",
-    "Our team will review your questions and follow up using the contact information you provided.",
+    input.waitlist
+      ? "Our team will contact you if the lot becomes available. Joining the waitlist does not reserve the lot or guarantee availability."
+      : "Our team will review your questions and follow up using the contact information you provided.",
     "",
     "This information request does not reserve a lot, guarantee lot availability, or imply application approval.",
     input.publicLink ? `\nYou can return to the live project and application page here: ${input.publicLink}` : "",

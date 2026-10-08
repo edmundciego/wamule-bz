@@ -6,7 +6,10 @@ const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("shared lot map supports pick mode alongside inquiry mode", async () => {
-  const map = await read("src/components/public/PublicLotMap.tsx");
+  const [map, modal] = await Promise.all([
+    read("src/components/public/PublicLotMap.tsx"),
+    read("src/components/public/PublicInquiryModal.tsx"),
+  ]);
   assert.match(map, /onToggleLot\?: \(parcel: PublicLotParcel\) => void/);
   assert.match(map, /selectedIds\?: number\[\]/);
   assert.match(map, /enableInquiry/);
@@ -22,6 +25,10 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   assert.match(map, /pickMode/);
   assert.match(map, /if \(pickMode && parcel\.status === "Available"\) onToggleLot\(parcel\)/);
   assert.doesNotMatch(map, /setTimeout\(\(\) => setInquiryLot/);
+  // Reserved lots offer a waitlist action; Sold lots offer no inquiry action.
+  assert.match(map, /Join Waitlist for Lot/);
+  assert.match(modal, /Join the Waitlist for Lot/);
+  assert.match(modal, /waitlist\?: boolean/);
   assert.match(map, /Remove Lot/);
   assert.match(map, /PublicInquiryModal/);
 });

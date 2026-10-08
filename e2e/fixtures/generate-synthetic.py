@@ -68,12 +68,17 @@ def build_lots() -> list[dict]:
         "reserve",
     ))
     assert len(polys) == 60, f"expected 60 lots, got {len(polys)}"
+    # Fixed statuses exercise the waitlist (Reserved) and no-inquiry (Sold)
+    # UI paths. Everything else stays Available.
+    STATUS = {"S-054": "Sold", "S-059": "Reserved", "S-060": "Reserved"}
     lots = []
     for n, (poly, tier) in enumerate(polys, start=1):
+        lot_number = f"S-{n:03d}"
         lots.append({
-            "lot_number": f"S-{n:03d}",
+            "lot_number": lot_number,
             "tier_key": tier,
             "price": TIERS[tier]["price"],
+            "status": STATUS.get(lot_number, "Available"),
             "polygon_pct": [{k: round(v, 3) for k, v in pt.items()} for pt in poly],
         })
     return lots

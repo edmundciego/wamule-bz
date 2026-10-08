@@ -191,6 +191,7 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   const activities = dbRows("select id from public.lead_activities where lead_id = %s", [leads[0][0]]);
   assert.ok(activities.length >= 1, "lead activity recorded for the inquiry");
 
-  // Cleanup: keep staging free of test data (cascades activities + tasks).
-  dbRows("delete from public.leads where email = %s", [email]);
+  // Cleanup: delete only rows this run created (its exact idempotency key),
+  // never a broad filter. Cascades activities + tasks.
+  dbRows("delete from public.leads where client_reference_id = %s", [referenceId]);
 });

@@ -138,8 +138,15 @@ function clampPanTo(x: number, y: number, z: number, vbH: number, pads: PanPads 
   };
 }
 
-function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {
-  if (view === "tier" && parcel.tier_color_hex) {
+/** Bounding-box area in map units (for hit-layer paint order). */
+function bboxAreaUnits(polygon: Array<{ x: number; y: number }>): number {
+  if (polygon.length < 3) return 0;
+  const xs = polygon.map((p) => p.x);
+  const ys = polygon.map((p) => p.y);
+  return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+}
+
+function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {  if (view === "tier" && parcel.tier_color_hex) {
     return { fill: parcel.tier_color_hex, stroke: parcel.tier_color_hex };
   }
   return STATUS_STYLE[parcel.status] ?? STATUS_STYLE.Available;
@@ -165,6 +172,7 @@ export function PublicLotMap({
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [internalSelectedId, setInternalSelectedId] = useState<number | null>(null);
   const [inquiryLot, setInquiryLot] = useState<PublicLotParcel | null>(null);
+  const [inquiryWaitlist, setInquiryWaitlist] = useState(false);
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [query, setQuery] = useState("");
   // Measured masterplan aspect (width/height). A square viewBox would
@@ -246,6 +254,14 @@ export function PublicLotMap({
     };
   }, []);
 
+  useEffect(() => {
+    function onResize() {
+      setNarrow(window.innerWidth < 640);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // Enter: focus Close, lock body scroll (pseudo only). Exit: restore scroll,
   // return focus to the toggle. Skipped on first mount (never expanded).
   useEffect(() => {
@@ -290,6 +306,7 @@ export function PublicLotMap({
           lot_number: string;
           tier_key: string;
           price: number;
+          status?: string;
           polygon_pct: Array<{ x: number; y: number }>;
         }>;
         const tiersRaw = (await tiersRes.json()) as { tiers?: Record<string, { label: string; price: number; legend: string }> };
@@ -297,7 +314,7 @@ export function PublicLotMap({
         const parcels: PublicLotParcel[] = lots.map((lot, index) => ({
           id: 100000 + index,
           lot_number: lot.lot_number,
-          status: "Available",
+          status: lot.status === "Reserved" || lot.status === "Sold" ? lot.status : "Available",
           price: Number(lot.price),
           dimensions: null,
           map_polygon: lot.polygon_pct,
@@ -464,6 +481,10 @@ export function PublicLotMap({
     const scale = Math.min(rect.width / vbW, rect.height / vbHView);
     if (!(scale > 0)) return;
     const cardRect = card.getBoundingClientRect();
+    if (Math.abs(cardRect.height - cardHpxRef.current) > 1) {
+      cardHpxRef.current = cardRect.height;
+      setCardHpx(cardRect.height);
+    }
     // The card floats (bottom-3/left-3/right-3 = 12px gaps), so "touching"
     // an edge means within 16px — otherwise pads stay zero and 1x reveal
     // has no room (this exact miss stranded bottom-row lots on phones).
@@ -536,6 +557,13 @@ export function PublicLotMap({
   // Extra pan range granted while a lot is selected, so a card/sheet
   // covering the lot can be escaped even at 1x (unpadded range is zero).
   const [cardPad, setCardPad] = useState<PanPads>(NO_PADS);
+  // Measured card height (px) for lifting the floating controls above it.
+  const [cardHpx, setCardHpx] = useState(0);
+  // Phone layout flag: the detail card is a full-width bottom sheet only
+  // below sm; the controls need lifting only there.
+  const [narrow, setNarrow] = useState<boolean>(() =>
+    typeof window === "undefined" ? false : window.innerWidth < 640,
+  );
   const svgRef = useRef<SVGSVGElement | null>(null);
   // Gesture model: NO setPointerCapture anywhere (capture retargets the
   // follow-up click to the capturing element, which broke selection).
@@ -559,6 +587,7 @@ export function PublicLotMap({
   panRef.current = pan;
   const cardPadRef = useRef(cardPad);
   cardPadRef.current = cardPad;
+  const cardHpxRef = useRef(0);
   const viewBoxHRef = useRef(viewBoxH);
   viewBoxHRef.current = viewBoxH;
   const pickModeRef = useRef(pickMode);
@@ -626,9 +655,59 @@ export function PublicLotMap({
   }
 
   function lotIdAtPoint(clientX: number, clientY: number): number | null {
-    const el = document.elementFromPoint(clientX, clientY)?.closest?.("[data-lot-id]");
-    const id = el?.getAttribute("data-lot-id");
-    return id != null && id !== "" ? Number(id) : null;
+    // All hit polygons under the point (hit padding overlaps neighbours):
+    // prefer the smallest lot, breaking equal-area ties by nearest centroid
+    // to the tap. Paint order alone can't do this — ties keep data order —
+    // so a tap on a tiny lot surrounded by equal tiny lots still resolves
+    // to the tapped one instead of the topmost sibling.
+    const els = document.elementsFromPoint(clientX, clientY);
+    const ids: number[] = [];
+    for (const el of els) {
+      const raw = (el as Element).closest?.("[data-lot-id]")?.getAttribute("data-lot-id");
+      const id = raw != null && raw !== "" ? Number(raw) : null;
+      if (id !== null && !ids.includes(id)) ids.push(id);
+    }
+    if (ids.length === 0) return null;
+    if (ids.length === 1) return ids[0];
+    const svg = svgRef.current;
+    let best = ids[0];
+    let bestScore = Infinity;
+    for (const id of ids) {
+      const poly = svg?.querySelector(`polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+      const box = poly?.getBBox?.();
+      if (!box) continue;
+      // Hit-polygon points are pre-scaled (pointsAttr applies yScale), so
+      // the bbox is already in full-space map units, matching my/mx below.
+      const area = box.width * box.height;
+      // Centroid distance needs the tap in map units: invert the meet mapping.
+      const rect = svg?.getBoundingClientRect();
+      let dist = Infinity;
+      if (rect?.width && rect?.height) {
+        const z = zoomRef.current;
+        const vbH = viewBoxHRef.current;
+        const vbW = 100 / z;
+        const vbHView = vbH / z;
+        const scale = Math.min(rect.width / vbW, rect.height / vbHView);
+        if (scale > 0) {
+          const offX = rect.left + (rect.width - vbW * scale) / 2;
+          const offY = rect.top + (rect.height - vbHView * scale) / 2;
+          const p = clampPanTo(panRef.current.x, panRef.current.y, z, vbH);
+          const mx = (clientX - offX) / scale + p.x;
+          const my = (clientY - offY) / scale + p.y;
+          const ddx = box.x + box.width / 2 - mx;
+          const ddy = box.y + box.height / 2 - my;
+          dist = Math.hypot(ddx, ddy);
+        }
+      }
+      // Area dominates; distance breaks ties (scaled far below any area gap
+      // that matters, and exact for equals).
+      const score = area * 1000 + dist;
+      if (score < bestScore) {
+        bestScore = score;
+        best = id;
+      }
+    }
+    return best;
   }
 
   function selectLotById(lotId: number) {
@@ -966,35 +1045,53 @@ export function PublicLotMap({
                 const style = fillFor(parcel, colourView);
                 const focused = highlighted.includes(parcel.id) || parcel.id === hoveredId;
                 const picked = pickMode && highlighted.includes(parcel.id);
-                const tappable = parcel.status === "Available";
                 return (
-                  <g key={parcel.id}>
-                    <polygon
-                      points={pointsAttr(polygon, yScale)}
-                      fill={style.fill}
-                      fillOpacity={focused ? 0.5 : 0.28}
-                      stroke={picked ? "#1d4ed8" : style.stroke}
-                      strokeWidth={focused ? 0.7 : 0.4}
-                      vectorEffect="non-scaling-stroke"
-                      pointerEvents="none"
-                    />
-                    <polygon
-                      data-lot-id={parcel.id}
-                      points={pointsAttr(polygon, yScale)}
-                      fill="transparent"
-                      stroke="rgba(0,0,0,0)"
-                      strokeWidth={HIT_STROKE_PX}
-                      strokeLinejoin="round"
-                      vectorEffect="non-scaling-stroke"
-                      style={{ cursor: tappable ? "pointer" : "default" }}
-                      onMouseEnter={() => setHoveredId(parcel.id)}
-                      onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
-                    >
-                      <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""}`}</title>
-                    </polygon>
-                  </g>
+                  <polygon
+                    key={parcel.id}
+                    points={pointsAttr(polygon, yScale)}
+                    fill={style.fill}
+                    fillOpacity={focused ? 0.5 : 0.28}
+                    stroke={picked ? "#1d4ed8" : style.stroke}
+                    strokeWidth={focused ? 0.7 : 0.4}
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
                 );
               })}
+              {/* Hit layer: separate overlay, smallest lots painted last so a
+                  tap between overlapping hit paddings selects the smallest
+                  lot, not the topmost in data order. Always active. */}
+              <g aria-hidden="true">
+                {[...visibleParcels]
+                  .sort((a, b) => {
+                    const pa = Array.isArray(a.map_polygon) ? a.map_polygon : [];
+                    const pb = Array.isArray(b.map_polygon) ? b.map_polygon : [];
+                    return bboxAreaUnits(pa) - bboxAreaUnits(pb);
+                  })
+                  .map((parcel) => {
+                    const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                    if (polygon.length < 3) return null;
+                    const picked = pickMode && highlighted.includes(parcel.id);
+                    const tappable = parcel.status === "Available" || parcel.status === "Reserved";
+                    return (
+                      <polygon
+                        key={`hit-${parcel.id}`}
+                        data-lot-id={parcel.id}
+                        points={pointsAttr(polygon, yScale)}
+                        fill="transparent"
+                        stroke="rgba(0,0,0,0)"
+                        strokeWidth={HIT_STROKE_PX}
+                        strokeLinejoin="round"
+                        vectorEffect="non-scaling-stroke"
+                        style={{ cursor: tappable ? "pointer" : "default" }}
+                        onMouseEnter={() => setHoveredId(parcel.id)}
+                        onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
+                      >
+                        <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""}`}</title>
+                      </polygon>
+                    );
+                  })}
+              </g>
               {visibleParcels.map((parcel) => {
                     // Overlay numbers render only for the hovered/selected
                     // lot: the plat raster already prints every lot number,
@@ -1048,7 +1145,10 @@ export function PublicLotMap({
                     );
                   })}
             </svg>
-            <div className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !expanded ? "bottom-48 sm:bottom-3" : "bottom-3")}>
+            <div
+              className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !expanded ? "bottom-48 sm:bottom-3" : "bottom-3")}
+              style={focusLot && !expanded && narrow && cardHpx > 0 ? { bottom: cardHpx + 24 } : undefined}
+            >
               <button
                 ref={toggleRef}
                 type="button"
@@ -1169,13 +1269,18 @@ export function PublicLotMap({
                     {highlighted.includes(focusLot.id) ? `Remove Lot ${focusLot.lot_number}` : `Select Lot ${focusLot.lot_number}`}
                   </button>
                 ) : null}
-                {!pickMode && focusLot.status === "Available" && enableInquiry ? (
+                {!pickMode && (focusLot.status === "Available" || focusLot.status === "Reserved") && enableInquiry ? (
                   <button
                     type="button"
-                    onClick={() => setInquiryLot(focusLot)}
+                    onClick={() => {
+                      setInquiryWaitlist(focusLot.status === "Reserved");
+                      setInquiryLot(focusLot);
+                    }}
                     className="mt-2 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white"
                   >
-                    Inquire About Lot {focusLot.lot_number}
+                    {focusLot.status === "Reserved"
+                      ? `Join Waitlist for Lot ${focusLot.lot_number}`
+                      : `Inquire About Lot ${focusLot.lot_number}`}
                   </button>
                 ) : null}
               </div>
@@ -1190,7 +1295,11 @@ export function PublicLotMap({
           tenantName={payload.branding.company_name || payload.tenant.name}
           lotId={inquiryLot.id}
           lotNumber={inquiryLot.lot_number}
-          onClose={() => setInquiryLot(null)}
+          waitlist={inquiryWaitlist}
+          onClose={() => {
+            setInquiryLot(null);
+            setInquiryWaitlist(false);
+          }}
         />
       ) : null}
     </div>

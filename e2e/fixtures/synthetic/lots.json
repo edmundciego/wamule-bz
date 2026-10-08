@@ -3,6 +3,7 @@
   "lot_number": "S-001",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -26,6 +27,7 @@
   "lot_number": "S-002",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 11.0,
@@ -49,6 +51,7 @@
   "lot_number": "S-003",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 18.0,
@@ -72,6 +75,7 @@
   "lot_number": "S-004",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 25.0,
@@ -95,6 +99,7 @@
   "lot_number": "S-005",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 32.0,
@@ -118,6 +123,7 @@
   "lot_number": "S-006",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 39.0,
@@ -141,6 +147,7 @@
   "lot_number": "S-007",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -164,6 +171,7 @@
   "lot_number": "S-008",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 11.0,
@@ -187,6 +195,7 @@
   "lot_number": "S-009",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 18.0,
@@ -210,6 +219,7 @@
   "lot_number": "S-010",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 25.0,
@@ -233,6 +243,7 @@
   "lot_number": "S-011",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 32.0,
@@ -256,6 +267,7 @@
   "lot_number": "S-012",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 39.0,
@@ -279,6 +291,7 @@
   "lot_number": "S-013",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -302,6 +315,7 @@
   "lot_number": "S-014",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 11.0,
@@ -325,6 +339,7 @@
   "lot_number": "S-015",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 18.0,
@@ -348,6 +363,7 @@
   "lot_number": "S-016",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 25.0,
@@ -371,6 +387,7 @@
   "lot_number": "S-017",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 32.0,
@@ -394,6 +411,7 @@
   "lot_number": "S-018",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 39.0,
@@ -417,6 +435,7 @@
   "lot_number": "S-019",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -440,6 +459,7 @@
   "lot_number": "S-020",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 11.0,
@@ -463,6 +483,7 @@
   "lot_number": "S-021",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 18.0,
@@ -486,6 +507,7 @@
   "lot_number": "S-022",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 25.0,
@@ -509,6 +531,7 @@
   "lot_number": "S-023",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 32.0,
@@ -532,6 +555,7 @@
   "lot_number": "S-024",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 39.0,
@@ -555,6 +579,7 @@
   "lot_number": "S-025",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -578,6 +603,7 @@
   "lot_number": "S-026",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 11.0,
@@ -601,6 +627,7 @@
   "lot_number": "S-027",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 18.0,
@@ -624,6 +651,7 @@
   "lot_number": "S-028",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 25.0,
@@ -647,6 +675,7 @@
   "lot_number": "S-029",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 32.0,
@@ -670,6 +699,7 @@
   "lot_number": "S-030",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 39.0,
@@ -693,6 +723,7 @@
   "lot_number": "S-031",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 54.0,
@@ -716,6 +747,7 @@
   "lot_number": "S-032",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 61.0,
@@ -739,6 +771,7 @@
   "lot_number": "S-033",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 68.0,
@@ -762,6 +795,7 @@
   "lot_number": "S-034",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 75.0,
@@ -785,6 +819,7 @@
   "lot_number": "S-035",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 82.0,
@@ -808,6 +843,7 @@
   "lot_number": "S-036",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 89.0,
@@ -831,6 +867,7 @@
   "lot_number": "S-037",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 54.0,
@@ -854,6 +891,7 @@
   "lot_number": "S-038",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 61.0,
@@ -877,6 +915,7 @@
   "lot_number": "S-039",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 68.0,
@@ -900,6 +939,7 @@
   "lot_number": "S-040",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 75.0,
@@ -923,6 +963,7 @@
   "lot_number": "S-041",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 82.0,
@@ -946,6 +987,7 @@
   "lot_number": "S-042",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 89.0,
@@ -969,6 +1011,7 @@
   "lot_number": "S-043",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 54.0,
@@ -992,6 +1035,7 @@
   "lot_number": "S-044",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 61.0,
@@ -1015,6 +1059,7 @@
   "lot_number": "S-045",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 68.0,
@@ -1038,6 +1083,7 @@
   "lot_number": "S-046",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 75.0,
@@ -1061,6 +1107,7 @@
   "lot_number": "S-047",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 82.0,
@@ -1084,6 +1131,7 @@
   "lot_number": "S-048",
   "tier_key": "premium",
   "price": 30000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 89.0,
@@ -1107,6 +1155,7 @@
   "lot_number": "S-049",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 54.0,
@@ -1130,6 +1179,7 @@
   "lot_number": "S-050",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 61.0,
@@ -1153,6 +1203,7 @@
   "lot_number": "S-051",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 68.0,
@@ -1176,6 +1227,7 @@
   "lot_number": "S-052",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 75.0,
@@ -1199,6 +1251,7 @@
   "lot_number": "S-053",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 82.0,
@@ -1222,6 +1275,7 @@
   "lot_number": "S-054",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Sold",
   "polygon_pct": [
    {
     "x": 89.0,
@@ -1245,6 +1299,7 @@
   "lot_number": "S-055",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 4.0,
@@ -1268,6 +1323,7 @@
   "lot_number": "S-056",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 6.0,
@@ -1291,6 +1347,7 @@
   "lot_number": "S-057",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 8.0,
@@ -1314,6 +1371,7 @@
   "lot_number": "S-058",
   "tier_key": "standard",
   "price": 20000,
+  "status": "Available",
   "polygon_pct": [
    {
     "x": 10.0,
@@ -1337,6 +1395,7 @@
   "lot_number": "S-059",
   "tier_key": "estate",
   "price": 45000,
+  "status": "Reserved",
   "polygon_pct": [
    {
     "x": 60,
@@ -1360,6 +1419,7 @@
   "lot_number": "S-060",
   "tier_key": "reserve",
   "price": 60000,
+  "status": "Reserved",
   "polygon_pct": [
    {
     "x": 4,

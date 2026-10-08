@@ -5,6 +5,7 @@ import {
   ALLOWED_INQUIRY_INTERESTS,
   buildInquiryPayload,
   decideLeadTenant,
+  lotDisposition,
   sameInquiryAs,
   validateInquiryPayload,
 } from "../supabase/functions/_shared/inquiry-contract.ts";
@@ -102,6 +103,14 @@ test("lot-authoritative tenant decision covers every case", () => {
     decideLeadTenant({ lotRequested: false, lotTenantId: null, slugProvided: true, slugTenantId: null }).error,
     "Unknown development. Please check the listing link.",
   );
+});
+
+test("lot disposition: Available inquiry, Reserved waitlist, else unavailable", () => {
+  assert.equal(lotDisposition("Available"), "available");
+  assert.equal(lotDisposition("Reserved"), "waitlist");
+  for (const status of ["Sold", null, "", "Pending", "available", "RESERVED"]) {
+    assert.equal(lotDisposition(status), "unavailable", `status ${String(status)}`);
+  }
 });
 
 test("same-key fingerprint: identical, case/order-insensitive, null wildcard", () => {

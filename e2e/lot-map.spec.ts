@@ -58,6 +58,21 @@ function selectedLotCard(page: Page): Locator {
   return page.locator("strong", { hasText: /^Lot S-/ }).first();
 }
 
+/** Screen-space centre of the hit polygon for a lot number (e.g. "S-057"). */
+async function lotCenter(page: Page, lotNumber: string): Promise<{ x: number; y: number }> {
+  return page.evaluate((lot) => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    if (!svg) throw new Error("map svg not found");
+    const poly = [...svg.querySelectorAll('polygon[fill="transparent"]')].find((p) =>
+      (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lot} `),
+    ) as SVGPolygonElement | undefined;
+    if (!poly?.getScreenCTM()) throw new Error(`lot ${lot} not found`);
+    const box = poly.getBBox();
+    const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(poly.getScreenCTM()!);
+    return { x: pt.x, y: pt.y };
+  }, lotNumber);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto(DEMO_URL);
   await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
@@ -99,6 +114,41 @@ test("hit-layer edge click still selects", async ({ page }) => {
   const pt = await hitEdge(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
+});
+
+test("tiny-lot tap selects the smallest lot under the cursor", async ({ page }) => {
+  // S-055…S-058 are 1.4-unit lots 0.6 apart: their 14px hit paddings
+  // overlap at 1x. Paint order is smallest-on-top, so the tap must lock
+  // exactly S-057 — not the topmost-in-data-order neighbor S-058.
+  const pt = await lotCenter(page, "S-057");
+  await page.mouse.click(pt.x, pt.y);
+  await expect(page.locator("strong", { hasText: /^Lot S-057$/ }).first()).toBeVisible();
+});
+
+test("Reset control stays clickable with the detail card open", async ({ page }) => {
+  // Phone viewports: the bottom sheet used to cover the Reset button
+  // (controls sat at bottom-48, inside the card's footprint). The column is
+  // now lifted above the measured card height: the centre of Reset must
+  // hit-test to the button itself.
+  const pt = await hitCenter(page, 5);
+  await page.mouse.click(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  const resettable = await page.evaluate(() => {
+    const btn = document.querySelector('main button[aria-label="Reset zoom"]') as HTMLElement | null;
+    if (!btn) return "no-button";
+    const r = btn.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return (hit as Element | null)?.closest?.('button[aria-label="Reset zoom"]') ? "hit" : `covered-by-${hit?.tagName ?? "null"}`;
+  });
+  expect(resettable).toBe("hit");
+});
+
+test("Sold lots offer no inquiry action", async ({ page }) => {
+  const pt = await lotCenter(page, "S-054");
+  await page.mouse.click(pt.x, pt.y);
+  await expect(page.locator("strong", { hasText: /^Lot S-054$/ }).first()).toBeVisible();
+  await expect(page.getByText("Sold", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Inquire About Lot|Join Waitlist)/ })).toHaveCount(0);
 });
 
 test("Zoom to lot button zooms to the lot (mouse)", async ({ page }) => {

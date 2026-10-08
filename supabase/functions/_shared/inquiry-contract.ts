@@ -180,8 +180,7 @@ export function decideLeadTenant(input: {
   return { tenantId: input.slugTenantId };
 }
 
-/** Identifying core of a submission (message/page URL may vary on retry). */
-export interface InquiryFingerprint {
+/** Identifying core of a submission (message/page URL may vary on retry). */export interface InquiryFingerprint {
   name: string;
   email: string;
   phone: string;
@@ -204,4 +203,17 @@ export function sameInquiryAs(a: InquiryFingerprint, b: InquiryFingerprint): boo
       b.interests === null ||
       (a.interests.length === b.interests.length && a.interests.every((interest) => b.interests!.includes(interest))))
   );
+}
+
+/**
+ * What an inquiry means for a lot status: Available → normal inquiry,
+ * Reserved → waitlist request (no availability promise), anything else
+ * (Sold, …) → not requestable.
+ */
+export type LotDisposition = "available" | "waitlist" | "unavailable";
+
+export function lotDisposition(status: string | null): LotDisposition {
+  if (status === "Available") return "available";
+  if (status === "Reserved") return "waitlist";
+  return "unavailable";
 }
