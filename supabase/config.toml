@@ -1,0 +1,13 @@
+# Supabase project config. Linked project: Wamule Development Staging
+# (kvocwmrcuhiaezlcgzjf) — see supabase/.temp/linked-project.json.
+project_id = "kvocwmrcuhiaezlcgzjf"
+
+# Public embed endpoints: anonymous buyers call these from any site, so JWT
+# verification stays OFF. A redeploy without --no-verify-jwt re-enables it
+# and breaks the public map with 401s (recovered 2026-10-09) — this pin is
+# the guard. All other functions keep the default (verify on).
+[functions.submit-public-inquiry]
+verify_jwt = false
+
+[functions.get-public-lots]
+verify_jwt = false
