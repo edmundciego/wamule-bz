@@ -23,7 +23,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "01",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "02",
@@ -49,7 +54,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "02",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "03",
@@ -75,7 +85,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "03",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "04",
@@ -101,7 +116,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "04",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "05",
@@ -127,7 +147,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "05",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "06",
@@ -153,7 +178,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "06",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "07",
@@ -179,7 +209,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "07",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "08",
@@ -205,7 +240,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "08",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "09",
@@ -231,7 +271,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "09",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "10",
@@ -256,8 +301,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "10",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "11",
@@ -283,7 +332,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "11",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "12",
@@ -309,7 +363,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "12",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "13",
@@ -335,7 +394,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "13",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "14",
@@ -361,7 +425,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "14",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "15",
@@ -387,7 +456,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "15",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "16",
@@ -413,7 +487,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "16",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "17",
@@ -439,7 +518,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "17",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "18",
@@ -465,7 +549,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "18",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "19",
@@ -491,7 +580,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "19",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "20",
@@ -517,7 +611,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "20",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "21",
@@ -543,7 +642,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "21",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "22",
@@ -569,7 +673,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "22",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "23",
@@ -595,7 +704,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "23",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "24",
@@ -621,7 +735,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "24",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "25",
@@ -647,7 +766,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "25",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "26",
@@ -673,7 +797,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "26",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "27",
@@ -699,7 +828,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "27",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "28",
@@ -724,8 +858,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "28",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "29",
@@ -751,7 +889,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "29",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "30",
@@ -777,7 +920,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "30",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "31",
@@ -803,7 +951,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "31",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "32",
@@ -829,7 +982,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "32",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "33",
@@ -855,7 +1013,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "33",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "34",
@@ -881,7 +1044,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "34",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "35",
@@ -907,7 +1075,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "35",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "36",
@@ -933,7 +1106,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "36",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "37",
@@ -959,7 +1137,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "37",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "38",
@@ -985,7 +1168,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "38",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "39",
@@ -1011,7 +1199,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "39",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "40",
@@ -1036,8 +1229,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "40",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "41",
@@ -1063,7 +1260,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "41",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "42",
@@ -1089,7 +1291,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "42",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "43",
@@ -1115,7 +1322,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "43",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "44",
@@ -1141,7 +1353,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "44",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "45",
@@ -1167,7 +1384,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "45",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "46",
@@ -1193,7 +1415,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "46",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "47",
@@ -1219,7 +1446,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "47",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "48",
@@ -1245,7 +1477,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "48",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "49",
@@ -1271,7 +1508,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "49",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "50",
@@ -1297,7 +1539,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "50",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "51",
@@ -1323,7 +1570,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "51",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "52",
@@ -1348,8 +1600,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "52",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "53",
@@ -1374,8 +1630,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": null,
+  "printed_area_sqm": null,
+  "match_status": "unmatched",
+  "area_status": "missing"
  },
  {
   "lot_number": "54",
@@ -1401,7 +1661,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "54",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "55",
@@ -1427,7 +1692,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "55",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "56",
@@ -1453,7 +1723,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "56",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "57",
@@ -1479,7 +1754,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "57",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "58",
@@ -1505,7 +1785,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "58",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "59",
@@ -1531,7 +1816,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "59",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "60",
@@ -1557,7 +1847,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "60",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "61",
@@ -1583,7 +1878,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "61",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "62",
@@ -1609,7 +1909,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "62",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "63",
@@ -1635,7 +1940,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "63",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "64",
@@ -1660,8 +1970,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "64",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "65",
@@ -1687,7 +2001,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "65",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "66",
@@ -1713,7 +2032,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "66",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "67",
@@ -1739,7 +2063,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "67",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "68",
@@ -1765,7 +2094,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "68",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "69",
@@ -1791,7 +2125,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "69",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "70",
@@ -1816,8 +2155,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "70",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "71",
@@ -1843,7 +2186,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "71",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "72",
@@ -1869,7 +2217,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "72",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "73",
@@ -1895,7 +2248,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "73",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "74",
@@ -1921,7 +2279,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "74",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "75",
@@ -1947,7 +2310,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "75",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "76",
@@ -1973,7 +2341,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "76",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "77",
@@ -1999,7 +2372,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "77",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "78",
@@ -2025,7 +2403,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "78",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "79",
@@ -2051,7 +2434,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "79",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "80",
@@ -2077,7 +2465,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "80",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "81",
@@ -2103,7 +2496,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "81",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "82",
@@ -2129,7 +2527,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "82",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "83",
@@ -2155,7 +2558,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "83",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "84",
@@ -2181,7 +2589,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "84",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "85",
@@ -2207,7 +2620,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "85",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "86",
@@ -2233,7 +2651,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "86",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "87",
@@ -2259,7 +2682,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "87",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "88",
@@ -2284,8 +2712,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "88",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "89",
@@ -2311,7 +2743,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "89",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9519
  },
  {
   "lot_number": "90",
@@ -2337,7 +2774,12 @@
   ],
   "confidence": 1.0,
   "needs_review": false,
-  "source": "synthetic"
+  "source": "synthetic",
+  "printed_lot_number": "90",
+  "printed_area_sqm": 564.85,
+  "match_status": "matched",
+  "area_status": "ok",
+  "area_ratio": 0.9517
  },
  {
   "lot_number": "91",
@@ -2362,8 +2804,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": null,
+  "printed_area_sqm": null,
+  "match_status": "duplicate",
+  "area_status": "missing"
  },
  {
   "lot_number": "92",
@@ -2388,8 +2834,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "92",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "93",
@@ -2414,8 +2864,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "93",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "94",
@@ -2440,8 +2894,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "94",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "95",
@@ -2466,8 +2924,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "95",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "96",
@@ -2492,8 +2954,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "96",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "97",
@@ -2518,8 +2984,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "97",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  },
  {
   "lot_number": "98",
@@ -2544,8 +3014,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": null,
+  "printed_area_sqm": null,
+  "match_status": "duplicate",
+  "area_status": "missing"
  },
  {
   "lot_number": "99",
@@ -2570,8 +3044,12 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": null,
+  "printed_area_sqm": null,
+  "match_status": "duplicate",
+  "area_status": "missing"
  },
  {
   "lot_number": "100",
@@ -2596,7 +3074,11 @@
    }
   ],
   "confidence": 1.0,
-  "needs_review": false,
-  "source": "synthetic"
+  "needs_review": true,
+  "source": "synthetic",
+  "printed_lot_number": "100",
+  "printed_area_sqm": null,
+  "match_status": "matched",
+  "area_status": "missing"
  }
 ]

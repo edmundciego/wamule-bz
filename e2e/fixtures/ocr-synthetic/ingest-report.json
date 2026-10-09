@@ -66,7 +66,7 @@
       }
      },
      "gx": 1449.5,
-     "gy": 1911.0
+     "gy": 1906.0
     },
     "rapidocr": {
      "tokens_total": 190,
@@ -126,7 +126,7 @@
       }
      },
      "gx": 1449.5,
-     "gy": 1911.0
+     "gy": 1906.0
     }
    },
    "winner": "tesseract",
@@ -137,17 +137,17 @@
    "production": {
     "engine": "tesseract+rotation",
     "tokens_total": 190,
-    "tokens_matched": 188,
-    "token_accuracy": 0.9895,
-    "char_accuracy": 0.9958,
+    "tokens_matched": 189,
+    "token_accuracy": 0.9947,
+    "char_accuracy": 0.9975,
     "per_class": {
      "number": {
       "total": 100,
-      "matched": 98,
-      "lev": 5,
+      "matched": 99,
+      "lev": 3,
       "chars": 201,
-      "token_accuracy": 0.98,
-      "char_accuracy": 0.9751
+      "token_accuracy": 0.99,
+      "char_accuracy": 0.9851
      },
      "area": {
       "total": 90,
@@ -177,11 +177,11 @@
      },
      "estate": {
       "total": 47,
-      "matched": 46,
-      "lev": 3,
+      "matched": 47,
+      "lev": 1,
       "chars": 292,
-      "token_accuracy": 0.9787,
-      "char_accuracy": 0.9897
+      "token_accuracy": 1.0,
+      "char_accuracy": 0.9966
      },
      "reserve": {
       "total": 47,
@@ -193,7 +193,7 @@
      }
     },
     "gx": 1449.5,
-    "gy": 1911.0
+    "gy": 1906.0
    },
    "pass": true
   },
@@ -204,8 +204,8 @@
   }
  },
  "matching": {
-  "match_rate": 0.97,
-  "matched": 97,
+  "match_rate": 0.96,
+  "matched": 96,
   "total": 100,
   "per_tier": {
    "standard": {
@@ -224,9 +224,9 @@
    },
    "estate": {
     "lots": 25,
-    "matched": 24,
+    "matched": 23,
     "area_ok": 22,
-    "match_rate": 0.96,
+    "match_rate": 0.92,
     "area_pass_rate": 0.88
    },
    "reserve": {
@@ -253,9 +253,17 @@
      "tesseract-rot9",
      "tesseract-rot10"
     ]
+   },
+   {
+    "lot": "99",
+    "kind": "multi-token",
+    "tokens": [
+     "tesseract-rot11",
+     "tesseract-rot12"
+    ]
    }
   ],
-  "duplicate_count": 2
+  "duplicate_count": 3
  },
  "area_validation": {
   "scale": {
