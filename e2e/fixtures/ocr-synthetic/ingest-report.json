@@ -1,0 +1,278 @@
+{
+ "ocr": {
+  "engine": "tesseract+rotation",
+  "engines_compared": [
+   "rapidocr",
+   "tesseract",
+   "tesseract+rotation"
+  ],
+  "comparison": {
+   "results": {
+    "tesseract": {
+     "tokens_total": 190,
+     "tokens_matched": 179,
+     "token_accuracy": 0.9421,
+     "char_accuracy": 0.9798,
+     "per_class": {
+      "number": {
+       "total": 100,
+       "matched": 89,
+       "lev": 24,
+       "chars": 201,
+       "token_accuracy": 0.89,
+       "char_accuracy": 0.8806
+      },
+      "area": {
+       "total": 90,
+       "matched": 90,
+       "lev": 0,
+       "chars": 990,
+       "token_accuracy": 1.0,
+       "char_accuracy": 1.0
+      }
+     },
+     "per_tier": {
+      "standard": {
+       "total": 48,
+       "matched": 45,
+       "lev": 6,
+       "chars": 303,
+       "token_accuracy": 0.9375,
+       "char_accuracy": 0.9802
+      },
+      "premium": {
+       "total": 48,
+       "matched": 46,
+       "lev": 4,
+       "chars": 303,
+       "token_accuracy": 0.9583,
+       "char_accuracy": 0.9868
+      },
+      "estate": {
+       "total": 47,
+       "matched": 44,
+       "lev": 7,
+       "chars": 292,
+       "token_accuracy": 0.9362,
+       "char_accuracy": 0.976
+      },
+      "reserve": {
+       "total": 47,
+       "matched": 44,
+       "lev": 7,
+       "chars": 293,
+       "token_accuracy": 0.9362,
+       "char_accuracy": 0.9761
+      }
+     },
+     "gx": 1449.5,
+     "gy": 1911.0
+    },
+    "rapidocr": {
+     "tokens_total": 190,
+     "tokens_matched": 90,
+     "token_accuracy": 0.4737,
+     "char_accuracy": 0.1511,
+     "per_class": {
+      "number": {
+       "total": 100,
+       "matched": 90,
+       "lev": 21,
+       "chars": 201,
+       "token_accuracy": 0.9,
+       "char_accuracy": 0.8955
+      },
+      "area": {
+       "total": 90,
+       "matched": 0,
+       "lev": 990,
+       "chars": 990,
+       "token_accuracy": 0.0,
+       "char_accuracy": 0.0
+      }
+     },
+     "per_tier": {
+      "standard": {
+       "total": 48,
+       "matched": 23,
+       "lev": 257,
+       "chars": 303,
+       "token_accuracy": 0.4792,
+       "char_accuracy": 0.1518
+      },
+      "premium": {
+       "total": 48,
+       "matched": 23,
+       "lev": 257,
+       "chars": 303,
+       "token_accuracy": 0.4792,
+       "char_accuracy": 0.1518
+      },
+      "estate": {
+       "total": 47,
+       "matched": 22,
+       "lev": 248,
+       "chars": 292,
+       "token_accuracy": 0.4681,
+       "char_accuracy": 0.1507
+      },
+      "reserve": {
+       "total": 47,
+       "matched": 22,
+       "lev": 249,
+       "chars": 293,
+       "token_accuracy": 0.4681,
+       "char_accuracy": 0.1502
+      }
+     },
+     "gx": 1449.5,
+     "gy": 1911.0
+    }
+   },
+   "winner": "tesseract",
+   "thresholds": {
+    "token": 0.95,
+    "char": 0.98
+   },
+   "production": {
+    "engine": "tesseract+rotation",
+    "tokens_total": 190,
+    "tokens_matched": 188,
+    "token_accuracy": 0.9895,
+    "char_accuracy": 0.9958,
+    "per_class": {
+     "number": {
+      "total": 100,
+      "matched": 98,
+      "lev": 5,
+      "chars": 201,
+      "token_accuracy": 0.98,
+      "char_accuracy": 0.9751
+     },
+     "area": {
+      "total": 90,
+      "matched": 90,
+      "lev": 0,
+      "chars": 990,
+      "token_accuracy": 1.0,
+      "char_accuracy": 1.0
+     }
+    },
+    "per_tier": {
+     "standard": {
+      "total": 48,
+      "matched": 47,
+      "lev": 2,
+      "chars": 303,
+      "token_accuracy": 0.9792,
+      "char_accuracy": 0.9934
+     },
+     "premium": {
+      "total": 48,
+      "matched": 48,
+      "lev": 0,
+      "chars": 303,
+      "token_accuracy": 1.0,
+      "char_accuracy": 1.0
+     },
+     "estate": {
+      "total": 47,
+      "matched": 46,
+      "lev": 3,
+      "chars": 292,
+      "token_accuracy": 0.9787,
+      "char_accuracy": 0.9897
+     },
+     "reserve": {
+      "total": 47,
+      "matched": 47,
+      "lev": 0,
+      "chars": 293,
+      "token_accuracy": 1.0,
+      "char_accuracy": 1.0
+     }
+    },
+    "gx": 1449.5,
+    "gy": 1911.0
+   },
+   "pass": true
+  },
+  "digit_height_median": 25.0,
+  "upscaled": {
+   "applied": false,
+   "factor": 1.0
+  }
+ },
+ "matching": {
+  "match_rate": 0.97,
+  "matched": 97,
+  "total": 100,
+  "per_tier": {
+   "standard": {
+    "lots": 25,
+    "matched": 24,
+    "area_ok": 22,
+    "match_rate": 0.96,
+    "area_pass_rate": 0.88
+   },
+   "premium": {
+    "lots": 25,
+    "matched": 24,
+    "area_ok": 21,
+    "match_rate": 0.96,
+    "area_pass_rate": 0.84
+   },
+   "estate": {
+    "lots": 25,
+    "matched": 24,
+    "area_ok": 22,
+    "match_rate": 0.96,
+    "area_pass_rate": 0.88
+   },
+   "reserve": {
+    "lots": 25,
+    "matched": 25,
+    "area_ok": 17,
+    "match_rate": 1.0,
+    "area_pass_rate": 0.68
+   }
+  },
+  "duplicates": [
+   {
+    "lot": "91",
+    "kind": "multi-token",
+    "tokens": [
+     "tesseract-rot0",
+     "tesseract-rot1"
+    ]
+   },
+   {
+    "lot": "98",
+    "kind": "multi-token",
+    "tokens": [
+     "tesseract-rot9",
+     "tesseract-rot10"
+    ]
+   }
+  ],
+  "duplicate_count": 2
+ },
+ "area_validation": {
+  "scale": {
+   "reference": "road 60.0ft",
+   "measured_px": 123.0,
+   "ft_per_px": 0.4878
+  },
+  "pass_rate": 1.0,
+  "median_ratio": 0.9519,
+  "tolerance": 0.08,
+  "outliers_redraw_queue": []
+ },
+ "paint_out_gate": {
+  "matched_ok": true,
+  "area_ok": true,
+  "manual_review_done": false,
+  "manual_review_pending": [],
+  "pass": false
+ }
+}

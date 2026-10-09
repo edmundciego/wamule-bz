@@ -21,6 +21,12 @@ e2e/fixtures/*/ocr-comparison.json
 e2e/fixtures/*/ocr-qa.html
 # ...except the hand-written matcher unit input.
 !e2e/fixtures/ocr-unit/ocr.json
+# ...and the committed fixture run report (golden evidence of the gate).
+!e2e/fixtures/ocr-synthetic/ingest-report.json
+
+# Python bytecode from pipeline scripts.
+__pycache__/
+*.pyc
 
 # Supabase local state
 supabase/.temp/
