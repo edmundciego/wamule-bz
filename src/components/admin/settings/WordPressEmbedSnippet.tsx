@@ -16,6 +16,7 @@ export function WordPressEmbedSnippet() {
   const [height, setHeight] = useState("700px");
   const [radius, setRadius] = useState("12px");
   const [filter, setFilter] = useState<EmbedFilter>("available");
+  const [project, setProject] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -66,8 +67,10 @@ export function WordPressEmbedSnippet() {
   }, []);
 
   const baseUrl = window.location.origin;
+  const projectPath = project.trim().toLowerCase();
+  const mapPath = projectPath ? `/embed/${slug}/${projectPath}` : `/embed/${slug}`;
   const snippet = slug
-    ? `<iframe src="${baseUrl}/embed/${slug}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
+    ? `<iframe src="${baseUrl}${mapPath}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
     : "";
 
   async function handleCopy() {
@@ -114,6 +117,14 @@ export function WordPressEmbedSnippet() {
                 <option value="available">Available only</option>
               </Select>
             </Field>
+            <Field label="Project (optional — blank aliases the default project)">
+              <Input
+                value={project}
+                onChange={(event) => setProject(event.target.value)}
+                placeholder="default project"
+                maxLength={60}
+              />
+            </Field>
           </div>
           <Field label="Custom height (optional override)">
             <Input
@@ -138,7 +149,14 @@ export function WordPressEmbedSnippet() {
             </Button>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Live map for tenant <strong>{slug}</strong>. Works in WordPress, Webflow, or any site that accepts iframes.
+            Live map for tenant <strong>{slug}</strong>
+            {projectPath ? (
+              <>
+                {" "}project <strong>{projectPath}</strong>
+              </>
+            ) : (
+              <> (default project)</>
+            )}. Works in WordPress, Webflow, or any site that accepts iframes.
             Inquiries submitted inside the embed route to your tenant pipeline automatically.
             The snippet allows fullscreen mode; older embeds need <code>allow=&quot;fullscreen&quot;</code> added to the iframe tag for it to work.
           </p>

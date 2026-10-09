@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { allowlistTheme } from "../../../src/lib/theme.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -114,6 +115,9 @@ Deno.serve(async (request) => {
   if (!tenantParam) {
     return json({ error: "Missing required query parameter: tenant (organization slug or inbound alias)." }, 400);
   }
+  // Optional project slug (?project=): explicit lookup scoped to the tenant.
+  // Absent = alias to the tenant's default project (see resolveProject).
+  const projectParam = (url.searchParams.get("project") ?? "").trim().toLowerCase() || null;
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -129,7 +133,7 @@ Deno.serve(async (request) => {
   const [{ data: parcels, error: parcelsError }, branding, tiersByKey, activeVersionId] = await Promise.all([
     supabase
       .from("parcels")
-      .select("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id")
+      .select("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id")
       .eq("tenant_id", organization.id)
       .order("lot_number", { ascending: true }),
     loadBranding(supabase, organization),
@@ -142,20 +146,40 @@ Deno.serve(async (request) => {
     return json({ error: "Could not load lot availability." }, 500);
   }
 
+  // Project scoping: explicit slug resolves (404 when unknown); absent
+  // aliases the default project, else the oldest project, else unscoped
+  // (no projects yet = legacy single-map behavior). Legacy rows with NULL
+  // project_id render under the default project only.
+  const project = await resolveProject(supabase, organization.id, projectParam);
+  if (projectParam && !project) {
+    return json({ error: "Project not found." }, 404);
+  }
+  const inProject = (parcel: Record<string, unknown>) => {
+    const pid = parcel.project_id;
+    if (!project) return true;
+    if (pid === null || pid === undefined) return project.isDefault;
+    return String(pid) === project.id;
+  };
+
   // Version scoping: rows aligned to a superseded map stay hidden; NULL
   // (legacy/unversioned) rows always stay visible so existing tenants' maps
   // never blank on deploy. Strict equality alone would hide every legacy lot.
   const visible = (parcels ?? []).filter(
     (parcel) =>
-      (parcel as Record<string, unknown>).masterplan_version_id == null ||
-      (parcel as Record<string, unknown>).masterplan_version_id === activeVersionId,
+      inProject(parcel as Record<string, unknown>) &&
+      ((parcel as Record<string, unknown>).masterplan_version_id == null ||
+        (parcel as Record<string, unknown>).masterplan_version_id === activeVersionId),
   );
+
+  const theme = await loadTheme(supabase, organization.id);
 
   return json({
     tenant: { name: organization.name, slug: organization.slug },
+    project: project ? { slug: project.slug, name: project.name } : null,
     masterplan_image_url: branding.masterplanImageUrl,
     masterplan_preview_url: branding.masterplanPreviewUrl,
     branding: branding.public,
+    theme,
     parcels: visible.map((parcel) => toPublicParcel(parcel as Record<string, unknown>, tiersByKey)),
   });
 });
@@ -253,8 +277,7 @@ async function loadTiers(
   return new Map((data ?? []).map((row) => [(row as TierRow).tier_key, row as TierRow]));
 }
 
-async function loadActiveVersionId(
-  supabase: ReturnType<typeof createClient>,
+async function loadActiveVersionId(  supabase: ReturnType<typeof createClient>,
   tenantId: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
@@ -269,6 +292,52 @@ async function loadActiveVersionId(
   }
   const id = (data as { id?: unknown } | null)?.id;
   return typeof id === "string" ? id : null;
+}
+
+type ResolvedProject = { id: string; slug: string; name: string; isDefault: boolean } | null;
+
+/**
+ * Explicit project lookup scoped to the tenant (never by Host header).
+ * slug=null → default project → oldest project → null (unscoped legacy).
+ */
+async function resolveProject(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  slug: string | null,
+): Promise<ResolvedProject> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id, slug, name, is_default, created_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("get-public-lots project lookup failed", error.message);
+    return null;
+  }
+  const rows = ((data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean }>);
+  if (slug) return rows.find((row) => row.slug.toLowerCase() === slug) ?? null;
+  return rows.find((row) => row.is_default) ?? rows[0] ?? null;
+}
+
+/**
+ * Tenant theme, allowlisted server-side (unknown keys dropped, colors
+ * hex-gated, texts stripped). Null when the tenant never published one —
+ * clients fall back to built-in defaults.
+ */
+async function loadTheme(supabase: ReturnType<typeof createClient>, tenantId: string) {
+  const { data, error } = await supabase
+    .from("business_settings")
+    .select("value")
+    .eq("tenant_id", tenantId)
+    .eq("key", "tenant_theme")
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("get-public-lots theme lookup failed", error.message);
+    return null;
+  }
+  const value = (data as { value?: unknown } | null)?.value as Record<string, unknown> | undefined;
+  const cssUrl = typeof value?.css_url === "string" ? (value.css_url as string) : null;
+  return allowlistTheme(value, cssUrl);
 }
 
 function sanitizePolygon(value: unknown): MapPoint[] {

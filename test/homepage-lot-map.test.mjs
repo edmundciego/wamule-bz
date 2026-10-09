@@ -31,7 +31,8 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   assert.match(map, /if \(pickMode && parcel\.status === "Available"\) onToggleLot\(parcel\)/);
   assert.doesNotMatch(map, /setTimeout\(\(\) => setInquiryLot/);
   // Reserved lots offer a waitlist action; Sold lots offer no inquiry action.
-  assert.match(map, /Join Waitlist for Lot/);
+  // (Button copy comes from the card theme config, not literals.)
+  assert.match(map, /waitlistText/);
   assert.match(modal, /Join the Waitlist for Lot/);
   assert.match(modal, /waitlist\?: boolean/);
   assert.match(map, /Remove Lot/);

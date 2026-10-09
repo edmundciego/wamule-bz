@@ -30,6 +30,7 @@ export default function App() {
       <Route path="/" element={<ApplicationPage />} />
       <Route path="/apply" element={<ApplicationPage />} />
       <Route path="/embed/:tenant_slug" element={<EmbeddableMapPage />} />
+      <Route path="/embed/:tenant_slug/:project_slug" element={<EmbeddableMapPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/logout" element={<LogoutPage />} />
       <Route path="/admin" element={<Navigate to="/dashboard" replace />} />

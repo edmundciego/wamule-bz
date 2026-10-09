@@ -2,7 +2,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { PublicLotMap, type PublicLotColourView, type PublicLotFilter } from "../../components/public/PublicLotMap";
 
 export function EmbeddableMapPage() {
-  const { tenant_slug = "" } = useParams<{ tenant_slug: string }>();
+  const { tenant_slug = "", project_slug } = useParams<{ tenant_slug: string; project_slug?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const initialFilter: PublicLotFilter = searchParams.get("filter") === "available" ? "available" : "all";
@@ -20,6 +20,7 @@ export function EmbeddableMapPage() {
     <main className="flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>
       <PublicLotMap
         tenantSlug={tenant_slug}
+        projectSlug={project_slug}
         enableInquiry
         showPrices
         initialFilter={initialFilter}

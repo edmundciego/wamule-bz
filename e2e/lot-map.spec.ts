@@ -90,6 +90,17 @@ test("demo map loads lots over the background", async ({ page }) => {
   expect(await lotCount(page)).toBeGreaterThan(50);
 });
 
+test("project route aliases the default project", async ({ page }) => {
+  // /embed/:tenant is the default-project alias of /embed/:tenant/:project.
+  // On the hermetic demo fixture (no DB projects) both serve the same lots.
+  await page.goto("/embed/demo/phase-1?demo=1");
+  await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
+  const aliased = await lotCount(page);
+  await page.goto(DEMO_URL);
+  await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
+  expect(await lotCount(page)).toBe(aliased);
+});
+
 test("mouse click selects a lot and locks the card", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
@@ -157,18 +168,24 @@ test("Reset control stays clickable with the detail card open", async ({ page })
   // Phone viewports: the bottom sheet used to cover the Reset button
   // (controls sat at bottom-48, inside the card's footprint). The column is
   // now lifted above the measured card height: the centre of Reset must
-  // hit-test to the button itself.
+  // hit-test to the button itself (poll: the lift applies on the effect
+  // after selection commits).
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
-  const resettable = await page.evaluate(() => {
-    const btn = document.querySelector('main button[aria-label="Reset zoom"]') as HTMLElement | null;
-    if (!btn) return "no-button";
-    const r = btn.getBoundingClientRect();
-    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-    return (hit as Element | null)?.closest?.('button[aria-label="Reset zoom"]') ? "hit" : `covered-by-${hit?.tagName ?? "null"}`;
-  });
-  expect(resettable).toBe("hit");
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const btn = document.querySelector('main button[aria-label="Reset zoom"]') as HTMLElement | null;
+          if (!btn) return "no-button";
+          const r = btn.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return (hit as Element | null)?.closest?.('button[aria-label="Reset zoom"]') ? "hit" : `covered-by-${hit?.tagName ?? "null"}`;
+        }),
+      { timeout: 5000 },
+    )
+    .toBe("hit");
 });
 
 test("Sold lots offer no inquiry action", async ({ page }) => {
@@ -420,6 +437,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     {
       const pt = await screenCenterOf(sample.largest.id);
       await page.mouse.move(pt.x, pt.y);
+      await page.waitForTimeout(300);
     }
     const m = await page.evaluate((lotNumber) => {
       const svg = document.querySelector("main svg") as SVGSVGElement | null;

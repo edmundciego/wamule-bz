@@ -68,9 +68,10 @@ test("existing migration suite keeps SECURITY DEFINER functions pinnable by the 
 test("get-public-lots rejects unauthorized field selects and allowlists the public payload", async () => {
   const fn = await read("supabase/functions/get-public-lots/index.ts");
 
-  // Tight select bounds: public-safe parcel columns plus the tier/version
-  // inputs needed server-side for price math and version scoping.
-  assert.match(fn, /\.select\("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id"\)/);
+  // Tight select bounds: public-safe parcel columns plus the tier/version/
+  // project inputs needed server-side for price math, version and project
+  // scoping (all stripped from the payload below).
+  assert.match(fn, /\.select\("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id"\)/);
 
   // Sensitive columns must never be requested...
   for (const forbidden of ["zoning", "authorized_by", "internal_notes", "created_by", "auth_user_id", "gemini_api_key", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
@@ -95,10 +96,13 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
     "Public parcel allowlist must contain exactly the eleven public-safe fields.",
   );
 
-  // Server-side price/version inputs must not leak into the payload.
-  for (const hidden of ["price_override_cents", "masterplan_version_id", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
+  // Server-side price/version/project inputs must not leak into the payload.
+  for (const hidden of ["price_override_cents", "masterplan_version_id", "project_id", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
     assert.ok(!allowlisted.includes(hidden), `Public payload must not contain ${hidden}.`);
   }
+
+  // Theme comes only from the shared allowlist (unknown keys dropped).
+  assert.match(fn, /allowlistTheme/);
 
   // Response mapping must route through the allowlist serializer.
   assert.match(fn, /parcels: visible\.map\(\(parcel\) => toPublicParcel/);

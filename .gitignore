@@ -12,6 +12,9 @@ dist/
 graphify-out/
 out/
 e2e/fixtures/hopkins/
+# Tenant packages: scaffolding is committed; working areas never are.
+tenants/*/source/
+tenants/*/build/
 
 # Supabase local state
 supabase/.temp/

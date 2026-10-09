@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn, formatAreaDualUnit, money } from "../../lib/utils";
+import {
+  allowlistTheme,
+  applyCardText,
+  buildThemeCssVars,
+  DEFAULT_CARD_CONFIG,
+  type LotMapTheme,
+} from "../../lib/theme";
 import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 
@@ -21,10 +28,13 @@ export interface PublicLotParcel {
 
 interface MapPayload {
   tenant: { name: string; slug: string };
+  project: { slug: string; name: string } | null;
   masterplan_image_url: string | null;
   /** Mobile-capped rendition; null until published (clients use full image). */
   masterplan_preview_url: string | null;
   branding: { company_name: string; logo_url: string; short_description: string };
+  /** Allowlisted tenant theme; null until published (built-in defaults). */
+  theme: LotMapTheme | null;
   parcels: PublicLotParcel[];
 }
 
@@ -33,6 +43,8 @@ export type PublicLotColourView = "status" | "tier";
 
 interface PublicLotMapProps {
   tenantSlug: string;
+  /** Optional project slug (/embed/:tenant/:project). Absent = tenant default. */
+  projectSlug?: string;
   /** Controlled highlight in pick mode. Omit for unmanaged inquiry highlighting. */
   selectedIds?: number[];
   /** Pick mode: clicking an Available lot toggles it. Absent = inquiry mode. */
@@ -160,6 +172,7 @@ function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: st
 
 export function PublicLotMap({
   tenantSlug,
+  projectSlug,
   selectedIds,
   onToggleLot,
   showPrices = true,
@@ -344,8 +357,10 @@ export function PublicLotMap({
         if (cancelled) return;
         setPayload({
           tenant: { name: "Hopkins Grove (preview)", slug: "demo" },
+          project: null,
           masterplan_image_url: `${base}/masterplan_background.webp`,
           masterplan_preview_url: null,
+          theme: null,
           branding: { company_name: "Hopkins Grove (preview)", logo_url: "", short_description: "" },
           parcels,
         });
@@ -368,7 +383,7 @@ export function PublicLotMap({
       setError(null);
       try {
         const response = await fetch(
-          `${baseUrl}/functions/v1/get-public-lots?tenant=${encodeURIComponent(tenantSlug)}`,
+          `${baseUrl}/functions/v1/get-public-lots?tenant=${encodeURIComponent(tenantSlug)}${projectSlug ? `&project=${encodeURIComponent(projectSlug)}` : ""}`,
           { headers: { apikey: anonKey } },
         );
         const body = (await response.json().catch(() => ({}))) as Partial<MapPayload> & { error?: string };
@@ -399,7 +414,7 @@ export function PublicLotMap({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug, demoDataUrl]);
+  }, [tenantSlug, projectSlug, demoDataUrl]);
 
   const tierOptions = useMemo(() => {
     const byKey = new Map<string, { label: string; color: string }>();
@@ -464,6 +479,17 @@ export function PublicLotMap({
   }, [masterplanUrl]);
 
   const highlighted = selectedIds ?? (internalSelectedId !== null ? [internalSelectedId] : []);
+  // Tenant theme (allowlisted server-side; built-in defaults until the
+  // tenant publishes one). Tokens become per-container CSS variables so two
+  // embeds never share state; card copy/flags come from the same object.
+  const theme: LotMapTheme = useMemo(
+    () => allowlistTheme(payload?.theme ?? null, payload?.theme?.cssUrl ?? null),
+    [payload?.theme],
+  );
+  const themeVars = useMemo(() => buildThemeCssVars(theme), [theme]);
+  const cardConfig = theme.card ?? DEFAULT_CARD_CONFIG;
+  // Sanitized to [a-z0-9-] so it always matches the overrides.css scope rule.
+  const tenantScope = `lotmap-t-${tenantSlug.toLowerCase().replace(/[^a-z0-9-]/g, "")}`;
   // Selection-locked detail card: hover NEVER drives this. Hover only
   // affects polygon styling; the card follows the locked selection.
   const focusLot = payload?.parcels.find((parcel) => parcel.id === highlighted[0]) ?? null;
@@ -902,20 +928,25 @@ export function PublicLotMap({
       ref={containerRef}
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden bg-background motion-reduce:[&_button]:transition-none motion-reduce:[&_polygon]:transition-none",
+        tenantScope,
         expanded && "h-[100dvh] w-screen",
         pseudoFullscreen && "fixed inset-0 z-[100]",
       )}
       style={
-        pseudoFullscreen
-          ? {
-              paddingTop: "env(safe-area-inset-top)",
-              paddingBottom: "env(safe-area-inset-bottom)",
-              paddingLeft: "env(safe-area-inset-left)",
-              paddingRight: "env(safe-area-inset-right)",
-            }
-          : undefined
+        {
+          ...themeVars,
+          ...(pseudoFullscreen
+            ? {
+                paddingTop: "env(safe-area-inset-top)",
+                paddingBottom: "env(safe-area-inset-bottom)",
+                paddingLeft: "env(safe-area-inset-left)",
+                paddingRight: "env(safe-area-inset-right)",
+              }
+            : undefined),
+        } as React.CSSProperties
       }
     >
+      {theme.cssUrl ? <link rel="stylesheet" href={theme.cssUrl} /> : null}
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
         <strong className="mr-auto truncate text-sm text-primary">
           {payload ? payload.branding.company_name || payload.tenant.name : "Lot availability"}
@@ -1293,20 +1324,22 @@ export function PublicLotMap({
                     ) : null}
                   </span>
                 </div>
-                {focusLot.tier_label ? <p className="mt-1 text-muted-foreground">{focusLot.tier_label}</p> : null}
-                <p className="mt-1 text-muted-foreground">
-                  {focusLot.area_sqm !== null && focusLot.area_sqm !== undefined
-                    ? formatAreaDualUnit(focusLot.area_sqm)
-                    : (focusLot.dimensions ?? "Size TBC")}
-                </p>
-                {showPrices ? <p className="mt-1 font-semibold text-primary">{money(focusLot.price)}</p> : null}
+                {cardConfig.showTier && focusLot.tier_label ? <p className="mt-1 text-muted-foreground">{focusLot.tier_label}</p> : null}
+                {cardConfig.showArea ? (
+                  <p className="mt-1 text-muted-foreground">
+                    {focusLot.area_sqm !== null && focusLot.area_sqm !== undefined
+                      ? formatAreaDualUnit(focusLot.area_sqm)
+                      : (focusLot.dimensions ?? "Size TBC")}
+                  </p>
+                ) : null}
+                {showPrices && cardConfig.showPrice ? <p className="mt-1 font-semibold text-primary">{money(focusLot.price)}</p> : null}
                 <button
                   type="button"
-                  aria-label={`Zoom to Lot ${focusLot.lot_number}`}
+                  aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                   onClick={() => zoomToParcel(focusLot)}
                   className="mt-2 w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-primary hover:bg-muted"
                 >
-                  Zoom to Lot
+                  {applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                 </button>
                 {pickMode && focusLot.status === "Available" ? (
                   <button
@@ -1331,8 +1364,8 @@ export function PublicLotMap({
                     className="mt-2 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white"
                   >
                     {focusLot.status === "Reserved"
-                      ? `Join Waitlist for Lot ${focusLot.lot_number}`
-                      : `Inquire About Lot ${focusLot.lot_number}`}
+                      ? applyCardText(cardConfig.waitlistText, focusLot.lot_number)
+                      : applyCardText(cardConfig.inquireText, focusLot.lot_number)}
                   </button>
                 ) : null}
               </div>

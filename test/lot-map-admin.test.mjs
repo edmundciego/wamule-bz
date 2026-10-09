@@ -97,7 +97,7 @@ test("public embed adds tier view, chips, search, zoom, and lot deep-links", asy
   assert.match(map, /viewBox=\{viewBox\}/);
   assert.match(map, /All Lots/);
   assert.match(map, /Available Only/);
-  assert.match(map, /Inquire About Lot/);
+  assert.match(map, /inquireText/);
   assert.match(map, /get-public-lots\?tenant=/);
 });
 
@@ -110,14 +110,20 @@ test("publish writes ingest columns, stamps the active version, and degrades pre
   assert.match(script, /eq\("is_active", true\)/);
   assert.match(script, /legacy payload mode/);
   assert.match(script, /tierChanged/);
-  // Status/dimensions on existing rows stay untouched: the .update() payload
-  // covers price, geometry, and ingest columns only.
-  const updateMatch = script.match(/\.update\(\{([\s\S]*?)\}\)\s*\.eq\("id"/);
-  assert.ok(updateMatch, "publish must update existing rows by id.");
-  assert.ok(updateMatch[1].includes("base_price"), "updates carry base_price.");
-  assert.ok(updateMatch[1].includes("map_polygon"), "updates carry map_polygon.");
-  assert.ok(!updateMatch[1].includes("status"), "updates must not touch status.");
-  assert.ok(!updateMatch[1].includes("dimensions"), "updates must not touch dimensions.");
+  // Status/dimensions on existing rows stay untouched: the geometry .update()
+  // covers price, geometry, and ingest columns only. The separate --repin
+  // update carries only masterplan_version_id (never status/dimensions).
+  const updates = [...script.matchAll(/\.update\(\{([\s\S]*?)\}\)\s*\.eq\("id", row\.id\)/g)].map((m) => m[1]);
+  const geometry = updates.find((body) => body.includes("base_price"));
+  assert.ok(geometry, "publish must update existing rows by id.");
+  assert.ok(geometry.includes("map_polygon"), "updates carry map_polygon.");
+  assert.ok(!geometry.includes("status"), "updates must not touch status.");
+  assert.ok(!geometry.includes("dimensions"), "updates must not touch dimensions.");
+  assert.match(script, /--repin/);
+  const repin = updates.find((body) => body.includes("masterplan_version_id") && !body.includes("base_price"));
+  assert.ok(repin, "repin updates rows by id with only the version id.");
+  assert.ok(!repin.includes("status"), "repin must not touch status.");
+  assert.ok(!repin.includes("dimensions"), "repin must not touch dimensions.");
 });
 
 test("dealer playbook documents the per-tenant lot mapping runbook", async () => {

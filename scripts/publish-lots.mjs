@@ -36,11 +36,18 @@ function usage() {
   return `Usage:
   node scripts/publish-lots.mjs --tenant <slug> --dir <out-dir> (--dry-run | --apply)
     [--supabase-url <url>] [--service-key <key>] [--batch-size 100]
+  node scripts/publish-lots.mjs --tenant <slug> --repin (--dry-run | --apply)
+    [--supabase-url <url>] [--service-key <key>] [--batch-size 100]
 
   Shorthand: --development <slug> resolves tenant + dir from
     map-input/developments.json (explicit flags win, except a conflicting
     --tenant is refused). E.g.:
     node scripts/publish-lots.mjs --development hopkins-grove --dry-run
+
+  --repin realigns rows pinned to a superseded masterplan version onto the
+    active version (the manual-SQL step it replaces). Only non-null stale
+    pins move; legacy NULL rows stay NULL (always visible). Refuses when no
+    active version exists. --dir/lots.json are not needed in repin mode.
 
   Credentials default to SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env vars.`;
 }
@@ -51,7 +58,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith("--")) throw new Error(`unexpected argument: ${a}\n${usage()}`);
     const key = a.slice(2);
-    if (key === "dry-run" || key === "apply" || key === "help" || key === "h") {
+    if (key === "dry-run" || key === "apply" || key === "repin" || key === "help" || key === "h") {
       out[key] = true;
       continue;
     }
@@ -191,21 +198,23 @@ async function main() {
   }
   const tenant = ((args.tenant || "").trim() || "").toLowerCase();
   if (!tenant) fail(`--tenant is required\n${usage()}`);
-  if (!args.dir) fail(`--dir is required\n${usage()}`);
+  if (!args.repin && !args.dir) fail(`--dir is required\n${usage()}`);
   if ((args["dry-run"] ? 1 : 0) + (args.apply ? 1 : 0) !== 1) {
     fail(`exactly one of --dry-run or --apply is required\n${usage()}`);
   }
   const dryRun = Boolean(args["dry-run"]);
-  const dir = resolve(args.dir);
+  const dir = args.dir ? resolve(args.dir) : null;
   const batchSize = args["batch-size"] ? Number(args["batch-size"]) : 100;
   if (!Number.isFinite(batchSize) || batchSize <= 0) fail("--batch-size must be a positive number");
 
-  const lotsPath = join(dir, "lots.json");
-  if (!existsSync(lotsPath)) fail(`lots.json not found in ${dir} — run map:build first`);
-  const lots = JSON.parse(readFileSync(lotsPath, "utf8"));
+  const lotsPath = args.repin ? null : join(dir, "lots.json");
+  if (!args.repin) {
+    if (!existsSync(lotsPath)) fail(`lots.json not found in ${dir} — run map:build first`);
+  }
+  const lots = args.repin ? [] : JSON.parse(readFileSync(lotsPath, "utf8"));
   let report = null;
-  const reportPath = join(dir, "ingest-report.json");
-  if (existsSync(reportPath)) {
+  const reportPath = args.repin ? null : join(dir, "ingest-report.json");
+  if (reportPath && existsSync(reportPath)) {
     try {
       report = JSON.parse(readFileSync(reportPath, "utf8"));
     } catch {
@@ -264,7 +273,7 @@ async function main() {
     .from("parcels")
     .select(
       step3
-        ? "id, lot_number, status, base_price, map_polygon, tier_key, needs_review, confidence"
+        ? "id, lot_number, status, base_price, map_polygon, tier_key, needs_review, confidence, masterplan_version_id"
         : "id, lot_number, status, base_price, map_polygon",
     )
     .eq("tenant_id", org.id)
@@ -285,6 +294,38 @@ async function main() {
     } else if (version) {
       activeVersionId = version.id;
     }
+  }
+
+  // --repin: realign rows pinned to a superseded version onto the active
+  // one (replaces the manual-SQL step). Only non-null stale pins move;
+  // legacy NULL rows stay NULL (always visible). Fails closed with no
+  // active version. lots.json is not needed.
+  if (args.repin) {
+    if (!step3) fail("--repin needs the parcel extensions deployed");
+    if (!activeVersionId) fail("--repin refused: tenant has no active masterplan version");
+    const withVersion = (existing ?? []).filter((row) => row.masterplan_version_id != null);
+    const rows = withVersion.filter((row) => String(row.masterplan_version_id) !== String(activeVersionId));
+    if (dryRun) {
+      console.log(`[publish] repin dry-run — zero writes performed (${rows.length} stale of ${withVersion.length} pinned rows)`);
+      for (const row of rows.slice(0, 20)) console.log(`  would repin lot ${row.lot_number} -> ${activeVersionId}`);
+      if (rows.length > 20) console.log(`  … +${rows.length - 20} more`);
+      return;
+    }
+    let repinned = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      for (const row of batch) {
+        const { error } = await supabase
+          .from("parcels")
+          .update({ masterplan_version_id: activeVersionId })
+          .eq("id", row.id)
+          .eq("tenant_id", org.id);
+        if (error) fail(`repin of lot ${row.lot_number} failed: ${error.message}`);
+        repinned++;
+      }
+    }
+    console.log(`[publish] repinned ${repinned} rows to ${activeVersionId} (NULL legacy rows untouched)`);
+    return;
   }
 
   const diff = diffLots(lots, existing ?? []);
