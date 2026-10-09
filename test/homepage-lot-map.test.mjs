@@ -20,6 +20,11 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   assert.match(map, /\/lots\.json/);
   assert.match(map, /masterplan_background\.webp/);
   assert.match(map, /Preview data/);
+  // Native master with a mobile-capped preview rendition; printed areas
+  // render dual-unit when the OCR stage supplies them.
+  assert.match(map, /masterplan_preview_url/);
+  assert.match(map, /area_sqm/);
+  assert.match(map, /formatAreaDualUnit/);
   // Pick mode toggles Available lots; selection never opens the inquiry
   // modal (it opens solely from the card's Inquire button).
   assert.match(map, /pickMode/);

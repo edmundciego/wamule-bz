@@ -154,6 +154,7 @@ Deno.serve(async (request) => {
   return json({
     tenant: { name: organization.name, slug: organization.slug },
     masterplan_image_url: branding.masterplanImageUrl,
+    masterplan_preview_url: branding.masterplanPreviewUrl,
     branding: branding.public,
     parcels: visible.map((parcel) => toPublicParcel(parcel as Record<string, unknown>, tiersByKey)),
   });
@@ -192,14 +193,17 @@ type OrganizationRow = {
 
 async function loadBranding(supabase: ReturnType<typeof createClient>, org: OrganizationRow) {
   // Masterplan prefers the tenant record; business_settings mirror is fallback.
+  // The mobile-capped preview rendition is optional: when unset, clients use
+  // the full image at every viewport.
   let masterplanImageUrl = org.masterplan_image_url;
+  let masterplanPreviewUrl: string | null = null;
   let companyProfile: Record<string, unknown> = {};
 
   const { data: settings, error } = await supabase
     .from("business_settings")
     .select("key, value")
     .eq("tenant_id", org.id)
-    .in("key", ["company_profile", "masterplan_image_url"]);
+    .in("key", ["company_profile", "masterplan_image_url", "masterplan_preview_url"]);
   if (error) {
     console.error("get-public-lots settings query failed", error.message);
   } else {
@@ -211,12 +215,17 @@ async function loadBranding(supabase: ReturnType<typeof createClient>, org: Orga
         const mirror = (row.value as Record<string, unknown> | null)?.url;
         if (typeof mirror === "string" && mirror) masterplanImageUrl = mirror;
       }
+      if (row.key === "masterplan_preview_url") {
+        const mirror = (row.value as Record<string, unknown> | null)?.url;
+        if (typeof mirror === "string" && mirror) masterplanPreviewUrl = mirror;
+      }
     }
   }
 
   const text = (value: unknown) => (typeof value === "string" ? value : "");
   return {
     masterplanImageUrl,
+    masterplanPreviewUrl,
     public: {
       company_name: text(companyProfile.company_name) || org.name,
       logo_url: text(companyProfile.logo_url),

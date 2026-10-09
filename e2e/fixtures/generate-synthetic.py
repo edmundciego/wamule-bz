@@ -71,6 +71,9 @@ def build_lots() -> list[dict]:
     # Fixed statuses exercise the waitlist (Reserved) and no-inquiry (Sold)
     # UI paths. Everything else stays Available.
     STATUS = {"S-054": "Sold", "S-059": "Reserved", "S-060": "Reserved"}
+    # Printed-area stand-ins (obviously round: this is fixture data, not plat
+    # values) so the card's dual-unit area line is covered by tests.
+    AREAS = {"S-010": 650, "S-059": 1450}
     lots = []
     for n, (poly, tier) in enumerate(polys, start=1):
         lot_number = f"S-{n:03d}"
@@ -81,6 +84,8 @@ def build_lots() -> list[dict]:
             "status": STATUS.get(lot_number, "Available"),
             "polygon_pct": [{k: round(v, 3) for k, v in pt.items()} for pt in poly],
         })
+        if lot_number in AREAS:
+            lots[-1]["area_sqm"] = AREAS[lot_number]
     return lots
 
 

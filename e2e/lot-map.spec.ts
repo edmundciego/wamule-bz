@@ -125,6 +125,34 @@ test("tiny-lot tap selects the smallest lot under the cursor", async ({ page }) 
   await expect(page.locator("strong", { hasText: /^Lot S-057$/ }).first()).toBeVisible();
 });
 
+test("selected lot draws a thick outline with no fill", async ({ page }) => {
+  const pt = await hitCenter(page, 5);
+  await page.mouse.click(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  const lot = /Lot (\S+)/.exec((await selectedLotCard(page).textContent()) ?? "")?.[1] ?? "";
+  const stroke = await page.evaluate((lotNumber) => {
+    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const id = [...(svg?.querySelectorAll('polygon[fill="transparent"]') ?? [])].find((p) =>
+      (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lotNumber} `),
+    )?.getAttribute("data-lot-id");
+    const visible = svg?.querySelector(`polygon[fill="none"][data-lot-id="${id}"]`);
+    return {
+      width: visible?.getAttribute("stroke-width"),
+      fill: visible?.getAttribute("fill"),
+    };
+  }, lot);
+  expect(stroke.width).toBe("3");
+  expect(stroke.fill).toBe("none");
+});
+
+test("card shows printed area dual-unit and tier for lots that have them", async ({ page }) => {
+  const pt = await lotCenter(page, "S-010");
+  await page.mouse.click(pt.x, pt.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  await expect(page.getByText("650 m² · 6,997 sq ft")).toBeVisible();
+  await expect(page.getByText("Premium", { exact: true }).first()).toBeVisible();
+});
+
 test("Reset control stays clickable with the detail card open", async ({ page }) => {
   // Phone viewports: the bottom sheet used to cover the Reset button
   // (controls sat at bottom-48, inside the card's footprint). The column is
@@ -312,8 +340,9 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     );
   }
 
-  // No hover/selection yet: zero overlay labels.
+  // No hover/selection yet: zero overlay labels (status dots still show).
   await expect(page.locator("main svg text")).toHaveCount(0);
+  expect(await page.locator("main svg circle").count()).toBeGreaterThan(50);
   await page.screenshot({ path: "test-results/labels-1x.png" });
 
   // Sample by geometry at 1x (full view): smallest (tiny), largest (huge).
@@ -387,6 +416,11 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     await expect(selectedLotCard(page)).toBeVisible();
     await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
     await page.waitForTimeout(400);
+    // Selection alone no longer labels: hover the fitted lot for its label.
+    {
+      const pt = await screenCenterOf(sample.largest.id);
+      await page.mouse.move(pt.x, pt.y);
+    }
     const m = await page.evaluate((lotNumber) => {
       const svg = document.querySelector("main svg") as SVGSVGElement | null;
       const label = [...(svg?.querySelectorAll("text") ?? [])].find((t) => t.textContent === lotNumber) as
@@ -409,8 +443,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   }
 
   /** Lot actually locked in the detail card (hit padding overlaps on tiny
-   *  lots, so a tap can select the topmost neighbor — use reality, not the
-   *  aim point, for the assertions below). */
+   *  lots, so read reality — not the aim point — for the assertions below). */
   async function selectedLot(): Promise<{ id: number; lot: string }> {
     const cardText = (await selectedLotCard(page).textContent()) ?? "";
     const lot = /Lot (\S+)/.exec(cardText)?.[1] ?? "";
@@ -467,10 +500,15 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     await expect(page.locator("main svg text", { hasText: tiny.lot })).toHaveCount(0);
   }
 
-  // ~4x via Zoom to Lot (exact fit+center on every engine): the tiny lot's
-  // label appears and fits.
+  // ~4x via Zoom to Lot (exact fit+center on every engine): hover the tiny
+  // lot for its label (selection alone no longer labels), which appears
+  // and fits.
   await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
   await page.waitForTimeout(400);
+  {
+    const pt = await screenCenterOf(tiny.id);
+    await page.mouse.move(pt.x, pt.y);
+  }
   await expect(page.locator("main svg text", { hasText: tiny.lot })).toBeVisible();
   {
     const fit = await labelFits(tiny.id, tiny.lot);
@@ -478,10 +516,10 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   }
   await page.screenshot({ path: "test-results/labels-4x.png" });
 
-  // Selection locks the label: move away, the tiny label persists alone.
+  // Selection shows no overlay text (the number lives in the card, never
+  // on top of baked plat text): move away, zero labels remain.
   await page.mouse.move(5, 5);
-  await expect(page.locator("main svg text", { hasText: tiny.lot })).toBeVisible();
-  expect(await page.locator("main svg text").count()).toBe(1);
+  await expect(page.locator("main svg text")).toHaveCount(0);
 });
 
 test("tap selects a lot (touch)", async ({ page }, testInfo) => {

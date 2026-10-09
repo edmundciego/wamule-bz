@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "../../lib/utils";
-import { money } from "../../lib/utils";
+import { cn, formatAreaDualUnit, money } from "../../lib/utils";
 import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 
@@ -10,6 +9,8 @@ export interface PublicLotParcel {
   status: ParcelStatus;
   price: number;
   dimensions: string | null;
+  /** Printed plat area in m² when known (OCR stage); card shows m² + sq ft. */
+  area_sqm: number | null;
   map_polygon: Array<{ x: number; y: number }> | null;
   tier_key: string | null;
   tier_label: string | null;
@@ -21,6 +22,8 @@ export interface PublicLotParcel {
 interface MapPayload {
   tenant: { name: string; slug: string };
   masterplan_image_url: string | null;
+  /** Mobile-capped rendition; null until published (clients use full image). */
+  masterplan_preview_url: string | null;
   branding: { company_name: string; logo_url: string; short_description: string };
   parcels: PublicLotParcel[];
 }
@@ -65,6 +68,9 @@ const HIT_STROKE_PX = 14;
 
 /** Lot-label ceiling on screen so giant lots don't get billboard text. */
 const MAX_LABEL_PX = 26;
+
+/** Below this viewport width the capped preview rendition wins (bandwidth). */
+const MOBILE_PREVIEW_PX = 768;
 
 type FullscreenHostElement = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -179,6 +185,15 @@ export function PublicLotMap({
   // letterbox differently from the object-contain image and drift polygons
   // off their lots, so the viewBox height tracks the real image ratio.
   const [imageAspect, setImageAspect] = useState<number | null>(null);
+  // Display image: the native-resolution master, unless a capped preview
+  // rendition is published and this is a phone-class viewport (bandwidth).
+  // Decided once per mount so resizes never swap the image mid-session
+  // (tile pyramids arrive with the clean-base pipeline).
+  const [wantPreview] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < MOBILE_PREVIEW_PX,
+  );
+  const masterplanUrl =
+    wantPreview && payload?.masterplan_preview_url ? payload.masterplan_preview_url : (payload?.masterplan_image_url ?? null);
   const [disabledTiers, setDisabledTiers] = useState<string[]>([]);
   const [filter, setFilter] = useState<PublicLotFilter>(initialFilter);
   const [colourView, setColourView] = useState<PublicLotColourView>(initialView);
@@ -307,6 +322,7 @@ export function PublicLotMap({
           tier_key: string;
           price: number;
           status?: string;
+          area_sqm?: number;
           polygon_pct: Array<{ x: number; y: number }>;
         }>;
         const tiersRaw = (await tiersRes.json()) as { tiers?: Record<string, { label: string; price: number; legend: string }> };
@@ -317,6 +333,7 @@ export function PublicLotMap({
           status: lot.status === "Reserved" || lot.status === "Sold" ? lot.status : "Available",
           price: Number(lot.price),
           dimensions: null,
+          area_sqm: typeof lot.area_sqm === "number" && lot.area_sqm > 0 ? lot.area_sqm : null,
           map_polygon: lot.polygon_pct,
           tier_key: lot.tier_key,
           tier_label: tiers[lot.tier_key]?.label ?? lot.tier_key,
@@ -328,6 +345,7 @@ export function PublicLotMap({
         setPayload({
           tenant: { name: "Hopkins Grove (preview)", slug: "demo" },
           masterplan_image_url: `${base}/masterplan_background.webp`,
+          masterplan_preview_url: null,
           branding: { company_name: "Hopkins Grove (preview)", logo_url: "", short_description: "" },
           parcels,
         });
@@ -424,9 +442,10 @@ export function PublicLotMap({
 
   // Probe the masterplan's intrinsic aspect so the viewBox matches it.
   // (The image itself lives *inside* the SVG below, so zoom/pan move the
-  // whole map — background plus lots — as one layer.)
+  // whole map — background plus lots — as one layer. Both renditions share
+  // the source aspect, so either URL probes identically.)
   useEffect(() => {
-    const url = payload?.masterplan_image_url;
+    const url = masterplanUrl;
     if (!url) {
       setImageAspect(null);
       return;
@@ -442,7 +461,7 @@ export function PublicLotMap({
     return () => {
       cancelled = true;
     };
-  }, [payload?.masterplan_image_url]);
+  }, [masterplanUrl]);
 
   const highlighted = selectedIds ?? (internalSelectedId !== null ? [internalSelectedId] : []);
   // Selection-locked detail card: hover NEVER drives this. Hover only
@@ -1015,7 +1034,7 @@ export function PublicLotMap({
         ) : null}
         {!loading && !error && payload ? (
           <>
-            {payload.masterplan_image_url ? null : (
+            {masterplanUrl ? null : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-muted-foreground">
                 No site map image published yet.
               </div>
@@ -1029,9 +1048,9 @@ export function PublicLotMap({
               onPointerDown={beginGesture}
             >
               <title>Drag to pan • Ctrl+scroll or pinch to zoom</title>
-              {payload.masterplan_image_url ? (
+              {masterplanUrl ? (
                 <image
-                  href={payload.masterplan_image_url}
+                  href={masterplanUrl}
                   x={0}
                   y={0}
                   width={100}
@@ -1039,20 +1058,26 @@ export function PublicLotMap({
                   preserveAspectRatio="none"
                 />
               ) : null}
+              {/* Status layer: outlines only, no fills — the plat raster keeps
+                  its own fills and baked text, so translucent overlays would
+                  muddy both. Status reads from outline color + centroid dot
+                  until the base layer is cleaned. */}
               {visibleParcels.map((parcel) => {
                 const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                 if (polygon.length < 3) return null;
                 const style = fillFor(parcel, colourView);
-                const focused = highlighted.includes(parcel.id) || parcel.id === hoveredId;
-                const picked = pickMode && highlighted.includes(parcel.id);
+                const selected = highlighted.includes(parcel.id);
+                const hovered = parcel.id === hoveredId;
+                const picked = pickMode && selected;
                 return (
                   <polygon
                     key={parcel.id}
+                    data-lot-id={parcel.id}
                     points={pointsAttr(polygon, yScale)}
-                    fill={style.fill}
-                    fillOpacity={focused ? 0.5 : 0.28}
+                    fill="none"
                     stroke={picked ? "#1d4ed8" : style.stroke}
-                    strokeWidth={focused ? 0.7 : 0.4}
+                    strokeWidth={selected ? 3 : hovered || picked ? 1.6 : 0.8}
+                    strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
                   />
@@ -1092,18 +1117,41 @@ export function PublicLotMap({
                     );
                   })}
               </g>
+              {/* Status dots: one centroid marker per lot in its status color,
+                  so status reads at a glance with outlines only. Above the
+                  hit layer, pointer-transparent (never steals taps/hovers). */}
+              <g aria-hidden="true">
+                {visibleParcels.map((parcel) => {
+                  const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                  if (polygon.length < 3) return null;
+                  const style = fillFor(parcel, colourView);
+                  const xs = polygon.map((p) => p.x);
+                  const ys = polygon.map((p) => p.y * yScale);
+                  const r = Math.min(Math.max(Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.07, 0.18), 0.8);
+                  return (
+                    <circle
+                      key={`dot-${parcel.id}`}
+                      cx={(Math.max(...xs) + Math.min(...xs)) / 2}
+                      cy={(Math.max(...ys) + Math.min(...ys)) / 2}
+                      r={r}
+                      fill={style.fill}
+                      stroke="#ffffff"
+                      strokeWidth={1}
+                      vectorEffect="non-scaling-stroke"
+                      pointerEvents="none"
+                    />
+                  );
+                })}
+              </g>
               {visibleParcels.map((parcel) => {
-                    // Overlay numbers render only for the hovered/selected
-                    // lot: the plat raster already prints every lot number,
-                    // so always-on overlays double-label. The transparent hit
-                    // layer stays active for all lots regardless. A selected
-                    // lot labels at any zoom (you tapped it, you get its
-                    // number); hover labels need zoom >= 2 against clutter.
-                    // Lots that would render below a readable size are still
-                    // skipped until deeper zoom (fs*zoom gate below).
-                    const selected = highlighted.includes(parcel.id);
-                    if (!selected && parcel.id !== hoveredId) return null;
-                    if (!selected && zoom < 2) return null;
+                    // Overlay numbers render only for the HOVERED lot: the
+                    // plat raster already prints every lot number, and the
+                    // selected lot's number lives in the detail card — vector
+                    // text on top of baked text helps nobody. The transparent
+                    // hit layer stays active for all lots regardless. The
+                    // fs*zoom readability gate below still hides lots that
+                    // would render unreadably small.
+                    if (parcel.id !== hoveredId) return null;
                     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                     if (polygon.length < 3) return null;
                     const xs = polygon.map((p) => p.x);
@@ -1246,7 +1294,11 @@ export function PublicLotMap({
                   </span>
                 </div>
                 {focusLot.tier_label ? <p className="mt-1 text-muted-foreground">{focusLot.tier_label}</p> : null}
-                <p className="mt-1 text-muted-foreground">{focusLot.dimensions ?? "Size TBC"}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {focusLot.area_sqm !== null && focusLot.area_sqm !== undefined
+                    ? formatAreaDualUnit(focusLot.area_sqm)
+                    : (focusLot.dimensions ?? "Size TBC")}
+                </p>
                 {showPrices ? <p className="mt-1 font-semibold text-primary">{money(focusLot.price)}</p> : null}
                 <button
                   type="button"
