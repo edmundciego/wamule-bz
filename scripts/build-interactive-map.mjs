@@ -157,7 +157,7 @@ function validateLots(lots, tiers, expectedMin, expectedMax) {
     if (
       typeof lot.confidence !== "number" || !Number.isFinite(lot.confidence) ||
       lot.confidence < 0 || lot.confidence > 1 ||
-      typeof lot.needs_review !== "boolean" || lot.source !== "raster-auto"
+      typeof lot.needs_review !== "boolean" || !["raster-auto", "synthetic"].includes(lot.source)
     ) {
       badSchema++;
     }

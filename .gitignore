@@ -15,6 +15,12 @@ e2e/fixtures/hopkins/
 # Tenant packages: scaffolding is committed; working areas never are.
 tenants/*/source/
 tenants/*/build/
+# Generated OCR artifacts (reproducible via scripts/ocr-match.py).
+e2e/fixtures/*/ocr.json
+e2e/fixtures/*/ocr-comparison.json
+e2e/fixtures/*/ocr-qa.html
+# ...except the hand-written matcher unit input.
+!e2e/fixtures/ocr-unit/ocr.json
 
 # Supabase local state
 supabase/.temp/

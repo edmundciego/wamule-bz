@@ -110,9 +110,11 @@ Private (gitignored, never served): \`source/\` (input plats), \`build/\`
 
 1. Drop the plat into \`source/\` (PDF or raster — never commit it).
 2. \`npm run tenant:build -- --slug ${slug} --source source/<file>\`
-   Stages run into \`build/\` only. Stages not built yet (OCR number/area
-   reading, area validation, paint-out, tiles) are listed as NOT IMPLEMENTED
-   in \`build/ingest-report.json\`, never silently skipped.
+   Stages run into \`build/\` only. Stages not built yet (paint-out, tiles)
+   are listed as NOT IMPLEMENTED in \`build/ingest-report.json\`, never
+   silently skipped. Add \`"scale": {"road_width_ft": 60, "road_band": [x0,x1]}\`
+   to \`tenant.json\` (stated reference + its px band) to enable S3 area
+   validation; without it matching runs but areas stay unverified.
 3. Review \`build/poc.html\` (QA viewer).
 4. \`npm run tenant:publish -- --slug ${slug} --dry-run\` then \`--apply\`.
    Snapshot first, drafts never public, activation gated behind \`--activate\`.
@@ -136,7 +138,16 @@ function main() {
   if (existsSync(dir)) fail(`tenants/${slug}/ already exists — slugs are immutable, create a new package instead`);
   mkdirSync(join(dir, "source"), { recursive: true });
   mkdirSync(join(dir, "build"), { recursive: true });
-  writeFileSync(join(dir, "tenant.json"), JSON.stringify({ slug, name, created: new Date().toISOString() }, null, 2) + "\n");
+  writeFileSync(join(dir, "tenant.json"), JSON.stringify({
+    slug,
+    name,
+    created: new Date().toISOString(),
+    scale: {
+      road_width_ft: 60,
+      road_band: null,
+      _notes: "Stated scale reference for S3 area validation: road width in feet plus the vertical road band in image px [x0, x1] to measure. Null road_band runs matching only (area validation NOT IMPLEMENTED for the build).",
+    },
+  }, null, 2) + "\n");
   writeFileSync(join(dir, "tiers.json"), JSON.stringify(defaultTiers(), null, 2) + "\n");
   writeFileSync(join(dir, "theme.json"), JSON.stringify(defaultTheme(slug), null, 2) + "\n");
   writeFileSync(join(dir, "overrides.css"), starterCss(slug, name));

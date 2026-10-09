@@ -23,11 +23,27 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const NOT_IMPLEMENTED_STAGES = [
-  { name: "ocr-numbers-areas", status: "NOT IMPLEMENTED", note: "OCR of printed lot numbers/areas at native resolution (clean-base plan S1)." },
-  { name: "area-validation", status: "NOT IMPLEMENTED", note: "Parsed-m² vs polygon-px-area ratio gates (clean-base plan S3)." },
   { name: "paint-out", status: "NOT IMPLEMENTED", note: "Painted-out clean base with preserved roads/creek/boundaries (clean-base plan S4)." },
   { name: "tiles", status: "NOT IMPLEMENTED", note: "Tile pyramid for the display image (clean-base plan S5)." },
 ];
+
+const OCR_STAGES = ["ocr-numbers-areas", "match-polygons", "area-validation"];
+
+function hasTesseract() {
+  try {
+    return spawnSync("tesseract", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function hasRapidOcr() {
+  try {
+    return spawnSync("python3", ["-c", "import rapidocr_onnxruntime"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
 
 const IMPLEMENTED_STAGES = [
   "source-classification",
@@ -133,6 +149,47 @@ function main() {
     console.warn("[tenant:build] no masterplan_background.webp — preview rendition skipped");
   }
 
+  // OCR stages S1-S3 (scripts/ocr-match.py). Engines: tesseract and/or
+  // rapidocr when installed; otherwise these stages stay NOT IMPLEMENTED
+  // (never silently skipped). Scale comes from tenant.json scale
+  // ({road_width_ft, road_band:[x0,x1]}); without it only match runs and
+  // area validation is recorded NOT IMPLEMENTED (no reference to measure).
+  const ocrStages = [];
+  {
+    const engines = [
+      hasTesseract() ? "tesseract" : null,
+      hasRapidOcr() ? "rapidocr" : null,
+    ].filter(Boolean);
+    let scale = null;
+    try {
+      const tenant = JSON.parse(readFileSync(join(tenantDir, "tenant.json"), "utf8"));
+      if (tenant.scale && Array.isArray(tenant.scale.road_band)) scale = tenant.scale;
+    } catch {
+      scale = null;
+    }
+    if (!engines.length) {
+      for (const name of OCR_STAGES) {
+        ocrStages.push({ name, status: "NOT IMPLEMENTED", note: "no OCR engine installed (tesseract binary or rapidocr_onnxruntime)" });
+      }
+      console.warn("[tenant:build] no OCR engines — S1-S3 recorded NOT IMPLEMENTED");
+    } else {
+      const ocrArgs = ["scripts/ocr-match.py", "--dir", outDir, "--tiers", tiersPath,
+        "--engines", engines.length > 1 ? "both" : engines[0]];
+      if (scale) ocrArgs.push("--road-band", scale.road_band.join(","), "--road-width-ft", String(scale.road_width_ft ?? 60));
+      // Without a scale reference there is nothing honest to validate areas
+      // against: run through matching only.
+      if (!scale) ocrArgs.push("--stage", "match");
+      run("python3", ocrArgs, "ocr-match (S1-S3)");
+      ocrStages.push(
+        { name: "ocr-numbers-areas", status: "IMPLEMENTED" },
+        { name: "match-polygons", status: "IMPLEMENTED" },
+        scale
+          ? { name: "area-validation", status: "IMPLEMENTED" }
+          : { name: "area-validation", status: "NOT IMPLEMENTED", note: "no scale reference (tenant.json scale.road_band) to measure against" },
+      );
+    }
+  }
+
   // Record the stage ledger (implemented + NOT IMPLEMENTED) in the report.
   const reportPath = join(outDir, "ingest-report.json");
   if (existsSync(reportPath)) {
@@ -142,6 +199,7 @@ function main() {
       source: { file: source, classification: kind },
       stages: [
         ...IMPLEMENTED_STAGES.map((name) => ({ name, status: "IMPLEMENTED" })),
+        ...ocrStages,
         ...NOT_IMPLEMENTED_STAGES,
       ],
     };
@@ -149,7 +207,9 @@ function main() {
   }
   console.log("[tenant:build] stages:");
   for (const name of IMPLEMENTED_STAGES) console.log(`  IMPLEMENTED      ${name}`);
-  for (const stage of NOT_IMPLEMENTED_STAGES) console.log(`  NOT IMPLEMENTED  ${stage.name} — ${stage.note}`);
+  for (const stage of [...ocrStages, ...NOT_IMPLEMENTED_STAGES]) {
+    console.log(`  ${stage.status === "IMPLEMENTED" ? "IMPLEMENTED     " : "NOT IMPLEMENTED "} ${stage.name}${stage.status === "IMPLEMENTED" ? "" : ` — ${stage.note}`}`);
+  }
   console.log(`[tenant:build] done -> ${outDir} (writes confined to build/)`);
 }
 
