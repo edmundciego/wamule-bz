@@ -12,6 +12,9 @@ dist/
 graphify-out/
 out/
 e2e/fixtures/hopkins/
+# Source plat PDF (1.4GB): local pipeline input only, never versioned.
+# The extracted raster + lots.json it produces are the tracked artifacts.
+/2026 Hopkins Map.pdf
 # Tenant packages: scaffolding is committed; working areas never are.
 tenants/*/source/
 tenants/*/build/
