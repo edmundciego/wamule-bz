@@ -46,9 +46,14 @@ FONT_CANDIDATES = [
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
 ]
 
+CONDENSED_CANDIDATES = [
+    "/System/Library/Fonts/Avenir Next Condensed.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+]
 
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in FONT_CANDIDATES:
+
+def load_font(size: int, condensed: bool = False) -> ImageFont.FreeTypeFont:
+    for path in (CONDENSED_CANDIDATES if condensed else []) + FONT_CANDIDATES:
         try:
             return ImageFont.truetype(path, size)
         except Exception:
@@ -121,20 +126,24 @@ def clip(x, y):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--small-text", action="store_true", help="render all lot text at 45% size (exercises the upscale path)")
+    ap.add_argument("--tough", action="store_true",
+                    help="stress variant: condensed type, +-30deg tilted lots, border-touching digits, "
+                         "JPEG compression, plus an open-space band (needs --image masterplan_background.jpg)")
     ap.add_argument("--out", default="e2e/fixtures/ocr-synthetic")
     args = ap.parse_args()
 
+    H = IMG_H + (140 if args.tough else 0)
     scale = 0.45 if args.small_text else 1.0
     num_size = max(8, int(36 * scale))
     area_size = max(8, int(24 * scale))
-    num_font = load_font(num_size)
-    area_font = load_font(area_size)
-    small_font = load_font(max(8, int(20 * scale)))
+    num_font = load_font(num_size, condensed=args.tough)
+    area_font = load_font(area_size, condensed=args.tough)
+    small_font = load_font(max(8, int(20 * scale)), condensed=args.tough)
 
-    img = Image.new("RGB", (IMG_W, IMG_H), PAPER)
+    img = Image.new("RGB", (IMG_W, H), PAPER)
     d = ImageDraw.Draw(img)
     # Roads (the scale reference): vertical x 1140-1260, horizontal y 940-1060.
-    d.rectangle([1140, 0, 1260, IMG_H], fill=ROAD_FILL)
+    d.rectangle([1140, 0, 1260, H], fill=ROAD_FILL)
     d.rectangle([0, 940, IMG_W, 1060], fill=ROAD_FILL)
     for x in (1140, 1260):
         d.line([(x, 0), (x, IMG_H)], fill=ROAD_EDGE, width=3)
@@ -168,40 +177,66 @@ def main() -> None:
             ys = [p[1] for p in poly]
             d.polygon(poly, outline=(40, 40, 40))
             rotated = n > narrow_start
+            tilted = args.tough and not rotated and n % 8 == 0
+            touching = args.tough and not rotated and n % 12 == 5
             cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-            num_box = draw_centered(img, (cx, cy - 14 * scale), number, num_font, angle=90 if rotated else 0)
-            tokens.append({"lot": number, "kind": "number", "text": number, "bbox": [round(v, 1) for v in num_box]})
             if rotated:
                 # Narrow flag lots carry the number only (a 170px column
                 # cannot hold both rotated lines); areas stay covered on the
-                # other 90 lots.
-                pass
+                # other lots.
+                num_box = draw_centered(img, (cx, cy - 14 * scale), number, num_font, angle=90)
+                tokens.append({"lot": number, "kind": "number", "text": number, "bbox": [round(v, 1) for v in num_box]})
             else:
-                area_box = draw_centered(img, (cx, cy + 20 * scale), area_text, area_font, angle=0)
+                num_angle = (30 if (n // 8) % 2 == 0 else -30) if tilted else 0
+                num_cx = cx
+                if touching:
+                    # Digits crossing the lot border (border welds onto glyphs).
+                    probe = ImageDraw.Draw(img).textbbox((0, 0), number, font=num_font)
+                    num_cx = min(xs) + (probe[2] - probe[0]) / 2 - 6
+                num_box = draw_centered(img, (num_cx, cy - 14 * scale), number, num_font, angle=num_angle)
+                tokens.append({"lot": number, "kind": "number", "text": number, "bbox": [round(v, 1) for v in num_box]})
+                area_box = draw_centered(img, (cx, cy + 20 * scale), area_text, area_font, angle=num_angle)
                 tokens.append({"lot": number, "kind": "area", "text": area_text, "bbox": [round(v, 1) for v in area_box]})
             lot_records.append({"lot_number": number, "tier_key": tier[0], "price": tier[2],
-                                "polygon_pct": [{"x": round(x / IMG_W * 100, 3), "y": round(y / IMG_H * 100, 3)} for x, y in poly],
+                                "polygon_pct": [{"x": round(x / IMG_W * 100, 3), "y": round(y / H * 100, 3)} for x, y in poly],
                                 "confidence": 1.0, "needs_review": False, "source": "synthetic"})
     assert n == 100, f"expected 100 lots, got {n}"
 
     d.polygon(reserve, outline=(40, 40, 40))
-    res_box = draw_curved(img, "CREEKSIDE RESERVE", load_font(max(10, int(30 * scale))),
+    res_box = draw_curved(img, "CREEKSIDE RESERVE", load_font(max(10, int(30 * scale)), condensed=args.tough),
                           center=(1990, 1680), radius=420, span_deg=38)
     decoys = [{"kind": "reserve-text", "text": "CREEKSIDE RESERVE", "bbox": [round(v, 1) for v in res_box]}]
 
+    open_space = None
+    if args.tough:
+        # Open-space band below the lots: axis-aligned rect + printed acres
+        # (true value from geometry, so the check is self-consistent).
+        ox0, oy0, ox1, oy1 = 500, 2010, 1900, 2130
+        d.rectangle([ox0, oy0, ox1, oy1], outline=(40, 40, 40))
+        acres_true = (ox1 - ox0) * (oy1 - oy0) * FT_PER_PX * FT_PER_PX / 43560
+        acres_text = f"{acres_true:.2f} ACRES"
+        os_box = draw_centered(img, ((ox0 + ox1) / 2, (oy0 + oy1) / 2), acres_text,
+                               load_font(max(10, int(28 * scale)), condensed=True))
+        open_space = {"bbox_px": [ox0, oy0, ox1, oy1], "printed_acres": round(acres_true, 2),
+                      "label": acres_text, "label_bbox": [round(v, 1) for v in os_box]}
+
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    img.save(out / "masterplan_background.webp", "WEBP", quality=85)
+    if args.tough:
+        img.save(out / "masterplan_background.jpg", "JPEG", quality=70)
+    else:
+        img.save(out / "masterplan_background.webp", "WEBP", quality=85)
     tiers = {"tiers": {k: {"label": lab, "price": p, "legend": c} for k, lab, p, c in TIERS}}
     (out / "tiers.json").write_text(json.dumps(tiers, indent=1) + "\n")
     (out / "lots.json").write_text(json.dumps(lot_records, indent=1) + "\n")
     (out / "labels.json").write_text(json.dumps({
         "scale_ft_per_px": FT_PER_PX, "road_width_ft": ROAD_FT,
-        "image": {"width": IMG_W, "height": IMG_H},
+        "image": {"width": IMG_W, "height": H},
         "tokens": tokens, "decoys": decoys,
         "reserve": {"text": "CREEKSIDE RESERVE"},
+        "open_space": open_space,
     }, indent=1) + "\n")
-    print(f"wrote 100 lots + {len(tokens)} tokens -> {out} (small-text={args.small_text})")
+    print(f"wrote 100 lots + {len(tokens)} tokens -> {out} (small-text={args.small_text}, tough={args.tough})")
 
 
 if __name__ == "__main__":

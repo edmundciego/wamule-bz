@@ -10,6 +10,7 @@ import {
   HandCoins,
   History,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Mail,
   Map,
@@ -39,6 +40,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
     ? [{ href: "/information-centre", label: "Information Centre", icon: BookOpenText }]
     : []),
   { href: "/lots", label: "Lots", icon: Map },
+  { href: "/lots/correct", label: "Correct", icon: ListChecks },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/contracts", label: "Contracts", icon: FileText },

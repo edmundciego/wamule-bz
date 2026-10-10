@@ -1,0 +1,16 @@
+{
+  "method": "area-anchored",
+  "units": {
+    "L-001": { "number": "101", "area_sqm": 1011.901, "suspect": [], "centroid": [135, 119] },
+    "L-002": { "number": "102", "area_sqm": 1011.902, "suspect": [], "centroid": [360, 119] },
+    "L-003": { "number": "103", "area_sqm": 1011.903, "suspect": [], "centroid": [585, 119] },
+    "L-004": { "number": "104", "area_sqm": 1011.904, "suspect": [], "centroid": [810, 119] },
+    "L-005": { "number": "105", "area_sqm": 1011.905, "suspect": ["duplicated-number"], "centroid": [135, 350] },
+    "L-006": { "number": "6", "area_sqm": 1011.906, "suspect": ["single-digit"], "centroid": [360, 350] },
+    "L-007": { "number": "105", "area_sqm": 1011.907, "suspect": ["duplicated-number"], "centroid": [585, 350] },
+    "L-008": { "number": "108", "area_sqm": 1011.908, "suspect": [], "centroid": [810, 350] },
+    "L-009": { "number": null, "area_sqm": 1011.909, "suspect": ["area-only"], "centroid": [135, 581] },
+    "L-010": { "number": "110", "area_sqm": 1011.91, "suspect": [], "centroid": [360, 581] },
+    "L-011": { "number": "111", "area_sqm": 2900.0, "suspect": ["area-near-edge"], "centroid": [585, 581] }
+  }
+}

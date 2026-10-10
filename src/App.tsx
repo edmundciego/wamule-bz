@@ -7,6 +7,7 @@ import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { AuditTrailPage } from "./pages/AuditTrailPage";
 import { ContractsPage } from "./pages/ContractsPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
+import { CorrectionWorkspacePage } from "./pages/CorrectionWorkspacePage";
 import { CustomerDetailPage } from "./pages/CustomerDetailPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DailyBriefsPage } from "./pages/DailyBriefsPage";
@@ -33,6 +34,10 @@ export default function App() {
       <Route path="/embed/:tenant_slug/:project_slug" element={<EmbeddableMapPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/logout" element={<LogoutPage />} />
+      {/* Slice 1.5 workspace: DEV ?demo=1 fixture mode is compiled out of
+          production builds; every other path enforces session + profile
+          inside the page (mirrors EmbeddableMapPage's demo contract). */}
+      <Route path="/lots/correct" element={<CorrectionWorkspacePage />} />
       <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
       <Route
         path="/documents/:kind/:id"

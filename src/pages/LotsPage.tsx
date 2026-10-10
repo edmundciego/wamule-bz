@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BulkIngestPanel } from "../components/admin/parcels/BulkIngestPanel";
 import { ParcelDrawer } from "../components/admin/parcels/ParcelDrawer";
@@ -121,6 +122,12 @@ export function LotsPage() {
         <p className="v2-page-kicker">Land Inventory</p>
         <h1 className="v2-page-title">Lots</h1>
         <p className="v2-page-description">Phase 1 inventory board with current availability and reservation status.</p>
+        <NavLink
+          to="/lots/correct"
+          className="mt-3 inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold text-primary hover:bg-primary-soft"
+        >
+          Edit in correction workspace
+        </NavLink>
       </div>
       <div className="flex gap-2" role="tablist" aria-label="Lots sections">
         {(["board", "ingest", "tiers"] as LotsTab[]).map((value) => (
