@@ -149,11 +149,11 @@ Browser-selected context is a request to validate, not proof of access. Website 
 - [ ] Name the person who can resolve register/drawing disagreements.
 - [ ] Identify sellable lots, roads, creek, boulevard and other common areas.
 - [ ] Approve the fields permitted in the public payload.
-- [ ] Define editor, publisher, tenant administrator and platform administrator permissions.
 - [ ] Inventory active migrations, archived/root SQL, manual schema setup and enabled functions.
 - [ ] Choose a reproducible fresh bootstrap or an incremental upgrade strategy; protect existing Wamule business records.
-- [ ] Define development, sandbox/staging and production environments.
 - [ ] Assign engineering, map review and release operations responsibilities.
+
+Intentionally deferred — non-blocking for M0 (reconciled 11 Oct 2026): role definitions ride with their enforcement in M4/M6 (§9, §11); development/sandbox/production environment definitions ride with hosting in M7 (§13). Neither gates M0–M3 progress.
 
 ### Acceptance
 
