@@ -1,0 +1,47 @@
+{
+ "pdf": "2026 Hopkins Map.pdf",
+ "bytes": 1395476715,
+ "checks": [
+  {
+   "hypothesis": "PDF magic header %PDF-1.x in first 8 bytes",
+   "observed": "%PDF-1.4",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "file size ~1.4GB single plat export",
+   "observed": "1395476715 bytes",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "exactly 1 page",
+   "observed": "Pages: 1",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "page size 547.2 x 460.8 pts",
+   "observed": "Page size: 547.2 x 460.8 pts",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "Creator is Civil 3D 2024",
+   "observed": "Creator: Autodesk Civil 3D 2024 - English 2024 (24.3s (LMS Tech))",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "Producer is Photoshop",
+   "observed": "Producer: Adobe Photoshop for Windows",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "17 embedded 5700x4800 rasters",
+   "observed": "17 images, dimensions=[(5700, 4800)]",
+   "verdict": "confirmed"
+  },
+  {
+   "hypothesis": "no selectable text",
+   "observed": "0 text chars extracted",
+   "verdict": "confirmed"
+  }
+ ],
+ "method": "pdfinfo + pdfimages -list + pdftotext (structure/text layers only; no raster decode, no PPM dump)"
+}
