@@ -71,7 +71,7 @@ test("Hopkins background and polygon coordinates stay aligned across ratios and 
     expect(statusMarkers).toEqual(["Sold:square:#ef4444"]);
 
     await page.getByRole("button", { name: "Tier colours", exact: true }).click();
-    await expect(page.locator('[aria-label="Map legend"]')).toHaveCount(0);
+    await expect(page.locator('[aria-label="Map legend"]')).toContainText("Selected lot");
     const tierMarkers = await mapMarkers.evaluateAll((elements) =>
       [...new Set(elements.map((element) => `${element.getAttribute("data-marker-shape")}:${element.firstElementChild?.getAttribute("fill")?.toLowerCase()}`))],
     );

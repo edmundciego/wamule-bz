@@ -35,6 +35,17 @@ test("public build verifier rejects development-only map fixture markers", (t) =
   writeFileSync(join(root, "assets", "app.js"), 'const fixture = "/demo-map";');
   const report = verifyPublicBuild(root);
   assert.ok(report.errors.some((error) => error.includes("development map fixture route")));
+
+  writeFileSync(join(root, "assets", "app.js"), 'fetch("/correction-review/hopkins/benchmark/benchmark-manifest.json");');
+  const privateRouteReport = verifyPublicBuild(root);
+  assert.ok(privateRouteReport.errors.some((error) => error.includes("development map fixture route")));
+});
+
+test("public build verifier does not mistake a CSS map aspect token for a fixture route", (t) => {
+  const root = makeBuild(t);
+  writeFileSync(join(root, "assets", "app.css"), ".preview{aspect-ratio:var(--demo-map-aspect)}");
+  const report = verifyPublicBuild(root);
+  assert.deepEqual(report.errors, []);
 });
 
 test("public build verifier rejects private map fixtures and source PDFs", (t) => {

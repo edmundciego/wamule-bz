@@ -12,7 +12,7 @@ const PRIVATE_FIXTURE_BASENAMES = new Set([
   "masterplan_preview.webp",
 ]);
 const FORBIDDEN_BUNDLE_MARKERS = [
-  ["development map fixture route", /demo-map/i],
+  ["development map fixture route", /["'`]\/(?:demo-map|demo-hopkins-map|correction-review\/hopkins)(?:\/|["'`])/i],
   ["development fixture loader", /loadDemo/],
   ["synthetic E2E fixture marker", /synthetic-e2e/i],
   ["development-only demo query", /demo=1/i],

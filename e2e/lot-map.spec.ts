@@ -172,16 +172,19 @@ test("demo map loads lots over the background", async ({ page }) => {
   expect(await lotCount(page)).toBeGreaterThan(50);
 });
 
-test("demo preview shows the sample and provenance labels without phone overflow", async ({ page }) => {
+test("synthetic test preview fits a narrow phone without claiming sales-plat provenance", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
-  const sampleLabel = page.getByText("Proof of concept, sample data", { exact: true });
-  const provenanceLabel = page.getByText("traced from sales plat", { exact: true });
-  await expect(sampleLabel).toBeVisible();
-  await expect(provenanceLabel).toBeVisible();
+  const previewTitle = page.getByText("Hopkins Grove (preview)", { exact: true });
+  const search = page.getByLabel("Search lots");
+  await expect(previewTitle).toBeVisible();
+  await expect(search).toBeVisible();
+  // ?demo=1 is a synthetic automated-test fixture, not the reviewed Hopkins
+  // source drawing. Never let the fixture imply that it was traced from a plat.
+  await expect(page.getByText("traced from sales plat", { exact: true })).toHaveCount(0);
 
-  const [sampleBounds, provenanceBounds] = await Promise.all(
-    [sampleLabel, provenanceLabel].map((label) => label.evaluate((element) => {
-      const rect = element.getBoundingClientRect();
+  const [titleBounds, searchBounds] = await Promise.all(
+    [previewTitle, search].map((element) => element.evaluate((target) => {
+      const rect = target.getBoundingClientRect();
       return {
         left: rect.left,
         right: rect.right,
@@ -190,7 +193,7 @@ test("demo preview shows the sample and provenance labels without phone overflow
       };
     })),
   );
-  for (const bounds of [sampleBounds, provenanceBounds]) {
+  for (const bounds of [titleBounds, searchBounds]) {
     expect(bounds.left).toBeGreaterThanOrEqual(0);
     expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
     expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
@@ -300,11 +303,15 @@ test("synthetic buyer-map overlay keeps tier and status palettes exclusive and a
   await expect(details).toBeVisible();
   await expect(page.locator('[aria-label="Map legend"]')).toBeVisible();
 
-  const statusColors = await mapMarkers.evaluateAll((elements) =>
-    [...new Set(elements.map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""))],
-  );
-  expect(statusColors).toEqual(expect.arrayContaining([...statusPalette]));
-  expect(statusColors.every((color) => statusPalette.has(color))).toBe(true);
+  const statusMarkers = await mapMarkers.evaluateAll((elements) => elements.map((element) => ({
+    key: element.getAttribute("data-lot-key"),
+    fill: element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? "",
+  })));
+  const selectedKey = await page.locator('main svg[role="group"] polygon[fill="transparent"][aria-selected="true"]').getAttribute("data-lot-key");
+  expect(selectedKey).toBeTruthy();
+  const statusColors = new Set(statusMarkers.filter((marker) => marker.key !== selectedKey).map((marker) => marker.fill));
+  expect(statusColors).toEqual(statusPalette);
+  expect(statusMarkers.find((marker) => marker.key === selectedKey)?.fill).toBe("var(--lotmap-accent)");
   const statusShapes = await mapMarkers.evaluateAll((elements) =>
     [...new Set(elements.map((element) => `${element.getAttribute("data-lot-status")}:${element.getAttribute("data-marker-shape")}`))].sort(),
   );
@@ -312,25 +319,29 @@ test("synthetic buyer-map overlay keeps tier and status palettes exclusive and a
   const legendMarkerShapes = await page.locator('[aria-label="Map legend"] svg > *').evaluateAll((elements) =>
     elements.map((element) => element.tagName.toLowerCase()),
   );
-  expect(legendMarkerShapes.sort()).toEqual(["circle", "polygon", "polygon"]);
+  expect(legendMarkerShapes.sort()).toEqual(["circle", "path", "polygon", "polygon"]);
   const statusStrokeColors = await lotOutlines.evaluateAll((elements) =>
     [...new Set(elements.map((element) => (element as SVGPolygonElement).getAttribute("stroke")?.toLowerCase() ?? ""))],
   );
   expect(statusStrokeColors.every((color) => statusStrokePalette.has(color))).toBe(true);
 
   await page.getByRole("button", { name: "Tier colours", exact: true }).click();
-  await expect(page.locator('[aria-label="Map legend"]')).toHaveCount(0);
+  await expect(page.locator('[aria-label="Map legend"]')).toContainText("Selected lot");
   await expect(details.getByText("Available", { exact: true })).toHaveClass(/bg-muted/);
 
   const tiersResponse = await page.request.get("/demo-map/tiers.json");
   expect(tiersResponse.ok()).toBe(true);
   const tiersPayload = (await tiersResponse.json()) as { tiers: Record<string, { legend: string }> };
   const tierPalette = new Set(Object.values(tiersPayload.tiers).map(({ legend }) => legend.toLowerCase()));
-  const tierColors = await mapMarkers.evaluateAll((elements) =>
-    [...new Set(elements.map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""))],
-  );
+  const tierColors = await mapMarkers.evaluateAll((elements, activeKey) => [...new Set(elements
+    .filter((element) => element.getAttribute("data-lot-key") !== activeKey)
+    .map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""))], selectedKey);
   expect(tierColors.length).toBeGreaterThan(0);
   expect(tierColors.every((color) => tierPalette.has(color))).toBe(true);
+  const selectedTierFills = await mapMarkers.evaluateAll((elements, activeKey) => elements
+    .filter((element) => element.getAttribute("data-lot-key") === activeKey)
+    .map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""), selectedKey);
+  expect(selectedTierFills).toEqual(["var(--lotmap-accent)"]);
   expect(tierColors.some((color) => statusPalette.has(color))).toBe(false);
   const tierShapes = await mapMarkers.evaluateAll((elements) =>
     [...new Set(elements.map((element) => element.getAttribute("data-marker-shape")))],
@@ -385,7 +396,7 @@ test("buyer-map search and filter controls keep names and visible keyboard focus
   await statusView.focus();
   await expect(statusView).toBeFocused();
   expect(await hasVisibleFocus(statusView)).toBe(true);
-  await expect(page.getByText("Lot availability", { exact: true })).toBeVisible();
+  await expect(page.getByText("Hopkins Grove (preview)", { exact: true })).toBeVisible();
   await expect(page.getByText("Wamule", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Tier colours", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "All Lots", exact: true })).toBeVisible();
@@ -471,7 +482,7 @@ test("tier-color view keeps the selected lot status badge neutral and readable",
   await page.mouse.click(point.x, point.y);
   const details = page.getByRole("region", { name: /^Details for Lot/ });
   await expect(details).toBeVisible();
-  await expect(page.locator('[aria-label="Map legend"]')).toHaveCount(0);
+  await expect(page.locator('[aria-label="Map legend"]')).toContainText("Selected lot");
   const badge = details.locator("span.rounded-full");
   await expect(badge).toBeVisible();
   const result = await badge.evaluate((element) => {
@@ -555,7 +566,7 @@ test("tiny-lot tap selects the smallest lot under the cursor", async ({ page }) 
   await expect(page.locator("strong", { hasText: /^Lot S-057$/ }).first()).toBeVisible();
 });
 
-test("selected lot draws a thick outline with no fill", async ({ page }) => {
+test("selected lot uses the tenant accent fill and a thick outline", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
@@ -565,14 +576,16 @@ test("selected lot draws a thick outline with no fill", async ({ page }) => {
     const id = [...(svg?.querySelectorAll('polygon[fill="transparent"]') ?? [])].find((p) =>
       (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lotNumber} `),
     )?.getAttribute("data-lot-key");
-    const visible = svg?.querySelector(`polygon[fill="none"][data-lot-key="${id}"]`);
+    const visible = svg?.querySelector(`polygon[data-lot-key="${id}"][fill="var(--lotmap-accent)"]`);
     return {
       width: visible?.getAttribute("stroke-width"),
       fill: visible?.getAttribute("fill"),
+      opacity: visible?.getAttribute("fill-opacity"),
     };
   }, lot);
-  expect(stroke.width).toBe("3");
-  expect(stroke.fill).toBe("none");
+  expect(Number(stroke.width)).toBeGreaterThanOrEqual(3);
+  expect(stroke.fill).toBe("var(--lotmap-accent)");
+  expect(Number(stroke.opacity)).toBeGreaterThan(0);
 });
 
 test("card shows printed area dual-unit and tier for lots that have them", async ({ page }) => {
@@ -969,9 +982,8 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     await expect(page.locator("main svg[role=group] text", { hasText: tiny.lot })).toHaveCount(0);
   }
 
-  // ~4x via Zoom to Lot (exact fit+center on every engine): hover the tiny
-  // lot for its label (selection alone no longer labels), which appears
-  // and fits.
+  // ~4x via Zoom to Lot (exact fit+center on every engine): the tiny lot's
+  // label becomes large enough to render and fit.
   await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
   await page.waitForTimeout(400);
   {
@@ -985,10 +997,14 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   }
   await page.screenshot({ path: testInfo.outputPath("labels-4x.png") });
 
-  // Selection shows no overlay text (the number lives in the card, never
-  // on top of baked plat text): move away, zero labels remain.
+  // The selected lot keeps its label visible after hover leaves; clearing
+  // selection removes the overlay label.
   await page.mouse.move(5, 5);
-  await expect(page.locator("main svg[role=group] text")).toHaveCount(0);
+  const labels = page.locator("main svg[role=group] text");
+  await expect(labels).toHaveCount(1);
+  await expect(labels).toHaveText(tiny.lot);
+  await page.getByRole("button", { name: `Close details for Lot ${tiny.lot}` }).click();
+  await expect(labels).toHaveCount(0);
 });
 
 test("tap selects a lot (touch)", async ({ page }, testInfo) => {

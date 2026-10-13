@@ -596,7 +596,7 @@ number mappings remain unapproved; the 60-case benchmark remains unlabeled;
 the editor still saves locally; and the authenticated editor route has not
 been verified against an authorized hosted session.
 
-**WIP verification on the current worktree:** typecheck passed; lint passed;
+**Initial WIP checkpoint verification (12 Oct 2026; superseded by the stabilization entry below):** typecheck passed; lint passed;
 `npm run build` passed; `npm test` passed 240 tests with 0 failures and 3
 skipped (243 total). Targeted Chromium Playwright completed 41 passed, 8
 failed and 3 skipped. Failures: correction bulk-accept queue expected sample
@@ -612,6 +612,65 @@ lines at EOF in two tenant tests. These are recorded, not repaired in this
 preservation checkpoint. Human review, M1 mapping approval, M2 authenticated
 and persistence acceptance, M3 buyer/API acceptance, M4 shared-draft restore,
 and hosted migration review remain open.
+
+**Integration checkpoint stabilization (12 Oct 2026; local and uncommitted):**
+The eight reported Playwright failures were reproduced and classified. The
+bulk-accept fixture has no approved measured scale/area evidence, so the
+candidate function correctly returned zero eligible rows; the UI now explains
+that no record changed and offers no empty sample/confirm action. The other
+assertion mismatches were stale relative to current product behavior: the
+synthetic `?demo=1` fixture is not a real plat (its image says so), status
+markers use the tenant accent for the selected lot, the title is the current
+development name, tier mode includes a selected-lot legend key, selected
+polygons use an accent fill plus a 3.5px outline, selected labels remain while
+the selection is open, and the Hopkins alignment test uses the same intentional
+tier legend. Tests now assert those behaviors and explicitly reject false
+sales-plat provenance on the synthetic fixture.
+
+The first public-build failure was partly a false positive: the broad
+`/demo-map/` text scan matched the harmless CSS token
+`--demo-map-aspect` in both JS class text and compiled CSS; it did not find a
+fixture route, loader, or `?demo=1` code in that build. A precise route scan
+then exposed a real local-only `/correction-review/hopkins/benchmark/...`
+fetch reachable from the authenticated workspace's label-review tab. The
+local benchmark/review mode is now explicitly development-only; normal
+correction modes remain available, and Vite production dead-code elimination
+removes the private benchmark loader/component from the production chunk. The
+verifier remains strict for exact development fixture/review routes, loaders,
+demo query markers, private fixture filenames, PDFs, and non-regular files.
+
+An additional browser rerun found a real export timing issue: the local review
+download helper revoked its Blob URL synchronously. It now retains the hidden
+download link and revokes the URL after the browser has had time to start the
+download. The isolated full Hopkins review/export test and the complete
+targeted Chromium batch pass with this fix.
+
+**Stabilization verification:** `npm run typecheck`, `npm run lint`, and
+`npm run build` pass. `npm test` passes 241 tests with 0 failures and 3
+skipped (244 total). The targeted Chromium suite across correction, inquiry,
+buyer-map, integrated-review, alignment and road-measurement specs passes 49,
+with 3 skipped (52 total; the screenshot-checkpoint case was intentionally
+excluded). It exercised the full local 719-polygon Hopkins map and alignment,
+blind review, local save/resume, JSON/CSV export and the existing map controls.
+These source-dependent tests used ignored local Hopkins assets; they are not a
+clean-checkout result. `npm run verify:public-build` now passes: 80 files and
+1,362,585 text bytes scanned, with no development fixture routes or private
+source assets in `dist`. No migration, Edge Function, Supabase data, staging,
+production or deployment was changed.
+
+**Extraction/push readiness:** no shared-renderer extraction has begun. The
+stabilized local baseline is ready for a separately approved extraction pass,
+but the architectural coupling through `PublicLotMap.tsx` remains, the
+Hopkins-dependent E2E still needs a portable synthetic editor fixture and a
+clean-checkout run before any editor-only commit, and M2 review remains 0/60
+human-labeled with no approved lot mappings. The branch remains local at
+`feature/map-first-integration-wip` / `63751d441ac407adf72c83435290e3bb854620dd`.
+The GitHub workflow is pull-request-to-`main` and manual-dispatch only; this
+checkout has no Netlify project configuration, so automatic branch deploys
+cannot be ruled out here. Before any push, verify Netlify's production branch
+and branch-deploy contexts in the site dashboard. Keep M2 authenticated and
+shared-persistence acceptance, M3 buyer/API/data acceptance, M4 shared drafts,
+and all M1 human-evidence gates open.
 
 - [ ] Carry crops, OCR snapshots, polygons, calibration and register matches into the authenticated workspace.
 

@@ -53,7 +53,7 @@ test("tier click-paint updates counts; undo reverts", async ({ page }) => {
   await expect(page.locator('[aria-label="Unassigned counter"]')).toContainText("Unassigned: 1 / 12");
 });
 
-test("gates block, waivers need reasons, bulk-accept enforces the sample", async ({ page }) => {
+test("gates block, waivers need reasons, and an empty bulk proposal stays blocked", async ({ page }) => {
   await page.getByRole("tab", { name: "Gates" }).click();
   await expect(page.locator("text=BLOCKED")).toBeVisible();
   // Advancing past a blocked gate is refused (bypass guard).
@@ -64,14 +64,13 @@ test("gates block, waivers need reasons, bulk-accept enforces the sample", async
   await page.getByLabel("Target").fill("L-012");
   await page.getByRole("button", { name: "Add waiver" }).click();
   await expect(page.locator("text=Waivers (")).toHaveCount(0);
-  // Bulk flow: propose, confirm the whole sample, then the rest.
+  // This fixture has no reviewed scale/area evidence, so it must not invent
+  // an eligible sample or offer a confirm action.
   await page.getByRole("button", { name: "Propose bulk accept" }).click();
-  const sampleButtons = page.locator("button", { hasText: "Confirm sample" });
-  expect(await sampleButtons.count()).toBeGreaterThanOrEqual(2);
-  for (let i = 0, n = await sampleButtons.count(); i < n; i++) {
-    await sampleButtons.first().click();
-  }
-  await page.getByRole("button", { name: /Confirm remaining/ }).click();
-  // Success resets the flow to a fresh proposal button.
+  await expect(page.getByRole("status", { name: "Bulk accept unavailable" })).toContainText("No eligible lots");
+  await expect(page.getByRole("button", { name: /Confirm sample/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Confirm remaining/ })).toHaveCount(0);
+  await expect(page.getByText("No records were changed.")).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss" }).click();
   await expect(page.getByRole("button", { name: "Propose bulk accept" })).toBeVisible();
 });

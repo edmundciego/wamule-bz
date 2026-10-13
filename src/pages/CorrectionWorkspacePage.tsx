@@ -332,7 +332,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedMode = searchParams.get("mode");
   const [mode, setMode] = useState<Mode>(() =>
-    requestedMode === "labels" ? "labels" : requestedMode === "tiers" || requestedMode === "gates" || requestedMode === "log" ? requestedMode : "numbers",
+    DEMO_PREVIEW && requestedMode === "labels" ? "labels" : requestedMode === "tiers" || requestedMode === "gates" || requestedMode === "log" ? requestedMode : "numbers",
   );
   const [state, setState] = useState<CorrectionState>(() => restoreLocalCorrectionState(data));
   const [toast, setToast] = useState<string | null>(null);
@@ -362,7 +362,10 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
     }
   }
 
-  const modes: Mode[] = data.reviewOnly ? ["labels"] : ["numbers", "tiers", "gates", "log", "labels"];
+  const modes: Mode[] = DEMO_PREVIEW
+    ? data.reviewOnly ? ["labels"] : ["numbers", "tiers", "gates", "log", "labels"]
+    : ["numbers", "tiers", "gates", "log"];
+  const labelReviewMode = DEMO_PREVIEW && mode === "labels";
   const drawableDetectionCount = Object.values(state.lots).filter((lot) => lot.polygon.length >= 3).length;
   function chooseMode(next: Mode): void {
     setMode(next);
@@ -373,12 +376,12 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
 
   return (
     <section className={data.serverBacked ? "" : "v2-page-shell"}>
-      <div className={cn("v2-page-header", mode === "labels" && "py-3 sm:py-4")}>
-        <p className="v2-page-kicker">{mode === "labels" ? "Map review · M2 correction" : "Onboarding · Correct"}</p>
-        <h1 className="v2-page-title">{mode === "labels" ? "Hopkins Grove map review" : "Correction workspace"}</h1>
+      <div className={cn("v2-page-header", labelReviewMode && "py-3 sm:py-4")}>
+        <p className="v2-page-kicker">{labelReviewMode ? "Map review · M2 correction" : "Onboarding · Correct"}</p>
+        <h1 className="v2-page-title">{labelReviewMode ? "Hopkins Grove map review" : "Correction workspace"}</h1>
         <p className="v2-page-description">
-          {data.tenant} / {data.project} · {mode === "labels" ? `${drawableDetectionCount} detected polygons` : `${Object.keys(state.lots).length} lots`} · actor {state.actor}
-          {mode === "labels" ? " · source-grounded review only · browser-local until shared drafts are verified" : data.serverBacked ? "" : " · local drafts (server drafts pending migration apply)"}
+          {data.tenant} / {data.project} · {labelReviewMode ? `${drawableDetectionCount} detected polygons` : `${Object.keys(state.lots).length} lots`} · actor {state.actor}
+          {labelReviewMode ? " · source-grounded review only · browser-local until shared drafts are verified" : data.serverBacked ? "" : " · local drafts (server drafts pending migration apply)"}
         </p>
       </div>
       <div className="flex gap-2" role="tablist" aria-label="Workspace modes">
@@ -403,7 +406,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
       {mode === "tiers" ? <TiersTab state={state} mutate={mutate} planUrl={data.planUrl} /> : null}
       {mode === "gates" ? <GatesTab state={state} mutate={mutate} /> : null}
       {mode === "log" ? <LogTab state={state} mutate={mutate} /> : null}
-      {mode === "labels" ? <LotNumberReviewTab data={data} state={state} mutate={mutate} /> : null}
+      {labelReviewMode ? <LotNumberReviewTab data={data} state={state} mutate={mutate} /> : null}
       {toast ? (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-foreground px-4 py-2 text-sm text-background" role="status">
           {toast}
@@ -975,8 +978,15 @@ function downloadFile(name: string, contents: string, type: string): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
+  link.hidden = true;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  // Let the browser start consuming the object URL before revoking it. A
+  // synchronous revoke can cancel the download in Chromium/WebKit.
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 /* ------------------------------- Numbers ------------------------------- */
@@ -1643,8 +1653,8 @@ function GatesTab({
         <p className="font-semibold">Bulk accept (three signals + reviewed sample)</p>
         <p className="text-xs text-muted-foreground">
           Proposal = suggested lots passing the gating signals (OCR number = working copy equals ingest read; street-run = ±1 neighbour in tier
-          within ~1.5 lot widths; scale-area = printed figure vs polygon at measured scale) and not duplicated. Scale-area shows “unavailable” until a
-          measured scale is provided and does not gate until then. Sample ≥ 20 (or all when fewer), stratified by tier/block. Any wrong sample lot
+          within ~1.5 lot widths; scale-area = printed figure vs polygon at measured scale) and not duplicated. Scale-area remains unavailable until a
+          reviewed scale and approved policy are provided, and it does gate bulk acceptance. Sample ≥ 20 (or all when fewer), stratified by tier/block. Any wrong sample lot
           blocks the bulk confirm. Production seeds are server-issued single-use nonces (correction_bulk_seeds, consumed atomically in the database);
           this local preview draws its seed via crypto and never authorizes a server confirm.
         </p>
@@ -1663,6 +1673,16 @@ function GatesTab({
           >
             Propose bulk accept
           </Button>
+        ) : bulk.proposal.length === 0 ? (
+          <div className="mt-3 rounded-md border border-border bg-muted/40 p-3 text-sm" role="status" aria-label="Bulk accept unavailable">
+            <p className="font-semibold">No eligible lots in this proposal.</p>
+            <p className="mt-1 text-muted-foreground">
+              No suggested lots currently pass every required number, neighboring-lot, and reviewed-scale/area check. No records were changed.
+            </p>
+            <Button type="button" variant="outline" className="mt-2" onClick={() => setBulk(null)}>
+              Dismiss
+            </Button>
+          </div>
         ) : (
           <>
             <p className="text-sm">
