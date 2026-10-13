@@ -47,8 +47,12 @@ function loadStagingConfig() {
 }
 
 const staging = loadStagingConfig();
-const LIVE = Boolean(staging);
-const skipReason = "live staging env (URL, anon key, DB password, psycopg) not available";
+// The roundtrip test writes to staging. Never run any live check as a side
+// effect of the default `npm test`; require an explicit operator opt-in.
+const LIVE = Boolean(staging) && process.env.WAMULE_RUN_LIVE_E2E === "1";
+const skipReason = staging
+  ? "live staging checks are opt-in (set WAMULE_RUN_LIVE_E2E=1 deliberately)"
+  : "live staging env (URL, anon key, DB password, psycopg) not available";
 
 function functionsUrl(path) {
   return `${staging.url.replace(/\/$/, "")}/functions/v1/${path}`;
@@ -88,7 +92,7 @@ test("e2e payload contract matches the inquiry function", async () => {
   assert.ok(source.includes("../_shared/inquiry-contract.ts"), "function must use the shared inquiry contract");
   assert.ok(source.includes("validateInquiryPayload"), "function must validate via the shared schema");
   const contract = read("supabase/functions/_shared/inquiry-contract.ts");
-  for (const key of ["name?: unknown", "specific_lot_id?: unknown", "tenant?: unknown"]) {
+  for (const key of ["name?: unknown", "specific_lot_ref?: unknown", "tenant?: unknown"]) {
     assert.ok(contract.includes(key), `shared contract must declare ${key}`);
   }
 });
@@ -106,6 +110,7 @@ test("public lots endpoint returns tenant availability with open CORS", { skip: 
   for (const parcel of body.parcels) {
     assert.ok(Array.isArray(parcel.map_polygon), `parcel ${parcel.lot_number} map_polygon is an array`);
     assert.ok(typeof parcel.price === "number", "price is numeric");
+    assert.ok(!("id" in parcel), "public parcel payload must not expose its database id");
   }
 });
 
@@ -118,10 +123,11 @@ test("embed page serves without auth redirects", { skip: !LIVE && skipReason }, 
   assert.ok(html.includes('id="root"'), "SPA mount point served (no login redirect)");
 });
 
-test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && skipReason }, async () => {
-  const email = "test-buyer@streetside.local";
-  // Idempotency: clear leftovers from any prior run.
-  dbRows("delete from public.leads where email = %s", [email]);
+test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && skipReason }, async (t) => {
+  const referenceId = `live-${Date.now()}-inquiry`;
+  const email = `test-buyer+${referenceId}@streetside.local`;
+  // Cleanup is limited to the unique row this opted-in test may create.
+  t.after(() => dbRows("delete from public.leads where client_reference_id = %s", [referenceId]));
 
   const lotsResponse = await fetch(`${functionsUrl("get-public-lots")}?tenant=${staging.tenantSlug}`, {
     headers: anonHeaders(),
@@ -130,18 +136,15 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   const lots = await lotsResponse.json();
   // Regression guard: prefer a real published lot number (L-001 style).
   // The legacy two-digit view used to 400 every genuine inquiry.
-  const available =
-    lots.parcels.find((parcel) => parcel.status === "Available" && !/^[0-9]{2}$/.test(parcel.lot_number ?? "")) ??
-    lots.parcels.find((parcel) => parcel.status === "Available");
-  assert.ok(available, "staging has an Available lot to inquire about");
+  const available = lots.parcels.find((parcel) => parcel.status === "Available" && parcel.public_ref);
+  assert.ok(available, "staging has an Available lot with a public reference to inquire about");
 
-  const referenceId = `live-${Date.now()}-inquiry`;
   const payload = {
     name: "Integration Tester",
     email,
     phone: "+501-600-0000",
     interests: ["Available lots", "A specific lot"],
-    specific_lot_id: available.id,
+    specific_lot_ref: available.public_ref,
     message: "Testing public map inquiry submission.",
     page_url: `${staging.site}/embed/${staging.tenantSlug}`,
     tenant: staging.tenantSlug,
@@ -191,7 +194,4 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   const activities = dbRows("select id from public.lead_activities where lead_id = %s", [leads[0][0]]);
   assert.ok(activities.length >= 1, "lead activity recorded for the inquiry");
 
-  // Cleanup: delete only rows this run created (its exact idempotency key),
-  // never a broad filter. Cascades activities + tasks.
-  dbRows("delete from public.leads where client_reference_id = %s", [referenceId]);
 });

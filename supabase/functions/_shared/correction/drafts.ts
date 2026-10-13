@@ -164,6 +164,9 @@ export class DraftStore {
     const seed = (buf[0] * 0x100000000 + buf[1]) % 0x7fffffff;
     const seedId = crypto.randomUUID();
     const { proposal, sample } = proposeBulkAccept(doc.state, seed);
+    if (!proposal.length) {
+      throw new Error("bulk accept unavailable: no lots meet all signals, including reviewed scale and approved area review policy");
+    }
     this.bulkSeeds.set(seedId, { seedId, seed, proposal, sample, used: false, tenant: args.tenant, project: args.project });
     return { seedId, seed, proposal: [...proposal], sample: [...sample] };
   }

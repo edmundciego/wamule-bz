@@ -276,81 +276,13 @@ function pilToWebp(srcPath, outPath, quality, maxWidth) {
  * cut through uniform fills. The gate requires the unshifted strength to
  * exceed the best of four +/-0.35% probes by --alignment-edge-ratio.
  */
-function checkAlignment(lotsPath, tiersPath, bgPath, edgeRatioMin) {
-  const script = [
-    "import json, sys",
-    "import numpy as np",
-    "from PIL import Image",
-    "lots_path, tiers_path, bg_path = sys.argv[1], sys.argv[2], sys.argv[3]",
-    "lots = json.load(open(lots_path))",
-    "raw = json.load(open(tiers_path))",
-    "tiers = raw.get('tiers', raw)",
-    "def hexrgb(h):",
-    "    h = h.strip().lstrip('#')",
-    "    return np.array([int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)], float)",
-    "fills = {k: hexrgb(t['fill']) for k, t in tiers.items()}",
-    "tols = {k: float(t.get('tolerance', 60)) for k, t in tiers.items()}",
-    "img = Image.open(bg_path).convert('RGB')",
-    "W, H = img.size",
-    "a = np.asarray(img).astype(float)",
-    "def tier_of(px):",
-    "    best, bk = 1e9, None",
-    "    for k, f in fills.items():",
-    "        d = float(np.sqrt(((px - f) ** 2).sum()))",
-    "        if d <= tols[k] and d < best: best, bk = d, k",
-    "    return bk",
-    "def inside(px, py, poly):",
-    "    ins = False",
-    "    n = len(poly)",
-    "    for i in range(n):",
-    "        x1, y1 = poly[i]; x2, y2 = poly[(i + 1) % n]",
-    "        if ((y1 > py) != (y2 > py)) and (px < (x2 - x1) * (py - y1) / (y2 - y1 + 1e-12) + x1): ins = not ins",
-    "    return ins",
-    "ok_lots = checked = 0",
-    "for lot in lots:",
-    "    pts = [(p['x'] / 100 * W, p['y'] / 100 * H) for p in lot.get('polygon_pct', [])]",
-    "    if len(pts) < 3: continue",
-    "    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]",
-    "    hits = good = 0",
-    "    for gx in np.linspace(min(xs), max(xs), 6):",
-    "        for gy in np.linspace(min(ys), max(ys), 6):",
-    "            if not inside(gx, gy, pts): continue",
-    "            px = a[min(H - 1, max(0, int(gy))), min(W - 1, max(0, int(gx)))]",
-    "            m = float(px.mean())",
-    "            if m < 100 or m > 240: continue",
-    "            hits += 1",
-    "            if tier_of(px) == lot.get('tier_key'): good += 1",
-    "    if hits >= 3:",
-    "        checked += 1",
-    "        if good / hits >= 0.6: ok_lots += 1",
-    "    from scipy import ndimage as ndi",
-    "    EW = 1500",
-    "    EH = int(EW * H / W)",
-    "    eimg = img.convert('L').resize((EW, EH))",
-    "    ea = np.asarray(eimg).astype(float)",
-    "    gx = ndi.sobel(ea, axis=1); gy = ndi.sobel(ea, axis=0)",
-    "    grad = np.hypot(gx, gy)",
-    "    def edge_strength(dx, dy, n=16):",
-    "        tot = 0.0; nl = 0",
-    "        for lot in lots[::3]:",
-    "            pts = lot.get('polygon_pct', [])",
-    "            if len(pts) < 3: continue",
-    "            s = 0.0",
-    "            for i in range(n):",
-    "                t = i / n * len(pts); j = int(t) % len(pts); f = t - int(t)",
-    "                p1, p2 = pts[j], pts[(j + 1) % len(pts)]",
-    "                x = ((p1['x'] + (p2['x'] - p1['x']) * f) + dx) / 100 * EW",
-    "                y = ((p1['y'] + (p2['y'] - p1['y']) * f) + dy) / 100 * EH",
-    "                s += grad[min(EH - 1, max(0, int(y))), min(EW - 1, max(0, int(x)))]",
-    "            tot += s / n; nl += 1",
-    "        return tot / max(1, nl)",
-    "    g0 = edge_strength(0, 0)",
-    "    probes = [edge_strength(dx, dy) for dx, dy in [(0.35, 0), (-0.35, 0), (0, 0.35), (0, -0.35)]]",
-    "    best_probe = max(probes) if probes else 0.0",
-    "    edge_ratio = (g0 / best_probe) if best_probe > 0 else 0.0",
-    "    print(json.dumps({'rate': (ok_lots / checked) if checked else 0.0, 'checked': checked, 'passed': ok_lots, 'edge_ratio': edge_ratio, 'edge_zero': g0, 'edge_probe_best': best_probe}))",
-  ].join("\n");
-  const res = run("python3", ["-c", script, lotsPath, tiersPath, bgPath]);
+function checkAlignment(lotsPath, tiersPath, bgPath) {
+  const res = run("python3", [
+    "scripts/check-lot-alignment.py",
+    "--lots", lotsPath,
+    "--tiers", tiersPath,
+    "--background", bgPath,
+  ]);
   if (res.status !== 0) fail(`alignment check crashed: ${(res.stderr || res.stdout || "").trim().slice(0, 300)}`);
   try {
     return JSON.parse(res.stdout.trim().split("\n").pop());
@@ -541,6 +473,15 @@ async function main() {
   const reportPath = join(outDir, "ingest-report.json");
   if (!existsSync(lotsPath)) fail(`lots.json missing in ${outDir} (detection did not produce it)`);
   const lots = JSON.parse(readFileSync(lotsPath, "utf8"));
+  if (args["skip-detect"] && Array.isArray(lots)) {
+    const postDetectionFields = ["printed_lot_number", "printed_area_sqm", "match_status", "area_status", "area_ratio"];
+    const contaminatedFields = postDetectionFields.filter((field) => lots.some((lot) =>
+      lot && Object.prototype.hasOwnProperty.call(lot, field),
+    ));
+    if (contaminatedFields.length > 0) {
+      fail(`--skip-detect requires detector-stage lots.json; post-detection OCR/match fields are present (${contaminatedFields.join(", ")})`);
+    }
+  }
   let detectorReport = {};
   if (existsSync(reportPath)) {
     try {
@@ -611,10 +552,26 @@ async function main() {
   let alignment = { checked: false, rate: null, lots_checked: 0, threshold: alignmentMin, edge_ratio: null, edge_threshold: edgeRatioMin, method: "interior-sample+edge" };
   if (!args["skip-alignment-check"]) {
     console.log("[build] checking polygon/background alignment (interior + edge sampling) ...");
-    const result = checkAlignment(lotsPath, tiersPath, bgPath, edgeRatioMin);
-    alignment = { checked: true, rate: result.rate, lots_checked: result.checked, threshold: alignmentMin, edge_ratio: result.edge_ratio, edge_threshold: edgeRatioMin, method: "interior-sample+edge" };
+    const result = checkAlignment(lotsPath, tiersPath, bgPath);
+    alignment = {
+      checked: true,
+      rate: result.rate,
+      lots_checked: result.checked,
+      threshold: alignmentMin,
+      edge_ratio: result.edge_ratio,
+      edge_threshold: edgeRatioMin,
+      edge_zero: result.edge_zero,
+      edge_probe_best: result.edge_probe_best,
+      edge_probes: result.edge_probes,
+      edge_best_probe_offset_pct: result.edge_best_probe_offset_pct,
+      edge_regions: result.edge_regions,
+      method: "interior-sample+edge",
+    };
     console.log(`[build] alignment agreement: ${(result.rate * 100).toFixed(1)}% over ${result.checked} lots (min ${(alignmentMin * 100).toFixed(0)}%)`);
     console.log(`[build] edge ratio: ${result.edge_ratio.toFixed(2)} (zero-shift strength ${(result.edge_zero).toFixed(0)} vs best probe ${(result.edge_probe_best).toFixed(0)}, min ${edgeRatioMin})`);
+    const bestProbe = result.edge_best_probe_offset_pct;
+    console.log(`[build] best edge probe offset: ${bestProbe ? `dx ${bestProbe.dx_pct >= 0 ? "+" : ""}${bestProbe.dx_pct.toFixed(2)}%, dy ${bestProbe.dy_pct >= 0 ? "+" : ""}${bestProbe.dy_pct.toFixed(2)}%` : "unavailable"} (diagnostic only; no geometry changed)`);
+    console.log(`[build] quadrant edge ratios: ${Object.entries(result.edge_regions ?? {}).map(([name, region]) => `${name}=${region.edge_ratio.toFixed(2)} (n=${region.sampled_lots})`).join(", ")}`);
     if (result.rate < alignmentMin) {
       fail(
         `alignment agreement ${(result.rate * 100).toFixed(1)}% below ${(alignmentMin * 100).toFixed(0)}% — ` +

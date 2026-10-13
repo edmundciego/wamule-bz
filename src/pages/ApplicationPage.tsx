@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, CheckCircle2, HelpCircle, MapPin, Send, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "react-router-dom";
 import type { z } from "zod";
@@ -14,6 +14,7 @@ import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicL
 import { applicationSchema } from "../lib/schemas";
 import { resolveInquirySubmitError } from "../lib/functions";
 import { buildInquiryPayload } from "../../supabase/functions/_shared/inquiry-contract";
+import { buildPublicApplicationPayload } from "../../supabase/functions/_shared/public-application-contract";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
@@ -21,8 +22,9 @@ import type { BusinessSetting, InstallmentPlan, PaymentMethod } from "../types/d
 
 type ApplicationValues = z.infer<typeof applicationSchema>;
 type PublicParcelOption = {
-  id: number;
-  lot_number: string | null;
+  public_ref: string;
+  local_key: number;
+  lot_number: string;
   status: string | null;
   base_price: number;
   dimensions: string | null;
@@ -72,7 +74,7 @@ const applicationSteps = [
 function applicationStepForField(field: string) {
   if (["applicant_full_name", "applicant_address", "nationality", "occupation", "phone", "email"].includes(field)) return 0;
   if (["intended_use", "intended_use_other", "parcel_count"].includes(field)) return 1;
-  if (["preferred_parcel_ids", "alternate_lot_preference"].includes(field)) return 2;
+  if (["preferred_lot_refs", "alternate_lot_preference"].includes(field)) return 2;
   if (["payment_option", "notes"].includes(field)) return 3;
   return 4;
 }
@@ -119,17 +121,43 @@ export function ApplicationPage() {
     },
     enabled: hasSupabaseConfig,
   });
-  const { data: parcels, isLoading } = useQuery({
-    queryKey: ["public-parcel-options"],
+  const companyProfile = settingValue<typeof defaultCompany>(publicSettings, "company_profile");
+  const hasCompanyProfile = publicSettings?.some((setting) => setting.key === "company_profile") ?? false;
+  const company = { ...defaultCompany, ...companyProfile };
+  const applicationSettings = {
+    ...defaultApplicationSettings,
+    ...settingValue<typeof defaultApplicationSettings>(publicSettings, "public_application"),
+  };
+  const lotPhase = { ...defaultLotPhase, ...settingValue<typeof defaultLotPhase>(publicSettings, "lot_phase") };
+  const configuredTenantSlug = applicationSettings.lot_map_tenant_slug;
+  const applicationTenantSlug = typeof configuredTenantSlug === "string" ? configuredTenantSlug.trim().toLowerCase() : "";
+  const { data: parcels = [], isLoading, isError: parcelsError, error: parcelLoadError } = useQuery({
+    queryKey: ["public-application-lots", applicationTenantSlug],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("public_parcel_options")
-        .select("id, lot_number, status, base_price, dimensions")
-        .order("lot_number");
-      if (error) throw error;
-      return data;
+      const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (!baseUrl || !anonKey) throw new Error("The public lot service is not configured.");
+      const response = await fetch(
+        `${baseUrl}/functions/v1/get-public-lots?tenant=${encodeURIComponent(applicationTenantSlug)}`,
+        { headers: { apikey: anonKey } },
+      );
+      const body = await response.json().catch(() => ({})) as {
+        parcels?: Array<Record<string, unknown>>;
+        error?: string;
+      };
+      if (!response.ok || !Array.isArray(body.parcels)) throw new Error(body.error || "Could not load the current lot list.");
+      return body.parcels
+        .map((parcel, index) => ({
+          public_ref: typeof parcel.public_ref === "string" ? parcel.public_ref : "",
+          local_key: index + 1,
+          lot_number: typeof parcel.lot_number === "string" ? parcel.lot_number : "",
+          status: typeof parcel.status === "string" ? parcel.status : null,
+          base_price: Number(parcel.price ?? 0),
+          dimensions: typeof parcel.dimensions === "string" ? parcel.dimensions : null,
+        }))
+        .filter((parcel) => parcel.public_ref && parcel.status === "Available");
     },
-    enabled: hasSupabaseConfig,
+    enabled: hasSupabaseConfig && Boolean(applicationTenantSlug),
   });
   const { data: installmentPlans } = useQuery({
     queryKey: ["public-installment-plans"],
@@ -162,44 +190,25 @@ export function ApplicationPage() {
   const form = useForm<ApplicationValues>({
     resolver: zodResolver(applicationSchema),
     defaultValues: {
-      preferred_parcel_ids: [],
+      preferred_lot_refs: [],
       sustainability_terms_verified: true,
       legal_notice_acknowledged: false,
     },
   });
-  const selectedLotIds = form.watch("preferred_parcel_ids") ?? [];
+  const selectedLotRefs = form.watch("preferred_lot_refs") ?? [];
+  const selectedLocalKeys = parcels
+    .filter((parcel) => selectedLotRefs.includes(parcel.public_ref))
+    .map((parcel) => parcel.local_key);
   const intendedUse = form.watch("intended_use");
   const watchedValues = form.watch();
-  // Lots picked on the visual map resolve here so the review step and summary
-  // can name them even when they are absent from the legacy card list.
-  const [mapParcels, setMapParcels] = useState<Map<number, { lot_number: string; base_price: number; dimensions: string | null }>>(new Map());
-
-  function handleMapParcelsLoaded(loaded: PublicLotParcel[]) {
-    setMapParcels((previous) => {
-      const next = new Map(previous);
-      for (const parcel of loaded) {
-        next.set(parcel.id, { lot_number: parcel.lot_number, base_price: parcel.price, dimensions: parcel.dimensions });
-      }
-      return next;
-    });
-  }
-
   function toggleMapLot(parcel: PublicLotParcel) {
-    const current = (form.getValues("preferred_parcel_ids") ?? []).map(Number);
-    const next = current.includes(parcel.id) ? current.filter((id) => id !== parcel.id) : [...current, parcel.id];
-    form.setValue("preferred_parcel_ids", next, { shouldValidate: true });
+    if (!parcel.public_ref) return;
+    const current = form.getValues("preferred_lot_refs") ?? [];
+    const next = current.includes(parcel.public_ref)
+      ? current.filter((reference) => reference !== parcel.public_ref)
+      : [...current, parcel.public_ref];
+    form.setValue("preferred_lot_refs", next, { shouldValidate: true });
   }
-
-  const allParcelOptions = useMemo(() => {
-    const base = [...(parcels ?? [])];
-    const ids = new Set(base.map((parcel) => parcel.id));
-    for (const [id, meta] of mapParcels) {
-      if (!ids.has(id)) {
-        base.push({ id, lot_number: meta.lot_number, status: "Available", base_price: meta.base_price, dimensions: meta.dimensions });
-      }
-    }
-    return base;
-  }, [parcels, mapParcels]);
 
   useEffect(() => {
     if (location.pathname === "/apply") {
@@ -209,71 +218,42 @@ export function ApplicationPage() {
     }
   }, [location.pathname]);
 
-  function splitApplicantName(fullName: string) {
-    const parts = fullName.trim().split(/\s+/);
-    return {
-      first_name: parts[0] ?? fullName.trim(),
-      last_name: parts.slice(1).join(" ") || parts[0] || "Applicant",
-    };
-  }
-
   async function onSubmit(values: ApplicationValues) {
     setSubmitError(null);
     if (!applicationSettings.applications_open) {
       setSubmitError("Applications are currently closed.");
       return;
     }
-    const { first_name, last_name } = splitApplicantName(values.applicant_full_name);
-    const { error } = await supabase.from("applications").insert({
-      first_name,
-      last_name,
-      applicant_full_name: values.applicant_full_name,
-      applicant_address: values.applicant_address,
-      nationality: values.nationality,
-      occupation: values.occupation,
-      phone: values.phone,
-      email: values.email,
-      intended_use: values.intended_use,
-      intended_use_other: values.intended_use_other || null,
-      parcel_count: values.parcel_count,
-      preferred_parcel_ids: values.preferred_parcel_ids,
-      alternate_lot_preference: values.alternate_lot_preference,
-      payment_option: values.payment_option,
-      legal_notice_acknowledged: values.legal_notice_acknowledged,
-      applicant_acknowledgement_signature: values.applicant_acknowledgement_signature,
-      notes: values.notes || null,
-      cultural_preservation_review:
-        `Applicant acknowledged the ${company.company_name} application notice, reservation terms, and applicant acknowledgement.`,
-      sustainability_terms_verified: values.sustainability_terms_verified,
-      status: "Pending Review",
+    if (!applicationTenantSlug) {
+      setSubmitError("This application page is not configured. Please contact the development team.");
+      return;
+    }
+    const { data, error: functionError } = await supabase.functions.invoke("submit-public-application", {
+      body: buildPublicApplicationPayload({ tenant: applicationTenantSlug, ...values }),
     });
-    if (error) {
-      setSubmitError(error.message);
+    if (functionError || data?.error) {
+      setSubmitError(
+        functionError
+          ? await resolveInquirySubmitError(functionError)
+          : String(data?.error ?? "We could not submit your application. Please try again."),
+      );
       return;
     }
     setSubmitted(true);
     form.reset({
-      preferred_parcel_ids: [],
+      preferred_lot_refs: [],
       sustainability_terms_verified: true,
       legal_notice_acknowledged: false,
     });
   }
 
-  const companyProfile = settingValue<typeof defaultCompany>(publicSettings, "company_profile");
-  const hasCompanyProfile = publicSettings?.some((setting) => setting.key === "company_profile") ?? false;
-  const company = { ...defaultCompany, ...companyProfile };
-  const applicationSettings = {
-    ...defaultApplicationSettings,
-    ...settingValue<typeof defaultApplicationSettings>(publicSettings, "public_application"),
-  };
-  const lotPhase = { ...defaultLotPhase, ...settingValue<typeof defaultLotPhase>(publicSettings, "lot_phase") };
   const availableLots = parcels?.length ?? 0;
   const visiblePlans = installmentPlans?.length ? installmentPlans : fallbackApplicationPlans();
   const summaryRows = buildApplicationSummaryRows({
     activeStep,
     values: watchedValues,
-    selectedLotIds,
-    parcels: allParcelOptions,
+    selectedLotRefs,
+    parcels,
   });
 
   // The public page must never flash a bundled brand before the admin-managed
@@ -366,7 +346,7 @@ export function ApplicationPage() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 {parcels?.slice(0, 4).map((parcel) => (
-                  <div key={parcel.id} className="rounded-lg border border-success/20 bg-success/10 p-3 text-sm">
+                  <div key={parcel.public_ref} className="rounded-lg border border-success/20 bg-success/10 p-3 text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <strong className="text-primary">Lot {parcel.lot_number}</strong>
                       <span className="rounded-full bg-success/10 px-2 py-1 text-xs font-semibold text-success">{parcel.status}</span>
@@ -387,7 +367,8 @@ export function ApplicationPage() {
       <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
         <PublicInquiryPanel
           companyName={company.company_name}
-          parcels={parcels ?? []}
+          tenantSlug={applicationTenantSlug}
+          parcels={parcels}
           showPrices={applicationSettings.show_lot_prices_publicly}
           hasSupabaseConfig={hasSupabaseConfig}
         />
@@ -529,11 +510,10 @@ export function ApplicationPage() {
                           <div className="grid gap-2">
                             <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
                               <PublicLotMap
-                                tenantSlug={applicationSettings.lot_map_tenant_slug || "demo"}
-                                selectedIds={selectedLotIds.map(Number)}
+                                tenantSlug={applicationTenantSlug || "demo"}
+                                selectedLocalKeys={selectedLocalKeys}
                                 onToggleLot={toggleMapLot}
                                 showPrices={applicationSettings.show_lot_prices_publicly}
-                                onParcelsLoaded={handleMapParcelsLoaded}
                                 demoDataUrl={
                                   applicationSettings.lot_map_tenant_slug || !import.meta.env.DEV
                                     ? undefined
@@ -546,23 +526,23 @@ export function ApplicationPage() {
                             </p>
                           </div>
                         ) : null}
-                        <Field label="Preferred lots" error={form.formState.errors.preferred_parcel_ids?.message}>
+                        <Field label="Preferred lots" error={form.formState.errors.preferred_lot_refs?.message}>
                           {isLoading ? (
                             <LoadingState label="Loading available lots" />
                           ) : (
                             <div className="grid gap-3">
                               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                                 {parcels?.map((parcel) => {
-                                  const selected = selectedLotIds.map(Number).includes(parcel.id);
+                                  const selected = selectedLotRefs.includes(parcel.public_ref);
                                   return (
                                     <label
-                                      key={parcel.id}
+                                      key={parcel.public_ref}
                                       className={cn(
                                         "relative cursor-pointer rounded-xl border p-4 text-sm font-normal transition",
                                         selected ? "border-primary bg-primary-soft ring-1 ring-primary" : "border-border bg-card hover:border-primary/40 hover:bg-primary-soft/30",
                                       )}
                                     >
-                                      <input className="sr-only" type="checkbox" value={parcel.id} {...form.register("preferred_parcel_ids")} />
+                                      <input className="sr-only" type="checkbox" value={parcel.public_ref} {...form.register("preferred_lot_refs")} />
                                       <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Lot</span>
                                       <span className="mt-1 block text-2xl font-semibold text-primary">{parcel.lot_number}</span>
                                       <span className="mt-2 block text-sm text-muted-foreground">{parcel.dimensions}</span>
@@ -574,7 +554,11 @@ export function ApplicationPage() {
                                   );
                                 })}
                               </div>
-                              {parcels?.length === 0 ? <p className="text-sm text-muted-foreground">No available lots are currently listed.</p> : null}
+                              {parcelsError ? (
+                                <ErrorState message={parcelLoadError instanceof Error ? parcelLoadError.message : "Could not load the current lot list."} />
+                              ) : parcels.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No available lots are currently listed.</p>
+                              ) : null}
                             </div>
                           )}
                         </Field>
@@ -639,7 +623,7 @@ export function ApplicationPage() {
                       <FormStep title="Review & Acknowledge" goal={applicationSteps[4].goal}>
                         <ReviewSummary
                           values={watchedValues}
-                          parcels={allParcelOptions}
+                          parcels={parcels}
                           showPrices={applicationSettings.show_lot_prices_publicly}
                           onEdit={setActiveStep}
                         />
@@ -706,11 +690,13 @@ export function ApplicationPage() {
 
 function PublicInquiryPanel({
   companyName,
+  tenantSlug,
   parcels,
   showPrices,
   hasSupabaseConfig,
 }: {
   companyName: string;
+  tenantSlug: string;
   parcels: PublicParcelOption[];
   showPrices: boolean;
   hasSupabaseConfig: boolean;
@@ -719,7 +705,7 @@ function PublicInquiryPanel({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [interests, setInterests] = useState<InquiryInterest[]>([]);
-  const [specificLotId, setSpecificLotId] = useState("");
+  const [specificLotRef, setSpecificLotRef] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -732,7 +718,7 @@ function PublicInquiryPanel({
   function toggleInterest(interest: InquiryInterest) {
     setInterests((current) => {
       const next = current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest];
-      if (interest === specificLotInterest && current.includes(interest)) setSpecificLotId("");
+      if (interest === specificLotInterest && current.includes(interest)) setSpecificLotRef("");
       return next;
     });
   }
@@ -745,12 +731,16 @@ function PublicInquiryPanel({
       setError("Enter your name and email so the team can follow up.");
       return;
     }
-    if (specificLotSelected && !specificLotId) {
+    if (specificLotSelected && !specificLotRef) {
       setError("Choose the specific lot you would like information about.");
       return;
     }
     if (!hasSupabaseConfig) {
       setError("Public inquiry submission is not configured in this environment.");
+      return;
+    }
+    if (!tenantSlug) {
+      setError("This application page is not configured. Please contact the development team.");
       return;
     }
 
@@ -761,9 +751,10 @@ function PublicInquiryPanel({
         email,
         phone,
         interests,
-        specificLotId: specificLotSelected && specificLotId ? Number(specificLotId) : null,
+        specificLotRef: specificLotSelected && specificLotRef ? specificLotRef : null,
         message,
         pageUrl: window.location.href,
+        tenant: tenantSlug,
         clientReferenceId,
       }),
     });
@@ -784,7 +775,7 @@ function PublicInquiryPanel({
     setEmail("");
     setPhone("");
     setInterests([]);
-    setSpecificLotId("");
+    setSpecificLotRef("");
     setMessage("");
   }
 
@@ -871,10 +862,10 @@ function PublicInquiryPanel({
 
           {specificLotSelected ? (
             <Field label="Specific lot">
-              <Select value={specificLotId} onChange={(event) => setSpecificLotId(event.target.value)}>
+              <Select value={specificLotRef} onChange={(event) => setSpecificLotRef(event.target.value)}>
                 <option value="">Select a lot</option>
                 {parcels.map((parcel) => (
-                  <option key={parcel.id} value={parcel.id}>
+                  <option key={parcel.public_ref} value={parcel.public_ref}>
                     Lot {parcel.lot_number} {parcel.dimensions ? `- ${parcel.dimensions}` : ""} {showPrices ? `- ${money(parcel.base_price)}` : ""}
                   </option>
                 ))}
@@ -992,15 +983,15 @@ function ReviewSummary({
   onEdit,
 }: {
   values: Partial<ApplicationValues>;
-  parcels: Array<{ id: number; lot_number: string | null; base_price: number; dimensions: string | null }>;
+  parcels: PublicParcelOption[];
   showPrices: boolean;
   onEdit: (step: number) => void;
 }) {
-  const preferredLots = values.preferred_parcel_ids?.length
-    ? values.preferred_parcel_ids.map((id) => {
-      const parcel = parcels.find((item) => item.id === Number(id));
+  const preferredLots = values.preferred_lot_refs?.length
+    ? values.preferred_lot_refs.map((reference) => {
+      const parcel = parcels.find((item) => item.public_ref === reference);
       const price = parcel && showPrices ? ` · ${money(parcel.base_price)}` : "";
-      return parcel ? `Lot ${parcel.lot_number} · ${parcel.dimensions}${price}` : `Lot ${id}`;
+      return parcel ? `Lot ${parcel.lot_number} · ${parcel.dimensions}${price}` : "Lot no longer listed";
     }).join(", ")
     : "None selected";
   return (
@@ -1049,13 +1040,13 @@ function ReviewGroup({ title, step, rows, onEdit }: { title: string; step: numbe
 function buildApplicationSummaryRows({
   activeStep,
   values,
-  selectedLotIds,
+  selectedLotRefs,
   parcels,
 }: {
   activeStep: number;
   values: Partial<ApplicationValues>;
-  selectedLotIds: ApplicationValues["preferred_parcel_ids"];
-  parcels: Array<{ id: number; lot_number: string | null }>;
+  selectedLotRefs: ApplicationValues["preferred_lot_refs"];
+  parcels: PublicParcelOption[];
 }) {
   const rows: Array<{ label: string; value: string; muted?: boolean }> = [];
   const addRow = (label: string, value: string | number | undefined | null, emptyValue: string) => {
@@ -1070,9 +1061,9 @@ function buildApplicationSummaryRows({
     addRow("Parcels", values.parcel_count, "Not entered");
   }
 
-  if (activeStep >= 2 || selectedLotIds?.length || values.alternate_lot_preference) {
-    const preferredLots = selectedLotIds?.length
-      ? selectedLotIds.map((id) => lotLabel(parcels, Number(id))).join(", ")
+  if (activeStep >= 2 || selectedLotRefs?.length || values.alternate_lot_preference) {
+    const preferredLots = selectedLotRefs?.length
+      ? selectedLotRefs.map((reference) => lotLabel(parcels, reference)).join(", ")
       : undefined;
     addRow("Preferred lot", preferredLots, "Not selected");
     if (activeStep >= 2 || values.alternate_lot_preference) addRow("Alternative", values.alternate_lot_preference, "Not entered");
@@ -1115,9 +1106,9 @@ function PublicSettingsUnavailable() {
   );
 }
 
-function lotLabel(parcels: Array<{ id: number; lot_number: string | null }>, id: number) {
-  const parcel = parcels.find((item) => item.id === id);
-  return parcel ? `Lot ${parcel.lot_number}` : `Lot ${id}`;
+function lotLabel(parcels: PublicParcelOption[], reference: string) {
+  const parcel = parcels.find((item) => item.public_ref === reference);
+  return parcel ? `Lot ${parcel.lot_number}` : "Lot no longer listed";
 }
 
 function settingValue<T>(settings: BusinessSetting[] | undefined, key: string) {

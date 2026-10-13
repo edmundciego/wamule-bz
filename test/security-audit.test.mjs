@@ -6,7 +6,7 @@ const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const PUBLIC_PARCEL_FIELDS = new Set([
-  "id",
+  "public_ref",
   "lot_number",
   "status",
   "price",
@@ -70,8 +70,10 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
 
   // Tight select bounds: public-safe parcel columns plus the tier/version/
   // project inputs needed server-side for price math, version and project
-  // scoping (all stripped from the payload below).
-  assert.match(fn, /\.select\("id, lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id"\)/);
+  // scoping (all stripped from the payload below). The internal row id is not
+  // needed and is never selected.
+  assert.match(fn, /\.select\("lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id"\)/);
+  assert.doesNotMatch(fn, /\.select\("id, lot_number/);
 
   // Sensitive columns must never be requested...
   for (const forbidden of ["zoning", "authorized_by", "internal_notes", "created_by", "auth_user_id", "gemini_api_key", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
@@ -81,8 +83,11 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
     );
   }
 
-  // Tier catalogue reads are display-safe only (no tenant scoping leaks).
-  assert.match(fn, /\.select\("tier_key, label, price_cents, corner_premium_cents, color_hex"\)/);
+  // Tier reads are project-scoped; the selected display fields are still
+  // server-only inputs and never enter the parcel allowlist directly.
+  assert.match(fn, /const tierFields = "tier_key, label, price_cents, corner_premium_cents, color_hex"/);
+  assert.match(fn, /from\("project_lot_tiers"\)/);
+  assert.match(fn, /from\("lot_tiers"\)/);
 
   // ...and the response layer must enforce an allowlist so unknown columns can
   // never leak even if the query bounds change later.
@@ -105,7 +110,7 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
   assert.match(fn, /allowlistTheme/);
 
   // Response mapping must route through the allowlist serializer.
-  assert.match(fn, /parcels: visible\.map\(\(parcel\) => toPublicParcel/);
+  assert.match(fn, /parcels: \(parcels \?\? \[\]\)\.map\(\(parcel, index\) =>\s+toPublicParcel/);
 });
 
 test("receive-inbound-email verifies Resend/Svix webhook signatures before processing", async () => {

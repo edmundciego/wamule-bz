@@ -14,6 +14,17 @@ function functionBody(source, name) {
   return end >= 0 ? rest.slice(0, end) : rest;
 }
 
+test("embedded map chrome stays neutral while tenant theme tokens carry styling", async () => {
+  const [app, map] = await Promise.all([read("src/App.tsx"), read("src/components/public/PublicLotMap.tsx")]);
+  assert.match(app, /role="status" aria-live="polite">Loading…/);
+  assert.doesNotMatch(app, /Loading Wamule/);
+  assert.match(map, /const mapTitle = reviewPendingDemo/);
+  assert.match(map, /payload\?\.branding\.company_name \|\| payload\?\.tenant\.name/);
+  assert.match(map, /Proof of concept · sample data/);
+  assert.match(map, /fontFamily: theme\.tokens\.fontFamily/);
+  assert.match(map, /buildThemeCssVars\(theme\)/);
+});
+
 test("fullscreen toggle enters natively and state follows browser-owned exits", async () => {
   const map = await read("src/components/public/PublicLotMap.tsx");
 
@@ -93,13 +104,14 @@ test("add-to-preferences works inside fullscreen with confirmation", async () =>
   assert.match(map, /aria-live="polite"/);
   // Fullscreen detail panel docks on desktop, scrolls on short viewports.
   assert.match(map, /max-h-\[50dvh\] overflow-auto/);
-  // Close sits top-right; the docked panel clears it, and the zoom stack
-  // lifts above the bottom sheet on small screens.
+  // Close sits top-right; the docked panel clears it, and the zoom/fullscreen
+  // stack lifts above the bottom sheet on small screens, including fullscreen.
   assert.match(map, /md:top-14/);
-  assert.match(map, /focusLot && !expanded \? "bottom-48 sm:bottom-3"/);
+  assert.match(map, /focusLot && !previewLayout \? "bottom-48 sm:bottom-3" : "bottom-3"/);
+  assert.match(map, /style=\{focusLot && narrow && cardHpx > 0 && !previewLayout/);
 
   // Pick action flows into the application form field.
-  assert.match(page, /form\.setValue\("preferred_parcel_ids"/);
+  assert.match(page, /form\.setValue\("preferred_lot_refs"/);
   assert.match(map, /Select Lot /);
 });
 
@@ -110,6 +122,19 @@ test("legend matches the active colour view", async () => {
   // Tier view legend is the tier chips row (collapsible, closed on small screens).
   assert.match(map, /aria-expanded=\{chipsOpen\}/);
   assert.match(map, /window\.innerWidth >= 640/);
+});
+
+test("public map exposes accessible loading, empty, failure, and retry states", async () => {
+  const map = await read("src/components/public/PublicLotMap.tsx");
+  assert.match(map, /role="status" aria-live="polite"/);
+  assert.match(map, /Loading lot map/);
+  assert.match(map, /No lots are published for this project yet\./);
+  assert.match(map, /No lots match these filters\./);
+  assert.match(map, /Clear filters and search/);
+  assert.match(map, /Map unavailable/);
+  assert.match(map, /Try again/);
+  assert.match(map, /setLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(map, /\[tenantSlug, projectSlug, demoDataUrl, loadAttempt\]/);
 });
 
 test("small lots get an invisible pointer halo without changing the visuals", async () => {

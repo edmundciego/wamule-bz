@@ -9,5 +9,8 @@ project_id = "kvocwmrcuhiaezlcgzjf"
 [functions.submit-public-inquiry]
 verify_jwt = false
 
+[functions.submit-public-application]
+verify_jwt = false
+
 [functions.get-public-lots]
 verify_jwt = false

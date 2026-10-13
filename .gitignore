@@ -15,9 +15,13 @@ e2e/fixtures/hopkins/
 # Source plat PDF (1.4GB): local pipeline input only, never versioned.
 # The extracted raster + lots.json it produces are the tracked artifacts.
 /2026 Hopkins Map.pdf
+# This local review package is a private scratch build, not an approved tenant.
+tenants/hopkins-grove/
 # Tenant packages: scaffolding is committed; working areas never are.
 tenants/*/source/
+tenants/*/evidence/
 tenants/*/build/
+tenants/*/build-history/
 # Generated OCR artifacts (reproducible via scripts/ocr-match.py).
 e2e/fixtures/*/ocr.json
 e2e/fixtures/*/ocr-comparison.json

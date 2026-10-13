@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { resolveInquirySubmitError } from "../../lib/functions";
 import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
@@ -9,7 +9,7 @@ import { ErrorState } from "../ui/State";
 interface PublicInquiryModalProps {
   tenantSlug: string;
   tenantName: string;
-  lotId: number;
+  lotRef: string;
   lotNumber: string;
   /** Reserved lots open in waitlist mode: no availability promise anywhere. */
   waitlist?: boolean;
@@ -28,7 +28,7 @@ function fallbackUuid(): string {
   });
 }
 
-export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+export function PublicInquiryModal({ tenantSlug, tenantName, lotRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -41,6 +41,62 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, w
   // Idempotency key, stable for this form instance: retries after an error
   // resubmit the same key, so the endpoint can't create a duplicate lead.
   const [clientReferenceId] = useState(() => fallbackUuid());
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeHandlerRef = useRef(onClose);
+  const titleId = useId();
+
+  useEffect(() => {
+    closeHandlerRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    dialog.querySelector<HTMLInputElement>('input[autocomplete="name"]')?.focus({ preventScroll: true });
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeHandlerRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(focusableSelector)].filter(
+        (element) => element.tabIndex >= 0 && element.getClientRects().length > 0,
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sent) return;
+    dialogRef.current
+      ?.querySelector<HTMLButtonElement>('[data-dialog-focus="success"]')
+      ?.focus({ preventScroll: true });
+  }, [sent]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -57,7 +113,7 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, w
           email: email.trim(),
           phone: phone.trim() || undefined,
           interests: ["Available lots", "A specific lot"],
-          specificLotId: lotId,
+          specificLotRef: lotRef,
           message: message.trim() || undefined,
           pageUrl: window.location.href,
           tenant: tenantSlug,
@@ -75,12 +131,19 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, w
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={waitlist ? `Join the waitlist for Lot ${lotNumber}` : `Inquire about Lot ${lotNumber}`}>
+    <div
+      ref={dialogRef}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+    >
       <button type="button" aria-label="Close inquiry form" onClick={onClose} className="absolute inset-0 bg-black/50" />
       <div className="relative w-full max-w-md rounded-lg bg-background p-5 shadow-xl">
         {sent ? (
           <div className="grid gap-3 text-center">
-            <h2 className="font-display text-xl font-semibold text-primary">
+            <h2 id={titleId} className="font-display text-xl font-semibold text-primary">
               {waitlist ? "You're on the Waitlist!" : "Inquiry Sent!"}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
@@ -88,14 +151,14 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotId, lotNumber, w
                 ? `We'll contact you if Lot ${lotNumber} becomes available. Joining the waitlist does not reserve the lot.`
                 : `The development team will reach out to you shortly about Lot ${lotNumber}.`}
             </p>
-            <Button type="button" onClick={onClose}>
+            <Button type="button" data-dialog-focus="success" onClick={onClose}>
               Done
             </Button>
           </div>
         ) : (
           <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
             <div>
-              <h2 className="font-display text-xl font-semibold text-primary">
+              <h2 id={titleId} className="font-display text-xl font-semibold text-primary">
                 {waitlist ? `Join the Waitlist for Lot ${lotNumber}` : `Inquire About Lot ${lotNumber}`}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">{tenantName}</p>

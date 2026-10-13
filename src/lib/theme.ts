@@ -1,7 +1,7 @@
 /**
  * Tenant theming contract (single source of truth).
  *
- * Used by the web app (PublicLotMap applies tokens as CSS variables + card
+ * Used by the web app (PublicLotMap applies color/type tokens as CSS variables + card
  * config), the publish pipeline (scripts validate + allowlist before
  * writing), and node tests. Dependency-free on purpose: no DOM access here
  * (callers own the DOM), no Node/Deno APIs.
@@ -19,6 +19,7 @@ export interface LotMapThemeTokens {
   accent: string;
   text: string;
   muted: string;
+  fontFamily: string;
 }
 
 export interface LotMapCardConfig {
@@ -37,9 +38,12 @@ export interface LotMapTheme {
   cssUrl: string | null;
 }
 
-const TOKEN_KEYS = ["primary", "background", "card", "accent", "text", "muted"] as const;
+const COLOR_TOKEN_KEYS = ["primary", "background", "card", "accent", "text", "muted"] as const;
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const FONT_NAME = String.raw`(?:[\p{L}\p{N}_-][\p{L}\p{N}_ -]*|"[\p{L}\p{N}_ -]+"|'[\p{L}\p{N}_ -]+')`;
+const FONT_STACK = new RegExp(`^${FONT_NAME}(?:\\s*,\\s*${FONT_NAME})*$`, "u");
+export const DEFAULT_FONT_FAMILY = `Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
 
 export const DEFAULT_CARD_CONFIG: LotMapCardConfig = {
   showTier: true,
@@ -63,6 +67,81 @@ function cleanHex(value: unknown, fallback: string): string {
   return HEX_COLOR.test(text) ? text : fallback;
 }
 
+function cleanFontFamily(value: unknown, fallback: string): string {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
+  if (!text || !FONT_STACK.test(text) || /^(inherit|initial|unset|revert|revert-layer)$/i.test(text)) return fallback;
+  return text;
+}
+
+type RGB = readonly [number, number, number];
+
+function hexToRgb(hex: string): RGB {
+  const raw = hex.slice(1);
+  const full = raw.length === 3 ? [...raw].map((value) => `${value}${value}`).join("") : raw;
+  return [0, 2, 4].map((index) => Number.parseInt(full.slice(index, index + 2), 16)) as unknown as RGB;
+}
+
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const first = relativeLuminance(foreground);
+  const second = relativeLuminance(background);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+function chooseForeground(preferred: string, surfaces: string[]): string {
+  const choices = [preferred, "#000000", "#ffffff"];
+  return choices.find((color) => surfaces.every((surface) => contrastRatio(color, surface) >= 4.5)) ??
+    ["#000000", "#ffffff"].sort((left, right) =>
+      Math.min(...surfaces.map((surface) => contrastRatio(right, surface))) -
+      Math.min(...surfaces.map((surface) => contrastRatio(left, surface))),
+    )[0];
+}
+
+function mixHex(base: string, tint: string, tintAmount: number): string {
+  const mixed = hexToRgb(base).map((channel, index) =>
+    Math.round(channel * (1 - tintAmount) + hexToRgb(tint)[index] * tintAmount),
+  );
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function blendForContrast(surface: string, preferred: string, minimum = 3): string {
+  if (contrastRatio(preferred, surface) >= minimum) return preferred;
+  const target = chooseForeground(preferred, [surface]);
+  let low = 0;
+  let high = 1;
+  for (let step = 0; step < 12; step++) {
+    const middle = (low + high) / 2;
+    if (contrastRatio(mixHex(surface, target, middle), surface) >= minimum) high = middle;
+    else low = middle;
+  }
+  return mixHex(surface, target, high);
+}
+
+function toHslChannels(hex: string): string {
+  const [red, green, blue] = hexToRgb(hex).map((channel) => channel / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  let hue = 0;
+  let saturation = 0;
+  if (delta !== 0) {
+    saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    if (max === red) hue = ((green - blue) / delta) % 6;
+    else if (max === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue = (hue * 60 + 360) % 360;
+  }
+  return `${Math.round(hue)} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%`;
+}
+
 function cleanBool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -83,6 +162,7 @@ export function allowlistTheme(raw: unknown, cssUrl: string | null): LotMapTheme
     accent: "#8a5a35",
     text: "#2d2317",
     muted: "#6b6259",
+    fontFamily: DEFAULT_FONT_FAMILY,
   };
   const out: LotMapTheme = {
     tokens: {
@@ -92,6 +172,7 @@ export function allowlistTheme(raw: unknown, cssUrl: string | null): LotMapTheme
       accent: cleanHex(tokens.accent, base.accent),
       text: cleanHex(tokens.text, base.text),
       muted: cleanHex(tokens.muted, base.muted),
+      fontFamily: cleanFontFamily(tokens.fontFamily, base.fontFamily),
     },
     card: {
       showTier: cleanBool(card.showTier, DEFAULT_CARD_CONFIG.showTier),
@@ -109,9 +190,62 @@ export function allowlistTheme(raw: unknown, cssUrl: string | null): LotMapTheme
 /** Build the per-container CSS variable map (fresh object per call). */
 export function buildThemeCssVars(theme: LotMapTheme): Record<string, string> {
   const vars: Record<string, string> = {};
-  for (const key of TOKEN_KEYS) {
+  for (const key of COLOR_TOKEN_KEYS) {
     vars[`--lotmap-${key}`] = theme.tokens[key];
   }
+
+  // A single foreground must work on both public surfaces. If a tenant pairs
+  // opposing light/dark surfaces such that no AA foreground can serve both,
+  // keep the requested values available as lotmap tokens but use one neutral
+  // semantic surface in the embed rather than shipping unreadable text.
+  const background = theme.tokens.background;
+  let card = theme.tokens.card;
+  if (![theme.tokens.text, "#000000", "#ffffff"].some((color) =>
+    [background, card].every((surface) => contrastRatio(color, surface) >= 4.5),
+  )) {
+    card = background;
+  }
+  const text = chooseForeground(theme.tokens.text, [background, card]);
+  const primary = chooseForeground(theme.tokens.primary, [background, card]);
+  const cardText = chooseForeground(theme.tokens.text, [card]);
+  const muted = chooseForeground(theme.tokens.muted, [background, card]);
+  const primaryForeground = chooseForeground("#ffffff", [primary]);
+  const accentForeground = chooseForeground("#ffffff", [theme.tokens.accent]);
+  let darkerPrimary = mixHex(primary, "#000000", 0.14);
+  if (contrastRatio(primaryForeground, darkerPrimary) < 4.5) darkerPrimary = primary;
+  let primarySoft = mixHex(background, primary, 0.09);
+  if (contrastRatio(primary, primarySoft) < 4.5) primarySoft = background;
+  let darkerAccent = mixHex(theme.tokens.accent, "#000000", 0.14);
+  if (contrastRatio(accentForeground, darkerAccent) < 4.5) darkerAccent = theme.tokens.accent;
+  let accentSoft = mixHex(background, theme.tokens.accent, 0.09);
+  if (contrastRatio(accentForeground, accentSoft) < 4.5) accentSoft = background;
+  const subtleBorder = blendForContrast(card, muted);
+  const border = [background, card].every((surface) => contrastRatio(subtleBorder, surface) >= 3)
+    ? subtleBorder
+    : muted;
+
+  // The app's Tailwind utilities consume HSL channel variables. Mapping these
+  // per embed keeps the chrome neutral and tenant-scoped without changing the
+  // surrounding host page or another map instance.
+  vars["--lotmap-font-family"] = theme.tokens.fontFamily;
+  vars["--font-sans"] = theme.tokens.fontFamily;
+  vars["--background"] = toHslChannels(background);
+  vars["--foreground"] = toHslChannels(text);
+  vars["--card"] = toHslChannels(card);
+  vars["--card-foreground"] = toHslChannels(cardText);
+  vars["--muted"] = toHslChannels(mixHex(card, text, 0.04));
+  vars["--muted-foreground"] = toHslChannels(muted);
+  vars["--primary"] = toHslChannels(primary);
+  vars["--primary-hover"] = toHslChannels(darkerPrimary);
+  vars["--primary-soft"] = toHslChannels(primarySoft);
+  vars["--primary-foreground"] = toHslChannels(primaryForeground);
+  vars["--accent"] = toHslChannels(theme.tokens.accent);
+  vars["--accent-hover"] = toHslChannels(darkerAccent);
+  vars["--accent-soft"] = toHslChannels(accentSoft);
+  vars["--border"] = toHslChannels(border);
+  vars["--input"] = vars["--border"];
+  vars["--ring"] = vars["--primary"];
+  vars["--accent-foreground"] = toHslChannels(accentForeground);
   return vars;
 }
 

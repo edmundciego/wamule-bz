@@ -12,10 +12,11 @@ const FIXTURE_MIME: Record<string, string> = {
 };
 
 /**
- * Serves the e2e map fixture directory at /demo-map in dev only
- * (`apply: "serve"` — `vite build` never runs this, so no fixture file can
- * reach dist/). Default: the committed synthetic fixture. Local-only runs
- * against real pipeline output: E2E_FIXTURE_DIR=e2e/fixtures/hopkins.
+ * Serves the synthetic test fixture and the private Hopkins review fixture
+ * at separate paths in dev only (`apply: "serve"` — `vite build` never runs
+ * this, so no fixture file can reach dist/). The synthetic source may be
+ * overridden for isolated local checks with E2E_FIXTURE_DIR; `/demo-hopkins-map`
+ * always serves the explicit local candidate-review fixture.
  */
 function e2eFixturePlugin(): Plugin {
   return {
@@ -23,21 +24,29 @@ function e2eFixturePlugin(): Plugin {
     apply: "serve",
     configureServer(server) {
       const root = server.config.root;
-      const dir = resolve(root, process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic");
-      const prefix = dir.replace(/\\/g, "/");
-      server.middlewares.use("/demo-map", (req, res, next) => {
-        if (!req.url || req.method !== "GET") return next();
-        const file = normalize(join(dir, decodeURIComponent(req.url.split("?")[0]))).replace(/\\/g, "/");
-        if (file !== prefix && !file.startsWith(`${prefix}/`)) {
-          res.statusCode = 403;
-          res.end();
-          return;
-        }
-        if (!existsSync(file) || !statSync(file).isFile()) return next();
-        const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
-        res.setHeader("Content-Type", FIXTURE_MIME[ext] ?? "application/octet-stream");
-        createReadStream(file).pipe(res);
-      });
+      const fixtures = [
+        {
+          route: "/demo-map",
+          dir: resolve(root, process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic"),
+        },
+        { route: "/demo-hopkins-map", dir: resolve(root, "e2e/fixtures/hopkins") },
+      ];
+      for (const fixture of fixtures) {
+        const prefix = fixture.dir.replace(/\\/g, "/");
+        server.middlewares.use(fixture.route, (req, res, next) => {
+          if (!req.url || req.method !== "GET") return next();
+          const file = normalize(join(fixture.dir, decodeURIComponent(req.url.split("?")[0]))).replace(/\\/g, "/");
+          if (file !== prefix && !file.startsWith(`${prefix}/`)) {
+            res.statusCode = 403;
+            res.end();
+            return;
+          }
+          if (!existsSync(file) || !statSync(file).isFile()) return next();
+          const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
+          res.setHeader("Content-Type", FIXTURE_MIME[ext] ?? "application/octet-stream");
+          createReadStream(file).pipe(res);
+        });
+      }
     },
   };
 }
@@ -73,8 +82,47 @@ function correctionWorkspacePlugin(): Plugin {
           createReadStream(file).pipe(res);
         });
       };
+      const serveRestricted = (route: string, dir: string, allowed: (relative: string) => boolean) => {
+        const prefix = dir.replace(/\\/g, "/");
+        server.middlewares.use(route, (req, res, next) => {
+          if (!req.url || req.method !== "GET") return next();
+          let relative: string;
+          try {
+            relative = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "");
+          } catch {
+            res.statusCode = 400;
+            res.end();
+            return;
+          }
+          if (!allowed(relative) || relative.split(/[\\/]/).some((part) => part === ".." || part === ".")) {
+            res.statusCode = 404;
+            res.end();
+            return;
+          }
+          const file = normalize(join(dir, relative)).replace(/\\/g, "/");
+          if (!file.startsWith(`${prefix}/`) || !existsSync(file) || !statSync(file).isFile()) {
+            res.statusCode = 404;
+            res.end();
+            return;
+          }
+          const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
+          res.setHeader("Content-Type", FIXTURE_MIME[ext] ?? "application/octet-stream");
+          res.setHeader("Cache-Control", "no-store");
+          createReadStream(file).pipe(res);
+        });
+      };
       serve("/correct/data", dataDir);
       serve("/correct", appDir);
+      serveRestricted(
+        "/correction-review/hopkins/map",
+        resolve(root, "out/hopkins-ocr"),
+        (relative) => relative === "lots.json" || relative === "masterplan_background.webp",
+      );
+      serveRestricted(
+        "/correction-review/hopkins/benchmark",
+        resolve(root, "out/hopkins-lot-number-benchmark-v1"),
+        (relative) => relative === "benchmark-manifest.json" || /^sheet-crops\/S\d{3}\.png$/.test(relative),
+      );
     },
   };
 }

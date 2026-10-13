@@ -2,11 +2,11 @@
 /**
  * Per-tenant interactive lot map pipeline — Stage 3 publisher.
  *
- *   npm run map:publish -- --tenant hopkins-grove --dir ./out/hopkins-grove --dry-run
- *   npm run map:publish -- --tenant hopkins-grove --dir ./out/hopkins-grove --apply
+ *   npm run map:publish -- --tenant hopkins-grove [--project phase-one] --dir ./out/hopkins-grove --dry-run
+ *   npm run map:publish -- --tenant hopkins-grove [--project phase-one] --dir ./out/hopkins-grove --apply
  *
  * Maps lots.json onto the existing public.parcels model:
- *   lot_number  -> lot_number   (unique per tenant: uniq_parcels_tenant_lot)
+ *   lot_number  -> lot_number   (unique within project)
  *   price       -> base_price   (get-public-lots exposes effective `price`)
  *   polygon_pct -> map_polygon  (0-100% space, same contract as useParcelMap)
  *   tier_key / geometry_source / confidence / needs_review /
@@ -18,6 +18,10 @@
  * Pre-migration fallback: if the parcel extensions are not deployed yet
  * (tier_key probe fails), publish degrades to the legacy payload
  * (lot_number/base_price/map_polygon) instead of erroring.
+ *
+ * Project scope:
+ *   --project scopes every read/write to one tenant project; omitted means
+ *   is_default. It never adopts unassigned rows into a project.
  *
  * Safety:
  *   --dry-run performs zero writes. Without Supabase credentials it validates
@@ -34,9 +38,9 @@ import { join, resolve } from "node:path";
 
 function usage() {
   return `Usage:
-  node scripts/publish-lots.mjs --tenant <slug> --dir <out-dir> (--dry-run | --apply)
+  node scripts/publish-lots.mjs --tenant <slug> [--project <slug>] --dir <out-dir> (--dry-run | --apply)
     [--supabase-url <url>] [--service-key <key>] [--batch-size 100]
-  node scripts/publish-lots.mjs --tenant <slug> --repin (--dry-run | --apply)
+  node scripts/publish-lots.mjs --tenant <slug> [--project <slug>] --repin (--dry-run | --apply)
     [--supabase-url <url>] [--service-key <key>] [--batch-size 100]
 
   Shorthand: --development <slug> resolves tenant + dir from
@@ -160,11 +164,12 @@ function ingestPayload(lot, activeVersionId) {
   };
 }
 
-function printPlan({ tenant, dir, lots, report, diff }) {
+function printPlan({ tenant, project, dir, lots, report, diff }) {
   const counts = {};
   for (const lot of lots) counts[lot.tier_key] = (counts[lot.tier_key] ?? 0) + 1;
   const needsReview = lots.filter((l) => l.needs_review).length;
   console.log(`tenant:  ${tenant}`);
+  if (project) console.log(`project: ${project}`);
   console.log(`dir:     ${dir}`);
   console.log(`file:    ${lots.length} lots (${needsReview} needs_review), tiers ${JSON.stringify(counts)}`);
   if (report?.background) {
@@ -197,6 +202,8 @@ async function main() {
     return;
   }
   const tenant = ((args.tenant || "").trim() || "").toLowerCase();
+  const requestedProject = args.project ? args.project.trim().toLowerCase() : null;
+  if (requestedProject && !/^[a-z0-9-]+$/.test(requestedProject)) fail("--project must be lowercase letters, digits, hyphens");
   if (!tenant) fail(`--tenant is required\n${usage()}`);
   if (!args.repin && !args.dir) fail(`--dir is required\n${usage()}`);
   if ((args["dry-run"] ? 1 : 0) + (args.apply ? 1 : 0) !== 1) {
@@ -237,7 +244,7 @@ async function main() {
   if (!supabaseUrl || !serviceKey) {
     if (!dryRun) fail("SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are required for --apply (or pass --supabase-url/--service-key)");
     console.log("[publish] no Supabase credentials — offline validation mode (zero writes, DB diff skipped)");
-    printPlan({ tenant, dir, lots, report, diff: null });
+    printPlan({ tenant, project: requestedProject ?? "(default)", dir, lots, report, diff: null });
     return;
   }
 
@@ -255,6 +262,49 @@ async function main() {
   if (orgError) fail(`tenant lookup failed: ${orgError.message}`);
   if (!org) fail(`tenant not found or inactive: ${tenant}`);
 
+  const projectProbe = await supabase.from("projects").select("id").limit(0);
+  let projectsDeployed = !projectProbe.error;
+  let projectId = null;
+  let projectSlug = null;
+  let prospectiveProject = false;
+  if (projectsDeployed) {
+    const [parcelProbe, versionProbe] = await Promise.all([
+      supabase.from("parcels").select("project_id").limit(0),
+      supabase.from("masterplan_versions").select("project_id").limit(0),
+    ]);
+    if (parcelProbe.error || versionProbe.error) {
+      fail(`project-scoped map migration is incomplete; refusing before writes: ${(parcelProbe.error ?? versionProbe.error).message}`);
+    }
+    let projectQuery = supabase.from("projects").select("id, slug, is_default").eq("tenant_id", org.id);
+    projectQuery = requestedProject ? projectQuery.eq("slug", requestedProject) : projectQuery.eq("is_default", true);
+    const { data: project, error: projectError } = await projectQuery.maybeSingle();
+    if (projectError) fail(`project lookup failed: ${projectError.message}`);
+    if (!project) {
+      if (requestedProject && dryRun) {
+        // A prospective project has no database rows yet; dry-run reports an
+        // empty target scope without querying tenant-wide data.
+        prospectiveProject = true;
+        projectSlug = requestedProject;
+        console.log(`[publish] dry-run — project '${requestedProject}' does not exist yet; planning against an empty project`);
+      } else if (requestedProject) {
+        fail(`project not found for tenant ${tenant}: ${requestedProject}`);
+      }
+      if (requestedProject) {
+        // Continue with the explicit prospective project above.
+      } else {
+        const count = await supabase.from("projects").select("id", { count: "exact", head: true }).eq("tenant_id", org.id);
+        if (count.error) fail(`project count failed: ${count.error.message}`);
+        if ((count.count ?? 0) > 0) fail(`tenant ${tenant} has projects but no default project; refusing unscoped publish`);
+        projectsDeployed = false;
+      }
+    } else {
+      projectId = project.id;
+      projectSlug = project.slug;
+    }
+  } else if (requestedProject) {
+    fail(`project-scoped migrations are not deployed; cannot publish project '${requestedProject}'`);
+  }
+
   // Step 3 columns may predate deployment: probe once, degrade gracefully.
   let step3 = true;
   {
@@ -269,28 +319,29 @@ async function main() {
     }
   }
 
-  const { data: existing, error: parcelsError } = await supabase
+  let existingQuery = supabase
     .from("parcels")
     .select(
       step3
-        ? "id, lot_number, status, base_price, map_polygon, tier_key, needs_review, confidence, masterplan_version_id"
-        : "id, lot_number, status, base_price, map_polygon",
+        ? "id, lot_number, status, base_price, map_polygon, tier_key, needs_review, confidence, masterplan_version_id, project_id"
+        : "id, lot_number, status, base_price, map_polygon, project_id",
     )
-    .eq("tenant_id", org.id)
-    .order("lot_number");
+    .eq("tenant_id", org.id);
+  if (projectsDeployed && projectId) existingQuery = existingQuery.eq("project_id", projectId);
+  const { data: existing, error: parcelsError } = prospectiveProject
+    ? { data: [], error: null }
+    : await existingQuery.order("lot_number");
   if (parcelsError) fail(`parcels read failed: ${parcelsError.message}`);
 
   // Active map version for stamping ingested rows (null when none/unknown).
   let activeVersionId = null;
-  if (step3) {
-    const { data: version, error: versionError } = await supabase
-      .from("masterplan_versions")
-      .select("id")
-      .eq("tenant_id", org.id)
-      .eq("is_active", true)
-      .maybeSingle();
+  if (step3 && !prospectiveProject) {
+    let versionQuery = supabase.from("masterplan_versions").select("id")
+      .eq("tenant_id", org.id).eq("is_active", true);
+    if (projectsDeployed && projectId) versionQuery = versionQuery.eq("project_id", projectId);
+    const { data: version, error: versionError } = await versionQuery.maybeSingle();
     if (versionError) {
-      console.warn(`[publish] active version lookup failed (${versionError.message}) — stamping NULL`);
+      fail(`active project map lookup failed; refusing unversioned parcel writes: ${versionError.message}`);
     } else if (version) {
       activeVersionId = version.id;
     }
@@ -315,11 +366,13 @@ async function main() {
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       for (const row of batch) {
-        const { error } = await supabase
+        let update = supabase
           .from("parcels")
           .update({ masterplan_version_id: activeVersionId })
           .eq("id", row.id)
           .eq("tenant_id", org.id);
+        if (projectsDeployed && projectId) update = update.eq("project_id", projectId);
+        const { error } = await update;
         if (error) fail(`repin of lot ${row.lot_number} failed: ${error.message}`);
         repinned++;
       }
@@ -332,7 +385,7 @@ async function main() {
 
   if (dryRun) {
     console.log("[publish] dry-run — zero writes performed");
-    printPlan({ tenant, dir, lots, report, diff });
+    printPlan({ tenant, project: projectSlug, dir, lots, report, diff });
     return;
   }
 
@@ -343,6 +396,7 @@ async function main() {
   for (let i = 0; i < diff.creates.length; i += batchSize) {
     const batch = diff.creates.slice(i, i + batchSize).map((lot) => ({
       tenant_id: org.id,
+      ...(projectsDeployed && projectId ? { project_id: projectId } : {}),
       lot_number: lot.lot_number,
       status: "Available",
       base_price: lot.price,
@@ -356,7 +410,7 @@ async function main() {
   for (let i = 0; i < diff.updates.length; i += batchSize) {
     const batch = diff.updates.slice(i, i + batchSize);
     for (const { lot, existing: row } of batch) {
-      const { error } = await supabase
+      let update = supabase
         .from("parcels")
         .update({
           base_price: lot.price,
@@ -365,6 +419,8 @@ async function main() {
         })
         .eq("id", row.id)
         .eq("tenant_id", org.id);
+      if (projectsDeployed && projectId) update = update.eq("project_id", projectId);
+      const { error } = await update;
       if (error) fail(`update of lot ${lot.lot_number} failed: ${error.message}`);
       updated++;
     }
@@ -373,6 +429,8 @@ async function main() {
   const publishReport = {
     tenant,
     tenant_id: org.id,
+    project: projectSlug,
+    project_id: projectId,
     dir,
     at: new Date().toISOString(),
     file_lots: lots.length,
@@ -387,7 +445,7 @@ async function main() {
   writeFileSync(join(dir, "publish-report.json"), JSON.stringify(publishReport, null, 2) + "\n", "utf8");
 
   console.log("[publish] applied — publish-report.json written");
-  printPlan({ tenant, dir, lots, report, diff });
+  printPlan({ tenant, project: projectSlug, dir, lots, report, diff });
   console.log(`result:  ${created} created, ${updated} updated`);
 }
 

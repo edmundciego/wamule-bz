@@ -8,7 +8,8 @@ position, and validate polygon areas against a measured scale reference.
       [--road-band X0,X1 --road-width-ft 60]
       [--number-pattern '\\d{2,3}' --number-min 1 --number-max 999]
       [--confidence-floor 0.5] [--token-threshold 0.95 --char-threshold 0.98]
-      [--area-tolerance 0.08] [--stage ocr|match|validate|all]
+      [--area-policy evidence/area-validation-policy.json]
+      [--stage ocr|match|validate|all]
 
 Reads build/lots.json (polygon_pct, 0-100 space) + masterplan_background.webp.
 Writes build/ocr.json, patches lots.json (printed_lot_number,
@@ -27,18 +28,21 @@ distinct numbers inside one polygon also flags it. Unmatched lots keep
 needs_review. Area figure: the area token in the same polygon (exactly one).
 S3 area validation: scale derived from a stated reference (road width in ft
 divided by its MEASURED px width in the raster — never from match medians);
-polygon px-area -> sqft -> sqm; |ratio-1| <= tolerance else redraw queue.
+polygon px-area -> sqft -> sqm. A pass/outlier decision requires a separately
+approved, versioned area-policy record; otherwise the result is unavailable.
 
 Comparison mode (--labels + both engines): evaluates each engine on the
-labeled sample (token + character accuracy, overall/per-class/per-tier) and
-gates on the thresholds (exit 3 below). Without labels: single engine
-(tesseract default), no accuracy gate.
+labeled sample (exact token accuracy plus normalized Levenshtein character
+accuracy, overall/per-class/per-tier) and gates on the thresholds (exit 3
+below). Without labels: single engine (tesseract default), no accuracy gate.
 
 Exit codes: 0 ok; 2 usage/missing input/engines; 3 below accuracy threshold.
 """
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
+import hashlib
 import json
 import math
 import re
@@ -57,6 +61,107 @@ UPSCALE_CAP = 3.0
 def fail(msg: str) -> "NoReturn":
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+def fingerprint_file(path: Path) -> dict[str, int | str]:
+    """Hash an input in bounded memory and reject files changed mid-read."""
+    before = path.stat()
+    digest = hashlib.sha256()
+    total = 0
+    with path.open("rb") as source:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            total += len(chunk)
+    after = path.stat()
+    if (
+        total != before.st_size or after.st_size != total or
+        before.st_mtime_ns != after.st_mtime_ns or
+        before.st_ctime_ns != after.st_ctime_ns or
+        before.st_ino != after.st_ino or before.st_dev != after.st_dev
+    ):
+        raise RuntimeError(f"input changed while fingerprinting: {path}")
+    return {"bytes": total, "sha256": digest.hexdigest()}
+
+
+def load_area_validation_policy(path: Path | None) -> tuple[dict | None, dict | None]:
+    """Read an approved versioned tolerance policy; pending/absent is unavailable."""
+    if path is None:
+        return None, None
+    if not path.is_file():
+        fail(f"area policy file not found: {path}")
+    try:
+        policy = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"area policy is not readable JSON: {exc}")
+    schema_version = policy.get("schema_version") if isinstance(policy, dict) else None
+    if isinstance(schema_version, bool) or not isinstance(schema_version, (int, float)) or schema_version != 1:
+        fail("area policy schema_version must be 1")
+    status = policy.get("status")
+    fields = ("policy_id", "policy_version", "tolerance_fraction", "approved_by",
+              "approved_at", "basis", "evidence_reference")
+    if status == "pending":
+        if any(field not in policy or policy[field] is not None for field in fields):
+            fail("pending area policy must set all approval fields to null")
+        return None, {"name": path.name, **fingerprint_file(path)}
+    if status != "approved":
+        fail("area policy status must be pending or approved")
+    if not isinstance(policy.get("policy_id"), str) or policy["policy_id"] != policy["policy_id"].strip() or not re.fullmatch(
+        r"[a-z0-9][a-z0-9._-]*", policy["policy_id"], re.IGNORECASE
+    ):
+        fail("approved area policy needs a stable policy_id")
+    version = policy.get("policy_version")
+    if isinstance(version, bool) or not isinstance(version, (int, float)) or not math.isfinite(version) or int(version) != version or version < 1:
+        fail("approved area policy policy_version must be a positive integer")
+    tolerance = policy.get("tolerance_fraction")
+    if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or not 0 <= tolerance < 1:
+        fail("approved area policy tolerance_fraction must be finite and in [0, 1)")
+    for field in ("approved_by", "basis", "evidence_reference"):
+        if not isinstance(policy.get(field), str) or not policy[field].strip():
+            fail(f"approved area policy needs non-empty {field}")
+    approved_at = policy.get("approved_at")
+    if not isinstance(approved_at, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})",
+        approved_at,
+    ):
+        fail("approved area policy approved_at must be ISO-8601 with timezone")
+    try:
+        datetime.fromisoformat(approved_at.replace("Z", "+00:00"))
+    except ValueError:
+        fail("approved area policy approved_at is not a valid date-time")
+    return policy, {"name": path.name, **fingerprint_file(path)}
+
+
+def fingerprint_lot_geometry(lots: list[dict]) -> str:
+    """Hash only identity, tier, and polygon inputs used by positional scoring."""
+    geometry = [
+        {
+            "lot_number": lot.get("lot_number"),
+            "tier_key": lot.get("tier_key"),
+            "polygon_pct": lot.get("polygon_pct"),
+        }
+        for lot in lots
+    ]
+    geometry.sort(key=lambda lot: (
+        str(lot["lot_number"] or ""),
+        json.dumps(lot["polygon_pct"], sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+    ))
+    payload = json.dumps(geometry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def write_ocr_artifact(
+    build: Path,
+    engines: dict,
+    provenance: dict,
+    production: str | None = None,
+) -> None:
+    artifact = {"schema_version": 1, "engines": engines, **provenance}
+    if production:
+        artifact["production"] = production
+    (build / "ocr.json").write_text(json.dumps(artifact, indent=1) + "\n")
 
 
 def have_tesseract() -> bool:
@@ -474,10 +579,20 @@ def token_key(kind: str, text: str):
     return ("number", strip_border_artifacts(text.strip().upper()))
 
 
+def score_text(kind: str, text: str) -> str:
+    """Text used for character edits after harmless formatting normalization."""
+    if kind == "area":
+        return normalize_token_text(text).replace(" ", "")
+    return strip_border_artifacts(text.strip().upper())
+
+
 def evaluate_engine(ocr: dict, labels: dict, lot_tier: dict[str, str]) -> dict:
-    """Match engine tokens to ground-truth tokens (same text, center inside
-    gt box +6px, one use each). Token accuracy = exact matches / total.
-    Char accuracy = 1 - lev/total_chars (unmatched gt counts fully wrong)."""
+    """Positionally align same-kind OCR tokens to each labeled lot token.
+
+    Exact token accuracy is reported separately from character accuracy, which
+    is 1 - normalized Levenshtein edits / normalized ground-truth characters.
+    A missing prediction counts as a deletion; one prediction can serve once.
+    """
     gt = labels["tokens"]
     used: set[int] = set()
     matched = 0
@@ -487,40 +602,48 @@ def evaluate_engine(ocr: dict, labels: dict, lot_tier: dict[str, str]) -> dict:
     per_tier: dict[str, dict[str, int | float]] = {}
     for g in gt:
         want = token_key(g["kind"], g["text"])
-        char_total += len(g["text"])
+        expected_text = score_text(g["kind"], g["text"])
+        char_total += len(expected_text)
         gx = (g["bbox"][0] + g["bbox"][2]) / 2
         gy = (g["bbox"][1] + g["bbox"][3]) / 2
-        hit = None
+        best = None
         for i, t in enumerate(ocr["tokens"]):
             if i in used:
                 continue
-            if token_key(t["kind"], t["text"]) != want:
+            if t.get("kind") != g["kind"]:
                 continue
             cx = (t["box"][0] + t["box"][2]) / 2
             cy = (t["box"][1] + t["box"][3]) / 2
-            if g["bbox"][0] - 6 <= cx <= g["bbox"][2] + 6 and g["bbox"][1] - 6 <= cy <= g["bbox"][3] + 6:
-                hit = i
-                break
+            if not (g["bbox"][0] - 6 <= cx <= g["bbox"][2] + 6 and
+                    g["bbox"][1] - 6 <= cy <= g["bbox"][3] + 6):
+                continue
+            polygon = g.get("polygon")
+            if polygon and not point_in_poly(cx, cy, polygon):
+                continue
+            predicted_text = score_text(g["kind"], t["text"])
+            edits = levenshtein(predicted_text, expected_text)
+            distance2 = (cx - gx) ** 2 + (cy - gy) ** 2
+            candidate = (edits, distance2, i)
+            if best is None or candidate < best:
+                best = candidate
         cls = per_class.setdefault(g["kind"], {"total": 0, "matched": 0, "lev": 0, "chars": 0})
         cls["total"] += 1
-        cls["chars"] += len(g["text"])
+        cls["chars"] += len(expected_text)
         tier = per_tier.setdefault(lot_tier.get(g.get("lot", ""), "unknown"), {"total": 0, "matched": 0, "lev": 0,
                                                                                "chars": 0})
         tier["total"] += 1
-        tier["chars"] += len(g["text"])
-        if hit is None:
-            lev_total += len(g["text"])
-            cls["lev"] += len(g["text"])
-            tier["lev"] += len(g["text"])
+        tier["chars"] += len(expected_text)
+        if best is None:
+            lev_total += len(expected_text)
+            cls["lev"] += len(expected_text)
+            tier["lev"] += len(expected_text)
             continue
+        lev, _distance2, hit = best
         used.add(hit)
-        matched += 1
-        cls["matched"] += 1
-        tier["matched"] += 1
-        # Residual distance on whitespace-normalized text (spacing variants
-        # of the same area figure are not character errors).
-        lev = levenshtein(normalize_token_text(ocr["tokens"][hit]["text"]).replace(" ", ""),
-                           normalize_token_text(g["text"]).replace(" ", ""))
+        if token_key(ocr["tokens"][hit]["kind"], ocr["tokens"][hit]["text"]) == want:
+            matched += 1
+            cls["matched"] += 1
+            tier["matched"] += 1
         lev_total += lev
         cls["lev"] += lev
         tier["lev"] += lev
@@ -661,12 +784,20 @@ def main() -> None:
     ap.add_argument("--confidence-floor", type=float, default=0.5)
     ap.add_argument("--token-threshold", type=float, default=0.95)
     ap.add_argument("--char-threshold", type=float, default=0.98)
-    ap.add_argument("--area-tolerance", type=float, default=0.08)
+    ap.add_argument("--area-policy", default=None,
+                    help="approved versioned area-policy JSON; absent/pending keeps area results unavailable")
     ap.add_argument("--ensemble", action="store_true",
                     help="two-engine agreement mode: match only tokens both engines agree on "
                          "(rotation retry skipped); anything else stays needs_review")
     ap.add_argument("--stage", default="all", choices=["ocr", "match", "validate", "all"])
     args = ap.parse_args()
+
+    try:
+        area_policy, area_policy_provenance = load_area_validation_policy(
+            Path(args.area_policy) if args.area_policy else None
+        )
+    except OSError as exc:
+        fail(f"could not fingerprint area policy: {exc}")
 
     build = Path(args.dir)
     lots_path = build / "lots.json"
@@ -678,6 +809,22 @@ def main() -> None:
     lots = json.loads(lots_path.read_text())
     from PIL import Image
     img_w, img_h = Image.open(image_path).size
+    ocr_provenance = None
+    if args.stage in ("ocr", "all"):
+        try:
+            image_fingerprint = fingerprint_file(image_path)
+            ocr_provenance = {
+                "image": {
+                    "name": image_path.name,
+                    "width": img_w,
+                    "height": img_h,
+                    **image_fingerprint,
+                },
+                "lot_geometry_sha256": fingerprint_lot_geometry(lots),
+                "environment": engine_environment(),
+            }
+        except (OSError, RuntimeError) as e:
+            fail(f"could not fingerprint OCR inputs: {e}")
 
     def to_px(poly_pct):
         return [[p["x"] / 100 * img_w, p["y"] / 100 * img_h] for p in poly_pct]
@@ -702,8 +849,7 @@ def main() -> None:
             print(f"[ocr-match] {engine}: {len(ocr_by_engine[engine]['tokens'])} lines {kinds}, "
                   f"digit_h={ocr_by_engine[engine]['digit_height_median']}, "
                   f"upscaled={ocr_by_engine[engine]['upscaled']}")
-        (build / "ocr.json").write_text(json.dumps(
-            {"engines": ocr_by_engine, "image": {"width": img_w, "height": img_h}}, indent=1) + "\n")
+        write_ocr_artifact(build, ocr_by_engine, ocr_provenance)
 
     labels = json.loads(Path(args.labels).read_text()) if args.labels else None
     lots_px = [{"lot_number": lot.get("lot_number", ""), "poly": to_px(lot["polygon_pct"])} for lot in lots]
@@ -824,9 +970,7 @@ def main() -> None:
                "upscaled": (ocr_by_engine.get("tesseract") or {}).get("upscaled"),
                "rotation_recovered_lots": production.get("rotation_recovered_lots", [])}
         ocr_by_engine[ocr["engine"]] = ocr
-        (build / "ocr.json").write_text(json.dumps(
-            {"engines": ocr_by_engine, "production": ocr["engine"],
-             "image": {"width": img_w, "height": img_h}}, indent=1) + "\n")
+        write_ocr_artifact(build, ocr_by_engine, ocr_provenance, ocr["engine"])
     elif args.stage in ("match", "validate"):
         stored = json.loads((build / "ocr.json").read_text())
         if "production" in stored and stored["production"] in stored.get("engines", {}):
@@ -836,8 +980,7 @@ def main() -> None:
             ocr = stored["engines"].get(pref) or next(iter(stored["engines"].values()))
     else:
         ocr = ocr_by_engine.get(args.engine) or next(iter(ocr_by_engine.values()))
-        (build / "ocr.json").write_text(json.dumps(
-            {"engines": ocr_by_engine, "image": {"width": img_w, "height": img_h}}, indent=1) + "\n")
+        write_ocr_artifact(build, ocr_by_engine, ocr_provenance)
     if args.stage == "ocr":
         print("[ocr-match] stage ocr done")
         return
@@ -984,14 +1127,20 @@ def main() -> None:
             area_results[lot_number] = {"status": "missing"}
             continue
         ratios.append((ratio, lot_number))
-        ok = abs(ratio - 1.0) <= args.area_tolerance
-        area_results[lot_number] = {"status": "ok" if ok else "outlier", "ratio": round(ratio, 4),
-                                    "computed_sqm": round(computed_sqm, 2), "printed_sqm": m["area_sqm"]}
+        result = {"status": "unavailable", "ratio": round(ratio, 4),
+                  "computed_sqm": round(computed_sqm, 2), "printed_sqm": m["area_sqm"]}
+        if area_policy is not None:
+            ok = abs(ratio - 1.0) <= area_policy["tolerance_fraction"]
+            result["status"] = "ok" if ok else "outlier"
+        area_results[lot_number] = result
     ratios.sort()
     median_ratio = ratios[len(ratios) // 2][0] if ratios else None
     outliers = [lot for lot, r in area_results.items() if r["status"] == "outlier"]
-    print(f"[ocr-match] S3 area: {sum(1 for r in area_results.values() if r['status']=='ok')}/{len(area_results)} ok, "
-          f"median_ratio={median_ratio}, outliers={len(outliers)}")
+    if area_policy is None:
+        print(f"[ocr-match] S3 area: unavailable (no approved policy); diagnostic median_ratio={median_ratio}")
+    else:
+        print(f"[ocr-match] S3 area: {sum(1 for r in area_results.values() if r['status']=='ok')}/{len(area_results)} ok, "
+              f"median_ratio={median_ratio}, outliers={len(outliers)}")
 
     # ---------------------------------------------------------- outputs
     patch_lots(lots, lot_match, area_results)
@@ -1009,7 +1158,7 @@ def main() -> None:
             b["ratios"].append(area_results[lot["lot_number"]]["ratio"])
     for b in per_tier.values():
         b["match_rate"] = round(b["matched"] / b["lots"], 4) if b["lots"] else None
-        b["area_pass_rate"] = round(b["area_ok"] / b["lots"], 4) if b["lots"] else None
+        b["area_pass_rate"] = round(b["area_ok"] / b["lots"], 4) if area_policy and b["lots"] else None
         ratios = sorted(b.pop("ratios"))
         # Within-tier spread of computed/printed ratios (median + stdev).
         if ratios:
@@ -1029,7 +1178,7 @@ def main() -> None:
     match_rate = matched_n / total_n if total_n else None
     # Pass rate over lots that printed an area (missing areas are reported,
     # not failed — narrow flag lots carry numbers only).
-    area_rate = ok_n / (ok_n + out_n) if (ok_n + out_n) else None
+    area_rate = ok_n / (ok_n + out_n) if area_policy and (ok_n + out_n) else None
     reserve_pending = []
     for lot in lots:
         poly = lot.get("polygon_pct") or []
@@ -1064,12 +1213,15 @@ def main() -> None:
     if comparison and comparison.get("ensemble"):
         report["ensemble"] = comparison["ensemble"]
     report["area_validation"] = {
+        "status": "implemented" if area_policy is not None else "unavailable",
         "scale": {"references": measurements, "ft_per_px": round(ft_per_px, 4),
                   "method": "stated road widths divided by measured px widths; widest reference wins; "
                             "median ratio is a cross-check only, never fed back into the scale"},
         "pass_rate": round(area_rate, 4) if area_rate is not None else None,
         "median_ratio": round(median_ratio, 4) if median_ratio is not None else None,
-        "tolerance": args.area_tolerance,
+        "policy": area_policy,
+        "policy_input": area_policy_provenance,
+        "tolerance_fraction": area_policy["tolerance_fraction"] if area_policy is not None else None,
         "outliers_redraw_queue": outliers,
     }
     report["open_space"] = check_open_space(image_path, ft_per_px, args)
@@ -1163,7 +1315,7 @@ def engine_environment() -> dict:
     import importlib.metadata
     env: dict = {"parameters": {
         "upscale_rule": f"median digit-box height < {DIGIT_TARGET_PX}px -> factor 24/median capped {UPSCALE_CAP}x",
-        "confidence_floor_default": 0.5, "area_tolerance_default": 0.08,
+        "confidence_floor_default": 0.5, "area_policy_schema_version": 1,
         "thresholds_default": {"token": 0.95, "char": 0.98},
     }}
     try:

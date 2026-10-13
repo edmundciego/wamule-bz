@@ -8,6 +8,12 @@ import {
   type InquiryPayload,
   type ValidInquiry,
 } from "../_shared/inquiry-contract.ts";
+import { parsePublicLotReference } from "../_shared/public-lot-reference.ts";
+import {
+  applyProjectAndVersionScope,
+  chooseResolvedProject,
+  normalizeActiveVersionLookup,
+} from "../get-public-lots/project-scope.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -49,13 +55,19 @@ Deno.serve(async (request) => {
   // is authoritative from here on — see decideLeadTenant below.
   const slugTenantId = await resolveTenantId(supabase, input.tenantSlug);
 
-  // The lot must be one the public map actually shows (any lot number),
-  // not just the legacy two-digit public view. Reserved lots are accepted
-  // as waitlist requests; anything not Available/Reserved is declined.
-  const specificLot = input.specificLotId ? await loadLotById(supabase, input.specificLotId) : null;
-  if (input.specificLotId && !specificLot) {
+  // Resolve a project-scoped public locator server-side; database ids never
+  // cross the anonymous request boundary. Reserved lots remain waitlistable.
+  const resolution = input.specificLotRef
+    ? await loadLotByPublicReference(supabase, slugTenantId, input.specificLotRef)
+    : { lot: null, error: null };
+  if (resolution.error === "database") {
+    return json({ error: "The current lot list could not be verified. Please try again." }, 503);
+  }
+  if (input.specificLotRef && !resolution.lot) {
     return json({ error: "Select an available public lot for this inquiry." }, 400);
   }
+  const specificLot = resolution.lot;
+  const specificLotId = specificLot?.id ?? null;
   if (specificLot && lotDisposition(specificLot.status) === "unavailable") {
     return json({ error: "That lot is no longer available." }, 400);
   }
@@ -65,7 +77,7 @@ Deno.serve(async (request) => {
   // provided slug must resolve to that same tenant. Without a lot, the slug
   // must resolve — there is no default fallback.
   const decision = decideLeadTenant({
-    lotRequested: input.specificLotId !== null,
+    lotRequested: input.specificLotRef !== null,
     lotTenantId: specificLot?.tenant_id ? String(specificLot.tenant_id) : null,
     slugProvided: input.tenantSlug !== null,
     slugTenantId,
@@ -77,7 +89,7 @@ Deno.serve(async (request) => {
   // carries the same client_reference_id and must not create a second lead.
   // Same key + divergent payload is a 409, never a second row.
   if (input.clientReferenceId) {
-    const dedup = await checkDuplicateSubmission(supabase, tenantId, input);
+    const dedup = await checkDuplicateSubmission(supabase, tenantId, input, specificLotId);
     if (dedup) return dedup;
   }
 
@@ -85,7 +97,7 @@ Deno.serve(async (request) => {
     name: input.name,
     email: input.email,
     phone: input.phone,
-    parcelId: input.specificLotId,
+    parcelId: specificLotId,
   });
   const now = new Date();
   const dueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
@@ -98,7 +110,7 @@ Deno.serve(async (request) => {
       full_name: input.name,
       email: input.email,
       phone: input.phone || null,
-      parcel_id: input.specificLotId,
+      parcel_id: specificLotId,
       client_reference_id: input.clientReferenceId,
       source: "public_inquiry",
       pipeline_stage: "new_lead",
@@ -121,7 +133,7 @@ Deno.serve(async (request) => {
     // same way (dedup or 409), never a second row.
     const code = (leadError as { code?: string } | null)?.code;
     if (code === "23505" && input.clientReferenceId) {
-      const dedup = await checkDuplicateSubmission(supabase, tenantId, input);
+      const dedup = await checkDuplicateSubmission(supabase, tenantId, input, specificLotId);
       if (dedup) return dedup;
     }
     console.error("Public inquiry lead insert failed", safeError(leadError));
@@ -139,7 +151,7 @@ Deno.serve(async (request) => {
     metadata: {
       source: "public_inquiry",
       interests: input.interests,
-      specific_lot_id: input.specificLotId,
+      specific_lot_ref: input.specificLotRef,
       page_url: safePageUrl,
       possible_duplicate: Boolean(duplicateReason),
       duplicate_reason: duplicateReason,
@@ -235,20 +247,55 @@ async function resolveTenantId(
 }
 
 /**
- * Load any published lot by id (status checked by the caller: Available →
+ * Load any published lot by its project-scoped public reference (status checked by the caller: Available →
  * inquiry, Reserved → waitlist, anything else → friendly 400).
  */
-async function loadLotById(supabase: ReturnType<typeof createClient>, lotId: number): Promise<ParcelOption | null> {
-  const { data, error } = await supabase
-    .from("parcels")
-    .select("id, tenant_id, lot_number, dimensions, base_price, status")
-    .eq("id", lotId)
-    .maybeSingle();
-  if (error) {
-    console.error("Public lot validation failed", safeError(error));
-    return null;
+async function loadLotByPublicReference(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string | null,
+  reference: string,
+): Promise<{ lot: ParcelOption | null; error: "database" | null }> {
+  const parts = parsePublicLotReference(reference);
+  if (!tenantId || !parts) return { lot: null, error: null };
+
+  const { data: projectRows, error: projectsError } = await supabase
+    .from("projects")
+    .select("id, slug, name, is_default, created_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: true });
+  if (projectsError) {
+    console.error("Public lot project validation failed", safeError(projectsError));
+    return { lot: null, error: "database" };
   }
-  return (data as ParcelOption | null) ?? null;
+  const project = chooseResolvedProject(projectRows ?? [], parts.projectSlug);
+  if (!project) return { lot: null, error: null };
+
+  const { data: activeVersion, error: versionError } = await supabase
+    .from("masterplan_versions")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true)
+    .maybeSingle();
+  const version = normalizeActiveVersionLookup(activeVersion as { id?: unknown } | null, versionError);
+  if (!version.ok) {
+    console.error("Public lot version validation failed", safeError(versionError));
+    return { lot: null, error: "database" };
+  }
+
+  const { data, error } = await applyProjectAndVersionScope(
+    supabase.from("parcels")
+      .select("id, tenant_id, lot_number, dimensions, base_price, status")
+      .eq("tenant_id", tenantId)
+      .eq("lot_number", parts.lotNumber),
+    project,
+    version.versionId,
+  ).limit(2);
+  if (error) {
+    console.error("Public lot reference validation failed", safeError(error));
+    return { lot: null, error: "database" };
+  }
+  if (!Array.isArray(data) || data.length !== 1) return { lot: null, error: null };
+  return { lot: data[0] as ParcelOption, error: null };
 }
 
 type LeadRow = {
@@ -271,6 +318,7 @@ async function checkDuplicateSubmission(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
   input: ValidInquiry,
+  parcelId: number | null,
 ): Promise<Response | null> {
   const { data: existing } = await supabase
     .from("leads")
@@ -293,7 +341,7 @@ async function checkDuplicateSubmission(
     name: input.name,
     email: input.email,
     phone: input.phone,
-    parcelId: input.specificLotId,
+    parcelId,
     interests: input.interests,
   };
   if (!sameInquiryAs(prior, current)) {

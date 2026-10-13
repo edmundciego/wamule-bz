@@ -10,7 +10,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 const variants: Record<ButtonVariant, string> = {
   primary: "bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover hover:shadow-[var(--shadow-button)]",
   secondary: "bg-secondary text-white shadow-sm hover:bg-secondary-hover hover:shadow-[var(--shadow-button)]",
-  accent: "bg-accent text-foreground shadow-sm hover:bg-accent-hover hover:text-white hover:shadow-[var(--shadow-button)]",
+  accent: "bg-accent text-accent-foreground shadow-sm hover:bg-accent-hover hover:shadow-[var(--shadow-button)]",
   outline: "border border-border bg-card text-primary shadow-sm hover:border-primary/30 hover:bg-primary-soft hover:shadow-[var(--shadow-button)]",
   ghost: "text-primary hover:bg-primary-soft hover:text-primary hover:shadow-none",
   destructive: "bg-danger text-white shadow-sm hover:bg-danger/90 hover:shadow-[var(--shadow-button)]",

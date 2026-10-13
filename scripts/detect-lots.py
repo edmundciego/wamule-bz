@@ -139,8 +139,9 @@ def load_source_image(source: str, image_index: int, work_width: int):
     """
     from PIL import Image
 
-    meta: dict = {"source": source, "work_width": work_width}
-    tmp_path: str | None = None
+    # Keep the report portable across machines; the build manifest carries
+    # the canonical source path and content fingerprint.
+    meta: dict = {"source": os.path.basename(source), "work_width": work_width}
 
     lower = source.lower()
     if lower.endswith(".pdf"):
@@ -164,20 +165,20 @@ def load_source_image(source: str, image_index: int, work_width: int):
                     f"(0..{len(objs) - 1}) for {source}"
                 )
             meta["pdf_image_index"] = image_index
-            tmp = tempfile.NamedTemporaryFile(prefix="lotdetect_", suffix=".png", delete=False)
-            tmp.close()
-            tmp_path = tmp.name
-            # extract() appends its own extension; pass prefix then resolve.
-            prefix = tmp_path + ".img"
-            objs[image_index].extract(prefix)
-            import glob
+            # Keep pypdfium's temporary extracted raster out of the report and
+            # guarantee its directory is removed even if decoding fails.
+            with tempfile.TemporaryDirectory(prefix="lotdetect_") as tmp_dir:
+                # extract() appends its own extension; pass a prefix then
+                # resolve the file created by the selected embedded image.
+                prefix = os.path.join(tmp_dir, "source.img")
+                objs[image_index].extract(prefix)
+                import glob
 
-            cands = sorted(glob.glob(prefix + ".*"))
-            if not cands:
-                raise SystemExit("pypdfium2 extract produced no file")
-            tmp_path = cands[0]
-            meta["pdf_extract_file"] = os.path.basename(tmp_path)
-            img = Image.open(tmp_path).convert("RGB")
+                cands = sorted(glob.glob(prefix + ".*"))
+                if not cands:
+                    raise SystemExit("pypdfium2 extract produced no file")
+                with Image.open(cands[0]) as extracted:
+                    img = extracted.convert("RGB")
             meta["native_size"] = list(img.size)
         finally:
             pdf.close()
@@ -185,22 +186,15 @@ def load_source_image(source: str, image_index: int, work_width: int):
         img = Image.open(source).convert("RGB")
         meta["native_size"] = list(img.size)
 
-    try:
-        w, h = img.size
-        if w <= 0 or h <= 0:
-            raise SystemExit(f"empty image: {source}")
-        scale = work_width / float(w) if w > work_width else 1.0
-        meta["work_scale"] = scale
-        if scale < 1.0:
-            img = img.resize((work_width, max(1, round(h * scale))), Image.LANCZOS)
-        meta["work_size"] = list(img.size)
-        return img, meta
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+    w, h = img.size
+    if w <= 0 or h <= 0:
+        raise SystemExit(f"empty image: {source}")
+    scale = work_width / float(w) if w > work_width else 1.0
+    meta["work_scale"] = scale
+    if scale < 1.0:
+        img = img.resize((work_width, max(1, round(h * scale))), Image.LANCZOS)
+    meta["work_size"] = list(img.size)
+    return img, meta
 
 
 # ---------------------------------------------------------------------------

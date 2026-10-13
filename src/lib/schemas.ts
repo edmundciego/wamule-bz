@@ -10,7 +10,7 @@ export const applicationSchema = z.object({
   intended_use: z.enum(["Residential", "Commercial", "Agriculture", "Investment", "Rental Property", "Other"]),
   intended_use_other: z.string().optional(),
   parcel_count: z.coerce.number().int().min(1, "Enter the number of parcels"),
-  preferred_parcel_ids: z.array(z.coerce.number()).min(1, "Select at least one preferred lot"),
+  preferred_lot_refs: z.array(z.string().min(1)).min(1, "Select at least one preferred lot"),
   alternate_lot_preference: z.string().min(1, "Alternative lot option is required"),
   payment_option: z.string().min(1, "Select a payment option"),
   applicant_acknowledgement_signature: z.string().min(1, "Type your name to acknowledge"),

@@ -48,7 +48,13 @@ test("validator allows relative url() for storage-relative assets", () => {
 test("allowlist drops unknown keys, gates colors, strips markup", () => {
   const theme = allowlistTheme(
     {
-      tokens: { primary: "#123456", background: "not-a-color", text: "<b>x</b>", extra: "drop me" },
+      tokens: {
+        primary: "#123456",
+        background: "not-a-color",
+        text: "<b>x</b>",
+        fontFamily: "Arial; color: red",
+        extra: "drop me",
+      },
       card: { showTier: "yes", inquireText: "<script>alert(1)</script> Hi {lot}", zoomText: "" },
       evil: true,
     },
@@ -57,6 +63,7 @@ test("allowlist drops unknown keys, gates colors, strips markup", () => {
   assert.equal(theme.tokens.primary, "#123456");
   assert.equal(theme.tokens.background, "#fffdf8");
   assert.equal(theme.tokens.text, "#2d2317");
+  assert.match(theme.tokens.fontFamily, /system-ui/);
   assert.equal(theme.card.showTier, true);
   // Angle brackets are stripped (no markup can form); text stays readable.
   assert.equal(theme.card.inquireText, "scriptalert(1)/script Hi {lot}");
@@ -75,6 +82,8 @@ test("two tenants never share tokens, vars, or CSS scope", () => {
   const varsB = buildThemeCssVars(themeB);
   assert.equal(varsA["--lotmap-primary"], "#111111");
   assert.equal(varsB["--lotmap-primary"], "#222222");
+  assert.equal(varsA["--lotmap-font-family"], themeA.tokens.fontFamily);
+  assert.equal(varsA["--font-sans"], themeA.tokens.fontFamily);
   assert.notEqual(varsA, varsB);
   // Mutating one tenant's var map cannot affect the other's.
   varsA["--lotmap-primary"] = "#000000";
@@ -84,6 +93,39 @@ test("two tenants never share tokens, vars, or CSS scope", () => {
   assert.ok(validateTenantCss(`${scopeB} .card { color: red; }`, scopeA).length > 0);
   assert.ok(validateTenantCss(`${scopeA} .card { color: red; }`, scopeB).length > 0);
   assert.deepEqual(validateTenantCss(`${scopeA} .card { color: red; }`, scopeA), []);
+});
+
+test("theme variables use tenant colors and keep normal text at AA contrast", () => {
+  const theme = allowlistTheme(
+    {
+      tokens: {
+        primary: "#eeeeee",
+        background: "#ffffff",
+        card: "#fefefe",
+        accent: "#aaaaaa",
+        text: "#bdbdbd",
+        muted: "#d0d0d0",
+        fontFamily: '"A calm Tenant Serif", Georgia, serif',
+      },
+    },
+    null,
+  );
+  const vars = buildThemeCssVars(theme);
+  assert.equal(vars["--lotmap-primary"], "#eeeeee");
+  assert.equal(vars["--lotmap-font-family"], '"A calm Tenant Serif", Georgia, serif');
+  assert.equal(vars["--background"], "0 0% 100%");
+  assert.equal(vars["--primary"], "0 0% 0%");
+  assert.equal(vars["--primary-foreground"], "0 0% 100%");
+  assert.equal(vars["--foreground"], "0 0% 0%");
+  assert.equal(vars["--muted-foreground"], "0 0% 0%");
+  assert.equal(vars["--accent-foreground"], "0 0% 0%");
+});
+
+test("contradictory light and dark surfaces fall back to one readable embed surface", () => {
+  const vars = buildThemeCssVars(allowlistTheme({ tokens: { background: "#000000", card: "#ffffff" } }, null));
+  assert.equal(vars["--card"], vars["--background"]);
+  assert.equal(vars["--foreground"], "0 0% 100%");
+  assert.equal(vars["--card-foreground"], vars["--foreground"]);
 });
 
 test("card text fills {lot} and leaves unknown tokens alone", () => {

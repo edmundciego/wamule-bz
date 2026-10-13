@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -38,6 +38,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { PublicLotMap, type CorrectionMapLayer, type CorrectionReviewStatus } from "../components/public/PublicLotMap";
 
 /**
  * Slice 1.5 correction workspace inside the authenticated admin app.
@@ -55,7 +56,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
  */
 const DEMO_PREVIEW = import.meta.env.DEV;
 
-type Mode = "numbers" | "tiers" | "gates" | "log";
+type Mode = "numbers" | "tiers" | "gates" | "log" | "labels";
 
 interface WorkspaceData {
   tenant: string;
@@ -66,42 +67,93 @@ interface WorkspaceData {
   planUrl: string | null;
   actor: string;
   serverBacked: boolean;
+  reviewOnly?: boolean;
+}
+
+interface BenchmarkCase {
+  id: string;
+  detection_id: string;
+  polygon_pct: Array<{ x: number; y: number }>;
+  crop_box_px: [number, number, number, number];
+  crop_file: string;
+  crop_sha256: string;
+  [key: string]: unknown;
+}
+
+interface BenchmarkManifest {
+  schema_version: number;
+  benchmark_id: string;
+  source_image: { name: string; sha256: string; width: number; height: number; coordinate_space: string };
+  lot_geometry_sha256: string;
+  review_key: string;
+  cases: BenchmarkCase[];
+}
+
+type LabelDecisionStatus = "draft" | "confirmed" | "ambiguous" | "unreadable" | "skipped";
+
+interface LabelDecision {
+  status: LabelDecisionStatus;
+  printed_number: string;
+  printed_area_sqm: string;
+  reviewer: string;
+  reviewed_at: string | null;
+  geometry_issue?: boolean;
+  geometry_note?: string;
+}
+
+interface GeometryFlag {
+  flagged: boolean;
+  note: string;
+  reviewer: string;
+  flagged_at: string;
+}
+
+interface LocalBenchmarkReview {
+  benchmark_id: string;
+  manifest_sha256: string;
+  current: number;
+  reviewer: string;
+  reviews: Record<string, LabelDecision>;
+  geometry_flags: Record<string, GeometryFlag>;
 }
 
 export function CorrectionWorkspacePage() {
   const [params] = useSearchParams();
   if (DEMO_PREVIEW && params.get("demo") === "1") {
-    return <DemoWorkspace />;
+    return <DemoWorkspace reviewOnly={params.get("mode") === "labels"} />;
   }
   return <AuthedWorkspace />;
 }
 
-function DemoWorkspace() {
+function DemoWorkspace({ reviewOnly = false }: { reviewOnly?: boolean }) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const base = "/correct/data/";
-        const [lotsRes, tiersRes, unitsRes] = await Promise.all([
-          fetch(`${base}lots.json`),
-          fetch(`${base}tiers.json`),
-          fetch(`${base}units.json`),
-        ]);
-        if (!lotsRes.ok || !tiersRes.ok || !unitsRes.ok) throw new Error("Correction fixture not found (dev server must serve /correct/).");
-        const [lotsRaw, tiersRaw, unitsRaw] = await Promise.all([lotsRes.json(), tiersRes.json(), unitsRes.json()]);
+        const base = reviewOnly ? "/correction-review/hopkins/map" : "/correct/data";
+        const lotsRes = await fetch(`${base}/lots.json`);
+        const tiersRes = reviewOnly ? null : await fetch(`${base}/tiers.json`);
+        const unitsRes = reviewOnly ? null : await fetch(`${base}/units.json`);
+        if (!lotsRes.ok || (!reviewOnly && (!tiersRes?.ok || !unitsRes?.ok))) {
+          throw new Error(reviewOnly ? "Local Hopkins review source is unavailable." : "Correction fixture not found (dev server must serve /correct/).");
+        }
+        const lotsRaw = await lotsRes.json();
+        const tiersRaw = reviewOnly ? {} : await tiersRes!.json();
+        const unitsRaw = reviewOnly ? {} : await unitsRes!.json();
         if (cancelled) return;
         const adapted = adaptTiers(tiersRaw);
         setData({
-          tenant: adapted.tenant,
-          project: adapted.project,
+          tenant: reviewOnly ? "hopkins-grove" : adapted.tenant,
+          project: reviewOnly ? "map-review" : adapted.project,
           lots: adaptLots(lotsRaw),
           tiers: adapted.tiers,
           units: adaptUnits(unitsRaw),
-          planUrl: `${base}plan.png`,
-          actor: "operator",
+          planUrl: reviewOnly ? `${base}/masterplan_background.webp` : `${base}/plan.png`,
+          actor: reviewOnly ? "local reviewer" : "operator",
           serverBacked: false,
+          reviewOnly,
         });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Fixture load failed.");
@@ -111,7 +163,7 @@ function DemoWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reviewOnly]);
   if (error) {
     return (
       <main className="mx-auto max-w-2xl p-6">
@@ -236,18 +288,53 @@ function storeKey(tenant: string, project: string): string {
   return `cw:${tenant}:${project}`;
 }
 
-function WorkspaceShell({ data }: { data: WorkspaceData }) {
-  const [mode, setMode] = useState<Mode>("numbers");
-  const [state, setState] = useState<CorrectionState>(() =>
-    createInitialState({
-      lots: data.lots.map((l) => ({ id: l.id, lot_number: l.lot_number, polygon_pct: l.polygon_pct, tier_key: l.tier_key })),
-      tiers: data.tiers,
-      units: data.units,
-      actor: data.actor,
+function restoreLocalCorrectionState(data: WorkspaceData): CorrectionState {
+  const initial = createInitialState({
+    lots: data.lots.map((lot) => ({ id: lot.id, lot_number: lot.lot_number, polygon_pct: lot.polygon_pct, tier_key: lot.tier_key })),
+    tiers: data.tiers,
+    units: data.units,
+    actor: data.actor,
+    tenant: data.tenant,
+    project: data.project,
+  });
+  try {
+    const raw = localStorage.getItem(storeKey(data.tenant, data.project));
+    if (!raw) return initial;
+    const saved = JSON.parse(raw) as Partial<CorrectionState>;
+    const savedLots = saved.lots;
+    if (!savedLots || typeof savedLots !== "object") return initial;
+    const initialIds = Object.keys(initial.lots).sort();
+    if (JSON.stringify(Object.keys(savedLots).sort()) !== JSON.stringify(initialIds)) return initial;
+    for (const id of initialIds) {
+      const candidate = savedLots[id];
+      if (!candidate || candidate.id !== id || candidate.lot_number !== initial.lots[id].lot_number ||
+        !Array.isArray(candidate.polygon) || candidate.polygon.length < 3) return initial;
+    }
+    return {
+      ...initial,
+      ...saved,
       tenant: data.tenant,
       project: data.project,
-    }),
+      actor: data.actor,
+      lots: savedLots as CorrectionState["lots"],
+      tiers: saved.tiers && typeof saved.tiers === "object" ? saved.tiers : initial.tiers,
+      log: Array.isArray(saved.log) ? saved.log : [],
+      pointer: Number.isInteger(saved.pointer) ? saved.pointer! : 0,
+      waivers: Array.isArray(saved.waivers) ? saved.waivers : [],
+      geometry_revisions: saved.geometry_revisions ?? initial.geometry_revisions,
+    };
+  } catch {
+    return initial;
+  }
+}
+
+function WorkspaceShell({ data }: { data: WorkspaceData }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedMode = searchParams.get("mode");
+  const [mode, setMode] = useState<Mode>(() =>
+    requestedMode === "labels" ? "labels" : requestedMode === "tiers" || requestedMode === "gates" || requestedMode === "log" ? requestedMode : "numbers",
   );
+  const [state, setState] = useState<CorrectionState>(() => restoreLocalCorrectionState(data));
   const [toast, setToast] = useState<string | null>(null);
   // Synchronous mirror of state: mutate() trials the edit on a clone FIRST
   // so refusals (duplicate renumber, two-signal confirm, gate bypass) throw
@@ -263,7 +350,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
     try {
       localStorage.setItem(
         storeKey(next.tenant, next.project),
-        JSON.stringify({ lots: next.lots, tiers: next.tiers, log: next.log, pointer: next.pointer, waivers: next.waivers, stage: next.stage, publishedAt: next.publishedAt }),
+        JSON.stringify({ lots: next.lots, tiers: next.tiers, log: next.log, pointer: next.pointer, waivers: next.waivers, stage: next.stage, publishedAt: next.publishedAt, geometry_revisions: next.geometry_revisions }),
       );
     } catch {
       /* storage full/blocked: session-only */
@@ -275,30 +362,40 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
     }
   }
 
+  const modes: Mode[] = data.reviewOnly ? ["labels"] : ["numbers", "tiers", "gates", "log", "labels"];
+  const drawableDetectionCount = Object.values(state.lots).filter((lot) => lot.polygon.length >= 3).length;
+  function chooseMode(next: Mode): void {
+    setMode(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("mode", next);
+    setSearchParams(params, { replace: true });
+  }
+
   return (
     <section className={data.serverBacked ? "" : "v2-page-shell"}>
-      <div className="v2-page-header">
-        <p className="v2-page-kicker">Onboarding · Correct</p>
-        <h1 className="v2-page-title">Correction workspace</h1>
+      <div className={cn("v2-page-header", mode === "labels" && "py-3 sm:py-4")}>
+        <p className="v2-page-kicker">{mode === "labels" ? "Map review · M2 correction" : "Onboarding · Correct"}</p>
+        <h1 className="v2-page-title">{mode === "labels" ? "Hopkins Grove map review" : "Correction workspace"}</h1>
         <p className="v2-page-description">
-          {data.tenant} / {data.project} · {Object.keys(state.lots).length} lots · actor {state.actor}
-          {data.serverBacked ? "" : " · local drafts (server drafts pending migration apply)"}
+          {data.tenant} / {data.project} · {mode === "labels" ? `${drawableDetectionCount} detected polygons` : `${Object.keys(state.lots).length} lots`} · actor {state.actor}
+          {mode === "labels" ? " · source-grounded review only · browser-local until shared drafts are verified" : data.serverBacked ? "" : " · local drafts (server drafts pending migration apply)"}
         </p>
       </div>
       <div className="flex gap-2" role="tablist" aria-label="Workspace modes">
-        {(["numbers", "tiers", "gates", "log"] as Mode[]).map((m) => (
+        {modes.map((m) => (
           <button
             key={m}
             type="button"
             role="tab"
+            aria-label={m === "labels" ? "Lot number review" : m}
             aria-selected={mode === m}
-            onClick={() => setMode(m)}
+            onClick={() => chooseMode(m)}
             className={cn(
-              "rounded-md px-3 py-2 text-sm font-semibold capitalize transition",
+              "rounded-md px-3 py-2 text-sm font-semibold transition",
               mode === m ? "bg-primary-soft text-primary" : "text-muted-foreground hover:text-primary",
             )}
           >
-            {m}
+            {m === "labels" ? "Lot number review" : m[0].toUpperCase() + m.slice(1)}
           </button>
         ))}
       </div>
@@ -306,6 +403,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
       {mode === "tiers" ? <TiersTab state={state} mutate={mutate} planUrl={data.planUrl} /> : null}
       {mode === "gates" ? <GatesTab state={state} mutate={mutate} /> : null}
       {mode === "log" ? <LogTab state={state} mutate={mutate} /> : null}
+      {mode === "labels" ? <LotNumberReviewTab data={data} state={state} mutate={mutate} /> : null}
       {toast ? (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-foreground px-4 py-2 text-sm text-background" role="status">
           {toast}
@@ -313,6 +411,572 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
       ) : null}
     </section>
   );
+}
+
+function LotNumberReviewTab({
+  data,
+  state,
+  mutate,
+}: {
+  data: WorkspaceData;
+  state: CorrectionState;
+  mutate: (fn: (draft: CorrectionState) => void, message?: string) => void;
+}) {
+  const [manifest, setManifest] = useState<BenchmarkManifest | null>(null);
+  const [manifestSha, setManifestSha] = useState("");
+  const [sourceVerified, setSourceVerified] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [review, setReview] = useState<LocalBenchmarkReview>({
+    benchmark_id: "hopkins-grove-lot-number-benchmark-v1",
+    manifest_sha256: "",
+    current: 0,
+    reviewer: data.actor,
+    reviews: {},
+    geometry_flags: {},
+  });
+  const [currentIndex, setCurrentIndex] = useState<number | null>(0);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [areaDraft, setAreaDraft] = useState("");
+  const [geometryNote, setGeometryNote] = useState("");
+  const [geometryEditKey, setGeometryEditKey] = useState<string | null>(null);
+  const [geometryDraft, setGeometryDraft] = useState<Array<{ x: number; y: number }> | null>(null);
+  const [showOutstanding, setShowOutstanding] = useState(true);
+  const [feedback, setFeedback] = useState("");
+  const importRef = useRef<HTMLInputElement | null>(null);
+
+  const mappedSlots = useMemo(() => Object.values(state.lots).filter((slot) => slot.polygon.length >= 3), [state.lots]);
+  const sourcePolygonFor = useCallback((slot: LotSlot): Array<{ x: number; y: number }> => {
+    const original = state.log.find((entry) => entry.lot === slot.id && entry.field === "polygon");
+    return Array.isArray(original?.before) ? original.before as Array<{ x: number; y: number }> : slot.polygon;
+  }, [state.log]);
+  const slotForCase = (item: BenchmarkCase): LotSlot | null =>
+    Object.values(state.lots).find((slot) => slot.id === item.detection_id || slot.lot_number === item.detection_id) ?? null;
+  const caseGeometryMatches = useCallback((item: BenchmarkCase, slot: LotSlot | null): boolean =>
+    Boolean(slot && JSON.stringify(sourcePolygonFor(slot)) === JSON.stringify(item.polygon_pct)), [sourcePolygonFor]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPack() {
+      setPackError(null);
+      try {
+        const response = await fetch("/correction-review/hopkins/benchmark/benchmark-manifest.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("Local Hopkins benchmark is unavailable. Start the Vite development server with the prepared M1 review artifacts.");
+        const raw = await response.text();
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+        const sha = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        const parsed = JSON.parse(raw) as BenchmarkManifest;
+        if (parsed.schema_version !== 1 || parsed.benchmark_id !== "hopkins-grove-lot-number-benchmark-v1" || parsed.cases?.length !== 60) {
+          throw new Error("The review pack is not the expected versioned 60-case Hopkins benchmark.");
+        }
+        if (!data.planUrl) throw new Error("This workspace has no source image. Number review is blocked until the source drawing is available.");
+        const imageResponse = await fetch(data.planUrl, { cache: "no-store" });
+        if (!imageResponse.ok) throw new Error("The source drawing could not be verified from this workspace.");
+        const imageBlob = await imageResponse.blob();
+        const imageDigest = await crypto.subtle.digest("SHA-256", await imageBlob.arrayBuffer());
+        const imageSha = Array.from(new Uint8Array(imageDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        const bitmap = await createImageBitmap(imageBlob);
+        const dimensionsMatch = bitmap.width === parsed.source_image.width && bitmap.height === parsed.source_image.height;
+        bitmap.close();
+        if (cancelled) return;
+        setManifest(parsed);
+        setManifestSha(sha);
+        setSourceVerified(imageSha === parsed.source_image.sha256 && dimensionsMatch);
+        if (imageSha !== parsed.source_image.sha256 || !dimensionsMatch) {
+          setPackError("Source image fingerprint or dimensions do not match the benchmark. Label decisions and exports are disabled.");
+        }
+        const key = `wamule-lot-number-benchmark-v1:${sha}`;
+        const saved = JSON.parse(localStorage.getItem(key) || "null") as Partial<LocalBenchmarkReview> | null;
+        if (saved?.benchmark_id === parsed.benchmark_id && saved?.manifest_sha256 === sha) {
+          const caseIds = new Set(parsed.cases.map((item) => item.id));
+          const importedReviews = Object.fromEntries(Object.entries(saved.reviews ?? {}).filter(([id]) => caseIds.has(id)));
+          setReview({
+            benchmark_id: parsed.benchmark_id,
+            manifest_sha256: sha,
+            current: Math.max(0, Math.min(parsed.cases.length - 1, Number(saved.current) || 0)),
+            reviewer: typeof saved.reviewer === "string" ? saved.reviewer : data.actor,
+            reviews: importedReviews,
+            geometry_flags: saved.geometry_flags && typeof saved.geometry_flags === "object" ? saved.geometry_flags : {},
+          });
+          setCurrentIndex(Math.max(0, Math.min(parsed.cases.length - 1, Number(saved.current) || 0)));
+        } else {
+          setReview((previous) => ({ ...previous, manifest_sha256: sha }));
+        }
+        setStateLoaded(true);
+      } catch (error) {
+        if (!cancelled) setPackError(error instanceof Error ? error.message : "Could not load the Hopkins review pack.");
+      }
+    }
+    void loadPack();
+    return () => { cancelled = true; };
+  }, [data.planUrl, data.actor]);
+
+  useEffect(() => {
+    if (!stateLoaded || !manifestSha) return;
+    try {
+      localStorage.setItem(`wamule-lot-number-benchmark-v1:${manifestSha}`, JSON.stringify(review));
+    } catch {
+      setFeedback("Browser storage is unavailable. Export your review JSON before leaving this page.");
+    }
+  }, [review, manifestSha, stateLoaded]);
+
+  useEffect(() => {
+    const decision = currentIndex == null || !manifest ? null : review.reviews[manifest.cases[currentIndex]?.id] ?? null;
+    setNumberDraft(decision?.printed_number ?? "");
+    setAreaDraft(decision?.printed_area_sqm ?? "");
+  }, [currentIndex, manifest, review.reviews]);
+
+  useEffect(() => {
+    const flag = selectedKey ? review.geometry_flags[selectedKey] : null;
+    setGeometryNote(flag?.note ?? "");
+    setGeometryEditKey(null);
+    setGeometryDraft(null);
+  }, [selectedKey, review.geometry_flags]);
+
+  const selectedSlot = selectedKey ? state.lots[selectedKey] ?? null : null;
+  const selectedCaseIndex = manifest && selectedSlot
+    ? manifest.cases.findIndex((item) => (item.detection_id === selectedSlot.id || item.detection_id === selectedSlot.lot_number) && caseGeometryMatches(item, selectedSlot))
+    : -1;
+  const activeIndex = selectedCaseIndex >= 0 ? selectedCaseIndex : currentIndex;
+  const activeCase = manifest && activeIndex != null ? manifest.cases[activeIndex] ?? null : null;
+  const activeDecision = activeCase ? review.reviews[activeCase.id] : undefined;
+  const duplicateLabelCases = activeCase && /^\d+$/.test(numberDraft.trim())
+    ? manifest?.cases.filter((item) => item.id !== activeCase.id
+      && review.reviews[item.id]?.status === "confirmed"
+      && review.reviews[item.id]?.printed_number === numberDraft.trim()) ?? []
+    : [];
+  const activeCaseMatches = Boolean(activeCase && selectedSlot && caseGeometryMatches(activeCase, selectedSlot));
+  const canRecordNumber = Boolean(manifest && sourceVerified && activeCase && activeCaseMatches && selectedSlot);
+  const reviewedCount = manifest?.cases.filter((item) => ["confirmed", "ambiguous", "unreadable"].includes(review.reviews[item.id]?.status ?? "")).length ?? 0;
+  const skippedCount = manifest?.cases.filter((item) => review.reviews[item.id]?.status === "skipped").length ?? 0;
+  const unresolvedCount = (manifest?.cases.length ?? 60) - reviewedCount - skippedCount;
+  const outstandingCases = manifest?.cases.filter((item) => !["confirmed", "ambiguous", "unreadable"].includes(review.reviews[item.id]?.status ?? "")) ?? [];
+  const queueCases = showOutstanding ? outstandingCases : (manifest?.cases ?? []);
+
+  const reviewStatusByKey = useMemo(() => {
+    const statuses: Record<string, CorrectionReviewStatus> = {};
+    for (const slot of mappedSlots) {
+      if (review.geometry_flags[slot.id]?.flagged) {
+        statuses[slot.id] = "geometry-issue";
+        continue;
+      }
+      const item = manifest?.cases.find((candidate) => candidate.detection_id === slot.id || candidate.detection_id === slot.lot_number);
+      const status = item ? review.reviews[item.id]?.status : undefined;
+      statuses[slot.id] = status === "confirmed" ? "reviewed" : status === "ambiguous" ? "ambiguous" : status === "unreadable" ? "unreadable" : status === "skipped" ? "skipped" : "unreviewed";
+    }
+    return statuses;
+  }, [mappedSlots, review.geometry_flags, review.reviews, manifest]);
+
+  const layer = useMemo<CorrectionMapLayer>(() => ({
+    title: "Hopkins Grove · internal map review",
+    imageUrl: data.planUrl,
+    parcels: mappedSlots.map((slot) => ({ key: slot.id, reference: slot.lot_number, polygon: slot.polygon })),
+    selectedKey,
+    reviewStatusByKey,
+    geometryEdit: geometryEditKey && selectedSlot && geometryDraft
+      ? { key: geometryEditKey, polygon: geometryDraft }
+      : null,
+    onSelect: (key) => {
+      setSelectedKey(key);
+      const slot = state.lots[key];
+      const index = manifest?.cases.findIndex((item) =>
+        (item.detection_id === slot?.id || item.detection_id === slot?.lot_number) && caseGeometryMatches(item, slot ?? null)) ?? -1;
+      if (index >= 0) {
+        setCurrentIndex(index);
+        setReview((previous) => ({ ...previous, current: index }));
+      } else {
+        setCurrentIndex(null);
+      }
+    },
+    onGeometryDraftChange: (_key, polygon) => setGeometryDraft(polygon),
+  }), [data.planUrl, mappedSlots, selectedKey, reviewStatusByKey, geometryEditKey, selectedSlot, geometryDraft, state.lots, manifest, caseGeometryMatches]);
+
+  function saveDecision(status: LabelDecisionStatus): void {
+    if (!activeCase || !selectedSlot || !canRecordNumber) {
+      setFeedback("Decision blocked: verify the original source image and exact benchmark polygon before recording.");
+      return;
+    }
+    const reviewer = review.reviewer.trim();
+    if (!reviewer) {
+      setFeedback("Enter the reviewer name before recording a decision.");
+      return;
+    }
+    const number = numberDraft.trim();
+    const area = areaDraft.trim();
+    if (status === "confirmed" && !/^\d+$/.test(number)) {
+      setFeedback("Enter only the digits printed inside the outlined polygon, or choose ambiguous/unreadable.");
+      return;
+    }
+    if (area && (!/^\d+(?:\.\d+)?$/.test(area) || Number(area) <= 0)) {
+      setFeedback("If recording a printed area, use a positive number or leave it blank.");
+      return;
+    }
+    const decision: LabelDecision = {
+      status,
+      printed_number: status === "confirmed" ? number : "",
+      printed_area_sqm: status === "confirmed" ? area : "",
+      reviewer,
+      reviewed_at: new Date().toISOString(),
+      ...(review.geometry_flags[selectedSlot.id]?.flagged ? { geometry_issue: true, geometry_note: review.geometry_flags[selectedSlot.id].note } : {}),
+    };
+    setReview((previous) => ({ ...previous, current: activeIndex ?? previous.current, reviews: { ...previous.reviews, [activeCase.id]: decision } }));
+    setFeedback(status === "confirmed" ? "Source-drawing decision saved locally." : `Marked ${status}; it remains separate from sales status.`);
+    if (status === "confirmed" || status === "ambiguous" || status === "unreadable" || status === "skipped") {
+      goNextUnresolved(activeIndex ?? 0);
+    }
+  }
+
+  function goToCase(index: number): void {
+    if (!manifest || !manifest.cases[index]) return;
+    setCurrentIndex(index);
+    setReview((previous) => ({ ...previous, current: index }));
+    const slot = slotForCase(manifest.cases[index]);
+    setSelectedKey(slot?.id ?? null);
+  }
+
+  function goNextUnresolved(from: number): void {
+    if (!manifest) return;
+    for (let offset = 1; offset <= manifest.cases.length; offset += 1) {
+      const index = (from + offset) % manifest.cases.length;
+      const status = review.reviews[manifest.cases[index].id]?.status;
+      if (!["confirmed", "ambiguous", "unreadable"].includes(status ?? "") && status !== "skipped") {
+        goToCase(index);
+        return;
+      }
+    }
+    const skipped = manifest.cases.findIndex((item) => review.reviews[item.id]?.status === "skipped");
+    if (skipped >= 0) goToCase(skipped);
+  }
+
+  function updateGeometryFlag(): void {
+    if (!selectedSlot) return;
+    const reviewer = review.reviewer.trim();
+    if (!reviewer) {
+      setFeedback("Enter the reviewer name before saving a geometry flag.");
+      return;
+    }
+    const existing = review.geometry_flags[selectedSlot.id];
+    const next: GeometryFlag = {
+      flagged: !existing?.flagged,
+      note: geometryNote.trim(),
+      reviewer,
+      flagged_at: new Date().toISOString(),
+    };
+    setReview((previous) => ({ ...previous, geometry_flags: { ...previous.geometry_flags, [selectedSlot.id]: next } }));
+    setFeedback(next.flagged ? "Geometry issue saved locally; no shape was changed." : "Geometry issue flag cleared locally.");
+  }
+
+  function beginGeometryEdit(): void {
+    if (!selectedSlot) return;
+    if (!review.reviewer.trim()) {
+      setFeedback("Enter the reviewer name before editing a boundary.");
+      return;
+    }
+    if (!review.geometry_flags[selectedSlot.id]?.flagged) {
+      setFeedback("Flag the geometry issue first, then preview a boundary correction.");
+      return;
+    }
+    setGeometryEditKey(selectedSlot.id);
+    setGeometryDraft(selectedSlot.polygon.map((point) => ({ ...point })));
+    setFeedback("Drag or keyboard-adjust the highlighted vertices. The original boundary is unchanged until you save the preview.");
+  }
+
+  function saveGeometryEdit(): void {
+    if (!selectedSlot || !geometryDraft || geometryEditKey !== selectedSlot.id) return;
+    if (JSON.stringify(selectedSlot.polygon) === JSON.stringify(geometryDraft)) {
+      setFeedback("No boundary changes to save.");
+      return;
+    }
+    mutate((draft) => {
+      applyEdit(draft, { actor: draft.actor, lot: selectedSlot.id, field: "polygon", before: selectedSlot.polygon, after: geometryDraft });
+    }, `${selectedSlot.lot_number} boundary preview saved to the local correction draft`);
+    setGeometryEditKey(null);
+    setGeometryDraft(null);
+    setFeedback("Boundary correction saved to the local correction draft with original geometry and edit history preserved. It is not published.");
+  }
+
+  function exportJson(): void {
+    if (!manifest || !sourceVerified || !manifestSha) return;
+    const cases = manifest.cases.map((item) => {
+      const slot = slotForCase(item);
+      const decision = review.reviews[item.id] ?? {
+        status: "pending",
+        printed_number: "",
+        printed_area_sqm: "",
+        reviewer: "",
+        reviewed_at: null,
+      };
+      return {
+        ...item,
+        ...decision,
+        original_polygon_pct: item.polygon_pct,
+        geometry_review: slot ? review.geometry_flags[slot.id] ?? null : null,
+        correction_history: slot ? state.log.filter((entry) => entry.lot === slot.id && entry.field === "polygon") : [],
+        current_polygon_pct: slot?.polygon ?? null,
+      };
+    });
+    const decisions = cases.filter((item) => ["confirmed", "ambiguous", "unreadable"].includes(String(item.status)));
+    const skipped = cases.filter((item) => item.status === "skipped").length;
+    const geometryIssues = Object.entries(review.geometry_flags).filter(([, flag]) => flag.flagged).map(([key, flag]) => ({
+      correction_key: key,
+      detection_reference: state.lots[key]?.lot_number ?? key,
+      ...flag,
+      original_polygon_pct: state.lots[key] ? sourcePolygonFor(state.lots[key]) : null,
+      current_polygon_pct: state.lots[key]?.polygon ?? null,
+      correction_history: state.log.filter((entry) => entry.lot === key && entry.field === "polygon"),
+    }));
+    downloadFile("hopkins-grove-lot-number-ground-truth-v1.json", JSON.stringify({
+      schema_version: 1,
+      artifact_type: "wamule-lot-number-ground-truth",
+      benchmark_id: manifest.benchmark_id,
+      export_status: decisions.length === manifest.cases.length ? "complete" : "partial",
+      exported_at_utc: new Date().toISOString(),
+      reviewer_name: review.reviewer,
+      review_summary: { expected_cases: manifest.cases.length, decisions_recorded: decisions.length, skipped, unresolved: manifest.cases.length - decisions.length - skipped },
+      source_image: manifest.source_image,
+      lot_geometry_sha256: manifest.lot_geometry_sha256,
+      benchmark_manifest_sha256: manifestSha,
+      cases,
+      geometry_issues: geometryIssues,
+      persistence: "browser-local; not synchronized or published",
+    }, null, 2) + "\n", "application/json");
+    setFeedback("Versioned source review JSON exported. It includes polygon, crop, source fingerprint, reviewer, decision, timestamps, and local geometry-edit history.");
+  }
+
+  function exportCsv(): void {
+    if (!manifest || !sourceVerified) return;
+    const escape = (value: unknown) => {
+      const text = String(value ?? "");
+      return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    const rows: unknown[][] = [["id", "printed_number", "printed_area_sqm", "ambiguous", "unreadable", "skipped", "reviewer", "reviewed_at"]];
+    for (const item of manifest.cases) {
+      const decision = review.reviews[item.id];
+      rows.push([
+        item.id,
+        decision?.status === "confirmed" ? decision.printed_number : "",
+        decision?.status === "confirmed" ? decision.printed_area_sqm : "",
+        decision?.status === "ambiguous" ? "1" : "",
+        decision?.status === "unreadable" ? "1" : "",
+        decision?.status === "skipped" ? "1" : "",
+        decision?.reviewer ?? "",
+        decision?.reviewed_at ?? "",
+      ]);
+    }
+    downloadFile("hopkins-grove-labels.csv", rows.map((row) => row.map(escape).join(",")).join("\n") + "\n", "text/csv;charset=utf-8");
+    setFeedback("Scorer-compatible CSV exported. Blank, ambiguous, unreadable, and skipped cases are not scored as numbers.");
+  }
+
+  async function importJson(file?: File): Promise<void> {
+    if (!file || !manifest || !manifestSha) return;
+    try {
+      const parsed = JSON.parse(await file.text()) as { artifact_type?: string; benchmark_id?: string; benchmark_manifest_sha256?: string; reviewer_name?: string; cases?: Array<Record<string, unknown>> };
+      if (parsed.artifact_type !== "wamule-lot-number-ground-truth" || parsed.benchmark_id !== manifest.benchmark_id || parsed.benchmark_manifest_sha256 !== manifestSha || !Array.isArray(parsed.cases)) {
+        throw new Error("This JSON is not an export for the same versioned Hopkins benchmark.");
+      }
+      const known = new Set(manifest.cases.map((item) => item.id));
+      const imported = Object.fromEntries(parsed.cases.filter((item) => typeof item.id === "string" && known.has(item.id)).map((item) => [String(item.id), {
+        status: item.status === "confirmed" || item.status === "ambiguous" || item.status === "unreadable" || item.status === "skipped" || item.status === "draft" ? item.status : "draft",
+        printed_number: typeof item.printed_number === "string" ? item.printed_number : "",
+        printed_area_sqm: typeof item.printed_area_sqm === "string" ? item.printed_area_sqm : typeof item.printed_area_sqm === "number" ? String(item.printed_area_sqm) : "",
+        reviewer: typeof item.reviewer === "string" ? item.reviewer : parsed.reviewer_name ?? "",
+        reviewed_at: typeof item.reviewed_at === "string" ? item.reviewed_at : null,
+      } as LabelDecision]));
+      setReview((previous) => ({ ...previous, reviewer: parsed.reviewer_name ?? previous.reviewer, reviews: { ...previous.reviews, ...imported } }));
+      setFeedback(`Imported ${Object.keys(imported).length} decisions from a matching exported review JSON.`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Review JSON could not be imported.");
+    } finally {
+      if (importRef.current) importRef.current.value = "";
+    }
+  }
+
+  const cropCase = activeCase;
+  const cropPolygon = cropCase?.polygon_pct ?? (selectedSlot ? sourcePolygonFor(selectedSlot) : []);
+  const cropBox = cropCase?.crop_box_px ?? polygonCropBox(cropPolygon, 5700, 4800);
+  const statusForActive = activeDecision?.status ?? "pending";
+
+  return (
+    <div className="correction-review-grid">
+      <section className="correction-review-map" aria-label="Hopkins Grove development map">
+        <PublicLotMap tenantSlug="correction-review" showPrices={false} correctionMapLayer={layer} />
+      </section>
+      <aside className="correction-review-panel" aria-label="Lot number review panel">
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <p className="v2-page-kicker">Independent source review</p>
+            <h2 className="mt-1 text-lg font-semibold text-primary">{activeCase ? `Case ${activeCase.id}` : selectedSlot ? "Polygon review" : "Select a polygon"}</h2>
+          </div>
+          <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+            {statusForActive === "pending" ? "Unreviewed" : statusForActive}
+          </span>
+        </header>
+        <div className="mt-3" aria-label="Benchmark review progress">
+          <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+            <span>{reviewedCount} / {manifest?.cases.length ?? 60} decisions recorded</span>
+            <span>{skippedCount} skipped · {unresolvedCount} unresolved</span>
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={manifest?.cases.length ?? 60} aria-valuenow={reviewedCount} aria-label="Recorded benchmark decisions">
+            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${(reviewedCount / (manifest?.cases.length ?? 60)) * 100}%` }} />
+          </div>
+        </div>
+        {packError ? <p className="mt-3 rounded-md border border-warning/30 bg-accent-soft p-2.5 text-xs leading-5 text-foreground" role="alert">{packError}</p> : null}
+        <p className="mt-3 rounded-md border border-primary/15 bg-primary-soft/50 p-2.5 text-xs leading-5 text-muted-foreground">
+          Printed drawing and detected geometry only. The reference is for navigation—not an official lot number. No price, tier, availability, or OCR/AI guess is shown. Progress is browser-local until M4 shared drafts are verified.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Field label="Reviewer">
+            <Input value={review.reviewer} onChange={(event) => setReview((previous) => ({ ...previous, reviewer: event.target.value }))} autoComplete="name" placeholder="Reviewer name" />
+          </Field>
+          <div className="flex items-end gap-2">
+            <label className="flex min-h-11 flex-1 items-center gap-2 rounded-md border border-border px-3 text-sm">
+              <input type="checkbox" checked={showOutstanding} onChange={(event) => setShowOutstanding(event.target.checked)} />
+              Outstanding only
+            </label>
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+          <label className="sr-only" htmlFor="benchmark-case-select">Benchmark review queue</label>
+          <select id="benchmark-case-select" value={activeCase?.id ?? ""} onChange={(event) => {
+            const index = manifest?.cases.findIndex((item) => item.id === event.target.value) ?? -1;
+            if (index >= 0) goToCase(index);
+          }} className="focus-ring h-11 min-w-0 rounded-md border border-border bg-card px-2 text-sm" disabled={!manifest}>
+            {queueCases.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.detection_id} · {review.reviews[item.id]?.status ?? "unreviewed"}</option>)}
+          </select>
+          <Button type="button" variant="outline" disabled={currentIndex == null || currentIndex <= 0} onClick={() => goToCase((currentIndex ?? 0) - 1)} aria-label="Previous benchmark case">←</Button>
+          <Button type="button" variant="outline" disabled={!manifest || unresolvedCount === 0} onClick={() => selectedKey == null ? goToCase(currentIndex ?? 0) : goNextUnresolved(currentIndex ?? 0)}>{selectedKey == null ? "Open current target" : "Next unresolved"}</Button>
+        </div>
+
+        {selectedSlot ? (
+          <div className="mt-3 rounded-lg border border-border bg-background p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Detection reference · not canonical identity</p>
+                <p className="mt-1 font-semibold text-foreground">{selectedSlot.lot_number}</p>
+              </div>
+              <button type="button" className="focus-ring min-h-11 rounded-md px-3 text-sm font-semibold text-muted-foreground hover:bg-muted" onClick={() => { setSelectedKey(null); setCurrentIndex(null); }}>Clear map selection</button>
+            </div>
+            {cropPolygon.length >= 3 && data.planUrl ? (
+              <SourcePolygonCrop imageUrl={data.planUrl} polygon={cropPolygon} cropBox={cropBox} />
+            ) : <div className="mt-2 grid min-h-36 place-items-center rounded-md border border-dashed text-sm text-muted-foreground">No traceable polygon crop is available.</div>}
+            {cropCase ? (
+              <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                Source-bound crop: {cropCase.crop_file} · SHA-256 {cropCase.crop_sha256.slice(0, 12)}… · map outline and crop use original percentage coordinates.
+              </p>
+            ) : <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Outside the 60-case benchmark. Boundary review can be recorded; no printed-number ground truth is accepted in this scope.</p>}
+            {activeCase && selectedCaseIndex >= 0 ? (
+              <>
+                <p className="mt-3 text-sm leading-5 text-foreground">Review only the number inside the outlined boundary. If it covers multiple lots or cannot be read confidently, mark ambiguous or unreadable. Adjacent labels are context only.</p>
+                <Field label="Printed lot number · digits only">
+                  <Input value={numberDraft} onChange={(event) => {
+                    const value = event.target.value.replace(/\D/g, "");
+                    setNumberDraft(value);
+                    if (activeCase) setReview((previous) => ({ ...previous, reviews: { ...previous.reviews, [activeCase.id]: { status: "draft", printed_number: value, printed_area_sqm: areaDraft, reviewer: previous.reviewer, reviewed_at: null } } }));
+                  }} inputMode="numeric" maxLength={12} placeholder="Read from outlined polygon" disabled={!sourceVerified} />
+                </Field>
+                {duplicateLabelCases.length > 0 ? (
+                  <p className="mt-2 rounded-md border border-warning/30 bg-accent-soft p-2.5 text-xs leading-5 text-foreground" role="alert">
+                    Possible duplicate printed number {numberDraft.trim()} is already recorded for {duplicateLabelCases.map((item) => item.detection_id).join(", ")}. Compare both source crops before resolving; this warning does not change canonical identity.
+                  </p>
+                ) : null}
+                <Field label="Printed area (optional; only if independently clear)">
+                  <Input value={areaDraft} onChange={(event) => setAreaDraft(event.target.value)} inputMode="decimal" placeholder="Leave blank if unclear" disabled={!sourceVerified} />
+                </Field>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button type="button" onClick={() => saveDecision("confirmed")} disabled={!canRecordNumber}>Confirm printed number</Button>
+                  <Button type="button" variant="outline" onClick={() => saveDecision("ambiguous")} disabled={!canRecordNumber}>Ambiguous</Button>
+                  <Button type="button" variant="outline" onClick={() => saveDecision("unreadable")} disabled={!canRecordNumber}>Unreadable</Button>
+                  <Button type="button" variant="outline" onClick={() => saveDecision("skipped")} disabled={!canRecordNumber}>Skip for later</Button>
+                  <Button type="button" variant="outline" className="col-span-2" onClick={() => saveDecision("draft")} disabled={!canRecordNumber}>Save draft</Button>
+                </div>
+                {!sourceVerified || !activeCaseMatches ? <p className="mt-2 text-xs text-destructive">Review is blocked until the source fingerprint and target polygon match the versioned benchmark.</p> : null}
+                {activeDecision?.reviewed_at ? <p className="mt-2 text-xs text-muted-foreground">Saved by {activeDecision.reviewer} · {new Date(activeDecision.reviewed_at).toLocaleString()}</p> : null}
+              </>
+            ) : null}
+
+            <div className="mt-3 border-t border-border pt-3">
+              <p className="text-sm font-semibold text-foreground">Boundary review</p>
+              <label className="mt-2 block text-xs font-medium text-muted-foreground" htmlFor="geometry-note">What looks wrong? (optional)</label>
+              <textarea id="geometry-note" rows={2} maxLength={300} value={geometryNote} onChange={(event) => setGeometryNote(event.target.value)} className="focus-ring mt-1 w-full resize-y rounded-md border border-border bg-card p-2 text-sm" placeholder="Boundary crosses a neighboring lot…" />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={updateGeometryFlag}>
+                  {review.geometry_flags[selectedSlot.id]?.flagged ? "Clear geometry flag" : "Flag geometry issue"}
+                </Button>
+                {!geometryEditKey ? <Button type="button" variant="outline" onClick={beginGeometryEdit} disabled={!sourceVerified}>Adjust boundary</Button> : null}
+              </div>
+              {geometryEditKey ? (
+                <div className="mt-2 rounded-md border border-secondary/30 bg-secondary-soft/35 p-2.5 text-xs leading-5">
+                  Preview mode: drag a white handle or focus one and use arrow keys. Changes remain local until explicitly saved.
+                  <div className="mt-2 flex gap-2">
+                    <Button type="button" onClick={saveGeometryEdit}>Save boundary preview</Button>
+                    <Button type="button" variant="outline" onClick={() => { setGeometryEditKey(null); setGeometryDraft(null); }}>Discard preview</Button>
+                  </div>
+                </div>
+              ) : null}
+              {review.geometry_flags[selectedSlot.id]?.flagged ? <p className="mt-2 text-xs font-semibold text-destructive">Geometry issue flagged · {review.geometry_flags[selectedSlot.id].note || "no note"}</p> : null}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-dashed border-border bg-background p-5 text-sm leading-6 text-muted-foreground">
+            <strong className="text-foreground">Choose a polygon on the full development map.</strong> The target appears with its original source crop and review controls here. The map includes all traceable detections; printed-number decisions are limited to the 60-case benchmark.
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+          <Button type="button" variant="outline" onClick={() => exportJson()} disabled={!sourceVerified || !manifest}>Export review JSON</Button>
+          <Button type="button" variant="outline" onClick={() => exportCsv()} disabled={!sourceVerified || !manifest}>Export scorer CSV</Button>
+          <input ref={importRef} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => void importJson(event.target.files?.[0])} />
+          <Button type="button" variant="outline" className="col-span-2" onClick={() => importRef.current?.click()} disabled={!manifest}>Import prior review JSON</Button>
+        </div>
+        {feedback ? <p className="mt-2 rounded-md bg-muted p-2 text-xs leading-5 text-foreground" role="status">{feedback}</p> : null}
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">No candidate suggestions are loaded or displayed before the independent review. JSON preserves all 60 source cases; CSV stays compatible with the existing OCR scorer.</p>
+      </aside>
+    </div>
+  );
+}
+
+function polygonCropBox(polygon: Array<{ x: number; y: number }>, width: number, height: number): [number, number, number, number] {
+  if (!polygon.length) return [0, 0, width, height];
+  const xs = polygon.map((point) => point.x * width / 100);
+  const ys = polygon.map((point) => point.y * height / 100);
+  const pad = Math.max(40, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.2);
+  const left = Math.max(0, Math.floor(Math.min(...xs) - pad));
+  const top = Math.max(0, Math.floor(Math.min(...ys) - pad));
+  const right = Math.min(width, Math.ceil(Math.max(...xs) + pad));
+  const bottom = Math.min(height, Math.ceil(Math.max(...ys) + pad));
+  return [left, top, right, bottom];
+}
+
+function SourcePolygonCrop({
+  imageUrl,
+  polygon,
+  cropBox,
+}: {
+  imageUrl: string;
+  polygon: Array<{ x: number; y: number }>;
+  cropBox: [number, number, number, number];
+}) {
+  const [x0, y0, x1, y1] = cropBox;
+  const points = polygon.map((point) => `${point.x * 57},${point.y * 48}`).join(" ");
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-border bg-white" data-testid="source-polygon-crop">
+      <svg role="img" aria-label="High-resolution subdivision drawing crop with the target polygon outlined" viewBox={`${x0} ${y0} ${Math.max(1, x1 - x0)} ${Math.max(1, y1 - y0)}`} className="block max-h-[280px] w-full">
+        <image href={imageUrl} x={0} y={0} width={5700} height={4800} preserveAspectRatio="none" />
+        <polygon points={points} fill="rgba(185,79,45,.16)" stroke="#ffffff" strokeWidth={16} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <polygon points={points} fill="none" stroke="#b84f2d" strokeWidth={8} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+}
+
+function downloadFile(name: string, contents: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ------------------------------- Numbers ------------------------------- */

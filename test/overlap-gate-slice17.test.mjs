@@ -61,13 +61,56 @@ test("overlap waiver needs reason/actor/time; then the gate passes", () => {
   const s = overlappingState();
   assert.throws(() => lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "a<->b", reason: "  " }), /reason is required/);
   assert.throws(() => lib.addWaiver(s, { actor: "  ", scope: "overlap", target: "a<->b", reason: "shared wall" }), /actor is required/);
-  const w = lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "a<->b", reason: "shared wall confirmed on plan" });
+  assert.throws(() => lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "a<->b", reason: "shared wall", time: "not a timestamp" }), /timezone-qualified ISO timestamp/);
+  const w = lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "b<->a", reason: "shared wall confirmed on plan" });
   assert.ok(w.id && w.time);
   assert.equal(w.actor, "alice");
+  assert.equal(w.target, "a<->b");
+  assert.deepEqual(Object.keys(w.geometry_binding.lot_revisions).sort(), ["a", "b"]);
   const gate = lib.evaluateStageGate(s);
   assert.equal(gate.pass, true);
   assert.equal(gate.waived.length, 1);
   assert.equal(lib.advanceStage(s, "alice"), "validate");
+});
+
+test("legacy overlap waivers without geometry evidence fail closed", () => {
+  const s = overlappingState();
+  s.waivers.push({
+    id: "legacy-waiver",
+    scope: "overlap",
+    target: "a<->b",
+    reason: "old review",
+    actor: "alice",
+    time: "2026-10-11T12:00:00Z",
+  });
+  const gate = lib.evaluateStageGate(s);
+  assert.equal(gate.pass, false);
+  assert.equal(gate.blocking.filter((f) => f.code === "within-draft-overlap").length, 1);
+});
+
+test("overlap waivers with missing audit fields fail closed", () => {
+  const s = overlappingState();
+  const waiver = lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "a<->b", reason: "reviewed pair" });
+  waiver.actor = " ";
+  const gate = lib.evaluateStageGate(s);
+  assert.equal(gate.pass, false);
+  assert.equal(gate.blocking.filter((f) => f.code === "within-draft-overlap").length, 1);
+});
+
+test("changing or undoing either paired geometry invalidates its overlap waiver", () => {
+  const s = overlappingState();
+  const original = structuredClone(s.lots.b.polygon);
+  lib.addWaiver(s, { actor: "alice", scope: "overlap", target: "a<->b", reason: "shared wall confirmed on plan" });
+  assert.equal(lib.evaluateStageGate(s).pass, true);
+
+  lib.applyEdit(s, { actor: "alice", lot: "b", field: "polygon", before: original, after: square(6, 5) });
+  assert.equal(lib.evaluateStageGate(s).blocking.filter((f) => f.code === "within-draft-overlap").length, 1);
+
+  lib.applyEdit(s, { actor: "alice", lot: "b", field: "polygon", before: s.lots.b.polygon, after: original });
+  assert.equal(lib.evaluateStageGate(s).blocking.filter((f) => f.code === "within-draft-overlap").length, 1);
+
+  lib.undoLast(s);
+  assert.equal(lib.evaluateStageGate(s).blocking.filter((f) => f.code === "within-draft-overlap").length, 1);
 });
 
 test("publish from correct is refused on overlap, proceeds once waived", () => {

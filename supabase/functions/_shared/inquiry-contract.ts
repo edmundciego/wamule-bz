@@ -1,3 +1,5 @@
+import { parsePublicLotReference } from "./public-lot-reference.ts";
+
 /**
  * Shared inquiry-submission contract: the single source of truth for the
  * public inquiry payload shape and field validation.
@@ -7,8 +9,8 @@
  * (PublicInquiryModal, ApplicationPage) plus the node contract test, so the
  * modal payload always matches the function's validation schema.
  *
- * Dependency-free on purpose: no Node/Deno/browser APIs, no const enums
- * (node type-stripping + isolatedModules compatible).
+ * The reference parser is likewise runtime-neutral; no Node/Deno/browser
+ * APIs or const enums are used (node type-stripping compatible).
  */
 
 export const ALLOWED_INQUIRY_INTERESTS = [
@@ -39,6 +41,8 @@ export interface InquiryPayload {
   email?: unknown;
   phone?: unknown;
   interests?: unknown;
+  specific_lot_ref?: unknown;
+  /** @deprecated Raw database ids are rejected; retained only to return a clear migration error. */
   specific_lot_id?: unknown;
   message?: unknown;
   page_url?: unknown;
@@ -54,7 +58,7 @@ export interface ValidInquiry {
   pageUrl: string;
   tenantSlug: string | null;
   interests: string[];
-  specificLotId: number | null;
+  specificLotRef: string | null;
   clientReferenceId: string | null;
 }
 
@@ -77,7 +81,7 @@ export function buildInquiryPayload(input: {
   email: string;
   phone?: string;
   interests: string[];
-  specificLotId?: number | null;
+  specificLotRef?: string | null;
   message?: string;
   pageUrl?: string;
   tenant?: string | null;
@@ -89,8 +93,8 @@ export function buildInquiryPayload(input: {
     interests: input.interests,
   };
   if (input.phone) body.phone = input.phone;
-  if (input.specificLotId !== undefined && input.specificLotId !== null) {
-    body.specific_lot_id = input.specificLotId;
+  if (input.specificLotRef !== undefined && input.specificLotRef !== null) {
+    body.specific_lot_ref = input.specificLotRef;
   }
   if (input.message) body.message = input.message;
   if (input.pageUrl) body.page_url = input.pageUrl;
@@ -113,10 +117,10 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   const invalidInterest = interests.find(
     (interest) => !(ALLOWED_INQUIRY_INTERESTS as readonly string[]).includes(interest),
   );
-  const specificLotId =
-    body.specific_lot_id === null || body.specific_lot_id === undefined || body.specific_lot_id === ""
-      ? null
-      : Number(body.specific_lot_id);
+  const rawSpecificLotRef = body.specific_lot_ref;
+  const invalidSpecificLotRef = rawSpecificLotRef !== null && rawSpecificLotRef !== undefined && rawSpecificLotRef !== "" &&
+    (typeof rawSpecificLotRef !== "string" || !parsePublicLotReference(rawSpecificLotRef));
+  const specificLotRef = invalidSpecificLotRef ? null : typeof rawSpecificLotRef === "string" && rawSpecificLotRef ? rawSpecificLotRef : null;
   const clientReferenceId = cleanText(body.client_reference_id, INQUIRY_LIMITS.clientReferenceId) || null;
 
   if (!name) return { error: "Name is required." };
@@ -124,14 +128,17 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
     return { error: "Enter a valid email address." };
   }
   if (invalidInterest) return { error: "Select a valid inquiry interest." };
-  if (specificLotId !== null && (!Number.isInteger(specificLotId) || specificLotId <= 0)) {
-    return { error: "Select a valid lot." };
+  if (body.specific_lot_id !== undefined) {
+    return { error: "Reload the current map before selecting a lot." };
+  }
+  if (invalidSpecificLotRef) {
+    return { error: "Select a valid lot from the current public map." };
   }
   if (clientReferenceId !== null && !/^[A-Za-z0-9-]{8,64}$/.test(clientReferenceId)) {
     return { error: "Invalid request reference. Please reload and try again." };
   }
 
-  return { name, email, phone, message, interests, specificLotId, pageUrl, tenantSlug, clientReferenceId };
+  return { name, email, phone, message, interests, specificLotRef, pageUrl, tenantSlug, clientReferenceId };
 }
 
 /**

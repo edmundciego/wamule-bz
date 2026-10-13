@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Road-width reference review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #18251e;
+      background: #f5f7f6;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header, main { width: min(100% - 2rem, 1480px); margin-inline: auto; }
+    header { padding-block: 1.25rem .75rem; }
+    h1 { margin: 0; font-size: 1.35rem; line-height: 1.3; }
+    p { line-height: 1.5; }
+    .intro { margin: .4rem 0 0; color: #435149; max-width: 78ch; }
+    main { padding-bottom: 2rem; }
+    .guidance { margin-block: .75rem; padding: 1rem; background: #fff; border: 1px solid #c9d2cc; border-radius: .5rem; }
+    .guidance p { margin: 0; }
+    .guidance ol { margin: .5rem 0 0; padding-left: 1.4rem; }
+    .guidance li + li { margin-top: .35rem; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-block: .75rem; }
+    button {
+      min-height: 44px; padding: .55rem .85rem; border: 1px solid #89988f; border-radius: .35rem;
+      background: #fff; color: #18251e; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #edf2ee; }
+    button:focus-visible { outline: 3px solid #1b5e3d; outline-offset: 2px; }
+    button[aria-pressed="true"] { border-color: #164b32; background: #164b32; color: #fff; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    #source-status { min-height: 3em; margin: .5rem 0; color: #435149; }
+    #source-status[data-state="error"] { color: #8b2727; font-weight: 700; }
+    .canvas-shell { overflow: auto; border: 1px solid #aab5ad; border-radius: .35rem; background: #e7ece8; }
+    canvas { display: block; width: 100%; max-width: {{CANVAS_WIDTH}}px; height: auto; margin-inline: auto; cursor: crosshair; touch-action: manipulation; }
+    canvas[aria-disabled="true"] { cursor: progress; }
+    .summary { margin: .75rem 0; color: #28372e; font-variant-numeric: tabular-nums; }
+    .table-wrap { overflow-x: auto; border: 1px solid #c9d2cc; border-radius: .35rem; background: #fff; }
+    table { width: 100%; border-collapse: collapse; min-width: 620px; }
+    th, td { padding: .55rem .65rem; border-bottom: 1px solid #dce2de; text-align: left; white-space: nowrap; }
+    th { background: #edf2ee; font-size: .875rem; }
+    td { font-variant-numeric: tabular-nums; }
+    .fit { color: #14583a; }
+    .held-out { color: #2a527a; }
+    .help { color: #526057; font-size: .9rem; }
+    @media (max-width: 600px) {
+      header, main { width: min(100% - 1rem, 1480px); }
+      .controls { align-items: stretch; }
+      .controls button { flex: 1 1 9rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Road-width reference review</h1>
+    <p class="intro">Record candidate scale evidence from known road widths on the approved source. This page does not approve scale or change parcel geometry.</p>
+  </header>
+  <main>
+    <section class="guidance" aria-label="Measurement instructions">
+      <p><strong>Use the approved drawing or survey as the authority.</strong> Do not infer road widths from typical streets, lot-area medians, or OCR. Measure across the road edges, perpendicular to its centerline, away from intersections and labels.</p>
+      <ol>
+        <li>Measure at least three distinct 60 ft references in each source-image direction. These are the fit references.</li>
+        <li>Measure at least three distinct 40 ft references in each direction. These are held out to check the fit.</li>
+        <li>Flag unclear or inconsistent references; do not move clicks to make ratios pass. A passing page is still only a candidate for owner/reviewer approval.</li>
+      </ol>
+    </section>
+    <div class="controls" aria-label="Measurement controls">
+      <button id="btn60" type="button" aria-pressed="true" onclick="setMode(60)">60 ft · fit reference</button>
+      <button id="btn40" type="button" aria-pressed="false" onclick="setMode(40)">40 ft · held-out check</button>
+      <button id="undo" type="button" onclick="undo()">Undo last</button>
+      <button id="clear" type="button" onclick="clearAll()">Clear measurements</button>
+      <button id="export" type="button" onclick="exportData()" disabled>Export raw clicks</button>
+    </div>
+    <p id="source-status" role="status" aria-live="polite" data-state="loading">Checking the source image fingerprint…</p>
+    <p class="help">For precise clicks, use a desktop browser at a comfortable zoom. The tool converts displayed clicks back to native source-image pixels.</p>
+    <div class="canvas-shell">
+      <canvas id="canvas" width="{{CANVAS_WIDTH}}" height="{{CANVAS_HEIGHT}}" aria-disabled="true">
+        Interactive source map. Once verified, click two road-edge endpoints for each reference measurement.
+      </canvas>
+    </div>
+    <p id="summary" class="summary" aria-live="polite">No measurements yet.</p>
+    <div class="table-wrap">
+      <table>
+        <caption class="help" style="padding:.6rem;text-align:left">Raw candidate clicks, in native source-image pixels</caption>
+        <thead>
+          <tr><th scope="col">Reference</th><th scope="col">Width</th><th scope="col">Endpoints (px)</th><th scope="col">Measured (px)</th><th scope="col">Direction</th><th scope="col">ft/px</th></tr>
+        </thead>
+        <tbody id="results"></tbody>
+      </table>
+    </div>
+  </main>
+  <script>
+    "use strict";
+    const IMAGE_URL = {{IMAGE_URL}};
+    const IMAGE_WIDTH = {{IMAGE_WIDTH}};
+    const IMAGE_HEIGHT = {{IMAGE_HEIGHT}};
+    const EXPECTED_IMAGE_SHA256 = {{IMAGE_SHA256}};
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const image = new Image();
+    const sourceStatus = document.getElementById("source-status");
+    const exportButton = document.getElementById("export");
+    const sourceToCanvasScale = canvas.width / IMAGE_WIDTH;
+    let mode = 60;
+    let sourceVerified = false;
+    let measurements = [];
+    let pendingStart = null;
+    let blobUrl = null;
+
+    function setStatus(message, state = "ready") {
+      sourceStatus.textContent = message;
+      sourceStatus.dataset.state = state;
+    }
+
+    function hex(bytes) {
+      return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function loadSource() {
+      try {
+        const response = await fetch(IMAGE_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`source image request failed (${response.status})`);
+        const bytes = await response.arrayBuffer();
+        const actualHash = hex(await crypto.subtle.digest("SHA-256", bytes));
+        if (actualHash !== EXPECTED_IMAGE_SHA256) throw new Error("source image fingerprint changed; regenerate the review page");
+        const sourceBlob = new Blob([bytes], { type: response.headers.get("content-type") || "image/webp" });
+        blobUrl = URL.createObjectURL(sourceBlob);
+        image.onload = () => {
+          if (image.naturalWidth !== IMAGE_WIDTH || image.naturalHeight !== IMAGE_HEIGHT) {
+            setStatus("Source image dimensions do not match the review page; no clicks can be recorded.", "error");
+            return;
+          }
+          sourceVerified = true;
+          canvas.setAttribute("aria-disabled", "false");
+          exportButton.disabled = false;
+          setStatus(`Source verified · ${IMAGE_WIDTH} × ${IMAGE_HEIGHT} px · SHA-256 ${actualHash.slice(0, 12)}…`);
+          draw();
+        };
+        image.onerror = () => setStatus("Source image could not be decoded; no clicks can be recorded.", "error");
+        image.src = blobUrl;
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Source image could not be verified.", "error");
+      }
+    }
+
+    function setMode(width) {
+      mode = width;
+      document.getElementById("btn60").setAttribute("aria-pressed", String(width === 60));
+      document.getElementById("btn40").setAttribute("aria-pressed", String(width === 40));
+      pendingStart = null;
+      setStatus(`${width} ft ${width === 60 ? "fit reference" : "held-out check"} selected.`);
+      draw();
+    }
+
+    function toSourcePoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      const displayWidth = canvas.clientWidth;
+      const displayHeight = canvas.clientHeight;
+      const x = (event.clientX - rect.left - canvas.clientLeft) / displayWidth * IMAGE_WIDTH;
+      const y = (event.clientY - rect.top - canvas.clientTop) / displayHeight * IMAGE_HEIGHT;
+      return {
+        x: Math.max(0, Math.min(IMAGE_WIDTH, x)),
+        y: Math.max(0, Math.min(IMAGE_HEIGHT, y)),
+      };
+    }
+
+    function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+    function duplicateSegment(first, second) {
+      const tolerance = 2;
+      return measurements.some((item) => {
+        if (item.stated !== mode) return false;
+        const sameOrder = distance(first, item.p1) <= tolerance && distance(second, item.p2) <= tolerance;
+        const reverseOrder = distance(first, item.p2) <= tolerance && distance(second, item.p1) <= tolerance;
+        return sameOrder || reverseOrder;
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (image.complete && image.naturalWidth) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      measurements.forEach((item, index) => {
+        const color = item.stated === 60 ? "#17613f" : "#315d91";
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = Math.max(2, canvas.width / 700);
+        ctx.beginPath();
+        ctx.moveTo(item.p1.x * sourceToCanvasScale, item.p1.y * sourceToCanvasScale);
+        ctx.lineTo(item.p2.x * sourceToCanvasScale, item.p2.y * sourceToCanvasScale);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(item.p1.x * sourceToCanvasScale, item.p1.y * sourceToCanvasScale, Math.max(3, canvas.width / 350), 0, Math.PI * 2);
+        ctx.arc(item.p2.x * sourceToCanvasScale, item.p2.y * sourceToCanvasScale, Math.max(3, canvas.width / 350), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = `${Math.max(11, canvas.width / 100)}px system-ui`;
+        ctx.fillText(`${item.stated} ft #${index + 1}`, item.p1.x * sourceToCanvasScale + 5, item.p1.y * sourceToCanvasScale - 6);
+      });
+      if (pendingStart) {
+        ctx.fillStyle = mode === 60 ? "#17613f" : "#315d91";
+        ctx.beginPath();
+        ctx.arc(pendingStart.x * sourceToCanvasScale, pendingStart.y * sourceToCanvasScale, Math.max(4, canvas.width / 300), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function updateResults() {
+      const body = document.getElementById("results");
+      body.replaceChildren();
+      const counts = { "60-horizontal": 0, "60-vertical": 0, "40-horizontal": 0, "40-vertical": 0 };
+      const byWidth = { 60: [], 40: [] };
+      measurements.forEach((item, index) => {
+        const dx = item.p2.x - item.p1.x;
+        const dy = item.p2.y - item.p1.y;
+        const direction = Math.abs(dx) >= Math.abs(dy) ? "horizontal" : "vertical";
+        counts[`${item.stated}-${direction}`] += 1;
+        byWidth[item.stated].push(item.width);
+        const row = body.insertRow();
+        row.insertCell().textContent = `${item.stated} ft #${index + 1}`;
+        row.insertCell().textContent = item.stated === 60 ? "60 ft · fit" : "40 ft · held out";
+        row.insertCell().textContent = `${item.p1.x.toFixed(1)}, ${item.p1.y.toFixed(1)} → ${item.p2.x.toFixed(1)}, ${item.p2.y.toFixed(1)}`;
+        row.insertCell().textContent = item.width.toFixed(2);
+        row.insertCell().textContent = direction;
+        row.insertCell().textContent = (item.stated / item.width).toFixed(5);
+        row.className = item.stated === 60 ? "fit" : "held-out";
+      });
+      const minimumsMet = Object.values(counts).every((count) => count >= 3);
+      const text = Object.entries(counts).map(([key, count]) => `${key.replace("-", " ft ")}: ${count}/3`).join(" · ");
+      let ratio = "60:40 ratio unavailable until both widths are measured";
+      if (byWidth[60].length && byWidth[40].length) {
+        const median = (values) => {
+          const sorted = [...values].sort((a, b) => a - b);
+          const middle = Math.floor(sorted.length / 2);
+          return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+        };
+        ratio = `Observed median 60:40 ratio: ${(median(byWidth[60]) / median(byWidth[40])).toFixed(3)} (review against references; this page does not accept scale)`;
+      }
+      document.getElementById("summary").textContent = measurements.length
+        ? `${text}${minimumsMet ? " · minimum reference count met" : " · more distinct references required"}. ${ratio}.`
+        : "No measurements yet. Select a reference width, then click two points across the road edges.";
+    }
+
+    function handleCanvasClick(event) {
+      if (!sourceVerified) return;
+      const point = toSourcePoint(event);
+      if (!pendingStart) {
+        pendingStart = point;
+        setStatus(`First endpoint recorded at ${point.x.toFixed(1)}, ${point.y.toFixed(1)} px. Click the opposite road edge.`);
+        draw();
+        return;
+      }
+      const start = pendingStart;
+      pendingStart = null;
+      const width = distance(start, point);
+      if (width < 1) {
+        setStatus("Endpoints must be distinct; no measurement was added.", "error");
+        draw();
+        return;
+      }
+      if (duplicateSegment(start, point)) {
+        setStatus("This reference duplicates an existing click pair; choose a distinct road segment.", "error");
+        draw();
+        return;
+      }
+      measurements.push({ stated: mode, p1: start, p2: point, width });
+      setStatus(`${mode} ft reference recorded · ${width.toFixed(2)} native pixels.`);
+      updateResults();
+      draw();
+    }
+
+    function undo() {
+      if (pendingStart) pendingStart = null;
+      else measurements.pop();
+      updateResults();
+      draw();
+      setStatus("Last click or reference removed.");
+    }
+
+    function clearAll() {
+      measurements = [];
+      pendingStart = null;
+      updateResults();
+      draw();
+      setStatus("Measurements cleared.");
+    }
+
+    function exportData() {
+      if (!sourceVerified) return;
+      const data = {
+        schemaVersion: 1,
+        roads: measurements,
+        scale: sourceToCanvasScale,
+        imageSize: [IMAGE_WIDTH, IMAGE_HEIGHT],
+        imageSha256: EXPECTED_IMAGE_SHA256,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "road-measurements.json";
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus(`Exported ${measurements.length} raw clicks. This is not an approved scale record.`);
+    }
+
+    canvas.addEventListener("click", handleCanvasClick);
+    updateResults();
+    loadSource();
+  </script>
+</body>
+</html>

@@ -15,11 +15,14 @@
     "map:build": "node scripts/build-interactive-map.mjs",
     "tenant:init": "node scripts/tenant-init.mjs",
     "tenant:build": "node scripts/tenant-build.mjs",
+    "tenant:verify": "node scripts/verify-tenant-build.mjs",
+    "probe:production-map": "node scripts/probe-production-map.mjs",
+    "verify:public-build": "node scripts/verify-public-build.mjs",
     "tenant:publish": "node scripts/tenant-publish.mjs",
     "map:publish": "node scripts/publish-lots.mjs",
     "map:audit": "node scripts/audit-plot-counts.mjs",
     "typecheck": "tsc -b",
-    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e:smoke && npm run build"
+    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e:smoke && npm run build && npm run verify:public-build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

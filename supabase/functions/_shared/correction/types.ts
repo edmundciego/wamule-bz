@@ -27,6 +27,32 @@ export interface ConfirmedBy {
   sampleOf?: string[];
 }
 
+/** Independently reviewed printed/register area; never populated from OCR. */
+export interface ReviewedAreaEvidence {
+  area_sqm: number;
+  source_kind: "approved_register" | "human_verified_print";
+  source: string;
+  reviewer: string;
+  reviewed_at: string;
+}
+
+/**
+ * Explicit owner/reviewer-approved area comparison policy. A policy is
+ * versioned independently from its schema; absence or `pending` means area
+ * comparisons are unavailable, never that an implicit tolerance applies.
+ */
+export interface AreaValidationPolicy {
+  schema_version: 1;
+  status: "approved";
+  policy_id: string;
+  policy_version: number;
+  tolerance_fraction: number;
+  approved_by: string;
+  approved_at: string;
+  basis: string;
+  evidence_reference: string;
+}
+
 export interface LotSlot {
   /** Stable internal id. Never changes; publish joins on this. */
   id: string;
@@ -51,6 +77,8 @@ export interface LotSlot {
   ocr_number?: string | null;
   /** Immutable OCR snapshot at ingest (never edited): measured area in sqm. */
   ocr_area?: number | null;
+  /** Immutable, separately supplied review evidence for measured-area checks. */
+  reviewed_area?: ReviewedAreaEvidence | null;
 }
 
 export interface TierDef {
@@ -83,6 +111,11 @@ export interface Waiver {
   reason: string;
   actor: string;
   time: string;
+  /** Required for overlap waivers; binds the decision to the exact pair geometry and its edit epochs. */
+  geometry_binding?: {
+    lot_revisions: Record<string, number>;
+    polygons: Record<string, MapPoint[]>;
+  };
 }
 
 export type OnboardingStage =
@@ -125,6 +158,8 @@ export interface CorrectionState {
   log: EditEntry[];
   /** Applied prefix length of log; undo moves it back. */
   pointer: number;
+  /** Monotonic per-lot geometry epochs; undoing geometry still invalidates old waivers. */
+  geometry_revisions?: Record<string, number>;
   waivers: Waiver[];
   stage: OnboardingStage;
   publishedAt: string | null;

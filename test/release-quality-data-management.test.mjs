@@ -16,6 +16,11 @@ test("release quality brand guard and metadata use the canonical name", async ()
   assert.match(brandGuard, /wamuale/i);
 });
 
+test("SPA document opts out of indexing for private and embedded app routes", async () => {
+  const index = await read("index.html");
+  assert.match(index, /<meta name="robots" content="noindex,nofollow"\s*\/>/);
+});
+
 test("retired purge migration and application control cannot delete operational history", async () => {
   const [migration, panel, edgeFunction] = await Promise.all([
     read("supabase/migrations/20260714220603_20260714074603_release_quality_data_management.sql"),

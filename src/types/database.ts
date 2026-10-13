@@ -262,6 +262,39 @@ export type LotTier = {
   updated_at: string;
 };
 
+export type Project = {
+  id: string;
+  tenant_id: string;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  created_at: string;
+};
+
+export type ProjectSetting = {
+  tenant_id: string;
+  project_id: string;
+  key: "tenant_theme" | "company_profile";
+  value: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type ProjectLotTier = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  tier_key: string;
+  label: string;
+  price_cents: number;
+  corner_premium_cents: number;
+  color_hex: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type DevelopmentUpdate = {
   id: string;
   tenant_id: string;
@@ -919,8 +952,10 @@ export type InformationRequestTopic = {
 export type MasterplanVersion = {
   id: string;
   tenant_id?: string | null;
+  project_id: string | null;
   version_number: number;
   image_url: string;
+  preview_url: string | null;
   file_name: string;
   is_active: boolean;
   created_at: string;
@@ -960,6 +995,22 @@ export type Database = {
           lot_number: string;
         };
         Update: Partial<Omit<Parcel, "id" | "created_at" | "updated_at">>;
+      };
+      projects: {
+        Row: Project;
+        Insert: Omit<Project, "id" | "created_at" | "is_default"> & Partial<Pick<Project, "id" | "is_default">>;
+        Update: Partial<Omit<Project, "id" | "tenant_id" | "created_at">>;
+      };
+      project_settings: {
+        Row: ProjectSetting;
+        Insert: Omit<ProjectSetting, "updated_at" | "updated_by" | "value"> & Partial<Pick<ProjectSetting, "updated_by" | "value">>;
+        Update: Partial<Pick<ProjectSetting, "value" | "updated_by">>;
+      };
+      project_lot_tiers: {
+        Row: ProjectLotTier;
+        Insert: Omit<ProjectLotTier, "id" | "created_at" | "updated_at" | "is_active" | "sort_order" | "corner_premium_cents"> &
+          Partial<Pick<ProjectLotTier, "id" | "is_active" | "sort_order" | "corner_premium_cents">>;
+        Update: Partial<Omit<ProjectLotTier, "id" | "tenant_id" | "project_id" | "created_at" | "updated_at">>;
       };
       applications: {
         Row: Application;
@@ -1205,8 +1256,8 @@ export type Database = {
       };
       masterplan_versions: {
         Row: MasterplanVersion;
-        Insert: Omit<MasterplanVersion, "id" | "created_at" | "version_number"> &
-          Partial<Pick<MasterplanVersion, "version_number">>;
+        Insert: Omit<MasterplanVersion, "id" | "created_at" | "version_number" | "project_id" | "preview_url"> &
+          Partial<Pick<MasterplanVersion, "version_number" | "project_id" | "preview_url">>;
         Update: Partial<Omit<MasterplanVersion, "id" | "created_at">>;
       };
     };

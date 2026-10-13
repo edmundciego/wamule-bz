@@ -12,12 +12,15 @@ import type {
   CorrectionState,
   DetectionUnit,
   EditEntry,
+  AreaValidationPolicy,
   LotSlot,
   LotStatus,
   MapPoint,
+  ReviewedAreaEvidence,
   TierDef,
   Waiver,
 } from "./types.ts";
+import { polygonsOverlap } from "./overlap.ts";
 
 export const LOT_STATUS: Record<string, LotStatus> = {
   SUGGESTED: "suggested",
@@ -39,6 +42,8 @@ export function createInitialState(args: {
   lots: LotInput[];
   tiers: Record<string, TierDef>;
   units: Record<string, DetectionUnit>;
+  /** Independent, reviewed values keyed by stable lot id (never OCR units). */
+  reviewedAreas?: Record<string, ReviewedAreaEvidence>;
   actor?: string;
   tenant?: string;
   project?: string;
@@ -52,6 +57,7 @@ export function createInitialState(args: {
     tiers: JSON.parse(JSON.stringify(tiers)) as Record<string, TierDef>,
     log: [],
     pointer: 0,
+    geometry_revisions: Object.fromEntries(lots.map((lot) => [lot.id, 0])),
     waivers: [],
     stage: "correct",
     publishedAt: null,
@@ -74,6 +80,7 @@ export function createInitialState(args: {
       // these originals.
       ocr_number: u?.number ?? null,
       ocr_area: u?.area_sqm ?? null,
+      reviewed_area: args.reviewedAreas?.[lot.id] ?? null,
     };
   }
   return state;
@@ -95,6 +102,55 @@ function requireActor(actor: string): void {
   if (!actor || !actor.trim()) throw new Error("actor is required (server-session actor; anonymous writes rejected)");
 }
 
+function geometryRevision(state: CorrectionState, lotId: string): number {
+  const revision = state.geometry_revisions?.[lotId];
+  return Number.isSafeInteger(revision) && (revision as number) >= 0 ? revision as number : 0;
+}
+
+function bumpGeometryRevision(state: CorrectionState, lotId: string): void {
+  state.geometry_revisions ??= {};
+  state.geometry_revisions[lotId] = geometryRevision(state, lotId) + 1;
+}
+
+function validWaiverTime(value: unknown): value is string {
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value));
+}
+
+function parseOverlapTarget(target: string): [string, string] {
+  const parts = target.split("<->");
+  if (parts.length !== 2 || !parts[0] || !parts[1] || parts[0] === parts[1]) {
+    throw new Error("overlap waiver target must be a lot pair in the form lot-a<->lot-b");
+  }
+  return parts[0] < parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
+}
+
+function overlapWaiverIsCurrent(state: CorrectionState, waiver: Waiver): boolean {
+  if (waiver.scope !== "overlap") return true;
+  const binding = waiver.geometry_binding;
+  if (!binding) return false; // Legacy/unbound waivers fail closed.
+  let pair: [string, string];
+  try {
+    pair = parseOverlapTarget(waiver.target);
+  } catch {
+    return false;
+  }
+  const [a, b] = pair;
+  if (!state.lots[a] || !state.lots[b]) return false;
+  for (const id of pair) {
+    if (binding.lot_revisions[id] !== geometryRevision(state, id)) return false;
+    if (JSON.stringify(binding.polygons[id]) !== JSON.stringify(state.lots[id].polygon)) return false;
+  }
+  return true;
+}
+
+function waiverHasAuditFields(waiver: Waiver): boolean {
+  return typeof waiver.actor === "string" && Boolean(waiver.actor.trim())
+    && typeof waiver.reason === "string" && Boolean(waiver.reason.trim())
+    && validWaiverTime(waiver.time);
+}
+
 /** Record one field edit. */
 export function applyEdit(
   state: CorrectionState,
@@ -105,6 +161,9 @@ export function applyEdit(
   pushEntries(state, [edit]);
   if (edit.lot !== "—") {
     (state.lots[edit.lot] as unknown as Record<string, unknown>)[edit.field] = edit.after;
+    if (edit.field === "polygon" && JSON.stringify(edit.before) !== JSON.stringify(edit.after)) {
+      bumpGeometryRevision(state, edit.lot);
+    }
   }
   return state.log[state.log.length - 1];
 }
@@ -120,6 +179,9 @@ export function applyBatch(
     if (e.lot === "—") continue;
     if (!state.lots[e.lot]) throw new Error(`unknown lot ${e.lot}`);
     (state.lots[e.lot] as unknown as Record<string, unknown>)[e.field] = e.after;
+    if (e.field === "polygon" && JSON.stringify(e.before) !== JSON.stringify(e.after)) {
+      bumpGeometryRevision(state, e.lot);
+    }
   }
   return batchId;
 }
@@ -133,6 +195,9 @@ export function undoLast(state: CorrectionState): EditEntry[] {
     const entry = state.log[state.pointer - 1];
     if (entry.lot !== "—" && state.lots[entry.lot]) {
       (state.lots[entry.lot] as unknown as Record<string, unknown>)[entry.field] = entry.before;
+      if (entry.field === "polygon" && JSON.stringify(entry.before) !== JSON.stringify(entry.after)) {
+        bumpGeometryRevision(state, entry.lot);
+      }
     }
     reverted.push(entry);
     state.pointer -= 1;
@@ -230,16 +295,19 @@ export function hasDetectionSignal(slot: LotSlot): boolean {
  *    polygons, never from OCR text.
  *
  * 3. Printed-area-vs-polygon-area at the measured scale — the plan's
- *    printed area figure against the polygon measured in sqm via the
+ *    independently reviewed printed/register area against the polygon measured in sqm via the
  *    independently measured map scale (road-width reference, never OCR).
  *    Computed: polygonAreaSqm = shoelace(plan-%) * scale.sqmPerPct2;
- *    |polygonAreaSqm - printed| / printed <= tolerance (default 15%).
- *    DISABLED until a scale is provided: with scale == null the verdict is
- *    "unavailable" (shown as such, never gates). Once provided, "fail"
- *    blocks like any other signal.
+ *    |polygonAreaSqm - printed| / printed <= explicitly approved tolerance.
+ *    There is no default tolerance. OCR
+ *    area and the editable working copy are never used as comparison inputs.
+ *    DISABLED until a reviewed scale, separately verified figure, AND
+ *    approved versioned tolerance policy exist. "Unavailable" blocks bulk
+ *    acceptance; once all evidence exists, "fail" blocks like any other
+ *    signal.
  *    OCR-SOURCE DEPENDENCE: fully independent of the OCR source — geometry
  *    from raster polygons, scale from the physical road reference, printed
- *    figure from the human-verified label (not the OCR read).
+ *    figure from explicit register or human-review evidence, not the OCR read.
  * ------------------------------------------------------------------------- */
 
 /** 1. OCR number: working number still equals the immutable OCR read. */
@@ -328,22 +396,62 @@ export function polygonAreaPct2(polygon: MapPoint[]): number {
 
 export type AreaScaleVerdict = "pass" | "fail" | "unavailable";
 
+function validIsoDateTime(value: unknown): value is string {
+  if (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+      !Number.isFinite(Date.parse(value))) return false;
+  const day = value.slice(0, 10);
+  const [hour, minute, second] = value.slice(11, 19).split(":").map(Number);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  const midnight = Date.parse(`${day}T00:00:00Z`);
+  return Number.isFinite(midnight) && new Date(midnight).toISOString().slice(0, 10) === day;
+}
+
+/** Validate an approved, immutable-by-version area policy; no implicit default. */
+export function isApprovedAreaValidationPolicy(value: unknown): value is AreaValidationPolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const policy = value as Partial<AreaValidationPolicy>;
+  return policy.schema_version === 1 &&
+    policy.status === "approved" &&
+    typeof policy.policy_id === "string" && policy.policy_id === policy.policy_id.trim() &&
+    /^[a-z0-9][a-z0-9._-]*$/i.test(policy.policy_id) &&
+    Number.isInteger(policy.policy_version) && (policy.policy_version ?? 0) > 0 &&
+    Number.isFinite(policy.tolerance_fraction) && (policy.tolerance_fraction ?? -1) >= 0 &&
+    (policy.tolerance_fraction ?? 1) < 1 &&
+    typeof policy.approved_by === "string" && !!policy.approved_by.trim() &&
+    validIsoDateTime(policy.approved_at) &&
+    typeof policy.basis === "string" && !!policy.basis.trim() &&
+    typeof policy.evidence_reference === "string" && !!policy.evidence_reference.trim();
+}
+
 /**
  * 3. Printed area vs polygon area at the measured scale.
- * Returns "unavailable" (shown as such, never gates) until a scale AND a
- * printed figure exist; otherwise "pass"/"fail" at the tolerance.
+ * Returns "unavailable" until a reviewed scale, independently reviewed area
+ * figure, and approved policy exist. Bulk acceptance requires "pass".
+ * `slot.area` and `slot.ocr_area` are deliberately ignored.
  */
 export function areaScaleSignal(
   slot: LotSlot,
   scale: ScaleRef | null,
-  tolerance = 0.15,
+  policy: AreaValidationPolicy | null = null,
 ): AreaScaleVerdict {
-  if (!scale || !(scale.sqmPerPct2 > 0)) return "unavailable";
-  const printed = slot.ocr_area ?? slot.area;
-  if (printed == null || !(printed > 0)) return "unavailable";
+  if (
+    !scale || !Number.isFinite(scale.sqmPerPct2) || !(scale.sqmPerPct2 > 0) ||
+    !isApprovedAreaValidationPolicy(policy)
+  ) return "unavailable";
+  const evidence = slot.reviewed_area;
+  if (
+    !evidence ||
+    !Number.isFinite(evidence.area_sqm) || evidence.area_sqm <= 0 ||
+    !["approved_register", "human_verified_print"].includes(evidence.source_kind) ||
+    typeof evidence.source !== "string" || typeof evidence.reviewer !== "string" ||
+    !evidence.source.trim() || !evidence.reviewer.trim() ||
+    !validIsoDateTime(evidence.reviewed_at)
+  ) return "unavailable";
+  const printed = evidence.area_sqm;
   if (slot.polygon.length < 3) return "fail";
   const measured = polygonAreaPct2(slot.polygon) * scale.sqmPerPct2;
-  return Math.abs(measured - printed) / printed <= tolerance ? "pass" : "fail";
+  return Math.abs(measured - printed) / printed <= policy.tolerance_fraction ? "pass" : "fail";
 }
 
 /** Bulk signals for one lot (plus the dup guard via streetRunSignal). */
@@ -351,11 +459,12 @@ export function bulkSignals(
   slot: LotSlot,
   state: CorrectionState,
   scale: ScaleRef | null = null,
+  policy: AreaValidationPolicy | null = null,
 ): { ocr: boolean; streetRun: boolean; areaScale: AreaScaleVerdict; all: boolean } {
   const ocr = ocrNumberSignal(slot);
   const streetRun = streetRunSignal(slot, state);
-  const areaScale = areaScaleSignal(slot, scale);
-  return { ocr, streetRun, areaScale, all: ocr && streetRun && areaScale !== "fail" };
+  const areaScale = areaScaleSignal(slot, scale, policy);
+  return { ocr, streetRun, areaScale, all: ocr && streetRun && areaScale === "pass" };
 }
 
 /**
@@ -396,7 +505,7 @@ export function mulberry32(seed: number): () => number {
 /**
  * Bulk-accept proposal (slice 1.7): confident set = suggested lots where
  * the gating signals pass (OCR number + street-run/adjacency, plus the
- * scale-area signal once a scale is provided — "unavailable" never gates)
+ * scale-area signal only after a reviewed calibration and approved policy)
  * plus not-duplicated. Sample is >= 20 lots (or ALL of the proposal when
  * fewer than 20 exist), stratified by tier/block stratum (lotStratum).
  * The caller confirms each sample lot manually (confirmLot), then
@@ -405,8 +514,8 @@ export function mulberry32(seed: number): () => number {
  * The seed SHOULD be server-generated single-use (DraftStore.issueBulkSeed
  * for local preview; correction_bulk_seeds + consume_correction_bulk_seed()
  * in the database for the server path); this pure function accepts an
- * explicit seed so tests stay deterministic. The optional scale activates
- * signal 3; without it the area verdict is "unavailable" and does not gate.
+ * explicit seed so tests stay deterministic. Scale and an approved policy
+ * are both required to activate signal 3; unavailable evidence blocks.
  */
 export const BULK_MIN_SAMPLE = 20;
 
@@ -415,13 +524,14 @@ export function proposeBulkAccept(
   seed = 7,
   minSample = BULK_MIN_SAMPLE,
   scale: ScaleRef | null = null,
+  policy: AreaValidationPolicy | null = null,
 ): { proposal: string[]; sample: string[] } {
   const dups = new Set(Object.values(findDuplicates(state)).flat());
   const proposal = Object.entries(state.lots)
     .filter(([id, s]) => {
       if (s.status !== "suggested" || dups.has(id)) return false;
       if (!hasDetectionSignal(s)) return false;
-      return bulkSignals(s, state, scale).all;
+      return bulkSignals(s, state, scale, policy).all;
     })
     .map(([id]) => id)
     .sort();
@@ -475,15 +585,22 @@ export function proposeBulkAccept(
  * Verify the reviewed sample BEFORE flipping the rest. Throws (blocking the
  * bulk accept) when ANY sample lot is:
  * - not manually confirmed yet, or
- * - currently failing a gating signal (a wrong review: number edited away
+ * - currently failing or missing a gating signal (a wrong review: number edited away
  *   from the OCR read, contiguity/adjacency broken by a typo that collides
  *   or lands across the map, or — once a scale is provided — the printed
- *   area disagreeing with the measured polygon).
+ *   area disagreeing with the measured polygon, or no approved policy).
  */
 export function verifyBulkSample(
   state: CorrectionState,
-  args: { proposal: string[]; sample: string[]; scale?: ScaleRef | null },
+  args: { proposal: string[]; sample: string[]; scale?: ScaleRef | null; policy?: AreaValidationPolicy | null },
 ): void {
+  const scale = args.scale ?? null;
+  if (
+    !scale || !Number.isFinite(scale.sqmPerPct2) || !(scale.sqmPerPct2 > 0) ||
+    !isApprovedAreaValidationPolicy(args.policy)
+  ) {
+    throw new Error("bulk accept unavailable: reviewed scale and approved area review policy are required");
+  }
   const inProposal = new Set(args.proposal);
   for (const id of args.sample) {
     if (!inProposal.has(id)) throw new Error(`bulk sample ${id} is not in the proposal`);
@@ -491,12 +608,12 @@ export function verifyBulkSample(
     if (!s || s.status !== "confirmed" || s.confirmed_by?.method !== "manual") {
       throw new Error(`two-signal rule: sample lot ${id} is not manually confirmed yet`);
     }
-    const sig = bulkSignals(s, state, args.scale ?? null);
+    const sig = bulkSignals(s, state, args.scale ?? null, args.policy ?? null);
     if (!sig.all) {
       const bad: string[] = [];
       if (!sig.ocr) bad.push("ocr-number");
       if (!sig.streetRun) bad.push("street-run");
-      if (sig.areaScale === "fail") bad.push("area-scale");
+      if (sig.areaScale !== "pass") bad.push(sig.areaScale === "fail" ? "area-scale" : "area-unavailable");
       throw new Error(`bulk sample ${id} is wrong (${bad.join(", ")} signal failed); bulk accept blocked`);
     }
   }
@@ -505,10 +622,10 @@ export function verifyBulkSample(
 /** Flip the non-sample remainder after the sample was manually confirmed. */
 export function bulkConfirmRest(
   state: CorrectionState,
-  args: { actor: string; proposal: string[]; sample: string[]; time?: string; scale?: ScaleRef | null },
+  args: { actor: string; proposal: string[]; sample: string[]; time?: string; scale?: ScaleRef | null; policy?: AreaValidationPolicy | null },
 ): string[] {
   requireActor(args.actor);
-  verifyBulkSample(state, { proposal: args.proposal, sample: args.sample, scale: args.scale });
+  verifyBulkSample(state, { proposal: args.proposal, sample: args.sample, scale: args.scale, policy: args.policy });
   const rest = args.proposal.filter((id) => !args.sample.includes(id) && state.lots[id]?.status === "suggested");
   const now = args.time ?? new Date().toISOString();
   const edits = rest.map((id) => ({ lot: id, field: "status", before: "suggested" as LotStatus, after: "confirmed" as LotStatus }));
@@ -532,14 +649,37 @@ export function addWaiver(
 ): Waiver {
   requireActor(args.actor);
   if (!args.reason.trim()) throw new Error("waiver reason is required");
+  let target = args.target;
+  let geometry_binding: Waiver["geometry_binding"];
+  if (args.scope === "overlap") {
+    const pair = parseOverlapTarget(args.target);
+    target = `${pair[0]}<->${pair[1]}`;
+    const [a, b] = pair;
+    if (!state.lots[a] || !state.lots[b]) throw new Error("overlap waiver target must name two existing lots");
+    if (!polygonsOverlap(state.lots[a].polygon, state.lots[b].polygon)) {
+      throw new Error("overlap waiver target must identify a current strict polygon overlap");
+    }
+    geometry_binding = {
+      lot_revisions: { [a]: geometryRevision(state, a), [b]: geometryRevision(state, b) },
+      polygons: {
+        [a]: structuredClone(state.lots[a].polygon),
+        [b]: structuredClone(state.lots[b].polygon),
+      },
+    };
+  }
+  const time = args.time ?? new Date().toISOString();
+  if (!validWaiverTime(time)) {
+    throw new Error("waiver time must be a valid timezone-qualified ISO timestamp");
+  }
   waiverSeq += 1;
   const waiver: Waiver = {
     id: `w${waiverSeq}`,
     scope: args.scope,
-    target: args.target,
+    target,
     reason: args.reason.trim(),
     actor: args.actor,
-    time: args.time ?? new Date().toISOString(),
+    time,
+    ...(geometry_binding ? { geometry_binding } : {}),
   };
   state.waivers.push(waiver);
   pushEntries(state, [{ actor: args.actor, lot: "—", field: `waiver/${waiver.id}`, before: null, after: `${args.scope}:${args.target}` }]);
@@ -547,7 +687,9 @@ export function addWaiver(
 }
 
 export function waivedFor(state: CorrectionState, scope: Waiver["scope"], target: string): boolean {
-  return state.waivers.some((w) => w.scope === scope && w.target === target);
+  return state.waivers.some((w) =>
+    w.scope === scope && w.target === target && waiverHasAuditFields(w) && overlapWaiverIsCurrent(state, w),
+  );
 }
 
 /** Record a catalogue-level entry (tier add/edit, waiver) sharing the batch sequence. */

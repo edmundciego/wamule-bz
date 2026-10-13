@@ -266,14 +266,17 @@
   "duplicate_count": 3
  },
  "area_validation": {
+  "status": "unavailable",
   "scale": {
    "reference": "road 60.0ft",
    "measured_px": 123.0,
    "ft_per_px": 0.4878
   },
-  "pass_rate": 1.0,
+  "pass_rate": null,
   "median_ratio": 0.9519,
-  "tolerance": 0.08,
+  "policy": null,
+  "policy_input": null,
+  "tolerance_fraction": null,
   "outliers_redraw_queue": []
  },
  "paint_out_gate": {

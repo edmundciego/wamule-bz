@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn, formatAreaDualUnit, money } from "../../lib/utils";
 import {
   allowlistTheme,
@@ -11,9 +11,12 @@ import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 
 export interface PublicLotParcel {
-  id: number;
+  /** Generated in the browser only for SVG interaction; never a database key. */
+  local_key: number;
+  /** Versioned project/lot locator returned by get-public-lots; null when ambiguous. */
+  public_ref: string | null;
   lot_number: string;
-  status: ParcelStatus;
+  status: PublicLotStatus;
   price: number;
   dimensions: string | null;
   /** Printed plat area in m² when known (OCR stage); card shows m² + sq ft. */
@@ -24,7 +27,24 @@ export interface PublicLotParcel {
   tier_color_hex: string | null;
   is_corner: boolean;
   effective_price_cents: number;
+  /** Stable correction-workspace key; never a public parcel identifier. */
+  correction_key?: string;
 }
+
+export type CorrectionReviewStatus = "unreviewed" | "reviewed" | "ambiguous" | "unreadable" | "skipped" | "geometry-issue";
+
+export interface CorrectionMapLayer {
+  title: string;
+  imageUrl: string | null;
+  parcels: Array<{ key: string; reference: string; polygon: Array<{ x: number; y: number }> }>;
+  selectedKey: string | null;
+  reviewStatusByKey: Record<string, CorrectionReviewStatus>;
+  geometryEdit?: { key: string; polygon: Array<{ x: number; y: number }> } | null;
+  onSelect: (key: string) => void;
+  onGeometryDraftChange?: (key: string, polygon: Array<{ x: number; y: number }>) => void;
+}
+
+type PublicLotStatus = ParcelStatus | "Review pending";
 
 interface MapPayload {
   tenant: { name: string; slug: string };
@@ -46,7 +66,7 @@ interface PublicLotMapProps {
   /** Optional project slug (/embed/:tenant/:project). Absent = tenant default. */
   projectSlug?: string;
   /** Controlled highlight in pick mode. Omit for unmanaged inquiry highlighting. */
-  selectedIds?: number[];
+  selectedLocalKeys?: number[];
   /** Pick mode: clicking an Available lot toggles it. Absent = inquiry mode. */
   onToggleLot?: (parcel: PublicLotParcel) => void;
   showPrices?: boolean;
@@ -57,6 +77,7 @@ interface PublicLotMapProps {
   /** Deep link: select this lot number once parcels arrive. */
   initialLotNumber?: string;
   onSelectLot?: (parcel: PublicLotParcel) => void;
+  onClearSelection?: () => void;
   onParcelsLoaded?: (parcels: PublicLotParcel[]) => void;
   /**
    * Local preview mode (never used in production): loads lots.json +
@@ -64,12 +85,33 @@ interface PublicLotMapProps {
    * masterplan_background.webp instead of calling get-public-lots.
    */
   demoDataUrl?: string;
+  /** Authenticated correction-only layer; contains geometry, never sales fields. */
+  correctionMapLayer?: CorrectionMapLayer;
 }
 
-const STATUS_STYLE: Record<ParcelStatus, { fill: string; stroke: string }> = {
+const STATUS_STYLE: Record<PublicLotStatus, { fill: string; stroke: string }> = {
   Available: { fill: "#22c55e", stroke: "#15803d" },
   Reserved: { fill: "#f59e0b", stroke: "#b45309" },
   Sold: { fill: "#ef4444", stroke: "#b91c1c" },
+  "Review pending": { fill: "#718078", stroke: "#52635a" },
+};
+
+const CORRECTION_REVIEW_STYLE: Record<CorrectionReviewStatus, { fill: string; stroke: string; label: string }> = {
+  unreviewed: { fill: "#64748b", stroke: "#475569", label: "Unreviewed" },
+  reviewed: { fill: "#2f7d4e", stroke: "#205a38", label: "Reviewed against source" },
+  ambiguous: { fill: "#b7791f", stroke: "#805313", label: "Ambiguous" },
+  unreadable: { fill: "#78716c", stroke: "#57534e", label: "Unreadable" },
+  skipped: { fill: "#94a3b8", stroke: "#64748b", label: "Skipped" },
+  "geometry-issue": { fill: "#c24132", stroke: "#8f2e26", label: "Geometry issue" },
+};
+
+type LotMarkerShape = "circle" | "diamond" | "square";
+
+const STATUS_MARKER_SHAPE: Record<PublicLotStatus, LotMarkerShape> = {
+  Available: "circle",
+  Reserved: "diamond",
+  Sold: "square",
+  "Review pending": "circle",
 };
 
 const MIN_ZOOM = 1;
@@ -77,6 +119,9 @@ const MAX_ZOOM = 4;
 
 /** Transparent pointer padding (px, non-scaling) so small lots stay tappable. */
 const HIT_STROKE_PX = 14;
+
+/** Keep the keyboard-accessible search chooser bounded for broad queries. */
+const SEARCH_RESULT_LIMIT = 12;
 
 /** Lot-label ceiling on screen so giant lots don't get billboard text. */
 const MAX_LABEL_PX = 26;
@@ -164,16 +209,23 @@ function bboxAreaUnits(polygon: Array<{ x: number; y: number }>): number {
   return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
 }
 
-function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {  if (view === "tier" && parcel.tier_color_hex) {
+function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {
+  if (view === "tier" && parcel.tier_color_hex) {
     return { fill: parcel.tier_color_hex, stroke: parcel.tier_color_hex };
   }
   return STATUS_STYLE[parcel.status] ?? STATUS_STYLE.Available;
 }
 
+function polygonMarkerPoints(shape: Exclude<LotMarkerShape, "circle">, cx: number, cy: number, radius: number): string {
+  if (shape === "diamond") return `${cx},${cy - radius} ${cx + radius},${cy} ${cx},${cy + radius} ${cx - radius},${cy}`;
+  const half = radius * 0.72;
+  return `${cx - half},${cy - half} ${cx + half},${cy - half} ${cx + half},${cy + half} ${cx - half},${cy + half}`;
+}
+
 export function PublicLotMap({
   tenantSlug,
   projectSlug,
-  selectedIds,
+  selectedLocalKeys,
   onToggleLot,
   showPrices = true,
   enableInquiry = false,
@@ -181,15 +233,22 @@ export function PublicLotMap({
   initialView = "status",
   initialLotNumber,
   onSelectLot,
+  onClearSelection,
   onParcelsLoaded,
   demoDataUrl,
+  correctionMapLayer,
 }: PublicLotMapProps) {
   const pickMode = typeof onToggleLot === "function";
   const [payload, setPayload] = useState<MapPayload | null>(null);
+  const [reviewPendingDemo, setReviewPendingDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
-  const [internalSelectedId, setInternalSelectedId] = useState<number | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [hoveredLocalKey, setHoveredLocalKey] = useState<number | null>(null);
+  const [internalSelectedKey, setInternalSelectedKey] = useState<number | null>(null);
+  const [detailsFocusRevision, setDetailsFocusRevision] = useState(0);
+  const [mapCursorKey, setMapCursorKey] = useState<number | null>(null);
+  const [mapKeyboardFocused, setMapKeyboardFocused] = useState(false);
   const [inquiryLot, setInquiryLot] = useState<PublicLotParcel | null>(null);
   const [inquiryWaitlist, setInquiryWaitlist] = useState(false);
   const [zoom, setZoom] = useState(MIN_ZOOM);
@@ -219,10 +278,16 @@ export function PublicLotMap({
     typeof window === "undefined" ? true : window.innerWidth >= 640,
   );
   const [toast, setToast] = useState<string | null>(null);
+  const [geometryDraft, setGeometryDraft] = useState<Array<{ x: number; y: number }> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const detailsPanelRef = useRef<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchResultsRef = useRef<HTMLDivElement | null>(null);
+  const detailsFocusTargetRef = useRef<number | null>(null);
+  const searchResultsId = useId();
   const wasExpandedRef = useRef(false);
   const pseudoRef = useRef(false);
   const previousOverflowRef = useRef("");
@@ -324,6 +389,7 @@ export function PublicLotMap({
     async function loadDemo(base: string) {
       setLoading(true);
       setError(null);
+      setReviewPendingDemo(false);
       try {
         const [lotsRes, tiersRes] = await Promise.all([
           fetch(`${base}/lots.json`),
@@ -340,10 +406,13 @@ export function PublicLotMap({
         }>;
         const tiersRaw = (await tiersRes.json()) as { tiers?: Record<string, { label: string; price: number; legend: string }> };
         const tiers = tiersRaw.tiers ?? {};
+        const validStatuses = new Set(["Available", "Reserved", "Sold"]);
+        const pendingStatuses = lots.length > 0 && lots.every((lot) => !validStatuses.has(lot.status ?? ""));
         const parcels: PublicLotParcel[] = lots.map((lot, index) => ({
-          id: 100000 + index,
+          local_key: index + 1,
+          public_ref: null,
           lot_number: lot.lot_number,
-          status: lot.status === "Reserved" || lot.status === "Sold" ? lot.status : "Available",
+          status: validStatuses.has(lot.status ?? "") ? lot.status as ParcelStatus : "Review pending",
           price: Number(lot.price),
           dimensions: null,
           area_sqm: typeof lot.area_sqm === "number" && lot.area_sqm > 0 ? lot.area_sqm : null,
@@ -355,6 +424,7 @@ export function PublicLotMap({
           effective_price_cents: Math.round(Number(lot.price) * 100),
         }));
         if (cancelled) return;
+        setReviewPendingDemo(pendingStatuses);
         setPayload({
           tenant: { name: "Hopkins Grove (preview)", slug: "demo" },
           project: null,
@@ -391,13 +461,37 @@ export function PublicLotMap({
         if (!response.ok || body.error || !body.parcels) {
           throw new Error(body.error || `Map request failed (${response.status}).`);
         }
-        setPayload(body as MapPayload);
-        onParcelsLoaded?.((body as MapPayload).parcels);
+        const responsePayload = body as MapPayload;
+        const parcels = (responsePayload.parcels as unknown as Array<Record<string, unknown>>).map((parcel, index): PublicLotParcel => ({
+          local_key: index + 1,
+          public_ref: typeof parcel.public_ref === "string" ? parcel.public_ref : null,
+          lot_number: typeof parcel.lot_number === "string" ? parcel.lot_number : "",
+          status: parcel.status === "Available" || parcel.status === "Reserved" || parcel.status === "Sold"
+            ? parcel.status
+            : "Review pending",
+          price: Number(parcel.price ?? 0),
+          dimensions: typeof parcel.dimensions === "string" ? parcel.dimensions : null,
+          area_sqm: typeof parcel.area_sqm === "number" ? parcel.area_sqm : null,
+          map_polygon: Array.isArray(parcel.map_polygon) ? parcel.map_polygon as PublicLotParcel["map_polygon"] : null,
+          tier_key: typeof parcel.tier_key === "string" ? parcel.tier_key : null,
+          tier_label: typeof parcel.tier_label === "string" ? parcel.tier_label : null,
+          tier_color_hex: typeof parcel.tier_color_hex === "string" ? parcel.tier_color_hex : null,
+          is_corner: parcel.is_corner === true,
+          effective_price_cents: Number(parcel.effective_price_cents ?? 0),
+        }));
+        setPayload({ ...responsePayload, parcels });
+        onParcelsLoaded?.(parcels);
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Map request failed.");
       } finally {
         if (!cancelled) setLoading(false);
       }
+    }
+    if (tenantSlug === "correction-review") {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
     }
     if (DEMO_PREVIEW && demoDataUrl) {
       void loadDemo(demoDataUrl);
@@ -414,7 +508,43 @@ export function PublicLotMap({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug, projectSlug, demoDataUrl]);
+  }, [tenantSlug, projectSlug, demoDataUrl, loadAttempt]);
+
+  const correctionReviewTitle = correctionMapLayer?.title;
+  const correctionReviewImageUrl = correctionMapLayer?.imageUrl;
+  const correctionReviewParcels = correctionMapLayer?.parcels;
+
+  useEffect(() => {
+    if (!correctionReviewTitle || !correctionReviewParcels) return;
+    const parcels: PublicLotParcel[] = correctionReviewParcels.map((lot, index) => ({
+      local_key: index + 1,
+      correction_key: lot.key,
+      public_ref: null,
+      lot_number: lot.reference,
+      status: "Review pending",
+      price: 0,
+      dimensions: null,
+      area_sqm: null,
+      map_polygon: lot.polygon,
+      tier_key: null,
+      tier_label: null,
+      tier_color_hex: null,
+      is_corner: false,
+      effective_price_cents: 0,
+    }));
+    setError(null);
+    setReviewPendingDemo(true);
+    setPayload({
+      tenant: { name: correctionReviewTitle, slug: "correction-review" },
+      project: null,
+      masterplan_image_url: correctionReviewImageUrl ?? null,
+      masterplan_preview_url: null,
+      theme: null,
+      branding: { company_name: correctionReviewTitle, logo_url: "", short_description: "" },
+      parcels,
+    });
+    onParcelsLoaded?.(parcels);
+  }, [correctionReviewTitle, correctionReviewImageUrl, correctionReviewParcels, onParcelsLoaded]);
 
   const tierOptions = useMemo(() => {
     const byKey = new Map<string, { label: string; color: string }>();
@@ -433,27 +563,56 @@ export function PublicLotMap({
     if (!payload) return [];
     const needle = query.trim().toLowerCase();
     return payload.parcels.filter((parcel) => {
-      if (filter === "available" && parcel.status !== "Available") return false;
-      if (parcel.tier_key && disabledTiers.includes(parcel.tier_key)) return false;
+      if (!reviewPendingDemo && filter === "available" && parcel.status !== "Available") return false;
+      if (!reviewPendingDemo && parcel.tier_key && disabledTiers.includes(parcel.tier_key)) return false;
       if (needle) {
         const haystack = `${parcel.lot_number} ${(parcel.tier_label ?? parcel.tier_key ?? "")} ${parcel.status}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       return true;
     });
-  }, [payload, filter, disabledTiers, query]);
+  }, [payload, filter, disabledTiers, query, reviewPendingDemo]);
+  // Wamule's current tenant-level staging feed has no approved project scope
+  // or register signal. Treat its sales fields as preview values until that
+  // approval state is represented by the public payload.
+  const unapprovedWamulePreview = Boolean(payload && tenantSlug.toLowerCase() === "wamule" && !payload.project);
+  const proofOfConcept = reviewPendingDemo || unapprovedWamulePreview;
+  const previewLayout = proofOfConcept && !correctionMapLayer;
+  const normalizedQuery = query.trim();
+  const searchResults = normalizedQuery ? visibleParcels.slice(0, SEARCH_RESULT_LIMIT) : [];
+  const mapParcels = visibleParcels.filter((parcel) => Array.isArray(parcel.map_polygon) && parcel.map_polygon.length >= 3);
+  const totalMappedParcels = payload?.parcels.filter((parcel) => Array.isArray(parcel.map_polygon) && parcel.map_polygon.length >= 3).length ?? 0;
+  const totalUnmappedParcels = (payload?.parcels.length ?? 0) - totalMappedParcels;
+  const mapCursorParcel = mapParcels.find((parcel) => parcel.local_key === mapCursorKey) ?? mapParcels[0] ?? null;
+  const mapListboxId = `${searchResultsId}-map-lots`;
+  const mapInstructionsId = `${searchResultsId}-map-instructions`;
+  const mapCursorOptionId = mapCursorParcel ? `${mapListboxId}-option-${mapCursorParcel.local_key}` : undefined;
+  const mapCursorPolygon = mapCursorParcel ? polygonFor(mapCursorParcel) : [];
 
   // Deep link: select the matching lot once parcels arrive.
   useEffect(() => {
+    if (correctionMapLayer) {
+      if (!correctionMapLayer.selectedKey) {
+        setInternalSelectedKey(null);
+        return;
+      }
+      const hit = payload?.parcels.find((parcel) => parcel.correction_key === correctionMapLayer.selectedKey);
+      if (!hit) return;
+      setInternalSelectedKey(hit.local_key);
+      setMapCursorKey(hit.local_key);
+      zoomToParcel(hit);
+      return;
+    }
     const target = (initialLotNumber ?? "").trim().toLowerCase();
     if (!target || !payload) return;
     const hit = payload.parcels.find((parcel) => parcel.lot_number.toLowerCase() === target);
     if (hit) {
-      setInternalSelectedId(hit.id);
+      setInternalSelectedKey(hit.local_key);
+      if (previewLayout) zoomToParcel(hit);
       onSelectLot?.(hit);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload]);
+  }, [payload, previewLayout, imageAspect, initialLotNumber, correctionMapLayer?.selectedKey]);
 
   // Probe the masterplan's intrinsic aspect so the viewBox matches it.
   // (The image itself lives *inside* the SVG below, so zoom/pan move the
@@ -478,7 +637,7 @@ export function PublicLotMap({
     };
   }, [masterplanUrl]);
 
-  const highlighted = selectedIds ?? (internalSelectedId !== null ? [internalSelectedId] : []);
+  const highlighted = selectedLocalKeys ?? (internalSelectedKey !== null ? [internalSelectedKey] : []);
   // Tenant theme (allowlisted server-side; built-in defaults until the
   // tenant publishes one). Tokens become per-container CSS variables so two
   // embeds never share state; card copy/flags come from the same object.
@@ -492,8 +651,23 @@ export function PublicLotMap({
   const tenantScope = `lotmap-t-${tenantSlug.toLowerCase().replace(/[^a-z0-9-]/g, "")}`;
   // Selection-locked detail card: hover NEVER drives this. Hover only
   // affects polygon styling; the card follows the locked selection.
-  const focusLot = payload?.parcels.find((parcel) => parcel.id === highlighted[0]) ?? null;
-  const focusLotId = focusLot?.id ?? null;
+  const focusLot = payload?.parcels.find((parcel) => parcel.local_key === highlighted[0]) ?? null;
+  const focusLotKey = focusLot?.local_key ?? null;
+  const demoDisplayName = payload?.tenant.name.replace(/\s+\(preview\)$/i, "") ?? "Land plan preview";
+  const mapTitle = reviewPendingDemo
+    ? correctionMapLayer?.title ?? demoDisplayName
+    : correctionMapLayer?.title ?? (payload?.branding.company_name || payload?.tenant.name || "Lot availability");
+
+  // A keyboard search result or map option opens the same detail card as a
+  // pointer selection, then focuses that card so its actions are reachable.
+  useEffect(() => {
+    if (detailsFocusRevision === 0) return;
+    const target = detailsFocusTargetRef.current;
+    if (target !== null && focusLotKey === target) {
+      detailsFocusTargetRef.current = null;
+      (previewLayout ? detailsPanelRef.current : cardRef.current)?.focus();
+    }
+  }, [detailsFocusRevision, focusLotKey, previewLayout]);
 
   // Reveal-on-select with card padding: while a lot is selected, the pan
   // clamp gains room equal to the card's overlap on each edge it touches
@@ -504,7 +678,7 @@ export function PublicLotMap({
   // changes — never while the user pans, so it can't fight manual gestures.
   useEffect(() => {
     const cur = cardPadRef.current;
-    if (focusLotId == null) {
+    if (focusLotKey == null) {
       if (cur.left !== 0 || cur.right !== 0 || cur.top !== 0 || cur.bottom !== 0) {
         setCardPad(NO_PADS);
       }
@@ -513,7 +687,7 @@ export function PublicLotMap({
     const svg = svgRef.current;
     const card = cardRef.current;
     if (!svg || !card) return;
-    const lot = payload?.parcels.find((parcel) => parcel.id === focusLotId) ?? null;
+    const lot = payload?.parcels.find((parcel) => parcel.local_key === focusLotKey) ?? null;
     const polygon = lot && Array.isArray(lot.map_polygon) ? lot.map_polygon : [];
     if (polygon.length < 3) return;
     const rect = svg.getBoundingClientRect();
@@ -592,7 +766,7 @@ export function PublicLotMap({
     // Moving the map opposite to the desired screen shift of the point.
     setPan(clampPanTo(p.x - moveX, p.y - moveY, z, vbH, pads));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusLotId, zoom, expanded]);
+  }, [focusLotKey, zoom, expanded]);
 
   const viewBoxH = imageAspect ? 100 / imageAspect : 100;
   const yScale = viewBoxH / 100;
@@ -621,7 +795,7 @@ export function PublicLotMap({
     startY: number;
     panX: number;
     panY: number;
-    downLotId: number | null;
+    downLotKey: number | null;
     moved: boolean;
   }>(null);
   const pinchRef = useRef<null | { startDist: number; startZoom: number; center: { x: number; y: number } }>(null);
@@ -641,6 +815,15 @@ export function PublicLotMap({
   visibleRef.current = visibleParcels;
   const wheelAccum = useRef(0);
   const wheelClient = useRef<{ x: number; y: number } | null>(null);
+  const geometryDraftRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const activeVertexRef = useRef<{ key: string; index: number; pointerId: number } | null>(null);
+
+  useEffect(() => {
+    const edit = correctionMapLayer?.geometryEdit;
+    const next = edit ? edit.polygon.map((point) => ({ ...point })) : null;
+    geometryDraftRef.current = next;
+    setGeometryDraft(next);
+  }, [correctionMapLayer?.geometryEdit]);
 
   function clampPan(x: number, y: number, z: number): { x: number; y: number } {
     return clampPanTo(x, y, z, viewBoxH, cardPad);
@@ -699,7 +882,7 @@ export function PublicLotMap({
     setPan(clampPan(b.x + b.w / 2 - 100 / next / 2, b.y + b.h / 2 - viewBoxH / next / 2, next));
   }
 
-  function lotIdAtPoint(clientX: number, clientY: number): number | null {
+  function lotKeyAtPoint(clientX: number, clientY: number): number | null {
     // All hit polygons under the point (hit padding overlaps neighbours):
     // prefer the smallest lot, breaking equal-area ties by nearest centroid
     // to the tap. Paint order alone can't do this — ties keep data order —
@@ -708,7 +891,7 @@ export function PublicLotMap({
     const els = document.elementsFromPoint(clientX, clientY);
     const ids: number[] = [];
     for (const el of els) {
-      const raw = (el as Element).closest?.("[data-lot-id]")?.getAttribute("data-lot-id");
+      const raw = (el as Element).closest?.("[data-lot-key]")?.getAttribute("data-lot-key");
       const id = raw != null && raw !== "" ? Number(raw) : null;
       if (id !== null && !ids.includes(id)) ids.push(id);
     }
@@ -718,7 +901,7 @@ export function PublicLotMap({
     let best = ids[0];
     let bestScore = Infinity;
     for (const id of ids) {
-      const poly = svg?.querySelector(`polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+      const poly = svg?.querySelector(`polygon[data-lot-key="${id}"]`) as SVGPolygonElement | null;
       const box = poly?.getBBox?.();
       if (!box) continue;
       // Hit-polygon points are pre-scaled (pointsAttr applies yScale), so
@@ -755,9 +938,102 @@ export function PublicLotMap({
     return best;
   }
 
-  function selectLotById(lotId: number) {
-    const parcel = visibleRef.current.find((p) => p.id === lotId) ?? null;
+  function selectLotByKey(lotKey: number) {
+    const parcel = visibleRef.current.find((p) => p.local_key === lotKey) ?? null;
     if (parcel) handleParcelClick(parcel);
+  }
+
+  function centerMapLotIfHidden(parcel: PublicLotParcel) {
+    const svg = svgRef.current;
+    const polygon = svg?.querySelector(`polygon[data-lot-key="${parcel.local_key}"]`);
+    const canvas = svg?.getBoundingClientRect();
+    const lot = polygon?.getBoundingClientRect();
+    if (!canvas || !lot) return;
+    const centerX = lot.left + lot.width / 2;
+    const centerY = lot.top + lot.height / 2;
+    if (centerX >= canvas.left && centerX <= canvas.right && centerY >= canvas.top && centerY <= canvas.bottom) return;
+
+    const bounds = boundsOf(parcel);
+    if (!bounds) return;
+    const zoom = zoomRef.current;
+    const viewHeight = viewBoxHRef.current;
+    setPan(
+      clampPanTo(
+        bounds.x + bounds.w / 2 - 100 / zoom / 2,
+        bounds.y + bounds.h / 2 - viewHeight / zoom / 2,
+        zoom,
+        viewHeight,
+        cardPadRef.current,
+      ),
+    );
+  }
+
+  function moveMapCursor(direction: "left" | "right" | "up" | "down") {
+    const parcels = visibleRef.current.filter((parcel) => Array.isArray(parcel.map_polygon) && parcel.map_polygon.length >= 3);
+    const current = parcels.find((parcel) => parcel.local_key === mapCursorParcel?.local_key) ?? parcels[0];
+    const currentBounds = current ? boundsOf(current) : null;
+    if (!current || !currentBounds) return;
+    const currentX = currentBounds.x + currentBounds.w / 2;
+    const currentY = currentBounds.y + currentBounds.h / 2;
+    let closest: PublicLotParcel | null = null;
+    let closestScore = Infinity;
+
+    for (const candidate of parcels) {
+      if (candidate.local_key === current.local_key) continue;
+      const bounds = boundsOf(candidate);
+      if (!bounds) continue;
+      const dx = bounds.x + bounds.w / 2 - currentX;
+      const dy = bounds.y + bounds.h / 2 - currentY;
+      const forward = direction === "right" ? dx : direction === "left" ? -dx : direction === "down" ? dy : -dy;
+      if (forward <= 0) continue;
+      const cross = direction === "left" || direction === "right" ? Math.abs(dy) : Math.abs(dx);
+      const score = forward + cross * 2;
+      if (score < closestScore) {
+        closest = candidate;
+        closestScore = score;
+      }
+    }
+    if (closest) {
+      centerMapLotIfHidden(closest);
+      setMapCursorKey(closest.local_key);
+    }
+  }
+
+  function handleMapKeyDown(event: React.KeyboardEvent<SVGGElement>) {
+    const directions: Record<string, "left" | "right" | "up" | "down"> = {
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      ArrowUp: "up",
+      ArrowDown: "down",
+    };
+    if (directions[event.key]) {
+      event.preventDefault();
+      moveMapCursor(directions[event.key]);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      const parcels = visibleRef.current.filter((parcel) => Array.isArray(parcel.map_polygon) && parcel.map_polygon.length >= 3);
+      if (parcels.length > 0) {
+        event.preventDefault();
+        const parcel = parcels[event.key === "Home" ? 0 : parcels.length - 1];
+        centerMapLotIfHidden(parcel);
+        setMapCursorKey(parcel.local_key);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      const parcel = visibleRef.current.find((item) => item.local_key === mapCursorParcel?.local_key) ?? visibleRef.current[0];
+      if (!parcel) return;
+      event.preventDefault();
+      detailsFocusTargetRef.current = parcel.local_key;
+      handleParcelClick(parcel);
+      setDetailsFocusRevision((revision) => revision + 1);
+    }
   }
 
   function endGestureListeners() {
@@ -834,7 +1110,7 @@ export function PublicLotMap({
         g.panX = panRef.current.x;
         g.panY = panRef.current.y;
         g.moved = true;
-        g.downLotId = null;
+        g.downLotKey = null;
       }
       return;
     }
@@ -846,15 +1122,15 @@ export function PublicLotMap({
     // Tap/click with no drag: decide at pointerup. Prefer the lot under the
     // release point (finger slop), fall back to the down-target lot, else an
     // empty release clears the unlocked selection. No click events involved.
-    const upLot = lotIdAtPoint(event.clientX, event.clientY);
-    const target = upLot ?? g.downLotId;
+    const upLot = lotKeyAtPoint(event.clientX, event.clientY);
+    const target = upLot ?? g.downLotKey;
     if (target != null) {
-      selectLotById(target);
+      selectLotByKey(target);
     } else if (!pickModeRef.current) {
-      setInternalSelectedId(null);
-      setHoveredId(null);
+      setInternalSelectedKey(null);
+      setHoveredLocalKey(null);
     } else {
-      setHoveredId(null);
+      setHoveredLocalKey(null);
     }
   }
 
@@ -862,13 +1138,13 @@ export function PublicLotMap({
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (!gestureRef.current) {
       const target = event.target as Element | null;
-      const id = target?.closest?.("[data-lot-id]")?.getAttribute("data-lot-id");
+      const id = target?.closest?.("[data-lot-key]")?.getAttribute("data-lot-key");
       gestureRef.current = {
         startX: event.clientX,
         startY: event.clientY,
         panX: panRef.current.x,
         panY: panRef.current.y,
-        downLotId: id != null && id !== "" ? Number(id) : null,
+        downLotKey: id != null && id !== "" ? Number(id) : null,
         moved: false,
       };
       window.addEventListener("pointermove", onGestureMove);
@@ -918,9 +1194,64 @@ export function PublicLotMap({
     // Selection only opens the detail card. The inquiry modal opens solely
     // from the card's Inquire button — never as a side effect of selection,
     // so tapping a lot can never be swallowed by a modal.
-    setInternalSelectedId(parcel.id);
+    setMapCursorKey(parcel.local_key);
+    setInternalSelectedKey(parcel.local_key);
+    if (correctionMapLayer && parcel.correction_key) correctionMapLayer.onSelect(parcel.correction_key);
     onSelectLot?.(parcel);
-    if (pickMode && parcel.status === "Available") onToggleLot(parcel);
+    if (previewLayout || correctionMapLayer) zoomToParcel(parcel);
+    if (pickMode && parcel.status === "Available" && parcel.public_ref) onToggleLot(parcel);
+  }
+
+  function polygonFor(parcel: PublicLotParcel): Array<{ x: number; y: number }> {
+    const edit = correctionMapLayer?.geometryEdit;
+    if (edit && parcel.correction_key === edit.key) return geometryDraft ?? edit.polygon;
+    return Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+  }
+
+  function reviewStyle(parcel: PublicLotParcel): { fill: string; stroke: string; label: string } {
+    const status = correctionMapLayer?.reviewStatusByKey[parcel.correction_key ?? ""] ?? "unreviewed";
+    return CORRECTION_REVIEW_STYLE[status] ?? CORRECTION_REVIEW_STYLE.unreviewed;
+  }
+
+  function updateGeometryVertex(
+    event: React.PointerEvent<SVGCircleElement>,
+    phase: "start" | "move" | "end",
+    index: number,
+    key: string,
+  ): void {
+    if (!correctionMapLayer?.geometryEdit || correctionMapLayer.geometryEdit.key !== key) return;
+    event.stopPropagation();
+    if (phase === "start") {
+      event.preventDefault();
+      activeVertexRef.current = { key, index, pointerId: event.pointerId };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    const active = activeVertexRef.current;
+    if (!active || active.pointerId !== event.pointerId || active.key !== key || active.index !== index) return;
+    if (phase === "move") {
+      const svg = svgRef.current;
+      const ctm = svg?.getScreenCTM();
+      if (!ctm) return;
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
+      const next = (geometryDraftRef.current ?? correctionMapLayer.geometryEdit.polygon).map((vertex, vertexIndex) =>
+        vertexIndex === index
+          ? { x: Math.max(0, Math.min(100, point.x)), y: Math.max(0, Math.min(100, point.y / yScale)) }
+          : vertex,
+      );
+      geometryDraftRef.current = next;
+      setGeometryDraft(next);
+      return;
+    }
+    activeVertexRef.current = null;
+    const draft = geometryDraftRef.current;
+    if (draft) correctionMapLayer.onGeometryDraftChange?.(key, draft.map((vertex) => ({ ...vertex })));
+  }
+
+  function clearSelection() {
+    setHoveredLocalKey(null);
+    setInternalSelectedKey(null);
+    onClearSelection?.();
   }
 
   return (
@@ -935,6 +1266,9 @@ export function PublicLotMap({
       style={
         {
           ...themeVars,
+          fontFamily: theme.tokens.fontFamily,
+          "--lotmap-accent": theme.tokens.accent,
+          "--lotmap-muted": theme.tokens.muted,
           ...(pseudoFullscreen
             ? {
                 paddingTop: "env(safe-area-inset-top)",
@@ -947,65 +1281,162 @@ export function PublicLotMap({
       }
     >
       {theme.cssUrl ? <link rel="stylesheet" href={theme.cssUrl} /> : null}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
-        <strong className="mr-auto truncate text-sm text-primary">
-          {payload ? payload.branding.company_name || payload.tenant.name : "Lot availability"}
-        </strong>
-        {DEMO_PREVIEW && demoDataUrl ? (
-          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
-            Preview data
+      <div className="relative z-30 flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2.5 sm:px-5">
+        <div className="mr-auto flex min-w-0 flex-wrap items-center gap-x-2">
+          <strong className="block max-w-full truncate text-base font-semibold tracking-tight text-primary">
+            {mapTitle}
+          </strong>
+          {proofOfConcept ? (
+            <span className="max-w-full rounded-full border border-secondary/25 bg-secondary-soft px-2.5 py-1 text-[11px] font-semibold leading-4 text-secondary" aria-label="Proof of concept; sales details are unapproved">
+              Proof of concept · sample data
+            </span>
+          ) : null}
+          <span className="mt-0.5 block basis-full truncate text-xs font-medium text-muted-foreground">
+            {correctionMapLayer
+              ? "Internal correction view · review states are not sales status"
+              : reviewPendingDemo
+              ? "Land plan · source review pending"
+              : unapprovedWamulePreview
+                ? "Sales details are not approved for publication."
+              : payload?.project?.name ?? "Explore the development plan"}
           </span>
-        ) : null}
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search lot, tier, status"
-          aria-label="Search lots"
-          className="h-8 w-44 rounded-md border border-border bg-background px-2 text-xs"
-        />
-        <div className="flex overflow-hidden rounded-md border border-border" role="tablist" aria-label="Colour view">
+        </div>
+        <div className="relative order-1 w-full md:order-none md:w-auto">
+          <input
+            ref={searchInputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && searchResults.length > 0) {
+                event.preventDefault();
+                searchResultsRef.current?.querySelector("button")?.focus();
+              } else if (event.key === "Escape" && normalizedQuery) {
+                event.preventDefault();
+                setQuery("");
+              }
+            }}
+            placeholder={correctionMapLayer ? "Search detection reference" : reviewPendingDemo ? "Search plan label" : "Search lot, tier, status"}
+            aria-label={correctionMapLayer ? "Search detected polygons by reference" : "Search lots"}
+            aria-controls={searchResultsId}
+            aria-describedby={`${searchResultsId}-instructions`}
+            aria-expanded={normalizedQuery.length > 0}
+            className="focus-ring h-11 w-full rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground md:w-44"
+          />
+          <span id={`${searchResultsId}-instructions`} className="sr-only">
+            {correctionMapLayer
+              ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a detected polygon to select it."
+              : "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a lot to open its details."}
+          </span>
+          {normalizedQuery ? (
+            <div
+              ref={searchResultsRef}
+              id={searchResultsId}
+              role="region"
+              aria-label={correctionMapLayer ? "Detection search results" : "Lot search results"}
+              className="absolute left-0 right-auto top-full z-50 mt-1 max-h-64 w-72 max-w-[calc(100vw-1.5rem)] overflow-auto rounded-md border border-border bg-card p-2 shadow-lg"
+            >
+              <p className="px-1 pb-1 text-xs text-muted-foreground" role="status" aria-live="polite">
+                {visibleParcels.length === 0
+                  ? correctionMapLayer ? "No matching detected polygons." : "No matching lots."
+                  : visibleParcels.length > SEARCH_RESULT_LIMIT
+                    ? `Showing ${SEARCH_RESULT_LIMIT} of ${visibleParcels.length} matching ${correctionMapLayer ? "detected polygons" : "lots"}; refine your search.`
+                    : `${visibleParcels.length} matching ${correctionMapLayer ? (visibleParcels.length === 1 ? "detected polygon" : "detected polygons") : (visibleParcels.length === 1 ? "lot" : "lots")}.`}
+              </p>
+              {searchResults.length > 0 ? (
+                <ul className="grid gap-1">
+                  {searchResults.map((parcel) => (
+                    <li key={parcel.local_key}>
+                      <button
+                        type="button"
+                        aria-label={correctionMapLayer
+                          ? `Select detected polygon ${parcel.lot_number}`
+                          : `Show details for Lot ${parcel.lot_number}, ${reviewPendingDemo ? "source review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
+                        onKeyDown={(event) => {
+                          if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            const previous = event.currentTarget.closest("li")?.previousElementSibling?.querySelector("button");
+                            if (previous instanceof HTMLButtonElement) previous.focus();
+                            else searchInputRef.current?.focus();
+                          } else if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            const next = event.currentTarget.closest("li")?.nextElementSibling?.querySelector("button");
+                            if (next instanceof HTMLButtonElement) next.focus();
+                          } else if (event.key === "Escape") {
+                            event.preventDefault();
+                            searchInputRef.current?.focus();
+                          }
+                        }}
+                        onClick={() => {
+                          const willSelect =
+                            !pickMode ||
+                            (parcel.status === "Available" &&
+                              Boolean(parcel.public_ref) &&
+                              !highlighted.includes(parcel.local_key));
+                          detailsFocusTargetRef.current = willSelect ? parcel.local_key : null;
+                          handleParcelClick(parcel);
+                          setDetailsFocusRevision((revision) => revision + 1);
+                        }}
+                        className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded px-3 py-2 text-left text-sm hover:bg-primary-soft"
+                      >
+                        <span className="font-semibold text-foreground">{correctionMapLayer ? `Detection ${parcel.lot_number}` : `Lot ${parcel.lot_number}`}</span>
+                        <span className="truncate text-muted-foreground">
+                          {reviewPendingDemo
+                            ? "Review pending"
+                            : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"} · ${parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {!reviewPendingDemo ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Colour view">
           {(["status", "tier"] as PublicLotColourView[]).map((value) => (
             <button
               key={value}
               type="button"
-              role="tab"
-              aria-selected={colourView === value}
+              aria-label={value === "status" ? "Status colours" : "Tier colours"}
+              aria-pressed={colourView === value}
               onClick={() => setColourView(value)}
               className={cn(
-                "px-3 py-1.5 text-xs font-semibold capitalize transition",
-                colourView === value ? "bg-primary text-white" : "bg-card text-muted-foreground hover:text-primary",
+                "focus-ring relative min-h-11 min-w-0 flex-1 px-2 text-xs font-semibold capitalize transition whitespace-nowrap first:rounded-l-md last:rounded-r-md sm:px-3 sm:text-sm md:flex-initial",
+                colourView === value ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-primary",
               )}
             >
-              {value === "status" ? "Status colours" : "Tier colours"}
+              <span className="sm:hidden">{value === "status" ? "Status" : "Tier"}</span>
+              <span className="hidden sm:inline">{value === "status" ? "Status colours" : "Tier colours"}</span>
             </button>
           ))}
-        </div>
-        <div className="flex overflow-hidden rounded-md border border-border" role="tablist" aria-label="Lot filter">
+        </div> : null}
+        {!reviewPendingDemo ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Lot filter">
           {(["all", "available"] as PublicLotFilter[]).map((value) => (
             <button
               key={value}
               type="button"
-              role="tab"
-              aria-selected={filter === value}
+              aria-label={value === "all" ? "All Lots" : unapprovedWamulePreview ? "Reported available only, sample data" : "Available Only"}
+              aria-pressed={filter === value}
               onClick={() => setFilter(value)}
               className={cn(
-                "px-3 py-1.5 text-xs font-semibold transition",
-                filter === value ? "bg-primary text-white" : "bg-card text-muted-foreground hover:text-primary",
+                "focus-ring relative min-h-11 min-w-0 flex-1 px-2 text-xs font-semibold transition whitespace-nowrap first:rounded-l-md last:rounded-r-md sm:px-3 sm:text-sm md:flex-initial",
+                filter === value ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-primary",
               )}
             >
-              {value === "all" ? "All Lots" : "Available Only"}
+              <span className="sm:hidden">{value === "all" ? "All" : unapprovedWamulePreview ? "Reported" : "Available"}</span>
+              <span className="hidden sm:inline">{value === "all" ? "All Lots" : unapprovedWamulePreview ? "Reported available" : "Available Only"}</span>
             </button>
           ))}
-        </div>
+        </div> : null}
       </div>
-      {tierOptions.length && colourView === "tier" ? (
+      {!reviewPendingDemo && tierOptions.length && colourView === "tier" ? (
         <div className="border-b border-border bg-card px-3 py-1.5">
           <button
             type="button"
             aria-expanded={chipsOpen}
             aria-controls="tier-filter-chips"
             onClick={() => setChipsOpen((open) => !open)}
-            className="flex items-center gap-1 text-xs font-semibold text-muted-foreground"
+            className="focus-ring flex min-h-11 items-center gap-2 px-1 text-sm font-semibold text-muted-foreground"
           >
             <span aria-hidden>{chipsOpen ? "▾" : "▸"}</span> Tiers ({tierOptions.length})
           </button>
@@ -1022,7 +1453,7 @@ export function PublicLotMap({
                       setDisabledTiers((current) => (off ? current.filter((t) => t !== key) : [...current, key]))
                     }
                     className={cn(
-                      "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition",
+                      "focus-ring flex min-h-11 items-center gap-2 rounded-full border px-3 text-sm font-semibold transition",
                       off ? "border-border opacity-45" : "border-border",
                     )}
                   >
@@ -1035,23 +1466,83 @@ export function PublicLotMap({
           ) : null}
         </div>
       ) : null}
-      {colourView === "status" ? (
+      {reviewPendingDemo ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-4 py-2" aria-label="Map legend">
+          {correctionMapLayer ? (Object.entries(CORRECTION_REVIEW_STYLE) as Array<[CorrectionReviewStatus, typeof CORRECTION_REVIEW_STYLE[CorrectionReviewStatus]]>).map(([status, style]) => (
+            <span key={status} className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: style.fill }} />
+              {style.label}
+            </span>
+          )) : <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+              <path d="M1 8h22" stroke="var(--lotmap-muted)" strokeWidth="2" />
+            </svg>
+            Candidate outline · review pending
+          </span>}
+          <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+              <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
+            </svg>
+            {correctionMapLayer ? "Selected polygon" : "Selected lot"}
+          </span>
+        </div>
+      ) : colourView === "status" ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1.5" aria-label="Map legend">
-          {(Object.keys(STATUS_STYLE) as ParcelStatus[]).map((status) => (
-            <span key={status} className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{ backgroundColor: STATUS_STYLE[status].fill }}
-              />
-              {status}
+          {[...new Set(visibleParcels.map((parcel) => parcel.status))].map((status) => (
+            <span key={status} className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+              <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16">
+                {STATUS_MARKER_SHAPE[status] === "circle" ? (
+                  <circle cx={8} cy={8} r={4} fill={STATUS_STYLE[status].fill} stroke="white" strokeWidth={1} />
+                ) : (
+                  <polygon
+                    points={polygonMarkerPoints(STATUS_MARKER_SHAPE[status], 8, 8, 4)}
+                    fill={STATUS_STYLE[status].fill}
+                    stroke="white"
+                    strokeWidth={1}
+                    strokeLinejoin="round"
+                  />
+                )}
+              </svg>
+              {status}{unapprovedWamulePreview ? " · sample" : ""}
             </span>
           ))}
+          <span className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+            <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+              <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
+            </svg>
+            Selected lot
+          </span>
+        </div>
+      ) : colourView === "tier" ? (
+        <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground" aria-label="Map legend">
+          <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+            <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
+          </svg>
+          Selected lot
         </div>
       ) : null}
 
-      <div className="relative min-h-0 flex-1 bg-muted">
+      <span id={mapInstructionsId} className="sr-only">
+        {correctionMapLayer
+          ? "Use the arrow keys to move between nearby detected polygons. Press Enter or Space to select the polygon; press Escape to return to detection search. Search uses detection references, not official lot numbers."
+          : "Use the arrow keys to move between nearby lots. Press Enter or Space to open lot details; press Escape to return to lot search. Search can find any lot by identifier, tier, or status."}
+      </span>
+
+        <div className={cn(
+          "relative flex min-h-0 flex-1 bg-muted",
+          previewLayout && "grid min-w-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[minmax(0,1.6fr)_minmax(20rem,.8fr)] md:grid-rows-1 md:gap-4 md:bg-background md:p-4",
+        )}>
+        <div
+          data-testid={previewLayout ? "candidate-map-viewport" : "buyer-map-viewport"}
+          className={cn(
+            "relative min-h-0 flex-1 bg-muted",
+            previewLayout && "h-auto min-w-0 w-full aspect-[var(--demo-map-aspect)] overflow-hidden md:h-full md:aspect-auto md:rounded-xl md:border md:border-border",
+          )}
+          style={previewLayout ? ({ "--demo-map-aspect": imageAspect ?? 1.1875 } as React.CSSProperties) : undefined}
+        >
         {loading ? (
-          <div className="absolute inset-0 animate-pulse p-4" aria-label="Loading lot map">
+          <div className="absolute inset-0 animate-pulse p-4 motion-reduce:animate-none" role="status" aria-live="polite">
+            <span className="sr-only">Loading lot map…</span>
             <div className="h-full w-full rounded-md bg-border/60" />
           </div>
         ) : null}
@@ -1060,11 +1551,40 @@ export function PublicLotMap({
             <div className="max-w-sm rounded-md border bg-card p-5">
               <p className="font-semibold text-primary">Map unavailable</p>
               <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+              <button
+                type="button"
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                className="mt-4 min-h-11 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                Try again
+              </button>
             </div>
           </div>
         ) : null}
         {!loading && !error && payload ? (
           <>
+            {visibleParcels.length === 0 ? (
+              <div className="absolute inset-0 z-10 grid place-items-center p-6 text-center" role="status" aria-live="polite">
+                <div className="max-w-sm rounded-md border bg-card/95 p-5 shadow-sm">
+                  <p className="font-semibold text-primary">
+                    {payload.parcels.length === 0 ? "No lots are published for this project yet." : "No lots match these filters."}
+                  </p>
+                  {payload.parcels.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setFilter("all");
+                        setDisabledTiers([]);
+                      }}
+                      className="mt-3 min-h-11 rounded-md border border-border px-3 py-2 text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    >
+                      Clear filters and search
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {masterplanUrl ? null : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-muted-foreground">
                 No site map image published yet.
@@ -1076,9 +1596,11 @@ export function PublicLotMap({
               preserveAspectRatio="xMidYMid meet"
               className={cn("absolute inset-0 h-full w-full", zoom > MIN_ZOOM && "touch-none")}
               style={{ cursor: "grab" }}
+              role="group"
+              aria-label={correctionMapLayer ? "Interactive correction map" : "Interactive lot map"}
               onPointerDown={beginGesture}
             >
-              <title>Drag to pan • Ctrl+scroll or pinch to zoom</title>
+              <title>Lot map. Drag to pan; use the controls or pinch to zoom.</title>
               {masterplanUrl ? (
                 <image
                   href={masterplanUrl}
@@ -1087,27 +1609,35 @@ export function PublicLotMap({
                   width={100}
                   height={viewBoxH}
                   preserveAspectRatio="none"
+                  // Keep the source asset intact; neutralize its printed
+                  // tier colors in this buyer view so status/tier overlays
+                  // remain the only color-coded data layer. Lower its visual
+                  // weight so the source reads as context, not the interface.
+                  style={{ filter: "grayscale(1)" }}
+                  opacity={0.68}
                 />
               ) : null}
-              {/* Status layer: outlines only, no fills — the plat raster keeps
-                  its own fills and baked text, so translucent overlays would
-                  muddy both. Status reads from outline color + centroid dot
-                  until the base layer is cleaned. */}
+              {/* Status/tier layer: outlines only, no fills. The source raster
+                  remains unmodified and retains its baked labels, but is
+                  displayed grayscale so its tier hues don't compete with the
+                  selected buyer color system. */}
               {visibleParcels.map((parcel) => {
-                const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                const polygon = polygonFor(parcel);
                 if (polygon.length < 3) return null;
-                const style = fillFor(parcel, colourView);
-                const selected = highlighted.includes(parcel.id);
-                const hovered = parcel.id === hoveredId;
+                const style = fillFor(parcel, reviewPendingDemo ? "status" : colourView);
+                const review = reviewStyle(parcel);
+                const selected = highlighted.includes(parcel.local_key);
+                const hovered = parcel.local_key === hoveredLocalKey;
                 const picked = pickMode && selected;
                 return (
                   <polygon
-                    key={parcel.id}
-                    data-lot-id={parcel.id}
+                    key={parcel.local_key}
+                    data-lot-key={parcel.local_key}
                     points={pointsAttr(polygon, yScale)}
-                    fill="none"
-                    stroke={picked ? "#1d4ed8" : style.stroke}
-                    strokeWidth={selected ? 3 : hovered || picked ? 1.6 : 0.8}
+                    fill={selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.fill : "none"}
+                    fillOpacity={selected ? 0.32 : correctionMapLayer ? 0.13 : 0}
+                    stroke={picked ? "#1d4ed8" : selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.stroke : style.stroke}
+                    strokeWidth={selected ? 3.5 : hovered || picked ? 1.6 : reviewPendingDemo ? 1.1 : 0.8}
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
@@ -1117,7 +1647,22 @@ export function PublicLotMap({
               {/* Hit layer: separate overlay, smallest lots painted last so a
                   tap between overlapping hit paddings selects the smallest
                   lot, not the topmost in data order. Always active. */}
-              <g aria-hidden="true">
+              <g
+                id={mapListboxId}
+                role="listbox"
+                aria-label={correctionMapLayer ? "Detected polygons on the map" : "Lots on the map"}
+                aria-describedby={mapInstructionsId}
+                aria-activedescendant={mapCursorOptionId}
+                aria-multiselectable={pickMode || undefined}
+                tabIndex={mapParcels.length > 0 ? 0 : -1}
+                className="focus:outline-none focus-visible:outline-none"
+                onKeyDown={handleMapKeyDown}
+                onFocus={() => {
+                  setMapKeyboardFocused(true);
+                  if (mapCursorParcel) centerMapLotIfHidden(mapCursorParcel);
+                }}
+                onBlur={() => setMapKeyboardFocused(false)}
+              >
                 {[...visibleParcels]
                   .sort((a, b) => {
                     const pa = Array.isArray(a.map_polygon) ? a.map_polygon : [];
@@ -1125,14 +1670,20 @@ export function PublicLotMap({
                     return bboxAreaUnits(pa) - bboxAreaUnits(pb);
                   })
                   .map((parcel) => {
-                    const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                    const polygon = polygonFor(parcel);
                     if (polygon.length < 3) return null;
-                    const picked = pickMode && highlighted.includes(parcel.id);
-                    const tappable = parcel.status === "Available" || parcel.status === "Reserved";
+                    const picked = pickMode && highlighted.includes(parcel.local_key);
+                    const tappable = Boolean(correctionMapLayer) || parcel.status === "Available" || parcel.status === "Reserved";
                     return (
                       <polygon
-                        key={`hit-${parcel.id}`}
-                        data-lot-id={parcel.id}
+                        key={`hit-${parcel.local_key}`}
+                        id={`${mapListboxId}-option-${parcel.local_key}`}
+                        role="option"
+                        aria-label={correctionMapLayer
+                          ? `Detected polygon ${parcel.lot_number}, ${reviewStyle(parcel).label}`
+                          : `Lot ${parcel.lot_number}, ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
+                        aria-selected={pickMode ? highlighted.includes(parcel.local_key) : internalSelectedKey === parcel.local_key}
+                        data-lot-key={parcel.local_key}
                         points={pointsAttr(polygon, yScale)}
                         fill="transparent"
                         stroke="rgba(0,0,0,0)"
@@ -1140,49 +1691,91 @@ export function PublicLotMap({
                         strokeLinejoin="round"
                         vectorEffect="non-scaling-stroke"
                         style={{ cursor: tappable ? "pointer" : "default" }}
-                        onMouseEnter={() => setHoveredId(parcel.id)}
-                        onMouseLeave={() => setHoveredId((current) => (current === parcel.id ? null : current))}
+                        onMouseEnter={() => setHoveredLocalKey(parcel.local_key)}
+                        onMouseLeave={() => setHoveredLocalKey((current) => (current === parcel.local_key ? null : current))}
                       >
-                        <title>{`Lot ${parcel.lot_number} — ${parcel.tier_label ?? parcel.status}${picked ? " — selected" : ""}`}</title>
+                      <title>{correctionMapLayer
+                        ? `Detected polygon ${parcel.lot_number} — ${reviewStyle(parcel).label}${internalSelectedKey === parcel.local_key ? " — selected" : ""}`
+                        : `Lot ${parcel.lot_number} — ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}${picked ? " — selected" : ""}`}</title>
                       </polygon>
                     );
                   })}
               </g>
-              {/* Status dots: one centroid marker per lot in its status color,
-                  so status reads at a glance with outlines only. Above the
-                  hit layer, pointer-transparent (never steals taps/hovers). */}
-              <g aria-hidden="true">
+              {/* Status markers pair color with distinct shapes; tier mode
+                  uses one neutral marker shape. Above the hit layer and
+                  pointer-transparent (never steals taps or hovers). */}
+              {!reviewPendingDemo ? <g aria-hidden="true">
                 {visibleParcels.map((parcel) => {
                   const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                   if (polygon.length < 3) return null;
                   const style = fillFor(parcel, colourView);
+                  const selected = highlighted.includes(parcel.local_key);
                   const xs = polygon.map((p) => p.x);
                   const ys = polygon.map((p) => p.y * yScale);
-                  const r = Math.min(Math.max(Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.07, 0.18), 0.8);
+                  const r = Math.min(
+                    Math.max(Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.07, 0.35),
+                    0.8,
+                  );
+                  const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+                  const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+                  const markerShape = colourView === "status" ? STATUS_MARKER_SHAPE[parcel.status] : "circle";
                   return (
-                    <circle
-                      key={`dot-${parcel.id}`}
-                      cx={(Math.max(...xs) + Math.min(...xs)) / 2}
-                      cy={(Math.max(...ys) + Math.min(...ys)) / 2}
-                      r={r}
-                      fill={style.fill}
-                      stroke="#ffffff"
-                      strokeWidth={1}
-                      vectorEffect="non-scaling-stroke"
-                      pointerEvents="none"
-                    />
+                    <g key={`marker-${parcel.local_key}`} data-lot-key={parcel.local_key} data-lot-status={parcel.status} data-marker-shape={markerShape}>
+                      {markerShape === "circle" ? (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={r}
+                          fill={selected ? "var(--lotmap-accent)" : style.fill}
+                          stroke="#ffffff"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                      ) : (
+                        <polygon
+                          points={polygonMarkerPoints(markerShape, cx, cy, r)}
+                          fill={selected ? "var(--lotmap-accent)" : style.fill}
+                          stroke="#ffffff"
+                          strokeWidth={1}
+                          strokeLinejoin="round"
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                      )}
+                    </g>
                   );
                 })}
-              </g>
+              </g> : null}
+              {mapKeyboardFocused && mapCursorPolygon.length >= 3 ? (
+                <g aria-hidden="true" pointerEvents="none">
+                  <polygon
+                    points={pointsAttr(mapCursorPolygon, yScale)}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={7}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polygon
+                    points={pointsAttr(mapCursorPolygon, yScale)}
+                    fill="none"
+                    stroke="#111827"
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              ) : null}
               {visibleParcels.map((parcel) => {
-                    // Overlay numbers render only for the HOVERED lot: the
-                    // plat raster already prints every lot number, and the
-                    // selected lot's number lives in the detail card — vector
-                    // text on top of baked text helps nobody. The transparent
-                    // hit layer stays active for all lots regardless. The
+                    if (correctionMapLayer) return null;
+                    // Keep one crisp vector label for the selected lot (or,
+                    // with no selection, the hovered lot). The source plat
+                    // already prints the rest, so avoid duplicating every
+                    // label. The transparent hit layer stays active for all lots. The
                     // fs*zoom readability gate below still hides lots that
                     // would render unreadably small.
-                    if (parcel.id !== hoveredId) return null;
+                    if (parcel.local_key !== (focusLotKey ?? hoveredLocalKey)) return null;
                     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                     if (polygon.length < 3) return null;
                     const xs = polygon.map((p) => p.x);
@@ -1206,7 +1799,7 @@ export function PublicLotMap({
                     if (!(fs > 0) || fs * zoom < 1.1) return null;
                     return (
                       <text
-                        key={`label-${parcel.id}`}
+                        key={`label-${parcel.local_key}`}
                         x={(Math.max(...xs) + Math.min(...xs)) / 2}
                         y={(Math.max(...ys) + Math.min(...ys)) / 2}
                         textAnchor="middle"
@@ -1223,10 +1816,48 @@ export function PublicLotMap({
                       </text>
                     );
                   })}
+              {correctionMapLayer?.geometryEdit ? (
+                <g aria-label="Editable polygon boundary vertices">
+                  {(geometryDraft ?? correctionMapLayer.geometryEdit.polygon).map((point, index) => (
+                    <circle
+                      key={`vertex-${index}`}
+                      cx={point.x}
+                      cy={point.y * yScale}
+                      r={1.15}
+                      fill="#ffffff"
+                      stroke="#b84f2d"
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
+                      role="slider"
+                      tabIndex={0}
+                      aria-label={`Move boundary point ${index + 1}`}
+                      aria-valuetext={`${point.x.toFixed(2)}, ${point.y.toFixed(2)} percent`}
+                      style={{ cursor: "move", touchAction: "none" }}
+                      onPointerDown={(event) => updateGeometryVertex(event, "start", index, correctionMapLayer.geometryEdit!.key)}
+                      onPointerMove={(event) => updateGeometryVertex(event, "move", index, correctionMapLayer.geometryEdit!.key)}
+                      onPointerUp={(event) => updateGeometryVertex(event, "end", index, correctionMapLayer.geometryEdit!.key)}
+                      onPointerCancel={(event) => updateGeometryVertex(event, "end", index, correctionMapLayer.geometryEdit!.key)}
+                      onKeyDown={(event) => {
+                        const dx = event.key === "ArrowLeft" ? -0.05 : event.key === "ArrowRight" ? 0.05 : 0;
+                        const dy = event.key === "ArrowUp" ? -0.05 : event.key === "ArrowDown" ? 0.05 : 0;
+                        if (!dx && !dy) return;
+                        event.preventDefault();
+                        const current = geometryDraftRef.current ?? correctionMapLayer.geometryEdit!.polygon;
+                        const next = current.map((vertex, vertexIndex) => vertexIndex === index
+                          ? { x: Math.max(0, Math.min(100, vertex.x + dx)), y: Math.max(0, Math.min(100, vertex.y + dy)) }
+                          : vertex);
+                        geometryDraftRef.current = next;
+                        setGeometryDraft(next);
+                        correctionMapLayer.onGeometryDraftChange?.(correctionMapLayer.geometryEdit!.key, next);
+                      }}
+                    />
+                  ))}
+                </g>
+              ) : null}
             </svg>
             <div
-              className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !expanded ? "bottom-48 sm:bottom-3" : "bottom-3")}
-              style={focusLot && !expanded && narrow && cardHpx > 0 ? { bottom: cardHpx + 24 } : undefined}
+              className={cn("absolute bottom-3 right-3 flex flex-col gap-1", focusLot && !previewLayout ? "bottom-48 sm:bottom-3" : "bottom-3", correctionMapLayer && focusLot && !previewLayout && "bottom-3")}
+              style={focusLot && narrow && cardHpx > 0 && !previewLayout ? correctionMapLayer ? undefined : { bottom: cardHpx + 24 } : undefined}
             >
               <button
                 ref={toggleRef}
@@ -1234,7 +1865,7 @@ export function PublicLotMap({
                 aria-label={expanded ? "Exit fullscreen" : "Enter fullscreen"}
                 aria-pressed={expanded}
                 onClick={() => (expanded ? exitFullscreen() : enterFullscreen())}
-                className="grid h-8 w-8 place-items-center rounded-md border border-border bg-card/95 shadow"
+                className="focus-ring grid h-11 w-11 place-items-center rounded-md border border-border bg-card/95 shadow"
               >
                 {expanded ? (
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
@@ -1251,7 +1882,7 @@ export function PublicLotMap({
                 aria-label="Zoom in"
                 disabled={zoom >= MAX_ZOOM}
                 onClick={() => zoomBy(0.5)}
-                className="h-8 w-8 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
+                className="focus-ring h-11 w-11 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
                 +
               </button>
@@ -1260,7 +1891,7 @@ export function PublicLotMap({
                 aria-label="Zoom out"
                 disabled={zoom <= MIN_ZOOM}
                 onClick={() => zoomBy(-0.5)}
-                className="h-8 w-8 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
+                className="focus-ring h-11 w-11 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
                 −
               </button>
@@ -1268,7 +1899,7 @@ export function PublicLotMap({
                 type="button"
                 aria-label="Reset zoom"
                 onClick={() => resetZoom()}
-                className="h-8 w-8 rounded-md border border-border bg-card/95 text-xs font-bold shadow"
+                className="focus-ring h-11 w-11 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
                 ⟲
               </button>
@@ -1278,7 +1909,7 @@ export function PublicLotMap({
                 ref={closeRef}
                 type="button"
                 onClick={() => exitFullscreen()}
-                className="absolute right-3 top-3 z-10 rounded-md border border-border bg-card/95 px-3 py-1.5 text-xs font-semibold shadow"
+                className="focus-ring absolute right-3 top-3 z-10 min-h-11 rounded-md border border-border bg-card/95 px-3 text-sm font-semibold shadow"
               >
                 ✕ Close
               </button>
@@ -1292,32 +1923,29 @@ export function PublicLotMap({
                 {toast}
               </div>
             ) : null}
-            {focusLot ? (
+            {focusLot && !previewLayout && !correctionMapLayer ? (
               <div
                 ref={cardRef}
+                role="region"
+                aria-label={`Details for Lot ${focusLot.lot_number}`}
+                tabIndex={-1}
                 className={cn(
-                  "absolute bottom-3 left-3 right-3 rounded-md border bg-card/95 p-3 text-sm shadow-lg sm:left-auto sm:right-14 sm:w-64",
+                  "focus-ring absolute bottom-3 left-3 right-3 rounded-md border bg-card/95 p-3 text-sm shadow-lg sm:left-auto sm:right-14 sm:w-64",
                   expanded && "max-h-[50dvh] overflow-auto md:bottom-auto md:right-3 md:top-14 md:w-72",
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
                   <strong className="text-primary">Lot {focusLot.lot_number}</strong>
                   <span className="flex items-center gap-1">
-                    <span
-                      className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
-                      style={{ backgroundColor: (STATUS_STYLE[focusLot.status] ?? STATUS_STYLE.Available).fill }}
-                    >
+                    <span className="rounded-full border border-border bg-muted px-3 py-1 text-sm font-semibold text-foreground">
                       {focusLot.status}
                     </span>
                     {!pickMode ? (
                       <button
                         type="button"
                         aria-label={`Close details for Lot ${focusLot.lot_number}`}
-                        onClick={() => {
-                          setHoveredId(null);
-                          setInternalSelectedId(null);
-                        }}
-                        className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={clearSelection}
+                        className="focus-ring grid h-11 w-11 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
                       >
                         ✕
                       </button>
@@ -1337,31 +1965,31 @@ export function PublicLotMap({
                   type="button"
                   aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                   onClick={() => zoomToParcel(focusLot)}
-                  className="mt-2 w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-primary hover:bg-muted"
+                  className="focus-ring mt-2 min-h-11 w-full rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-primary hover:bg-muted"
                 >
                   {applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                 </button>
-                {pickMode && focusLot.status === "Available" ? (
+                {pickMode && focusLot.status === "Available" && focusLot.public_ref ? (
                   <button
                     type="button"
                     onClick={() => {
-                      const adding = !highlighted.includes(focusLot.id);
+                      const adding = !highlighted.includes(focusLot.local_key);
                       onToggleLot(focusLot);
                       setToast(adding ? `Lot ${focusLot.lot_number} added to your preferences` : `Lot ${focusLot.lot_number} removed`);
                     }}
-                    className="mt-2 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white"
+                    className="focus-ring mt-2 min-h-11 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
                   >
-                    {highlighted.includes(focusLot.id) ? `Remove Lot ${focusLot.lot_number}` : `Select Lot ${focusLot.lot_number}`}
+                    {highlighted.includes(focusLot.local_key) ? `Remove Lot ${focusLot.lot_number}` : `Select Lot ${focusLot.lot_number}`}
                   </button>
                 ) : null}
-                {!pickMode && (focusLot.status === "Available" || focusLot.status === "Reserved") && enableInquiry ? (
+                {!pickMode && (focusLot.status === "Available" || focusLot.status === "Reserved") && focusLot.public_ref && enableInquiry ? (
                   <button
                     type="button"
                     onClick={() => {
                       setInquiryWaitlist(focusLot.status === "Reserved");
                       setInquiryLot(focusLot);
                     }}
-                    className="mt-2 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white"
+                    className="focus-ring mt-2 min-h-11 w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
                   >
                     {focusLot.status === "Reserved"
                       ? applyCardText(cardConfig.waitlistText, focusLot.lot_number)
@@ -1372,13 +2000,202 @@ export function PublicLotMap({
             ) : null}
           </>
         ) : null}
+        </div>
+        {previewLayout && !loading && !error ? (
+          <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-t border-border bg-card px-4 py-4 md:rounded-xl md:border md:px-6 md:py-6" aria-label="Lot details">
+            {focusLot ? reviewPendingDemo ? (
+              <section
+                ref={detailsPanelRef}
+                role="region"
+                aria-label={`Details for Lot ${focusLot.lot_number}`}
+                tabIndex={-1}
+                className="focus-ring flex flex-col gap-2 outline-none md:gap-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-muted-foreground">Plan label</p>
+                    <h2 className="mt-1 text-xl font-semibold leading-tight text-primary">Lot {focusLot.lot_number}</h2>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Close details for Lot ${focusLot.lot_number}`}
+                    onClick={clearSelection}
+                    className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="inline-flex w-fit items-center rounded-full border border-border bg-muted px-3 py-1 text-sm font-semibold text-foreground">
+                  Review pending
+                </p>
+                <p className="max-w-prose text-sm leading-5 text-muted-foreground">
+                  Traced from the sales plat · register match pending.
+                </p>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border py-3 text-sm md:gap-y-4 md:py-4">
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Plan classification</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">
+                      {focusLot.tier_label ? `Sample · ${focusLot.tier_label}` : "Not confirmed"}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Plan price</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">
+                      {showPrices && cardConfig.showPrice && focusLot.price > 0 ? `${money(focusLot.price)} · sample` : "Not confirmed"}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Lot area</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">
+                      {focusLot.area_sqm ? `${formatAreaDualUnit(focusLot.area_sqm)} · sample` : focusLot.dimensions ? `${focusLot.dimensions} · sample` : "Awaiting reviewed labels"}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Availability</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">Not published</dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                  disabled={!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3}
+                  onClick={() => zoomToParcel(focusLot)}
+                  className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                </button>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Sample source values only. The approved register and human crop review are still outstanding.
+                </p>
+              </section>
+            ) : (
+              <section
+                ref={detailsPanelRef}
+                role="region"
+                aria-label={`Details for Lot ${focusLot.lot_number}`}
+                tabIndex={-1}
+                className="focus-ring flex flex-col gap-2 outline-none md:gap-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Lot preview</p>
+                    <h2 className="mt-1 text-2xl font-semibold leading-tight tracking-tight text-primary">Lot {focusLot.lot_number}</h2>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Close details for Lot ${focusLot.lot_number}`}
+                    onClick={clearSelection}
+                    className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="inline-flex w-fit items-center rounded-full border border-secondary/25 bg-secondary-soft px-3 py-1 text-xs font-semibold text-secondary sm:text-sm">
+                  {focusLot.status} · sample
+                </p>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-border py-2 text-sm md:gap-y-5 md:py-4">
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Classification · sample</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">{focusLot.tier_label ?? "Not confirmed"}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">Dimensions · sample</dt>
+                    <dd className="mt-1 break-words font-medium text-foreground">
+                      {focusLot.area_sqm ? formatAreaDualUnit(focusLot.area_sqm) : focusLot.dimensions ?? "Not confirmed"}
+                    </dd>
+                  </div>
+                  <div className="col-span-2 min-w-0 border-t border-border pt-2 md:pt-3">
+                    <dt className="text-xs text-muted-foreground">Price · sample</dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-primary md:text-2xl">
+                      {showPrices && cardConfig.showPrice && focusLot.price > 0 ? money(focusLot.price) : "Not confirmed"}
+                    </dd>
+                  </div>
+                  <div className="col-span-2 min-w-0 border-t border-border pt-2 md:pt-3">
+                    <dt className="text-xs text-muted-foreground">Availability · sample</dt>
+                    <dd className="mt-1 font-medium text-foreground">{focusLot.status}</dd>
+                  </div>
+                </dl>
+                {!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3 ? (
+                  <p className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                    This lot has no mapped outline in the current preview.
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                  disabled={!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3}
+                  onClick={() => zoomToParcel(focusLot)}
+                  className="focus-ring min-h-11 w-full rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                </button>
+                {!pickMode && enableInquiry && focusLot.public_ref ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInquiryWaitlist(false);
+                      setInquiryLot(focusLot);
+                    }}
+                    className="focus-ring min-h-12 w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
+                  >
+                    Ask the team about this lot
+                  </button>
+                ) : (
+                  <p className="text-xs leading-4 text-muted-foreground">Inquiry is not configured for this lot yet.</p>
+                )}
+              </section>
+            ) : reviewPendingDemo ? (
+              <section className="flex h-full flex-col justify-center gap-3" aria-label="No lot selected">
+                <p className="text-sm font-semibold text-muted-foreground">Explore the land plan</p>
+                <h2 className="text-xl font-semibold leading-tight text-primary">Choose an outlined lot</h2>
+                <p className="max-w-prose text-sm leading-6 text-muted-foreground">
+                  Tap a lot on the map, or search for its printed label. The outline and source notes will appear here.
+                </p>
+                <div className="mt-1 grid grid-cols-2 gap-4 border-y border-border py-4">
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums text-primary">{totalMappedParcels}</p>
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">Candidate outlines</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Under review</p>
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">Sales details not published</p>
+                  </div>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Plan labels and classifications are samples; price, size, status and register approval are not complete.
+                </p>
+              </section>
+            ) : (
+              <section className="flex h-full flex-col justify-center gap-3" aria-label="No lot selected">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Interactive preview</p>
+                <h2 className="text-2xl font-semibold leading-tight tracking-tight text-primary">Explore the development</h2>
+                <p className="max-w-prose text-sm leading-6 text-muted-foreground">
+                  Select a mapped lot or search by its plan label. Preview information is shown for demonstration only.
+                </p>
+                <dl className="mt-1 grid grid-cols-2 gap-4 border-y border-border py-4">
+                  <div>
+                    <dt className="text-2xl font-semibold tabular-nums text-primary">{totalMappedParcels}</dt>
+                    <dd className="mt-1 text-xs font-medium text-muted-foreground">Mapped outlines</dd>
+                  </div>
+                  <div>
+                    <dt className="text-2xl font-semibold tabular-nums text-secondary">{totalUnmappedParcels}</dt>
+                    <dd className="mt-1 text-xs font-medium text-muted-foreground">Records without geometry</dd>
+                  </div>
+                </dl>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Lot status, price, dimensions and classifications have not been approved against the sales register.
+                </p>
+              </section>
+            )}
+          </aside>
+        ) : null}
       </div>
 
-      {inquiryLot && payload && enableInquiry ? (
+      {inquiryLot?.public_ref && payload && enableInquiry ? (
         <PublicInquiryModal
           tenantSlug={payload.tenant.slug}
           tenantName={payload.branding.company_name || payload.tenant.name}
-          lotId={inquiryLot.id}
+          lotRef={inquiryLot.public_ref}
           lotNumber={inquiryLot.lot_number}
           waitlist={inquiryWaitlist}
           onClose={() => {

@@ -5,7 +5,7 @@ const DEMO_URL = "/embed/demo?demo=1";
 /** Screen-space centre of the nth hit-layer polygon (fill=transparent). */
 async function hitCenter(page: Page, index: number): Promise<{ x: number; y: number }> {
   return page.evaluate((i) => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const polys = [...svg.querySelectorAll('polygon[fill="transparent"]')];
     const poly = polys[i] as SVGPolygonElement | undefined;
@@ -21,7 +21,7 @@ async function hitCenter(page: Page, index: number): Promise<{ x: number; y: num
 /** Screen-space centre of the first hit polygon currently inside the viewport. */
 async function hitCenterVisible(page: Page): Promise<{ x: number; y: number }> {
   return page.evaluate(() => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const rect = svg.getBoundingClientRect();
     const polys = [...svg.querySelectorAll('polygon[fill="transparent"]')];
@@ -39,7 +39,7 @@ async function hitCenterVisible(page: Page): Promise<{ x: number; y: number }> {
 }
 async function hitEdge(page: Page, index: number): Promise<{ x: number; y: number }> {
   return page.evaluate((i) => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const poly = [...svg.querySelectorAll('polygon[fill="transparent"]')][i] as SVGPolygonElement;
     const box = poly.getBBox();
@@ -51,7 +51,7 @@ async function hitEdge(page: Page, index: number): Promise<{ x: number; y: numbe
 }
 
 async function lotCount(page: Page): Promise<number> {
-  return page.evaluate(() => document.querySelectorAll('main svg polygon[fill="transparent"]').length);
+  return page.evaluate(() => document.querySelectorAll('main svg[role=group] polygon[fill="transparent"]').length);
 }
 
 function selectedLotCard(page: Page): Locator {
@@ -61,7 +61,7 @@ function selectedLotCard(page: Page): Locator {
 /** Screen-space centre of the hit polygon for a lot number (e.g. "S-057"). */
 async function lotCenter(page: Page, lotNumber: string): Promise<{ x: number; y: number }> {
   return page.evaluate((lot) => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const poly = [...svg.querySelectorAll('polygon[fill="transparent"]')].find((p) =>
       (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lot} `),
@@ -81,13 +81,145 @@ test.beforeEach(async ({ page }) => {
   // that settles misses (this bit us — real users never click that fast,
   // but tests do).
   await expect
-    .poll(() => page.locator("main svg").first().first().getAttribute("viewBox"), { timeout: 15000 })
+    .poll(() => page.locator("main svg[role=group]").first().first().getAttribute("viewBox"), { timeout: 15000 })
     .not.toBe("0 0 100 100");
 });
 
+test("records synthetic map-load evidence under a provisional good-4G profile", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.startsWith("webkit"), "The network/CPU throttle in this probe requires Chromium CDP.");
+  await page.goto("about:blank");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.enable");
+  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+  await cdp.send("Network.emulateNetworkConditions", {
+    offline: false,
+    latency: 50,
+    downloadThroughput: 1_500_000,
+    uploadThroughput: 750_000,
+    connectionType: "cellular4g",
+  });
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+
+  try {
+    await page.goto(DEMO_URL, { waitUntil: "load" });
+    await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
+    await page.waitForFunction(() => {
+      const image = document.querySelector("main svg[role=group] image");
+      if (!image) return false;
+      const imageUrl = new URL(image.getAttribute("href") ?? "", location.href).href;
+      return performance.getEntriesByType("resource").some((entry) => entry.name === imageUrl && entry.responseEnd > 0);
+    });
+
+    const report = await page.evaluate((project) => {
+      const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
+      const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+      const sameOriginResources = resources.filter((entry) => new URL(entry.name).origin === location.origin);
+      const image = sameOriginResources.find((entry) => entry.name.includes("masterplan_background.webp"));
+      const resourceBytes = sameOriginResources.reduce((sum, entry) => sum + entry.transferSize, 0);
+      const largestResources = sameOriginResources
+        .map((entry) => ({ path: new URL(entry.name).pathname, transferBytes: entry.transferSize }))
+        .sort((left, right) => right.transferBytes - left.transferBytes)
+        .slice(0, 12);
+      return {
+        fixture: "e2e/fixtures/synthetic",
+        serveMode: "Vite development server (unbundled module graph)",
+        project,
+        viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+        profile: {
+          downloadBytesPerSecond: 1_500_000,
+          uploadBytesPerSecond: 750_000,
+          roundTripLatencyMs: 50,
+          cpuSlowdown: 4,
+          cacheDisabled: true,
+        },
+        usefulMapReadyMs: Number(performance.now().toFixed(1)),
+        firstContentfulPaintMs: Number(
+          (performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? 0).toFixed(1),
+        ),
+        domContentLoadedMs: Number(navigation.domContentLoadedEventEnd.toFixed(1)),
+        loadEventEndMs: Number(navigation.loadEventEnd.toFixed(1)),
+        navigationTransferBytes: navigation.transferSize,
+        sameOriginResourceTransferBytes: resourceBytes,
+        totalTransferBytes: navigation.transferSize + resourceBytes,
+        largestResources,
+        background: image
+          ? {
+              transferBytes: image.transferSize,
+              encodedBodyBytes: image.encodedBodySize,
+              responseEndMs: Number(image.responseEnd.toFixed(1)),
+            }
+          : null,
+        renderedHitPolygons: document.querySelectorAll('main svg[role=group] polygon[fill="transparent"]').length,
+        interpretation: "Map-ready is measured after the background response completes and more than 50 lot hit polygons render.",
+        scope: "Local Vite dev server and synthetic fixture only; the unbundled module graph distorts transfer/timing. Not a phone, hosted payload, or release measurement.",
+      };
+    }, testInfo.project.name);
+
+    await testInfo.attach("synthetic-map-load-baseline.json", {
+      body: JSON.stringify(report, null, 2),
+      contentType: "application/json",
+    });
+    console.info(`[MAP_LOAD_BASELINE] ${JSON.stringify(report)}`);
+    expect(report.renderedHitPolygons).toBeGreaterThan(50);
+    expect(report.background).not.toBeNull();
+  } finally {
+    await cdp.detach();
+  }
+});
+
 test("demo map loads lots over the background", async ({ page }) => {
-  await expect(page.locator("main svg image")).toBeAttached();
+  await expect(page.locator("main svg[role=group] image")).toBeAttached();
   expect(await lotCount(page)).toBeGreaterThan(50);
+});
+
+test("demo preview shows the sample and provenance labels without phone overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  const sampleLabel = page.getByText("Proof of concept, sample data", { exact: true });
+  const provenanceLabel = page.getByText("traced from sales plat", { exact: true });
+  await expect(sampleLabel).toBeVisible();
+  await expect(provenanceLabel).toBeVisible();
+
+  const [sampleBounds, provenanceBounds] = await Promise.all(
+    [sampleLabel, provenanceLabel].map((label) => label.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: rect.right,
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+      };
+    })),
+  );
+  for (const bounds of [sampleBounds, provenanceBounds]) {
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
+    expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
+  }
+});
+
+test("synthetic preview makes no business API calls or inquiry offers", async ({ page }) => {
+  await page.goto("about:blank");
+  const businessApiRequests: string[] = [];
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (/\/(?:functions|rest)\/v1\//.test(path)) businessApiRequests.push(`${request.method()} ${path}`);
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  await page.goto(DEMO_URL);
+  await expect.poll(() => lotCount(page), { timeout: 30000 }).toBeGreaterThan(50);
+  const point = await hitCenter(page, 5);
+  await page.mouse.click(point.x, point.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Inquire About Lot|Join Waitlist for Lot/ })).toHaveCount(0);
+  expect(businessApiRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
 
 test("project route aliases the default project", async ({ page }) => {
@@ -101,6 +233,265 @@ test("project route aliases the default project", async ({ page }) => {
   expect(await lotCount(page)).toBe(aliased);
 });
 
+test("empty project data shows the published-lots empty state", async ({ page }) => {
+  await page.route("**/demo-map/lots.json", (route) => route.fulfill({ json: [] }));
+  await page.goto(DEMO_URL);
+
+  await expect(page.getByText("No lots are published for this project yet.", { exact: true })).toBeVisible();
+  await expect.poll(() => lotCount(page)).toBe(0);
+});
+
+test("map failure offers a retry that recovers from the local fixture", async ({ page }) => {
+  let lotRequests = 0;
+  let retryAllowed = false;
+  await page.route("**/demo-map/lots.json", (route) => {
+    lotRequests += 1;
+    return retryAllowed ? route.continue() : route.fulfill({ status: 503, body: "temporary fixture failure" });
+  });
+  await page.goto(DEMO_URL);
+
+  await expect(page.getByText("Map unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText("Demo map files not found.", { exact: true })).toBeVisible();
+  retryAllowed = true;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect.poll(() => lotCount(page)).toBeGreaterThan(50);
+  expect(lotRequests).toBeGreaterThan(2);
+});
+
+test("search, tier and availability filters clear cleanly; lot deep links select", async ({ page }) => {
+  const allLots = await lotCount(page);
+  const search = page.getByLabel("Search lots");
+
+  await search.fill("S-010");
+  await expect.poll(() => lotCount(page)).toBe(1);
+  await search.fill("");
+  await expect.poll(() => lotCount(page)).toBe(allLots);
+
+  await page.getByRole("button", { name: "Tier colours" }).click();
+  const tierToggle = page.getByRole("button", { name: /Tiers/ });
+  if ((await tierToggle.getAttribute("aria-expanded")) !== "true") await tierToggle.click();
+  const premiumTier = page.getByRole("button", { name: "Premium", exact: true });
+  await expect(premiumTier).toBeVisible();
+  await premiumTier.click();
+  await expect.poll(() => lotCount(page)).toBeLessThan(allLots);
+  await premiumTier.click();
+  await expect.poll(() => lotCount(page)).toBe(allLots);
+
+  await page.getByRole("button", { name: "Available Only" }).click();
+  await expect.poll(() => lotCount(page)).toBeLessThan(allLots);
+  await search.fill("S-059"); // Reserved in the fixture: excluded by Available Only.
+  await expect(page.getByText("No lots match these filters.")).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters and search" }).click();
+  await expect.poll(() => lotCount(page)).toBe(allLots);
+
+  await page.goto("/embed/demo?demo=1&lot=S-010");
+  await expect(selectedLotCard(page)).toBeVisible();
+  await expect(selectedLotCard(page)).toContainText("Lot S-010");
+});
+
+test("synthetic buyer-map overlay keeps tier and status palettes exclusive and avoids urgency", async ({ page }) => {
+  const statusPalette = new Set(["#22c55e", "#f59e0b", "#ef4444"]);
+  const statusStrokePalette = new Set(["#15803d", "#b45309", "#b91c1c"]);
+  const mapMarkers = page.locator('main svg[role=group] > g[aria-hidden="true"] > g[data-lot-status]');
+  const lotOutlines = page.locator('svg polygon[data-lot-key][fill="none"]');
+
+  await page.goto(`${DEMO_URL}&lot=S-010`);
+  const details = page.getByRole("region", { name: "Details for Lot S-010" });
+  await expect(details).toBeVisible();
+  await expect(page.locator('[aria-label="Map legend"]')).toBeVisible();
+
+  const statusColors = await mapMarkers.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""))],
+  );
+  expect(statusColors).toEqual(expect.arrayContaining([...statusPalette]));
+  expect(statusColors.every((color) => statusPalette.has(color))).toBe(true);
+  const statusShapes = await mapMarkers.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => `${element.getAttribute("data-lot-status")}:${element.getAttribute("data-marker-shape")}`))].sort(),
+  );
+  expect(statusShapes).toEqual(["Available:circle", "Reserved:diamond", "Sold:square"]);
+  const legendMarkerShapes = await page.locator('[aria-label="Map legend"] svg > *').evaluateAll((elements) =>
+    elements.map((element) => element.tagName.toLowerCase()),
+  );
+  expect(legendMarkerShapes.sort()).toEqual(["circle", "polygon", "polygon"]);
+  const statusStrokeColors = await lotOutlines.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => (element as SVGPolygonElement).getAttribute("stroke")?.toLowerCase() ?? ""))],
+  );
+  expect(statusStrokeColors.every((color) => statusStrokePalette.has(color))).toBe(true);
+
+  await page.getByRole("button", { name: "Tier colours", exact: true }).click();
+  await expect(page.locator('[aria-label="Map legend"]')).toHaveCount(0);
+  await expect(details.getByText("Available", { exact: true })).toHaveClass(/bg-muted/);
+
+  const tiersResponse = await page.request.get("/demo-map/tiers.json");
+  expect(tiersResponse.ok()).toBe(true);
+  const tiersPayload = (await tiersResponse.json()) as { tiers: Record<string, { legend: string }> };
+  const tierPalette = new Set(Object.values(tiersPayload.tiers).map(({ legend }) => legend.toLowerCase()));
+  const tierColors = await mapMarkers.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => element.firstElementChild?.getAttribute("fill")?.toLowerCase() ?? ""))],
+  );
+  expect(tierColors.length).toBeGreaterThan(0);
+  expect(tierColors.every((color) => tierPalette.has(color))).toBe(true);
+  expect(tierColors.some((color) => statusPalette.has(color))).toBe(false);
+  const tierShapes = await mapMarkers.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => element.getAttribute("data-marker-shape")))],
+  );
+  expect(tierShapes).toEqual(["circle"]);
+  const tierStrokeColors = await lotOutlines.evaluateAll((elements) =>
+    [...new Set(elements.map((element) => (element as SVGPolygonElement).getAttribute("stroke")?.toLowerCase() ?? ""))],
+  );
+  expect(tierStrokeColors.every((color) => tierPalette.has(color))).toBe(true);
+
+  await expect(page.getByText(/only\s+\d+\s+left|ends\s+in\s+\d+|limited[- ]time|in demand/i)).toHaveCount(0);
+});
+
+test("keyboard lot search opens details and exposes a keyboard lot action", async ({ page }) => {
+  const search = page.getByLabel("Search lots");
+  await search.fill("S-010");
+
+  const result = page.getByRole("button", { name: /^Show details for Lot S-010/ });
+  await expect(result).toBeVisible();
+  await search.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(result).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(search).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(result).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  const details = page.getByRole("region", { name: "Details for Lot S-010" });
+  await expect(details).toBeFocused();
+  const zoomToLot = details.getByRole("button", { name: /Zoom/ });
+  await expect(zoomToLot).toBeVisible();
+});
+
+test("buyer-map search and filter controls keep names and visible keyboard focus", async ({ page }) => {
+  const search = page.getByRole("textbox", { name: "Search lots" });
+  const statusView = page.getByRole("button", { name: "Status colours", exact: true });
+  const hasVisibleFocus = (locator: Locator) =>
+    locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const outlineVisible = style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0;
+      return element.matches(":focus-visible") && (outlineVisible || style.boxShadow !== "none");
+    });
+
+  await page.keyboard.press("Tab");
+  await expect(search).toBeFocused();
+  expect(await hasVisibleFocus(search)).toBe(true);
+
+  // Keep the keyboard modality established by the first Tab, but focus the
+  // next control directly: macOS WebKit can skip buttons during Tab traversal
+  // unless the host OS enables full keyboard access.
+  await statusView.focus();
+  await expect(statusView).toBeFocused();
+  expect(await hasVisibleFocus(statusView)).toBe(true);
+  await expect(page.getByText("Lot availability", { exact: true })).toBeVisible();
+  await expect(page.getByText("Wamule", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Tier colours", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All Lots", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Available Only", exact: true })).toBeVisible();
+});
+
+test("keyboard map navigation moves between nearby lots and opens focused details", async ({ page }) => {
+  const mapLots = page.getByRole("listbox", { name: "Lots on the map" });
+  await expect(mapLots).toBeVisible();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await mapLots.focus();
+  const keyboardFocusRing = page.locator('svg > g[aria-hidden="true"] polygon[stroke="#111827"]');
+  await expect(keyboardFocusRing).toHaveCount(1);
+  const [ringBounds, mapBounds] = await Promise.all([
+    keyboardFocusRing.boundingBox(),
+    page.getByRole("group", { name: "Interactive lot map" }).boundingBox(),
+  ]);
+  expect(ringBounds).not.toBeNull();
+  expect(mapBounds).not.toBeNull();
+  expect(ringBounds!.x + ringBounds!.width / 2).toBeGreaterThanOrEqual(mapBounds!.x);
+  expect(ringBounds!.x + ringBounds!.width / 2).toBeLessThanOrEqual(mapBounds!.x + mapBounds!.width);
+  expect(ringBounds!.y + ringBounds!.height / 2).toBeGreaterThanOrEqual(mapBounds!.y);
+  expect(ringBounds!.y + ringBounds!.height / 2).toBeLessThanOrEqual(mapBounds!.y + mapBounds!.height);
+
+  const initialOptionId = await mapLots.getAttribute("aria-activedescendant");
+  expect(initialOptionId).toBeTruthy();
+  await mapLots.press("ArrowRight");
+  const activeOptionId = await mapLots.getAttribute("aria-activedescendant");
+  expect(activeOptionId).toBeTruthy();
+  expect(activeOptionId).not.toBe(initialOptionId);
+  const activeOption = page.locator(`[id="${activeOptionId}"]`);
+  const activeLabel = await activeOption.getAttribute("aria-label");
+  const lotNumber = activeLabel?.match(/^Lot ([^,]+)/)?.[1];
+  expect(lotNumber).toBeTruthy();
+
+  await mapLots.press("Escape");
+  await expect(page.getByLabel("Search lots")).toBeFocused();
+  await mapLots.focus();
+  await mapLots.press("Space");
+  const details = page.getByRole("region", { name: `Details for Lot ${lotNumber}` });
+  await expect(details).toBeFocused();
+  await expect(details).toContainText(`Lot ${lotNumber}`);
+  await details.getByRole("button", { name: `Close details for Lot ${lotNumber}` }).click();
+  await mapLots.focus();
+  await mapLots.press("Enter");
+  await expect(details).toBeFocused();
+});
+
+test("mobile lot search results stay fully on screen", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  const search = page.getByLabel("Search lots");
+  const colourView = page.getByRole("group", { name: "Colour view" });
+  const lotFilter = page.getByRole("group", { name: "Lot filter" });
+  const [colourBounds, filterBounds] = await Promise.all([colourView.boundingBox(), lotFilter.boundingBox()]);
+  expect(colourBounds).not.toBeNull();
+  expect(filterBounds).not.toBeNull();
+  expect(Math.abs(colourBounds!.y - filterBounds!.y)).toBeLessThan(2);
+  await expect(page.getByRole("button", { name: "Tier colours", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Available Only", exact: true })).toBeVisible();
+  const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(documentWidth).toBeLessThanOrEqual(320);
+
+  await search.fill("S-010");
+  const results = page.getByRole("region", { name: "Lot search results" });
+  await expect(results).toBeVisible();
+  const bounds = await results.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, width: rect.width, viewport: window.innerWidth };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.viewport);
+  expect(bounds.width).toBeGreaterThan(0);
+  const searchHeight = await search.evaluate((element) => element.getBoundingClientRect().height);
+  const zoomHeight = await page.getByRole("button", { name: "Zoom in" }).evaluate((element) => element.getBoundingClientRect().height);
+  expect(searchHeight).toBeGreaterThanOrEqual(44);
+  expect(zoomHeight).toBeGreaterThanOrEqual(44);
+});
+
+test("tier-color view keeps the selected lot status badge neutral and readable", async ({ page }) => {
+  await page.getByRole("button", { name: "Tier colours" }).click();
+  const point = await hitCenter(page, 5);
+  await page.mouse.click(point.x, point.y);
+  const details = page.getByRole("region", { name: /^Details for Lot/ });
+  await expect(details).toBeVisible();
+  await expect(page.locator('[aria-label="Map legend"]')).toHaveCount(0);
+  const badge = details.locator("span.rounded-full");
+  await expect(badge).toBeVisible();
+  const result = await badge.evaluate((element) => {
+    const parse = (value: string) => value.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
+    const luminance = (value: string) => {
+      const [r, g, b] = parse(value).map((channel) => {
+        const c = channel / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const color = getComputedStyle(element).color;
+    const background = getComputedStyle(element).backgroundColor;
+    const [a, b] = [luminance(color), luminance(background)].sort((left, right) => right - left);
+    return { background, ratio: (a + 0.05) / (b + 0.05) };
+  });
+  expect(["rgb(34, 197, 94)", "rgb(245, 158, 11)", "rgb(239, 68, 68)"]).not.toContain(result.background);
+  expect(result.ratio).toBeGreaterThanOrEqual(4.5);
+});
+
 test("mouse click selects a lot and locks the card", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
@@ -108,7 +499,7 @@ test("mouse click selects a lot and locks the card", async ({ page }) => {
 });
 
 test("click selects after a pan (drag then click)", async ({ page }) => {
-  const box = await page.locator("main svg").first().boundingBox();
+  const box = await page.locator("main svg[role=group]").first().boundingBox();
   if (!box) throw new Error("no svg box");
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
@@ -119,6 +510,34 @@ test("click selects after a pan (drag then click)", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
+});
+
+test("dragging the map pans without selecting the lot under the pointer", async ({ page }) => {
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const before = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
+  const { x, y } = await hitCenterVisible(page);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 120, y + 80, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(selectedLotCard(page)).toHaveCount(0);
+  await expect.poll(() => page.locator("main svg[role=group]").first().getAttribute("viewBox")).not.toBe(before);
+});
+
+test("reset zoom restores the original map window after zooming and panning", async ({ page }) => {
+  const map = page.locator("main svg[role=group]").first();
+  const initialView = await map.getAttribute("viewBox");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const { x, y } = await hitCenterVisible(page);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 100, y + 50, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => map.getAttribute("viewBox")).not.toBe(initialView);
+  await page.getByRole("button", { name: "Reset zoom" }).click();
+  await expect.poll(() => map.getAttribute("viewBox")).toBe(initialView);
 });
 
 test("hit-layer edge click still selects", async ({ page }) => {
@@ -142,11 +561,11 @@ test("selected lot draws a thick outline with no fill", async ({ page }) => {
   await expect(selectedLotCard(page)).toBeVisible();
   const lot = /Lot (\S+)/.exec((await selectedLotCard(page).textContent()) ?? "")?.[1] ?? "";
   const stroke = await page.evaluate((lotNumber) => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     const id = [...(svg?.querySelectorAll('polygon[fill="transparent"]') ?? [])].find((p) =>
       (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lotNumber} `),
-    )?.getAttribute("data-lot-id");
-    const visible = svg?.querySelector(`polygon[fill="none"][data-lot-id="${id}"]`);
+    )?.getAttribute("data-lot-key");
+    const visible = svg?.querySelector(`polygon[fill="none"][data-lot-key="${id}"]`);
     return {
       width: visible?.getAttribute("stroke-width"),
       fill: visible?.getAttribute("fill"),
@@ -202,10 +621,10 @@ test("Zoom to lot button zooms to the lot (mouse)", async ({ page }) => {
   await expect(selectedLotCard(page)).toBeVisible();
   // Selection opens the card only — no inquiry modal on tap.
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  const before = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
   await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
   await expect
-    .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
+    .poll(async () => page.locator("main svg[role=group]").first().getAttribute("viewBox"), { timeout: 5000 })
     .not.toBe(before);
   await expect(selectedLotCard(page)).toBeVisible();
 });
@@ -215,10 +634,10 @@ test("Zoom to lot button works with touch", async ({ page }, testInfo) => {
   const pt = await hitCenter(page, 5);
   await page.touchscreen.tap(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
-  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  const before = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
   await page.getByRole("button", { name: /^Zoom to Lot/ }).tap();
   await expect
-    .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
+    .poll(async () => page.locator("main svg[role=group]").first().getAttribute("viewBox"), { timeout: 5000 })
     .not.toBe(before);
 });
 
@@ -227,10 +646,10 @@ test("Zoom to lot works in fullscreen", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
-  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  const before = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
   await page.getByRole("button", { name: /^Zoom to Lot/ }).click();
   await expect
-    .poll(async () => page.locator("main svg").first().getAttribute("viewBox"), { timeout: 5000 })
+    .poll(async () => page.locator("main svg[role=group]").first().getAttribute("viewBox"), { timeout: 5000 })
     .not.toBe(before);
   await expect(selectedLotCard(page)).toBeVisible();
 });
@@ -243,7 +662,7 @@ test("selecting a lot behind the detail card pans it into view", async ({ page }
   // selection must pan until uncovered; elsewhere it is already visible and
   // this asserts the invariant (visible, zoom unchanged).
   const lotId = await page.evaluate(() => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("map svg not found");
     const rect = svg.getBoundingClientRect();
     let best: { id: number; y: number } | null = null;
@@ -256,29 +675,29 @@ test("selecting a lot behind the detail card pans it into view", async ({ page }
       if (pt.x < rect.left + 4 || pt.x > rect.right - 4 || pt.y < rect.top + 4 || pt.y > rect.bottom - 4) continue;
       // Keep clear of the floating zoom-control column (bottom-right).
       if (pt.x > rect.right - 70 && pt.y > rect.bottom - 180) continue;
-      if (!best || pt.y > best.y) best = { id: Number(el.getAttribute("data-lot-id")), y: pt.y };
+      if (!best || pt.y > best.y) best = { id: Number(el.getAttribute("data-lot-key")), y: pt.y };
     }
     if (!best) throw new Error("no visible lot found");
     return best.id;
   });
   const center = await page.evaluate((id) => {
-    const el = document.querySelector(`main svg polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+    const el = document.querySelector(`main svg[role=group] polygon[data-lot-key="${id}"]`) as SVGPolygonElement | null;
     if (!el?.getScreenCTM()) throw new Error("lot not found");
     const box = el.getBBox();
     const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(el.getScreenCTM()!);
     return { x: pt.x, y: pt.y };
   }, lotId);
-  const before = await page.locator("main svg").first().getAttribute("viewBox");
+  const before = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
   await page.mouse.click(center.x, center.y);
   await expect(selectedLotCard(page)).toBeVisible();
   // Zoom must not have changed (reveal pans only): viewBox width encodes zoom.
-  const viewBoxWidth = async () => (await page.locator("main svg").first().getAttribute("viewBox"))?.split(" ")[2];
+  const viewBoxWidth = async () => (await page.locator("main svg[role=group]").first().getAttribute("viewBox"))?.split(" ")[2];
   expect(await viewBoxWidth()).toBe(before.split(" ")[2]);
   await expect
     .poll(
       () =>
         page.evaluate((id) => {
-          const el = document.querySelector(`main svg polygon[data-lot-id="${id}"]`) as SVGPolygonElement | null;
+          const el = document.querySelector(`main svg[role=group] polygon[data-lot-key="${id}"]`) as SVGPolygonElement | null;
           if (!el?.getScreenCTM()) return "no-lot";
           const box = el.getBBox();
           const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(
@@ -308,6 +727,38 @@ test("fullscreen lot click selects", async ({ page }) => {
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
+  await page.getByRole("button", { name: "✕ Close" }).click();
+  await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+  await expect(selectedLotCard(page)).toBeVisible();
+});
+
+test("mobile fullscreen exit control stays clear of the selected lot card", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.use.hasTouch, "mobile layout needs a touch viewport");
+  await page.getByRole("button", { name: "Enter fullscreen" }).tap();
+  const point = await hitCenter(page, 5);
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(selectedLotCard(page)).toBeVisible();
+
+  const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen" });
+  await expect(exitFullscreen).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const control = document.querySelector('button[aria-label="Exit fullscreen"]');
+          const card = document.querySelector('[role="region"][aria-label^="Details for Lot"]');
+          if (!control || !card) return false;
+          const a = control.getBoundingClientRect();
+          const b = card.getBoundingClientRect();
+          return a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom;
+        }),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+
+  await exitFullscreen.tap();
+  await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+  await expect(selectedLotCard(page)).toBeVisible();
 });
 
 test("lot numbers show on hover/selection and fit inside their lots", async ({ page }, testInfo) => {
@@ -318,7 +769,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   // raster already prints every number); the hit layer stays active for all.
   async function screenCenterOf(id: number): Promise<{ x: number; y: number }> {
     return page.evaluate((lotId) => {
-      const el = document.querySelector(`main svg polygon[data-lot-id="${lotId}"]`) as SVGPolygonElement | null;
+      const el = document.querySelector(`main svg[role=group] polygon[data-lot-key="${lotId}"]`) as SVGPolygonElement | null;
       if (!el?.getScreenCTM()) throw new Error("lot not found");
       const box = el.getBBox();
       const pt = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(el.getScreenCTM()!);
@@ -330,9 +781,9 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   async function labelFits(id: number, lot: string): Promise<{ ok: boolean; detail: string }> {
     return page.evaluate(
       ({ lotId, lotNumber }) => {
-        const svg = document.querySelector("main svg") as SVGSVGElement | null;
+        const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
         if (!svg) throw new Error("no svg");
-        const poly = svg.querySelector(`polygon[data-lot-id="${lotId}"]`) as SVGPolygonElement | null;
+        const poly = svg.querySelector(`polygon[data-lot-key="${lotId}"]`) as SVGPolygonElement | null;
         const label = [...svg.querySelectorAll("text")].find((t) => t.textContent === lotNumber) as
           | SVGTextElement
           | undefined;
@@ -358,20 +809,20 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   }
 
   // No hover/selection yet: zero overlay labels (status dots still show).
-  await expect(page.locator("main svg text")).toHaveCount(0);
-  expect(await page.locator("main svg circle").count()).toBeGreaterThan(50);
-  await page.screenshot({ path: "test-results/labels-1x.png" });
+  await expect(page.locator("main svg[role=group] text")).toHaveCount(0);
+  expect(await page.locator("main svg[role=group] circle").count()).toBeGreaterThan(50);
+  await page.screenshot({ path: testInfo.outputPath("labels-1x.png") });
 
   // Sample by geometry at 1x (full view): smallest (tiny), largest (huge).
   const sample = await page.evaluate(() => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("no svg");
     const rows = [...svg.querySelectorAll('polygon[fill="transparent"]')].map((p) => {
       const el = p as SVGPolygonElement;
       const b = el.getBBox();
       const title = el.querySelector("title")?.textContent ?? "";
       return {
-        id: Number(el.getAttribute("data-lot-id")),
+        id: Number(el.getAttribute("data-lot-key")),
         lot: /Lot (\S+)/.exec(title)?.[1] ?? "",
         area: b.width * b.height,
       };
@@ -386,7 +837,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   await page.getByRole("button", { name: "Zoom in" }).click();
   await page.waitForTimeout(300);
   const visible2x = await page.evaluate(() => {
-    const svg = document.querySelector("main svg") as SVGSVGElement | null;
+    const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
     if (!svg) throw new Error("no svg");
     const rect = svg.getBoundingClientRect();
     const rows = [...svg.querySelectorAll('polygon[fill="transparent"]')]
@@ -398,7 +849,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
         const pt = new DOMPoint(b.x + b.width / 2, b.y + b.height / 2).matrixTransform(ctm);
         const title = el.querySelector("title")?.textContent ?? "";
         return {
-          id: Number(el.getAttribute("data-lot-id")),
+          id: Number(el.getAttribute("data-lot-key")),
           lot: /Lot (\S+)/.exec(title)?.[1] ?? "",
           area: b.width * b.height,
           onScreen: pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom,
@@ -412,14 +863,14 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   for (const s of [visible2x.median, visible2x.largest]) {
     const pt = await screenCenterOf(s.id);
     await page.mouse.move(pt.x, pt.y);
-    await expect(page.locator("main svg text", { hasText: s.lot })).toBeVisible();
+    await expect(page.locator("main svg[role=group] text", { hasText: s.lot })).toBeVisible();
     const fit = await labelFits(s.id, s.lot);
     expect(fit.ok, `2x hover label fit for ${s.lot}: ${fit.detail}`).toBe(true);
   }
   {
     const pt = await screenCenterOf(visible2x.median.id);
     await page.mouse.move(pt.x, pt.y);
-    await page.screenshot({ path: "test-results/labels-2x.png" });
+    await page.screenshot({ path: testInfo.outputPath("labels-2x.png") });
   }
 
   // Screen-size cap: the huge lot via Zoom to Lot must not render at its
@@ -440,7 +891,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
       await page.waitForTimeout(300);
     }
     const m = await page.evaluate((lotNumber) => {
-      const svg = document.querySelector("main svg") as SVGSVGElement | null;
+      const svg = document.querySelector("main svg[role=group]") as SVGSVGElement | null;
       const label = [...(svg?.querySelectorAll("text") ?? [])].find((t) => t.textContent === lotNumber) as
         | SVGTextElement
         | undefined;
@@ -466,9 +917,9 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     const cardText = (await selectedLotCard(page).textContent()) ?? "";
     const lot = /Lot (\S+)/.exec(cardText)?.[1] ?? "";
     const id = await page.evaluate((lotNumber) => {
-      const els = [...document.querySelectorAll('main svg polygon[fill="transparent"]')];
+      const els = [...document.querySelectorAll('main svg[role=group] polygon[fill="transparent"]')];
       const hit = els.find((p) => (p.querySelector("title")?.textContent ?? "").includes(`Lot ${lotNumber} `));
-      return hit ? Number((hit as SVGPolygonElement).getAttribute("data-lot-id")) : -1;
+      return hit ? Number((hit as SVGPolygonElement).getAttribute("data-lot-key")) : -1;
     }, lot);
     return { id, lot };
   }
@@ -488,7 +939,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     const pt = await screenCenterOf(sample.smallest.id);
     await page.mouse.click(pt.x, pt.y);
     await expect(selectedLotCard(page)).toBeVisible();
-    expect(await page.locator("main svg text").count()).toBe(0);
+    expect(await page.locator("main svg[role=group] text").count()).toBe(0);
   }
   const tiny = await selectedLot();
 
@@ -498,7 +949,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     try {
       await expect
         .poll(async () => {
-          const vb = await page.locator("main svg").first().getAttribute("viewBox");
+          const vb = await page.locator("main svg[role=group]").first().getAttribute("viewBox");
           const w = Number(vb?.split(" ")[2]);
           if (w <= maxWidth) return w;
           await page.mouse.wheel(0, -240);
@@ -515,7 +966,7 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
   // Wheel-zoom holds the cursor (and the lot) put; buttons would recenter.
   if (canWheel) {
     await wheelZoomTo(51);
-    await expect(page.locator("main svg text", { hasText: tiny.lot })).toHaveCount(0);
+    await expect(page.locator("main svg[role=group] text", { hasText: tiny.lot })).toHaveCount(0);
   }
 
   // ~4x via Zoom to Lot (exact fit+center on every engine): hover the tiny
@@ -527,17 +978,17 @@ test("lot numbers show on hover/selection and fit inside their lots", async ({ p
     const pt = await screenCenterOf(tiny.id);
     await page.mouse.move(pt.x, pt.y);
   }
-  await expect(page.locator("main svg text", { hasText: tiny.lot })).toBeVisible();
+  await expect(page.locator("main svg[role=group] text", { hasText: tiny.lot })).toBeVisible();
   {
     const fit = await labelFits(tiny.id, tiny.lot);
     expect(fit.ok, `4x label fit for ${tiny.lot}: ${fit.detail}`).toBe(true);
   }
-  await page.screenshot({ path: "test-results/labels-4x.png" });
+  await page.screenshot({ path: testInfo.outputPath("labels-4x.png") });
 
   // Selection shows no overlay text (the number lives in the card, never
   // on top of baked plat text): move away, zero labels remain.
   await page.mouse.move(5, 5);
-  await expect(page.locator("main svg text")).toHaveCount(0);
+  await expect(page.locator("main svg[role=group] text")).toHaveCount(0);
 });
 
 test("tap selects a lot (touch)", async ({ page }, testInfo) => {

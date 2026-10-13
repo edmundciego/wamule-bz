@@ -224,7 +224,7 @@ test("re-run preserves confirmed/locked (model + store round-trip)", () => {
   assert.equal(store.load("t1", "p1", "t1").state.lots.a.number, "101");
 });
 
-test("two-signal rule + bulk-accept sample review", () => {
+test("two-signal rule + bulk accept stays unavailable without approved area policy", () => {
   const s = createInitialState({
     lots: Array.from({ length: 20 }, (_, i) => ({
       id: `l${i}`,
@@ -245,20 +245,12 @@ test("two-signal rule + bulk-accept sample review", () => {
   s.lots.l0.hasUnit = true;
   s.lots.l0.suspect = [];
   confirmLot(s, { actor: "alice", id: "l0" });
-  // Bulk flow: proposal excludes l0 (now confirmed); sample is deterministic.
-  // Slice 1.6 rule: <20 qualifying lots -> sample is ALL of the proposal
-  // (larger stratified >=20 flows live in bulk-accept-slice16.test.mjs).
+  // OCR + adjacency alone are insufficient: no scale/policy means no proposal.
   const { proposal, sample } = proposeBulkAccept(s, 7);
-  assert.equal(proposal.length, 19);
+  assert.deepEqual(proposal, []);
+  assert.deepEqual(sample, []);
   assert.deepEqual(proposeBulkAccept(s, 7).sample, sample); // seeded
-  assert.deepEqual(sample, proposal);
-  // Confirming the rest before the sample is refused.
-  assert.throws(() => bulkConfirmRest(s, { actor: "alice", proposal, sample }), /not manually confirmed/);
-  for (const id of sample) confirmLot(s, { actor: "alice", id });
-  const rest = bulkConfirmRest(s, { actor: "alice", proposal, sample });
-  assert.equal(rest.length, 0); // sample was all; nothing remains
-  const marker = s.lots[sample[0]].confirmed_by;
-  assert.equal(marker?.method, "manual");
+  assert.throws(() => bulkConfirmRest(s, { actor: "alice", proposal, sample }), /area review policy/);
 });
 
 test("undo reverts batches; log survives (pointer semantics)", () => {
