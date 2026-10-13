@@ -1,5 +1,6 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
+import { createSyntheticReviewManifest } from "./e2e/fixtures/map-review-synthetic/create-manifest.mjs";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -7,6 +8,7 @@ const FIXTURE_MIME: Record<string, string> = {
   ".json": "application/json",
   ".png": "image/png",
   ".webp": "image/webp",
+  ".svg": "image/svg+xml",
   ".html": "text/html",
   ".js": "text/javascript",
 };
@@ -113,6 +115,27 @@ function correctionWorkspacePlugin(): Plugin {
       };
       serve("/correct/data", dataDir);
       serve("/correct", appDir);
+      const syntheticReviewDir = resolve(root, "e2e/fixtures/map-review-synthetic");
+      serveRestricted(
+        "/correction-review/synthetic/map",
+        syntheticReviewDir,
+        (relative) => relative === "lots.json" || relative === "masterplan_background.svg",
+      );
+      server.middlewares.use("/correction-review/synthetic/benchmark", (req, res, next) => {
+        if (req.method !== "GET" || req.url?.split("?")[0] !== "/benchmark-manifest.json") return next();
+        try {
+          const source = readFileSync(join(syntheticReviewDir, "masterplan_background.svg"));
+          const lots = readFileSync(join(syntheticReviewDir, "lots.json"));
+          const manifest = createSyntheticReviewManifest(source, lots);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(`${JSON.stringify(manifest)}\n`);
+        } catch {
+          res.statusCode = 500;
+          res.end("Synthetic review fixture could not be built.");
+        }
+      });
       serveRestricted(
         "/correction-review/hopkins/map",
         resolve(root, "out/hopkins-ocr"),

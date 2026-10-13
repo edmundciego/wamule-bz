@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 const REVIEW_URL = "/lots/correct?demo=1&mode=labels";
+const HOPKINS_REVIEW_ASSETS_AVAILABLE =
+  existsSync("out/hopkins-ocr/lots.json") &&
+  existsSync("out/hopkins-ocr/masterplan_background.webp") &&
+  existsSync("out/hopkins-lot-number-benchmark-v1/benchmark-manifest.json");
 
 async function findSelectablePoint(page: import("@playwright/test").Page, label: string): Promise<{ x: number; y: number }> {
   const point = await page.evaluate((targetLabel) => {
@@ -46,6 +51,7 @@ async function findSelectablePoint(page: import("@playwright/test").Page, label:
 }
 
 test.beforeEach(async ({ page }) => {
+  test.skip(!HOPKINS_REVIEW_ASSETS_AVAILABLE, "Optional real-Hopkins verification requires the private local review artifacts.");
   await page.addInitScript(() => {
     if (sessionStorage.getItem("integrated-map-review-reset") !== "yes") {
       localStorage.clear();
@@ -168,14 +174,14 @@ test("review controls remain usable at narrow mobile width without horizontal pa
   await expect(page.getByRole("button", { name: "Confirm printed number" })).toBeVisible();
 });
 
-test("capture desktop and mobile editor review checkpoints (QA-only test data)", async ({ page }) => {
-  const base = "artifacts/persistent-lot-labels-review/integrated-map";
+test("capture desktop and mobile editor review checkpoints (QA-only test data)", async ({ page }, testInfo) => {
+  const screenshot = (name: string) => testInfo.outputPath(`hopkins-${name}.png`);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.screenshot({ path: `${base}-desktop-overview.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("desktop-overview"), fullPage: true });
 
   await page.getByRole("button", { name: "Open current target", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Case S001" })).toBeVisible();
-  await page.screenshot({ path: `${base}-desktop-selected.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("desktop-selected"), fullPage: true });
 
   await page.evaluate(() => {
     const badge = document.createElement("div");
@@ -187,21 +193,21 @@ test("capture desktop and mobile editor review checkpoints (QA-only test data)",
   await page.getByRole("button", { name: "Ambiguous" }).click();
   await expect(page.getByText("1 / 60 decisions recorded")).toBeVisible();
   await page.getByRole("button", { name: "Reset zoom" }).click();
-  await page.screenshot({ path: `${base}-desktop-progress-qa-only.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("desktop-progress-qa-only"), fullPage: true });
 
   await page.getByRole("button", { name: "Flag geometry issue" }).click();
   await page.getByRole("button", { name: "Adjust boundary" }).click();
   await expect(page.getByRole("slider", { name: "Move boundary point 1" })).toBeVisible();
   await page.getByText(/Geometry issue flagged/).scrollIntoViewIfNeeded();
   await expect(page.getByText(/Geometry issue flagged/)).toBeVisible();
-  await page.screenshot({ path: `${base}-desktop-geometry-qa-only.png` });
+  await page.screenshot({ path: screenshot("desktop-geometry-qa-only") });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Discard preview" }).click();
-  await page.screenshot({ path: `${base}-mobile-390-overview.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("mobile-390-overview"), fullPage: true });
   await page.getByRole("button", { name: /Next unresolved/ }).click();
-  await page.screenshot({ path: `${base}-mobile-390-selected.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("mobile-390-selected"), fullPage: true });
 
   await page.setViewportSize({ width: 320, height: 800 });
-  await page.screenshot({ path: `${base}-mobile-320-selected.png`, fullPage: true });
+  await page.screenshot({ path: screenshot("mobile-320-selected"), fullPage: true });
 });

@@ -38,7 +38,10 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
-import { PublicLotMap, type CorrectionMapLayer, type CorrectionReviewStatus } from "../components/public/PublicLotMap";
+import { PublicLotMap } from "../components/public/PublicLotMap";
+import type { CorrectionMapLayer, CorrectionReviewStatus } from "../components/map/correctionMapLayer";
+import { MapPolygon, MapRasterLayer } from "../components/map/MapPolygon";
+import { mapPolygonBounds, mapPolygonToRasterPixels, mapViewBoxHeight } from "../lib/mapGeometry";
 
 /**
  * Slice 1.5 correction workspace inside the authenticated admin app.
@@ -68,6 +71,11 @@ interface WorkspaceData {
   actor: string;
   serverBacked: boolean;
   reviewOnly?: boolean;
+  reviewTitle?: string;
+  reviewFixture?: "hopkins" | "synthetic";
+  reviewBenchmarkBase?: string;
+  reviewBenchmarkId?: string;
+  reviewExpectedCaseCount?: number;
 }
 
 interface BenchmarkCase {
@@ -75,8 +83,8 @@ interface BenchmarkCase {
   detection_id: string;
   polygon_pct: Array<{ x: number; y: number }>;
   crop_box_px: [number, number, number, number];
-  crop_file: string;
-  crop_sha256: string;
+  crop_file: string | null;
+  crop_sha256: string | null;
   [key: string]: unknown;
 }
 
@@ -120,24 +128,36 @@ interface LocalBenchmarkReview {
 export function CorrectionWorkspacePage() {
   const [params] = useSearchParams();
   if (DEMO_PREVIEW && params.get("demo") === "1") {
-    return <DemoWorkspace reviewOnly={params.get("mode") === "labels"} />;
+    return (
+      <DemoWorkspace
+        reviewOnly={params.get("mode") === "labels"}
+        reviewFixture={params.get("fixture") === "synthetic" ? "synthetic" : "hopkins"}
+      />
+    );
   }
   return <AuthedWorkspace />;
 }
 
-function DemoWorkspace({ reviewOnly = false }: { reviewOnly?: boolean }) {
+function DemoWorkspace({
+  reviewOnly = false,
+  reviewFixture = "hopkins",
+}: {
+  reviewOnly?: boolean;
+  reviewFixture?: "hopkins" | "synthetic";
+}) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const base = reviewOnly ? "/correction-review/hopkins/map" : "/correct/data";
+        const reviewBase = reviewFixture === "synthetic" ? "/correction-review/synthetic/map" : "/correction-review/hopkins/map";
+        const base = reviewOnly ? reviewBase : "/correct/data";
         const lotsRes = await fetch(`${base}/lots.json`);
         const tiersRes = reviewOnly ? null : await fetch(`${base}/tiers.json`);
         const unitsRes = reviewOnly ? null : await fetch(`${base}/units.json`);
         if (!lotsRes.ok || (!reviewOnly && (!tiersRes?.ok || !unitsRes?.ok))) {
-          throw new Error(reviewOnly ? "Local Hopkins review source is unavailable." : "Correction fixture not found (dev server must serve /correct/).");
+          throw new Error(reviewOnly ? `Local ${reviewFixture} review source is unavailable.` : "Correction fixture not found (dev server must serve /correct/).");
         }
         const lotsRaw = await lotsRes.json();
         const tiersRaw = reviewOnly ? {} : await tiersRes!.json();
@@ -145,15 +165,24 @@ function DemoWorkspace({ reviewOnly = false }: { reviewOnly?: boolean }) {
         if (cancelled) return;
         const adapted = adaptTiers(tiersRaw);
         setData({
-          tenant: reviewOnly ? "hopkins-grove" : adapted.tenant,
-          project: reviewOnly ? "map-review" : adapted.project,
+          tenant: reviewOnly ? (reviewFixture === "synthetic" ? "synthetic-map" : "hopkins-grove") : adapted.tenant,
+          project: reviewOnly ? (reviewFixture === "synthetic" ? "portable-review-fixture" : "map-review") : adapted.project,
           lots: adaptLots(lotsRaw),
           tiers: adapted.tiers,
           units: adaptUnits(unitsRaw),
-          planUrl: reviewOnly ? `${base}/masterplan_background.webp` : `${base}/plan.png`,
+          planUrl: reviewOnly ? `${base}/${reviewFixture === "synthetic" ? "masterplan_background.svg" : "masterplan_background.webp"}` : `${base}/plan.png`,
           actor: reviewOnly ? "local reviewer" : "operator",
           serverBacked: false,
           reviewOnly,
+          reviewTitle: reviewOnly ? (reviewFixture === "synthetic" ? "Synthetic map review · test fixture" : "Hopkins Grove map review") : undefined,
+          reviewFixture: reviewOnly ? reviewFixture : undefined,
+          reviewBenchmarkBase: reviewOnly
+            ? reviewFixture === "synthetic" ? "/correction-review/synthetic/benchmark" : "/correction-review/hopkins/benchmark"
+            : undefined,
+          reviewBenchmarkId: reviewOnly
+            ? reviewFixture === "synthetic" ? "wamule-map-renderer-synthetic-v1" : "hopkins-grove-lot-number-benchmark-v1"
+            : undefined,
+          reviewExpectedCaseCount: reviewOnly ? reviewFixture === "synthetic" ? 6 : 60 : undefined,
         });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Fixture load failed.");
@@ -163,7 +192,7 @@ function DemoWorkspace({ reviewOnly = false }: { reviewOnly?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [reviewOnly]);
+  }, [reviewOnly, reviewFixture]);
   if (error) {
     return (
       <main className="mx-auto max-w-2xl p-6">
@@ -378,7 +407,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
     <section className={data.serverBacked ? "" : "v2-page-shell"}>
       <div className={cn("v2-page-header", labelReviewMode && "py-3 sm:py-4")}>
         <p className="v2-page-kicker">{labelReviewMode ? "Map review · M2 correction" : "Onboarding · Correct"}</p>
-        <h1 className="v2-page-title">{labelReviewMode ? "Hopkins Grove map review" : "Correction workspace"}</h1>
+        <h1 className="v2-page-title">{labelReviewMode ? data.reviewTitle ?? "Lot number map review" : "Correction workspace"}</h1>
         <p className="v2-page-description">
           {data.tenant} / {data.project} · {labelReviewMode ? `${drawableDetectionCount} detected polygons` : `${Object.keys(state.lots).length} lots`} · actor {state.actor}
           {labelReviewMode ? " · source-grounded review only · browser-local until shared drafts are verified" : data.serverBacked ? "" : " · local drafts (server drafts pending migration apply)"}
@@ -431,7 +460,7 @@ function LotNumberReviewTab({
   const [packError, setPackError] = useState<string | null>(null);
   const [stateLoaded, setStateLoaded] = useState(false);
   const [review, setReview] = useState<LocalBenchmarkReview>({
-    benchmark_id: "hopkins-grove-lot-number-benchmark-v1",
+    benchmark_id: data.reviewBenchmarkId ?? "hopkins-grove-lot-number-benchmark-v1",
     manifest_sha256: "",
     current: 0,
     reviewer: data.actor,
@@ -464,24 +493,26 @@ function LotNumberReviewTab({
     async function loadPack() {
       setPackError(null);
       try {
-        const response = await fetch("/correction-review/hopkins/benchmark/benchmark-manifest.json", { cache: "no-store" });
-        if (!response.ok) throw new Error("Local Hopkins benchmark is unavailable. Start the Vite development server with the prepared M1 review artifacts.");
+        const expectedBenchmarkId = data.reviewBenchmarkId ?? "hopkins-grove-lot-number-benchmark-v1";
+        const expectedCaseCount = data.reviewExpectedCaseCount ?? 60;
+        const benchmarkBase = data.reviewBenchmarkBase ?? "/correction-review/hopkins/benchmark";
+        const response = await fetch(`${benchmarkBase}/benchmark-manifest.json`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Local ${data.reviewFixture ?? "Hopkins"} benchmark is unavailable. Start the Vite development server with its prepared review fixtures.`);
         const raw = await response.text();
         const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
         const sha = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
         const parsed = JSON.parse(raw) as BenchmarkManifest;
-        if (parsed.schema_version !== 1 || parsed.benchmark_id !== "hopkins-grove-lot-number-benchmark-v1" || parsed.cases?.length !== 60) {
-          throw new Error("The review pack is not the expected versioned 60-case Hopkins benchmark.");
+        if (parsed.schema_version !== 1 || parsed.benchmark_id !== expectedBenchmarkId || parsed.cases?.length !== expectedCaseCount) {
+          throw new Error(`The review pack is not the expected versioned ${expectedCaseCount}-case ${data.reviewFixture ?? "Hopkins"} benchmark.`);
         }
-        if (!data.planUrl) throw new Error("This workspace has no source image. Number review is blocked until the source drawing is available.");
+        if (!data.planUrl) throw new Error("This workspace has no source image. Number review is blocked until a source drawing is available.");
         const imageResponse = await fetch(data.planUrl, { cache: "no-store" });
-        if (!imageResponse.ok) throw new Error("The source drawing could not be verified from this workspace.");
+        if (!imageResponse.ok) throw new Error("The source image could not be verified from this workspace.");
         const imageBlob = await imageResponse.blob();
         const imageDigest = await crypto.subtle.digest("SHA-256", await imageBlob.arrayBuffer());
         const imageSha = Array.from(new Uint8Array(imageDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-        const bitmap = await createImageBitmap(imageBlob);
-        const dimensionsMatch = bitmap.width === parsed.source_image.width && bitmap.height === parsed.source_image.height;
-        bitmap.close();
+        const dimensions = await readSourceImageDimensions(imageBlob);
+        const dimensionsMatch = dimensions.width === parsed.source_image.width && dimensions.height === parsed.source_image.height;
         if (cancelled) return;
         setManifest(parsed);
         setManifestSha(sha);
@@ -508,12 +539,12 @@ function LotNumberReviewTab({
         }
         setStateLoaded(true);
       } catch (error) {
-        if (!cancelled) setPackError(error instanceof Error ? error.message : "Could not load the Hopkins review pack.");
+        if (!cancelled) setPackError(error instanceof Error ? error.message : "Could not load the map review pack.");
       }
     }
     void loadPack();
     return () => { cancelled = true; };
-  }, [data.planUrl, data.actor]);
+  }, [data.planUrl, data.actor, data.reviewBenchmarkBase, data.reviewBenchmarkId, data.reviewExpectedCaseCount, data.reviewFixture]);
 
   useEffect(() => {
     if (!stateLoaded || !manifestSha) return;
@@ -553,7 +584,8 @@ function LotNumberReviewTab({
   const canRecordNumber = Boolean(manifest && sourceVerified && activeCase && activeCaseMatches && selectedSlot);
   const reviewedCount = manifest?.cases.filter((item) => ["confirmed", "ambiguous", "unreadable"].includes(review.reviews[item.id]?.status ?? "")).length ?? 0;
   const skippedCount = manifest?.cases.filter((item) => review.reviews[item.id]?.status === "skipped").length ?? 0;
-  const unresolvedCount = (manifest?.cases.length ?? 60) - reviewedCount - skippedCount;
+  const caseCount = manifest?.cases.length ?? data.reviewExpectedCaseCount ?? 0;
+  const unresolvedCount = caseCount - reviewedCount - skippedCount;
   const outstandingCases = manifest?.cases.filter((item) => !["confirmed", "ambiguous", "unreadable"].includes(review.reviews[item.id]?.status ?? "")) ?? [];
   const queueCases = showOutstanding ? outstandingCases : (manifest?.cases ?? []);
 
@@ -572,7 +604,7 @@ function LotNumberReviewTab({
   }, [mappedSlots, review.geometry_flags, review.reviews, manifest]);
 
   const layer = useMemo<CorrectionMapLayer>(() => ({
-    title: "Hopkins Grove · internal map review",
+    title: `${data.reviewTitle ?? "Lot number map review"} · internal map review`,
     imageUrl: data.planUrl,
     parcels: mappedSlots.map((slot) => ({ key: slot.id, reference: slot.lot_number, polygon: slot.polygon })),
     selectedKey,
@@ -593,7 +625,7 @@ function LotNumberReviewTab({
       }
     },
     onGeometryDraftChange: (_key, polygon) => setGeometryDraft(polygon),
-  }), [data.planUrl, mappedSlots, selectedKey, reviewStatusByKey, geometryEditKey, selectedSlot, geometryDraft, state.lots, manifest, caseGeometryMatches]);
+  }), [data.planUrl, data.reviewTitle, mappedSlots, selectedKey, reviewStatusByKey, geometryEditKey, selectedSlot, geometryDraft, state.lots, manifest, caseGeometryMatches]);
 
   function saveDecision(status: LabelDecisionStatus): void {
     if (!activeCase || !selectedSlot || !canRecordNumber) {
@@ -729,7 +761,8 @@ function LotNumberReviewTab({
       current_polygon_pct: state.lots[key]?.polygon ?? null,
       correction_history: state.log.filter((entry) => entry.lot === key && entry.field === "polygon"),
     }));
-    downloadFile("hopkins-grove-lot-number-ground-truth-v1.json", JSON.stringify({
+    const exportPrefix = data.reviewFixture === "synthetic" ? "wamule-synthetic-map-review-v1" : "hopkins-grove-lot-number-ground-truth-v1";
+    downloadFile(`${exportPrefix}.json`, JSON.stringify({
       schema_version: 1,
       artifact_type: "wamule-lot-number-ground-truth",
       benchmark_id: manifest.benchmark_id,
@@ -767,7 +800,8 @@ function LotNumberReviewTab({
         decision?.reviewed_at ?? "",
       ]);
     }
-    downloadFile("hopkins-grove-labels.csv", rows.map((row) => row.map(escape).join(",")).join("\n") + "\n", "text/csv;charset=utf-8");
+    const filename = data.reviewFixture === "synthetic" ? "wamule-synthetic-map-review-labels.csv" : "hopkins-grove-labels.csv";
+    downloadFile(filename, rows.map((row) => row.map(escape).join(",")).join("\n") + "\n", "text/csv;charset=utf-8");
     setFeedback("Scorer-compatible CSV exported. Blank, ambiguous, unreadable, and skipped cases are not scored as numbers.");
   }
 
@@ -776,7 +810,7 @@ function LotNumberReviewTab({
     try {
       const parsed = JSON.parse(await file.text()) as { artifact_type?: string; benchmark_id?: string; benchmark_manifest_sha256?: string; reviewer_name?: string; cases?: Array<Record<string, unknown>> };
       if (parsed.artifact_type !== "wamule-lot-number-ground-truth" || parsed.benchmark_id !== manifest.benchmark_id || parsed.benchmark_manifest_sha256 !== manifestSha || !Array.isArray(parsed.cases)) {
-        throw new Error("This JSON is not an export for the same versioned Hopkins benchmark.");
+        throw new Error("This JSON is not an export for the same versioned review benchmark.");
       }
       const known = new Set(manifest.cases.map((item) => item.id));
       const imported = Object.fromEntries(parsed.cases.filter((item) => typeof item.id === "string" && known.has(item.id)).map((item) => [String(item.id), {
@@ -802,7 +836,7 @@ function LotNumberReviewTab({
 
   return (
     <div className="correction-review-grid">
-      <section className="correction-review-map" aria-label="Hopkins Grove development map">
+      <section className="correction-review-map" aria-label={`${data.reviewTitle ?? "Development"} map`}>
         <PublicLotMap tenantSlug="correction-review" showPrices={false} correctionMapLayer={layer} />
       </section>
       <aside className="correction-review-panel" aria-label="Lot number review panel">
@@ -817,11 +851,11 @@ function LotNumberReviewTab({
         </header>
         <div className="mt-3" aria-label="Benchmark review progress">
           <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-            <span>{reviewedCount} / {manifest?.cases.length ?? 60} decisions recorded</span>
+            <span>{reviewedCount} / {caseCount} decisions recorded</span>
             <span>{skippedCount} skipped · {unresolvedCount} unresolved</span>
           </div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={manifest?.cases.length ?? 60} aria-valuenow={reviewedCount} aria-label="Recorded benchmark decisions">
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${(reviewedCount / (manifest?.cases.length ?? 60)) * 100}%` }} />
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={caseCount} aria-valuenow={reviewedCount} aria-label="Recorded benchmark decisions">
+            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${caseCount > 0 ? (reviewedCount / caseCount) * 100 : 0}%` }} />
           </div>
         </div>
         {packError ? <p className="mt-3 rounded-md border border-warning/30 bg-accent-soft p-2.5 text-xs leading-5 text-foreground" role="alert">{packError}</p> : null}
@@ -865,9 +899,11 @@ function LotNumberReviewTab({
             ) : <div className="mt-2 grid min-h-36 place-items-center rounded-md border border-dashed text-sm text-muted-foreground">No traceable polygon crop is available.</div>}
             {cropCase ? (
               <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-                Source-bound crop: {cropCase.crop_file} · SHA-256 {cropCase.crop_sha256.slice(0, 12)}… · map outline and crop use original percentage coordinates.
+                {cropCase.crop_file && cropCase.crop_sha256
+                  ? <>Source-bound crop: {cropCase.crop_file} · SHA-256 {cropCase.crop_sha256.slice(0, 12)}… · map outline and crop use original percentage coordinates.</>
+                  : <>Context crop rendered directly from the source image and target polygon · original percentage coordinates retained.</>}
               </p>
-            ) : <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Outside the 60-case benchmark. Boundary review can be recorded; no printed-number ground truth is accepted in this scope.</p>}
+            ) : <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Outside this benchmark. Boundary review can be recorded; no printed-number ground truth is accepted in this scope.</p>}
             {activeCase && selectedCaseIndex >= 0 ? (
               <>
                 <p className="mt-3 text-sm leading-5 text-foreground">Review only the number inside the outlined boundary. If it covers multiple lots or cannot be read confidently, mark ambiguous or unreadable. Adjacent labels are context only.</p>
@@ -922,7 +958,7 @@ function LotNumberReviewTab({
           </div>
         ) : (
           <div className="mt-3 rounded-lg border border-dashed border-border bg-background p-5 text-sm leading-6 text-muted-foreground">
-            <strong className="text-foreground">Choose a polygon on the full development map.</strong> The target appears with its original source crop and review controls here. The map includes all traceable detections; printed-number decisions are limited to the 60-case benchmark.
+            <strong className="text-foreground">Choose a polygon on the full development map.</strong> The target appears with its source crop and review controls here. Printed-number decisions are limited to the versioned benchmark.
           </div>
         )}
 
@@ -933,7 +969,7 @@ function LotNumberReviewTab({
           <Button type="button" variant="outline" className="col-span-2" onClick={() => importRef.current?.click()} disabled={!manifest}>Import prior review JSON</Button>
         </div>
         {feedback ? <p className="mt-2 rounded-md bg-muted p-2 text-xs leading-5 text-foreground" role="status">{feedback}</p> : null}
-        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">No candidate suggestions are loaded or displayed before the independent review. JSON preserves all 60 source cases; CSV stays compatible with the existing OCR scorer.</p>
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">No candidate suggestions are loaded or displayed before the independent review. JSON preserves all {caseCount} source cases; CSV stays compatible with the existing OCR scorer.</p>
       </aside>
     </div>
   );
@@ -941,14 +977,37 @@ function LotNumberReviewTab({
 
 function polygonCropBox(polygon: Array<{ x: number; y: number }>, width: number, height: number): [number, number, number, number] {
   if (!polygon.length) return [0, 0, width, height];
-  const xs = polygon.map((point) => point.x * width / 100);
-  const ys = polygon.map((point) => point.y * height / 100);
-  const pad = Math.max(40, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.2);
-  const left = Math.max(0, Math.floor(Math.min(...xs) - pad));
-  const top = Math.max(0, Math.floor(Math.min(...ys) - pad));
-  const right = Math.min(width, Math.ceil(Math.max(...xs) + pad));
-  const bottom = Math.min(height, Math.ceil(Math.max(...ys) + pad));
+  const bounds = mapPolygonBounds(mapPolygonToRasterPixels(polygon, width, height));
+  if (!bounds) return [0, 0, width, height];
+  const pad = Math.max(40, Math.max(bounds.width, bounds.height) * 0.2);
+  const left = Math.max(0, Math.floor(bounds.x - pad));
+  const top = Math.max(0, Math.floor(bounds.y - pad));
+  const right = Math.min(width, Math.ceil(bounds.x + bounds.width + pad));
+  const bottom = Math.min(height, Math.ceil(bounds.y + bounds.height + pad));
   return [left, top, right, bottom];
+}
+
+async function readSourceImageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const dimensions = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return dimensions;
+    } catch {
+      // Some browsers cannot create an ImageBitmap from SVG; Image.decode is
+      // a standards-based fallback that keeps the source fingerprint check.
+    }
+  }
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.src = objectUrl;
+    await image.decode();
+    return { width: image.naturalWidth, height: image.naturalHeight };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function SourcePolygonCrop({
@@ -961,13 +1020,13 @@ function SourcePolygonCrop({
   cropBox: [number, number, number, number];
 }) {
   const [x0, y0, x1, y1] = cropBox;
-  const points = polygon.map((point) => `${point.x * 57},${point.y * 48}`).join(" ");
+  const rasterPolygon = mapPolygonToRasterPixels(polygon, 5700, 4800);
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-border bg-white" data-testid="source-polygon-crop">
       <svg role="img" aria-label="High-resolution subdivision drawing crop with the target polygon outlined" viewBox={`${x0} ${y0} ${Math.max(1, x1 - x0)} ${Math.max(1, y1 - y0)}`} className="block max-h-[280px] w-full">
-        <image href={imageUrl} x={0} y={0} width={5700} height={4800} preserveAspectRatio="none" />
-        <polygon points={points} fill="rgba(185,79,45,.16)" stroke="#ffffff" strokeWidth={16} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        <polygon points={points} fill="none" stroke="#b84f2d" strokeWidth={8} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <MapRasterLayer src={imageUrl} x={0} y={0} width={5700} height={4800} preserveAspectRatio="none" />
+        <MapPolygon coordinates={rasterPolygon} fill="rgba(185,79,45,.16)" stroke="#ffffff" strokeWidth={16} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <MapPolygon coordinates={rasterPolygon} fill="none" stroke="#b84f2d" strokeWidth={8} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       </svg>
     </div>
   );
@@ -1285,7 +1344,7 @@ function TiersTab({
     };
     probe.src = planUrl;
   }, [planUrl]);
-  const vbH = 100 / aspect;
+  const vbH = mapViewBoxHeight(aspect);
   const yScale = vbH / 100;
   const legend = buildLegend(state);
   const current = activeTier ?? Object.keys(state.tiers)[0] ?? null;
@@ -1356,10 +1415,11 @@ function TiersTab({
           }}
         >
           {Object.entries(state.lots).map(([id, s]) => (
-            <polygon
+            <MapPolygon
               key={id}
               data-lot={id}
-              points={s.polygon.map((p) => `${p.x},${p.y * yScale}`).join(" ")}
+              coordinates={s.polygon}
+              coordinateScale={{ y: yScale }}
               fill={s.tier_key == null ? "#e5e5e5" : (state.tiers[s.tier_key]?.color ?? "#999999")}
               fillOpacity={s.status === "suggested" ? 0.55 : 0.85}
               stroke={current != null && s.tier_key === current ? "#111" : "#fff"}
@@ -1370,7 +1430,7 @@ function TiersTab({
               }}
             >
               <title>{`${id} — ${s.number ?? "?"} — ${s.tier_key ?? "unassigned"} (${s.status})`}</title>
-            </polygon>
+            </MapPolygon>
           ))}
           {lasso ? (
             <rect x={lasso.x} y={lasso.y} width={lasso.w} height={lasso.h} fill="rgba(29,78,216,0.12)" stroke="#1d4ed8" strokeWidth={0.3} />

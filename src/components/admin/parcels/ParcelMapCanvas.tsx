@@ -5,10 +5,16 @@ import type { ParcelStatus } from "../../../types/database";
 import {
   CLOSE_THRESHOLD_PCT,
   distancePct,
-  pointsToSvgPoints,
   type MapPoint,
   type ParcelMapMode,
 } from "../../../hooks/useParcelMap";
+import {
+  clampMapPan,
+  clientPointToMapCoordinate,
+  mapViewBoxString,
+  mapViewportBounds,
+} from "../../../lib/mapGeometry";
+import { MapPolygon } from "../../map/MapPolygon";
 import { Button } from "../../ui/Button";
 import { Badge } from "../../ui/Badge";
 
@@ -84,13 +90,10 @@ export function ParcelMapCanvas({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [draggingVertex, setDraggingVertex] = useState<number | null>(null);
 
-  const viewBox = useMemo(() => {
-    const w = 100 / zoom;
-    const h = 100 / zoom;
-    const x = Math.min(100 - w, Math.max(0, pan.x));
-    const y = Math.min(100 - h, Math.max(0, pan.y));
-    return `${x} ${y} ${w} ${h}`;
-  }, [zoom, pan]);
+  const viewBox = useMemo(
+    () => mapViewBoxString(mapViewportBounds(pan, zoom, 100, 100)),
+    [zoom, pan],
+  );
 
   const activeParcel = parcels.find((p) => p.id === activeParcelId) ?? null;
 
@@ -99,14 +102,12 @@ export function ParcelMapCanvas({
       const svg = svgRef.current;
       if (!svg) return null;
       const rect = svg.getBoundingClientRect();
-      if (!rect.width || !rect.height) return null;
-      const viewW = 100 / zoom;
-      const viewH = 100 / zoom;
-      const viewX = Math.min(100 - viewW, Math.max(0, pan.x));
-      const viewY = Math.min(100 - viewH, Math.max(0, pan.y));
+      const viewport = mapViewportBounds(pan, zoom, 100, 100);
+      const point = clientPointToMapCoordinate(clientX, clientY, rect, viewport, "none");
+      if (!point) return null;
       return {
-        x: Math.min(100, Math.max(0, viewX + ((clientX - rect.left) / rect.width) * viewW)),
-        y: Math.min(100, Math.max(0, viewY + ((clientY - rect.top) / rect.height) * viewH)),
+        x: Math.min(100, Math.max(0, point.x)),
+        y: Math.min(100, Math.max(0, point.y)),
       };
     },
     [zoom, pan],
@@ -168,12 +169,7 @@ export function ParcelMapCanvas({
   const panBy = useCallback(
     (dx: number, dy: number) => {
       setPan((current) => {
-        const viewW = 100 / zoom;
-        const viewH = 100 / zoom;
-        return {
-          x: Math.min(100 - viewW, Math.max(0, current.x + dx)),
-          y: Math.min(100 - viewH, Math.max(0, current.y + dy)),
-        };
+        return clampMapPan({ x: current.x + dx, y: current.y + dy }, zoom, 100, 100);
       });
     },
     [zoom],
@@ -249,8 +245,9 @@ export function ParcelMapCanvas({
             const flagged = reviewMode && parcel.needs_review === true;
             return (
               <g key={parcel.id}>
-                <polygon
-                  points={pointsToSvgPoints(polygon)}
+                <MapPolygon
+                  coordinates={polygon}
+                  coordinatePrecision={2}
                   fill={flagged ? "#c026d3" : style.fill}
                   fillOpacity={isActive ? 0.45 : flagged ? 0.3 : 0.15}
                   stroke={flagged ? "#a21caf" : style.stroke}
@@ -266,7 +263,7 @@ export function ParcelMapCanvas({
                   }}
                 >
                   <title>{`Lot ${parcel.lot_number} — ${parcel.status}${parcel.tier_label ? ` — ${parcel.tier_label}` : ""}${parcel.needs_review ? " — NEEDS REVIEW" : ""}`}</title>
-                </polygon>
+                </MapPolygon>
                 {isActive && (mode === "draw" || mode === "edit")
                   ? polygon.map((point, index) => (
                       <circle

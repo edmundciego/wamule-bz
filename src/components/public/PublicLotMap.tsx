@@ -9,6 +9,20 @@ import {
 } from "../../lib/theme";
 import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
+import { MapPolygon, MapRasterLayer } from "../map/MapPolygon";
+import type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
+export type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
+import {
+  clampMapPan,
+  clientPointToMapCoordinate,
+  mapPanAfterZoom,
+  mapPolygonBounds,
+  mapPolygonBoundsArea,
+  mapViewBoxHeight,
+  mapViewBoxString,
+  mapViewportBounds,
+  type MapPanPadding,
+} from "../../lib/mapGeometry";
 
 export interface PublicLotParcel {
   /** Generated in the browser only for SVG interaction; never a database key. */
@@ -29,19 +43,6 @@ export interface PublicLotParcel {
   effective_price_cents: number;
   /** Stable correction-workspace key; never a public parcel identifier. */
   correction_key?: string;
-}
-
-export type CorrectionReviewStatus = "unreviewed" | "reviewed" | "ambiguous" | "unreadable" | "skipped" | "geometry-issue";
-
-export interface CorrectionMapLayer {
-  title: string;
-  imageUrl: string | null;
-  parcels: Array<{ key: string; reference: string; polygon: Array<{ x: number; y: number }> }>;
-  selectedKey: string | null;
-  reviewStatusByKey: Record<string, CorrectionReviewStatus>;
-  geometryEdit?: { key: string; polygon: Array<{ x: number; y: number }> } | null;
-  onSelect: (key: string) => void;
-  onGeometryDraftChange?: (key: string, polygon: Array<{ x: number; y: number }>) => void;
 }
 
 type PublicLotStatus = ParcelStatus | "Review pending";
@@ -177,37 +178,12 @@ function exitActiveFullscreen(): Promise<void> {
  */
 const DEMO_PREVIEW = import.meta.env.DEV;
 
-function pointsAttr(polygon: Array<{ x: number; y: number }>, yScale = 1): string {
-  return polygon.map((p) => `${p.x},${p.y * yScale}`).join(" ");
-}
-
-/** Extra pan range (viewBox units) beyond the map edges, one per side. */
-interface PanPads {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
+/** Compatibility wrappers keep this buyer component focused on its parcel contract. */
+type PanPads = MapPanPadding;
 const NO_PADS: PanPads = { left: 0, right: 0, top: 0, bottom: 0 };
-
-/** Pure pan clamp in full-space units (shared by render + gesture paths). */
-function clampPanTo(x: number, y: number, z: number, vbH: number, pads: PanPads = NO_PADS): { x: number; y: number } {
-  const w = 100 / z;
-  const h = vbH / z;
-  return {
-    x: Math.min(Math.max(0, 100 - w) + pads.right, Math.max(-pads.left, x)),
-    y: Math.min(Math.max(0, vbH - h) + pads.bottom, Math.max(-pads.top, y)),
-  };
-}
-
-/** Bounding-box area in map units (for hit-layer paint order). */
-function bboxAreaUnits(polygon: Array<{ x: number; y: number }>): number {
-  if (polygon.length < 3) return 0;
-  const xs = polygon.map((p) => p.x);
-  const ys = polygon.map((p) => p.y);
-  return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
-}
+const clampPanTo = (x: number, y: number, z: number, vbH: number, pads: PanPads = NO_PADS) =>
+  clampMapPan({ x, y }, z, 100, vbH, pads);
+const bboxAreaUnits = (polygon: Array<{ x: number; y: number }>): number => mapPolygonBoundsArea(polygon);
 
 function fillFor(parcel: PublicLotParcel, view: PublicLotColourView): { fill: string; stroke: string } {
   if (view === "tier" && parcel.tier_color_hex) {
@@ -768,7 +744,7 @@ export function PublicLotMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusLotKey, zoom, expanded]);
 
-  const viewBoxH = imageAspect ? 100 / imageAspect : 100;
+  const viewBoxH = mapViewBoxHeight(imageAspect);
   const yScale = viewBoxH / 100;
   // Pan stays in full-space units so zooming keeps the current centre
   // instead of jumping back to the top-left corner.
@@ -829,13 +805,10 @@ export function PublicLotMap({
     return clampPanTo(x, y, z, viewBoxH, cardPad);
   }
 
-  const viewBox = useMemo(() => {
-    const w = 100 / zoom;
-    const h = viewBoxH / zoom;
-    const p = clampPan(pan.x, pan.y, zoom);
-    return `${p.x} ${p.y} ${w} ${h}`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, viewBoxH, pan, cardPad]);
+  const viewBox = useMemo(
+    () => mapViewBoxString(mapViewportBounds(pan, zoom, 100, viewBoxH, cardPad)),
+    [zoom, viewBoxH, pan, cardPad],
+  );
 
   function zoomBy(delta: number) {
     zoomTo(zoom + delta);
@@ -845,10 +818,8 @@ export function PublicLotMap({
   function zoomTo(next: number, cx: number = 50, cy: number = viewBoxH / 2) {
     const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
     if (clamped === zoom) return;
-    const sx = 100 / clamped / (100 / zoom);
-    const sy = viewBoxH / clamped / (viewBoxH / zoom);
     setZoom(clamped);
-    setPan(clampPan(cx - (cx - pan.x) * sx, cy - (cy - pan.y) * sy, clamped));
+    setPan(mapPanAfterZoom(pan, zoom, clamped, { x: cx, y: cy }, 100, viewBoxH, cardPad));
   }
 
   function resetZoom() {
@@ -859,13 +830,9 @@ export function PublicLotMap({
   function boundsOf(parcel: PublicLotParcel): { x: number; y: number; w: number; h: number } | null {
     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
     if (polygon.length < 3) return null;
-    const xs = polygon.map((p) => p.x);
-    const ys = polygon.map((p) => p.y * yScale);
-    const x0 = Math.min(...xs);
-    const x1 = Math.max(...xs);
-    const y0 = Math.min(...ys);
-    const y1 = Math.max(...ys);
-    return { x: x0, y: y0, w: Math.max(x1 - x0, 0.01), h: Math.max(y1 - y0, 0.01) };
+    const bounds = mapPolygonBounds(polygon, yScale);
+    if (!bounds) return null;
+    return { x: bounds.x, y: bounds.y, w: Math.max(bounds.width, 0.01), h: Math.max(bounds.height, 0.01) };
   }
 
   /** Explicit zoom control (detail-card button): fit the lot's bounds with
@@ -904,7 +871,7 @@ export function PublicLotMap({
       const poly = svg?.querySelector(`polygon[data-lot-key="${id}"]`) as SVGPolygonElement | null;
       const box = poly?.getBBox?.();
       if (!box) continue;
-      // Hit-polygon points are pre-scaled (pointsAttr applies yScale), so
+      // Hit-polygon points are pre-scaled by the shared polygon primitive, so
       // the bbox is already in full-space map units, matching my/mx below.
       const area = box.width * box.height;
       // Centroid distance needs the tap in map units: invert the meet mapping.
@@ -913,17 +880,11 @@ export function PublicLotMap({
       if (rect?.width && rect?.height) {
         const z = zoomRef.current;
         const vbH = viewBoxHRef.current;
-        const vbW = 100 / z;
-        const vbHView = vbH / z;
-        const scale = Math.min(rect.width / vbW, rect.height / vbHView);
-        if (scale > 0) {
-          const offX = rect.left + (rect.width - vbW * scale) / 2;
-          const offY = rect.top + (rect.height - vbHView * scale) / 2;
-          const p = clampPanTo(panRef.current.x, panRef.current.y, z, vbH);
-          const mx = (clientX - offX) / scale + p.x;
-          const my = (clientY - offY) / scale + p.y;
-          const ddx = box.x + box.width / 2 - mx;
-          const ddy = box.y + box.height / 2 - my;
+        const viewport = mapViewportBounds(panRef.current, z, 100, vbH);
+        const point = clientPointToMapCoordinate(clientX, clientY, rect, viewport);
+        if (point) {
+          const ddx = box.x + box.width / 2 - point.x;
+          const ddy = box.y + box.height / 2 - point.y;
           dist = Math.hypot(ddx, ddy);
         }
       }
@@ -1045,17 +1006,18 @@ export function PublicLotMap({
   function viewportCenter(): { x: number; y: number } {
     const z = zoomRef.current;
     const vbH = viewBoxHRef.current;
-    const p = panRef.current;
     const pts = [...pointersRef.current.values()];
     const svg = svgRef.current;
     const rect = svg?.getBoundingClientRect();
     if (pts.length < 2 || !rect?.width || !rect.height) return { x: 50, y: vbH / 2 };
     const cxPx = (pts[0].x + pts[1].x) / 2;
     const cyPx = (pts[0].y + pts[1].y) / 2;
-    return {
-      x: p.x + ((cxPx - rect.left) / rect.width) * (100 / z),
-      y: p.y + ((cyPx - rect.top) / rect.height) * (vbH / z),
-    };
+    return clientPointToMapCoordinate(
+      cxPx,
+      cyPx,
+      rect,
+      mapViewportBounds(panRef.current, z, 100, vbH, cardPadRef.current),
+    ) ?? { x: 50, y: vbH / 2 };
   }
 
   function onGestureMove(event: PointerEvent) {
@@ -1079,10 +1041,8 @@ export function PublicLotMap({
         g.moved = true;
         const next = (pinch.startZoom * dist) / pinch.startDist;
         const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-        const sx = 100 / clamped / (100 / z);
-        const sy = vbH / clamped / (vbH / z);
         setZoom(clamped);
-        setPan(clampPanTo(pinch.center.x - (pinch.center.x - panRef.current.x) * sx, pinch.center.y - (pinch.center.y - panRef.current.y) * sy, clamped, vbH, cardPadRef.current));
+        setPan(mapPanAfterZoom(panRef.current, z, clamped, pinch.center, 100, vbH, cardPadRef.current));
       }
       return;
     }
@@ -1170,8 +1130,16 @@ export function PublicLotMap({
       let cx = 50;
       let cy = viewBoxH / 2;
       if (client && rect.width && rect.height) {
-        cx = pan.x + ((client.x - rect.left) / rect.width) * (100 / zoom);
-        cy = pan.y + ((client.y - rect.top) / rect.height) * (viewBoxH / zoom);
+        const point = clientPointToMapCoordinate(
+          client.x,
+          client.y,
+          rect,
+          mapViewportBounds(pan, zoom, 100, viewBoxH, cardPad),
+        );
+        if (point) {
+          cx = point.x;
+          cy = point.y;
+        }
       }
       zoomTo(zoom * Math.exp(-acc * 0.0015), cx, cy);
     };
@@ -1602,8 +1570,8 @@ export function PublicLotMap({
             >
               <title>Lot map. Drag to pan; use the controls or pinch to zoom.</title>
               {masterplanUrl ? (
-                <image
-                  href={masterplanUrl}
+                <MapRasterLayer
+                  src={masterplanUrl}
                   x={0}
                   y={0}
                   width={100}
@@ -1630,10 +1598,11 @@ export function PublicLotMap({
                 const hovered = parcel.local_key === hoveredLocalKey;
                 const picked = pickMode && selected;
                 return (
-                  <polygon
+                  <MapPolygon
                     key={parcel.local_key}
                     data-lot-key={parcel.local_key}
-                    points={pointsAttr(polygon, yScale)}
+                    coordinates={polygon}
+                    coordinateScale={{ y: yScale }}
                     fill={selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.fill : "none"}
                     fillOpacity={selected ? 0.32 : correctionMapLayer ? 0.13 : 0}
                     stroke={picked ? "#1d4ed8" : selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.stroke : style.stroke}
@@ -1675,7 +1644,7 @@ export function PublicLotMap({
                     const picked = pickMode && highlighted.includes(parcel.local_key);
                     const tappable = Boolean(correctionMapLayer) || parcel.status === "Available" || parcel.status === "Reserved";
                     return (
-                      <polygon
+                      <MapPolygon
                         key={`hit-${parcel.local_key}`}
                         id={`${mapListboxId}-option-${parcel.local_key}`}
                         role="option"
@@ -1684,7 +1653,8 @@ export function PublicLotMap({
                           : `Lot ${parcel.lot_number}, ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
                         aria-selected={pickMode ? highlighted.includes(parcel.local_key) : internalSelectedKey === parcel.local_key}
                         data-lot-key={parcel.local_key}
-                        points={pointsAttr(polygon, yScale)}
+                        coordinates={polygon}
+                        coordinateScale={{ y: yScale }}
                         fill="transparent"
                         stroke="rgba(0,0,0,0)"
                         strokeWidth={HIT_STROKE_PX}
@@ -1697,7 +1667,7 @@ export function PublicLotMap({
                       <title>{correctionMapLayer
                         ? `Detected polygon ${parcel.lot_number} — ${reviewStyle(parcel).label}${internalSelectedKey === parcel.local_key ? " — selected" : ""}`
                         : `Lot ${parcel.lot_number} — ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}${picked ? " — selected" : ""}`}</title>
-                      </polygon>
+                      </MapPolygon>
                     );
                   })}
               </g>
@@ -1733,7 +1703,7 @@ export function PublicLotMap({
                           pointerEvents="none"
                         />
                       ) : (
-                        <polygon
+                      <polygon
                           points={polygonMarkerPoints(markerShape, cx, cy, r)}
                           fill={selected ? "var(--lotmap-accent)" : style.fill}
                           stroke="#ffffff"
@@ -1749,16 +1719,18 @@ export function PublicLotMap({
               </g> : null}
               {mapKeyboardFocused && mapCursorPolygon.length >= 3 ? (
                 <g aria-hidden="true" pointerEvents="none">
-                  <polygon
-                    points={pointsAttr(mapCursorPolygon, yScale)}
+                  <MapPolygon
+                    coordinates={mapCursorPolygon}
+                    coordinateScale={{ y: yScale }}
                     fill="none"
                     stroke="#ffffff"
                     strokeWidth={7}
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                   />
-                  <polygon
-                    points={pointsAttr(mapCursorPolygon, yScale)}
+                  <MapPolygon
+                    coordinates={mapCursorPolygon}
+                    coordinateScale={{ y: yScale }}
                     fill="none"
                     stroke="#111827"
                     strokeWidth={3}

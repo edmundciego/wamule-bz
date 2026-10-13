@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="5700" height="4800" viewBox="0 0 5700 4800">
+  <rect width="5700" height="4800" fill="#f3efe5"/>
+  <path d="M0 650H5700M0 1430H5700M0 2210H5700M0 2990H5700M0 3770H5700M900 0V4800M1800 0V4800M2700 0V4800M3600 0V4800M4500 0V4800" stroke="#dfd9cb" stroke-width="18"/>
+  <path d="M0 2650C900 2400 1350 2950 2200 2700S3600 2470 4400 2750S5200 2910 5700 2650" fill="none" stroke="#b7d3d0" stroke-width="150"/>
+  <path d="M150 850H2920M150 1870H2920M2980 800V2250M800 2250V3550M1600 2250V3550M2500 2250V3550" stroke="#fffdf8" stroke-width="105"/>
+  <g fill="#e6eadb" stroke="#9eaa8c" stroke-width="22">
+    <path d="M342 480 1026 480 1026 1008 342 1008Z"/><path d="M1197 480 1824 480 1824 1008 1197 1008Z"/>
+    <path d="M1995 480 2793 480 2793 1008 1995 1008Z"/><path d="M342 1536 1083 1536 1083 2064 342 2064Z"/>
+    <path d="M1311 1536 1653 1478 1767 2064 1425 2122Z"/><path d="M1995 1536 2793 1536 2793 2064 1995 2064Z"/>
+  </g>
+  <g fill="#35483d" font-family="Arial,sans-serif" font-weight="700" font-size="104" text-anchor="middle">
+    <text x="684" y="790">TEST-001</text><text x="1510" y="790">TEST-002</text>
+    <text x="2394" y="790">TEST-003</text><text x="712" y="1842">TEST-004</text>
+    <text x="1530" y="1842" transform="rotate(-10 1530 1842)">TEST-005</text><text x="2394" y="1842">TEST-006</text>
+  </g>
+  <g transform="rotate(-25 2850 2400)" fill="#9d392d" font-family="Arial,sans-serif" font-weight="800" font-size="280" opacity=".18" text-anchor="middle">
+    <text x="2850" y="2300">SYNTHETIC TEST FIXTURE</text><text x="2850" y="2630">NOT A REAL PLAT · NOT SALES DATA</text>
+  </g>
+  <text x="180" y="4600" fill="#52635a" font-family="Arial,sans-serif" font-size="100">WAMULE MAP RENDERER TEST · ALL LOTS AND LABELS ARE SYNTHETIC</text>
+</svg>

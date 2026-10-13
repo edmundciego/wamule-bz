@@ -385,6 +385,13 @@ to alter polygons or infer a canonical identity. The benchmark currently has
 untouched. Desktop reviewer evidence is captured at
 `artifacts/lot-number-benchmark/benchmark-reviewer-desktop.png`.
 
+**Renderer fixture note (13 Oct 2026):** the committed-safe six-polygon
+synthetic fixture and its reproducible manifest exercise map selection,
+source/crop coordinate alignment, and review workflow mechanics only. Its
+watermarked synthetic labels are not Hopkins ground truth; this test coverage
+does not change the 0/60 human-reviewed Hopkins benchmark or establish OCR,
+polygon-association, or legal-register accuracy.
+
 The existing scorer evaluates full-image engine tokens against polygon-scoped
 labels; it does not score the separate per-polygon crop guesses. The new
 reviewer CSV uses the existing scorer fields and preserves skipped cases as
@@ -658,19 +665,95 @@ clean-checkout result. `npm run verify:public-build` now passes: 80 files and
 source assets in `dist`. No migration, Edge Function, Supabase data, staging,
 production or deployment was changed.
 
-**Extraction/push readiness:** no shared-renderer extraction has begun. The
-stabilized local baseline is ready for a separately approved extraction pass,
-but the architectural coupling through `PublicLotMap.tsx` remains, the
-Hopkins-dependent E2E still needs a portable synthetic editor fixture and a
-clean-checkout run before any editor-only commit, and M2 review remains 0/60
-human-labeled with no approved lot mappings. The branch remains local at
-`feature/map-first-integration-wip` / `63751d441ac407adf72c83435290e3bb854620dd`.
-The GitHub workflow is pull-request-to-`main` and manual-dispatch only; this
-checkout has no Netlify project configuration, so automatic branch deploys
-cannot be ruled out here. Before any push, verify Netlify's production branch
-and branch-deploy contexts in the site dashboard. Keep M2 authenticated and
-shared-persistence acceptance, M3 buyer/API/data acceptance, M4 shared drafts,
-and all M1 human-evidence gates open.
+**Prior extraction/push readiness (12 Oct 2026; superseded by the next entry):**
+At the end of stabilization the branch was local at
+`feature/map-first-integration-wip` / `63751d441ac407adf72c83435290e3bb854620dd`;
+no renderer extraction or portable fixture had yet been made. The GitHub
+workflow is pull-request-to-`main` and manual-dispatch only; this checkout has
+no Netlify project configuration, so automatic branch deploys cannot be ruled
+out. Before any push, verify the Netlify production branch and branch-deploy
+contexts in the site dashboard.
+
+**Stabilization commit and shared-map extraction checkpoint (13 Oct 2026;
+local only):** Stabilization fixes were preserved first in commit
+`3f5ec05 fix(map-first): stabilize editor review build and tests` on
+`feature/map-first-integration-wip`, parent
+`63751d441ac407adf72c83435290e3bb854620dd`. This commit is local; no push,
+deploy, migration, Edge Function update, or hosted data change occurred.
+
+The first safe extraction slice is now in the working tree:
+`src/lib/mapGeometry.ts` owns shared image-aspect, normalized/raster coordinate,
+polygon-bounds, viewBox, pan-clamp, focal-zoom, and client-to-map transforms;
+`src/components/map/MapPolygon.tsx` and `MapRasterLayer` are buyer-contract-
+neutral SVG primitives; `src/components/map/correctionMapLayer.ts` owns the
+editor review-layer types independently of the buyer component. `PublicLotMap`,
+the integrated source crop and tier overlay, and the older `ParcelMapCanvas` /
+`useParcelMap` now use these shared primitives. Existing coordinate transforms,
+selection, pan/zoom, map controls, inquiry behavior, geometry changes, and
+review history were retained in the exercised flows.
+
+This is deliberately an **incremental foundation, not full renderer
+decoupling**. `CorrectionWorkspacePage` still mounts `PublicLotMap` for its
+interactive review map; its correction adapter still passes through the
+buyer-shaped parcel model, and the map's pointer/touch gesture controller,
+selection dispatcher, keyboard behavior, and composed buyer/editor canvas
+remain in `PublicLotMap.tsx`. No duplicate map engine was added. The next
+architectural slice must extract that shared interactive canvas/controller
+behind neutral feature/layer contracts, then leave API, inquiry, prices, tiers,
+and public-data policy in the buyer wrapper. Do not claim buyer/editor
+independent evolution complete until the editor can consume that neutral
+canvas without importing the buyer wrapper.
+
+**Portable fixture and visual evidence:** committed-safe synthetic source files
+are in `e2e/fixtures/map-review-synthetic/`; the source drawing is prominently
+watermarked as synthetic and not a real plat or sales data. A deterministic
+manifest generator binds its six polygons to source bytes and crop boxes. A
+serve-only, filename-allowlisted Vite route exposes it only in local
+development; it is not copied into `dist`. The portable editor Playwright suite
+tests direct selection (including an irregular polygon), source-aligned crop,
+pan/zoom/reset, local review and resume, duplicate warnings, geometry-edit
+history, JSON/CSV exports, and 390px/320px mobile layouts. It reads no
+`out/hopkins-*` files. The Hopkins E2E remains an optional local supplement and
+skips when the ignored private artifacts are absent. A fresh Git worktree was
+not created for this pass; clean-checkout portability is supported by fixture
+dependencies and the private-asset skip, but that separate-checkout run remains
+unverified.
+
+Before/after visual spot-checks compared the actual local Hopkins map at
+1440px: polygon/image alignment and framing were unchanged. The supplemental
+Hopkins screenshot run passed and wrote local-only captures under
+`/private/tmp/wamule-map-renderer-visual-check/integrated-map-review-capt-f4b5f-ckpoints-QA-only-test-data--chromium/`
+(`hopkins-desktop-overview.png`, `hopkins-desktop-selected.png`, and 390px /
+320px mobile captures). Portable synthetic buyer/editor captures are under
+`test-results/integrated-map-review-port-*/`; these are QA artifacts only, not
+approved map evidence. Buyer regression tests use the synthetic fixture; they
+verify the buyer wrapper remains on shared primitives, not the real Hopkins
+API payload. No real buyer field, polygon identity, geometry, price, or
+availability was changed.
+
+**Verification for this checkpoint:** `npm run typecheck`, `npm run lint`,
+`npm run build`, and `npm run verify:public-build` pass. The public guard scanned
+82 built files / 1,364,248 text bytes and found no dev map fixtures or private
+source artifacts. `npm test` reports 246 passed, 0 failed, 3 skipped (249
+tests across 2 suites). The focused Chromium regression batch reports 61
+passed, 0 failed, 4 skipped (65 total), covering buyer map/search/inquiry,
+correction modes, the 719-polygon Hopkins review/alignment flows, and the new
+portable editor suite. Hopkins editor scenarios and mobile screenshots were
+run locally against ignored source assets; hosted authorization, public
+deployment, and cross-device persistence were not tested.
+
+**Remaining milestone state:** M1 ground truth remains 0/60 human-labeled; no
+printed-number-to-polygon mapping is approved. M2 local review remains
+browser-only, the authenticated hosted route is unverified, and visual review
+acceptance remains open. M3A buyer labels remain disabled until reviewed
+mappings pass register/public-field gates; buyer visual acceptance remains
+open. The label reviewer is development-only and must not gain production
+access to private Hopkins files as a shortcut. M4 must provide the secure
+tenant-scoped asset/review service and shared persistence described in §9
+before production Lot Number Review or cross-device resume. No migration or
+hosted change was performed. Extraction changes and unrelated source-audit /
+artifact files remain uncommitted; no remote branch or Netlify preview was
+created.
 
 - [ ] Carry crops, OCR snapshots, polygons, calibration and register matches into the authenticated workspace.
 
@@ -906,6 +989,31 @@ Schema names can follow the existing repository conventions. The required relati
 - [ ] If retaining a development local preview, restore its saved state honestly and keep it separate from the shared path.
 
 - [ ] Remove the local-drafts banner only when the actual server-backed path passes acceptance. Keep it for remaining local paths.
+
+### 9.2.1 Production-capable Lot Number Review dependency
+
+The integrated Hopkins label reviewer is development-only today because its
+map image and 60-case benchmark are local private artifacts. Do not make it
+production-reachable by copying those files into the public build or by
+loosening the build guard. A production-capable reviewer requires, at minimum:
+
+- [ ] Tenant/project-authorized map, polygon, manifest, and review-evidence
+  assets in private, versioned storage, with source fingerprints and native
+  dimensions verified on read.
+- [ ] Authenticated retrieval that checks reviewer role and exact project/map
+  scope; no public bucket paths or local filesystem paths in browser responses.
+- [ ] Shared review decisions/drafts keyed to the benchmark and source revision,
+  saved with an expected base revision and conflict-safe optimistic concurrency.
+- [ ] Reviewer identity derived from the authenticated session, timestamps, and
+  append-only audit history for confirm/correct/ambiguous/unreadable/skip and
+  geometry review actions.
+- [ ] Explicit concurrent-review conflict handling that preserves both
+  proposals until a reviewer resolves them; no silent last-write-wins.
+- [ ] Separation between visual reading evidence, M2 register reconciliation,
+  legal/public-field approval, and M3 buyer publication. A human label is not
+  by itself canonical parcel identity or sale status.
+- [ ] Tests proving unauthorized asset access fails closed and neither
+  unreviewed labels nor local-only decisions can pass publishing gates.
 
 ### 9.3 Endpoint authentication and server authority
 
