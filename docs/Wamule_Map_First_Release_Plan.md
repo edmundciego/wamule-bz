@@ -675,7 +675,10 @@ out. Before any push, verify the Netlify production branch and branch-deploy
 contexts in the site dashboard.
 
 **Stabilization commit and shared-map extraction checkpoint (13 Oct 2026;
-local only):** Stabilization fixes were preserved first in commit
+local only):** The extracted checkpoint is committed locally as
+`7f91e08b4d3c00e0230af8da477cceb49ae0e35d`
+(`refactor(map): extract shared rendering primitives`) on
+`feature/map-first-integration-wip`. Stabilization fixes were preserved first in commit
 `3f5ec05 fix(map-first): stabilize editor review build and tests` on
 `feature/map-first-integration-wip`, parent
 `63751d441ac407adf72c83435290e3bb854620dd`. This commit is local; no push,
@@ -714,10 +717,14 @@ tests direct selection (including an irregular polygon), source-aligned crop,
 pan/zoom/reset, local review and resume, duplicate warnings, geometry-edit
 history, JSON/CSV exports, and 390px/320px mobile layouts. It reads no
 `out/hopkins-*` files. The Hopkins E2E remains an optional local supplement and
-skips when the ignored private artifacts are absent. A fresh Git worktree was
-not created for this pass; clean-checkout portability is supported by fixture
-dependencies and the private-asset skip, but that separate-checkout run remains
-unverified.
+skips when the ignored private artifacts are absent. A tracked-file archive at
+the commit SHA was unpacked into an isolated temporary checkout; only
+`node_modules` was linked from the active tree. Before any private-source
+symlinks were added, all five portable Chromium tests passed from this clean
+snapshot, confirming they do not rely on ignored Hopkins outputs. A first
+verification attempt inherited Node 18 and failed on existing tests that
+import TypeScript directly; the authoritative clean-snapshot run used Node
+22.23.1, matching the active project environment.
 
 Before/after visual spot-checks compared the actual local Hopkins map at
 1440px: polygon/image alignment and framing were unchanged. The supplemental
@@ -742,6 +749,22 @@ portable editor suite. Hopkins editor scenarios and mobile screenshots were
 run locally against ignored source assets; hosted authorization, public
 deployment, and cross-device persistence were not tested.
 
+**Clean-snapshot and actual-source readiness check (13 Oct 2026):** At
+`7f91e08b4d3c00e0230af8da477cceb49ae0e35d`, typecheck, lint, build, and
+`verify:public-build` all passed in the isolated tracked-file snapshot. The
+guard scanned 82 files / 1,361,684 text bytes and found no development fixture
+or private source artifacts. `npm test` reported 245 passed, 0 failed, 4
+skipped (249 total). The portable Playwright suite passed 5/5 with no Hopkins
+assets mounted. For a separate local-only source check, ignored Hopkins output
+directories were symlinked into the temporary snapshot and never staged or
+copied; the three Hopkins reviewer Playwright tests passed. They loaded all
+719 drawable polygons against the 5700 × 4800 source image, selected a
+benchmark detection and its outlined crop, verified prediction-blind review
+copy, saved/resumed/exported an isolated QA decision, and retained original
+benchmark geometry/source fingerprints while keeping a geometry proposal in
+separate correction history. These are functional checks, not human review:
+the authoritative benchmark remains 0/60 labeled.
+
 **Remaining milestone state:** M1 ground truth remains 0/60 human-labeled; no
 printed-number-to-polygon mapping is approved. M2 local review remains
 browser-only, the authenticated hosted route is unverified, and visual review
@@ -751,9 +774,11 @@ open. The label reviewer is development-only and must not gain production
 access to private Hopkins files as a shortcut. M4 must provide the secure
 tenant-scoped asset/review service and shared persistence described in §9
 before production Lot Number Review or cross-device resume. No migration or
-hosted change was performed. Extraction changes and unrelated source-audit /
-artifact files remain uncommitted; no remote branch or Netlify preview was
-created.
+hosted change was performed. The shared interactive canvas/controller
+extraction remains intentionally open; current correction review still mounts
+the buyer wrapper. Only unrelated source-audit files, local artifacts, and
+private source assets remain uncommitted. No remote branch or Netlify preview
+was created.
 
 - [ ] Carry crops, OCR snapshots, polygons, calibration and register matches into the authenticated workspace.
 
