@@ -50,6 +50,18 @@ async function findSelectablePoint(page: import("@playwright/test").Page, label:
   return point;
 }
 
+async function clickSourceCoordinate(page: import("@playwright/test").Page, x: number, y: number): Promise<void> {
+  const point = await page.locator("svg[aria-label='Interactive correction map']").evaluate((svg, sourcePoint) => {
+    const element = svg as SVGSVGElement;
+    const mapPoint = element.createSVGPoint();
+    mapPoint.x = sourcePoint.x;
+    mapPoint.y = sourcePoint.y * (4800 / 5700);
+    const client = mapPoint.matrixTransform(element.getScreenCTM()!);
+    return { x: client.x, y: client.y };
+  }, { x, y });
+  await page.mouse.click(point.x, point.y);
+}
+
 test.beforeEach(async ({ page }) => {
   test.skip(!HOPKINS_REVIEW_ASSETS_AVAILABLE, "Optional real-Hopkins verification requires the private local review artifacts.");
   await page.addInitScript(() => {
@@ -172,6 +184,110 @@ test("review controls remain usable at narrow mobile width without horizontal pa
   await page.getByRole("button", { name: /Open current target/ }).click();
   await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
   await expect(page.getByRole("button", { name: "Confirm printed number" })).toBeVisible();
+});
+
+test("actual Hopkins L-683 can be traced into four separate local child proposals without changing S019 benchmark geometry", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.locator("g[role='listbox'] polygon[role='option']")).toHaveCount(719);
+  const target = await findSelectablePoint(page, "Detected polygon L-683");
+  await page.mouse.click(target.x, target.y);
+  await expect(page.getByRole("heading", { name: "Case S019" })).toBeVisible();
+  await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
+  const splitButton = page.getByRole("button", { name: "Split Polygon", exact: true });
+  await expect(splitButton).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath("hopkins-l683-split-button-qa.png"), fullPage: false });
+  await splitButton.click();
+  await expect(page.getByRole("heading", { name: "Split Mode · L-683" })).toBeVisible();
+  await expect(page.getByTestId("polygon-split-mode").getByRole("heading", { name: "Split Mode" })).toBeInViewport();
+  await expect(page.getByText(/Tap or click each visible corner/)).toBeVisible();
+  await expect(page.locator("[aria-label='Split Mode'] ol li")).toHaveCount(5);
+  await expect(page.getByTestId("split-drawn-progress")).toContainText("0 polygons drawn");
+  await expect(page.getByRole("button", { name: "Preview split" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Confirm Split" })).toBeDisabled();
+  await page.getByLabel("Reviewer").fill("");
+  await expect(page.getByRole("alert", { name: "Split validation guidance" })).toContainText("Trace at least two child outlines");
+  await expect(page.getByTestId("split-confirm-blockers")).toContainText("Enter your name in the Reviewer field");
+  await expect(page.getByTestId("split-confirm-blockers")).toContainText("Add a short note explaining why this detection needs to be split");
+  await page.screenshot({ path: testInfo.outputPath("hopkins-l683-split-mode-instructions-qa.png"), fullPage: false });
+  await page.getByLabel("Reviewer").fill("Local geometry QA · not ground truth");
+  await page.getByLabel("Why should this detection be split?").fill("One auto-detected boundary spans four separately outlined printed parcels; trace requires human review.");
+
+  // Exercise an invalid trace through the displayed map and controls. The
+  // finish action must explain the crossing and remain unavailable.
+  for (const [x, y] of [[90.7, 78.6], [94.2, 88.1], [94, 80], [90.7, 88]]) {
+    await clickSourceCoordinate(page, x, y);
+  }
+  await expect(page.getByTestId("split-active-child-state")).toHaveAttribute("data-state", "needs-correction");
+  await expect(page.getByRole("button", { name: "Finish Polygon" })).toBeDisabled();
+  await expect(page.getByRole("alert", { name: "Split validation guidance" })).toContainText("crosses itself");
+  await expect(page.getByTestId("split-confirm-blockers")).toContainText("The outline crosses itself");
+  await page.screenshot({ path: testInfo.outputPath("hopkins-l683-invalid-outline-guidance-qa.png"), fullPage: false });
+  await page.getByRole("button", { name: "Cancel Split" }).click();
+  await page.getByRole("button", { name: "Split Polygon", exact: true }).click();
+
+  const sourcePoints = [
+    [[39, 70], [209, 181], [198, 252], [45, 230]],
+    [[45, 230], [198, 252], [207, 331], [36, 307]],
+    [[36, 307], [207, 331], [218, 419], [26, 395]],
+    [[26, 395], [218, 419], [235, 524], [11, 494]],
+  ];
+  for (const [index, child] of sourcePoints.entries()) {
+    if (index > 0) await page.getByRole("button", { name: "Start Next Polygon" }).click();
+    for (const [x, y] of child) {
+      await clickSourceCoordinate(page, (5150 + x) / 57, (3720 + y) / 48);
+    }
+    await page.getByRole("button", { name: "Finish Polygon" }).click();
+    const childState = page.getByTestId("split-child-states").locator("li").nth(index);
+    await expect(childState).toContainText(`Child ${index + 1} ·`);
+    await expect(childState).not.toContainText("Editing");
+    expect(["completed", "needs-correction"]).toContain(await childState.getAttribute("data-child-state"));
+    await expect(page.getByTestId("split-action-feedback")).toContainText(`Choose Start Next Polygon`);
+    if (index === 0) await page.screenshot({ path: testInfo.outputPath("hopkins-l683-child-1-finished-qa.png"), fullPage: false });
+  }
+  await expect(page.getByTestId("split-drawn-progress")).toContainText("4 polygons drawn");
+  await expect(page.getByRole("button", { name: "Edit Child 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Edit Child 1" }).click();
+  const editedChild = page.getByTestId("split-child-states").locator("li").first();
+  await expect(editedChild).toContainText("Child 1 · Editing");
+  await page.getByRole("button", { name: "Cancel adjustment" }).click();
+  await expect(editedChild).not.toContainText("Editing");
+  await expect(page.getByRole("button", { name: "Preview split" })).toBeEnabled();
+  const gapAcknowledgement = page.getByLabel("I checked the uncovered area and all child-boundary warnings against the source.");
+  if (await gapAcknowledgement.count()) {
+    await expect(page.getByRole("button", { name: "Confirm Split" })).toBeDisabled();
+    await expect(page.getByTestId("split-confirm-blockers")).toContainText("Inspect the uncovered parent area and each child-boundary warning");
+    await expect(page.getByTestId("split-confirm-blockers")).toContainText("check the acknowledgment box");
+  }
+  if (await gapAcknowledgement.count()) await gapAcknowledgement.check();
+  await page.getByRole("button", { name: "Preview split" }).click();
+  await expect(page.getByTestId("split-drawn-progress")).toContainText("Preview is ready");
+  await expect(page.getByRole("button", { name: "Confirm Split" })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath("hopkins-l683-after-split-preview-qa.png"), fullPage: false });
+  await page.getByRole("button", { name: "Confirm Split" }).click();
+
+  await expect(page.getByRole("option", { name: /Draft child 1 · not canonical/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Draft child 4 · not canonical/ })).toBeVisible();
+  await expect(page.locator("g[role='listbox'] polygon[role='option']")).toHaveCount(722);
+  await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
+  await expect(page.getByTestId("split-child-next-steps")).toContainText(/To review the next plot, tap its outlined child on the map/);
+  await expect(page.getByTestId("split-child-next-steps")).toBeInViewport();
+
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export review JSON" }).click(),
+  ]);
+  const exported = JSON.parse(await readFile((await jsonDownload.path())!, "utf8"));
+  const originalCase = exported.cases.find((item: { id: string }) => item.id === "S019");
+  expect(originalCase.original_polygon_pct).toEqual(originalCase.polygon_pct);
+  expect(originalCase.status).toBe("pending");
+  expect(exported.geometry_issues).toContainEqual(expect.objectContaining({ correction_key: "L-683" }));
+  expect(exported.proposed_polygon_splits[0].children).toHaveLength(4);
+  expect(exported.proposed_polygon_splits[0].parent_polygon_pct).toEqual(originalCase.polygon_pct);
+  expect(exported.proposed_polygon_splits[0].source_image_sha256).toBe(exported.source_image.sha256);
+
+  await page.getByRole("button", { name: "Undo split · restore parent" }).click();
+  await expect(page.getByRole("option", { name: /Detected polygon L-683, Geometry issue/ })).toBeVisible();
+  await expect(page.locator("g[role='listbox'] polygon[role='option']")).toHaveCount(719);
 });
 
 test("capture desktop and mobile editor review checkpoints (QA-only test data)", async ({ page }, testInfo) => {

@@ -1,0 +1,5669 @@
+{
+  "manifest_kind": "wamule-hopkins-demo-correction-manifest",
+  "schema_version": 1,
+  "scope": {
+    "tenantSlug": "hopkins-grove",
+    "projectSlug": "map-review",
+    "phaseSlug": "default"
+  },
+  "revision": 33,
+  "created_at": "2026-10-15T01:03:06.953Z",
+  "source_image": {
+    "sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+    "width": 5700,
+    "height": 4800
+  },
+  "detection_source_sha256": "f70084a8e7c9ba0ea2b0203bfbf4af678d3f09b60a712ec5b469f45ff08aafa0",
+  "owner_authorization": {
+    "basis": "explicit-owner-instruction",
+    "approved_at": "2026-10-14T21:26:52.147Z",
+    "note": "Owner authorized all accessible listed proposals for local Hopkins Grove demo use. This does not authorize a hosted release, canonical sales record, printed identity, price, availability, or publication. Owner additionally approved the local-demo refinements for L-048, L-137, L-156, L-184, and L-235 on 2026-10-14; OCR identities remain pending, and hosted/canonical sales data is unchanged. Owner requested local demo fine-tuning for L-258, L-363, L-365, L-338, L-337, L-505, L-504, L-444, L-506, L-020, and L-011 on 2026-10-14. Nine source-bound contour replacements were applied with blank/pending identities; L-258 and L-363 remain pending due to contour/overlap issues."
+  },
+  "benchmark_exposure": [
+    {
+      "case_id": "S015",
+      "detection_id": "L-028",
+      "status": "exposed-not-independent-blind-ground-truth",
+      "note": "L-028 source/proposal inspection was previously recorded as an exposure. The original benchmark manifest and label evidence were not modified."
+    }
+  ],
+  "inaccessible_manual_session": {
+    "status": "pending-not-imported",
+    "detection_id": null,
+    "note": "The owner's unsaved six-child browser session was inaccessible to this local manifest build and was not guessed, imported, replaced, or marked complete."
+  },
+  "approved_splits": [
+    {
+      "snapshot_id": "OWNER-DEMO-L-155-e182d4941b71@1089569fd6c7a2b50a7a3c13d6cf0555628ca7b681c98b187eec3a49c8e10f06",
+      "draft_id": "OWNER-DEMO-L-155-e182d4941b71",
+      "revision_fingerprint": "1089569fd6c7a2b50a7a3c13d6cf0555628ca7b681c98b187eec3a49c8e10f06",
+      "parent_detection_id": "L-155",
+      "parent_map_reference": "L-155",
+      "parent_polygon_pct": [
+        {
+          "x": 25.15,
+          "y": 35.93
+        },
+        {
+          "x": 25.25,
+          "y": 35.15
+        },
+        {
+          "x": 27.2,
+          "y": 35.45
+        },
+        {
+          "x": 28.95,
+          "y": 38.36
+        },
+        {
+          "x": 28.5,
+          "y": 42.64
+        },
+        {
+          "x": 28.2,
+          "y": 43.11
+        },
+        {
+          "x": 25.15,
+          "y": 36.46
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "e182d4941b7183d0d96a51de4d0e3c48cfa5fb346258a532aeed254ca0c0b236",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z",
+      "correction_note": "Owner-approved local demo refinement: L-155 children 2 and 3 now use the full source-aligned L-137/L-156 plot outlines; original partial fragments and source detections remain recoverable in the manifest/history.",
+      "reasoned_waiver": "Owner-approved local Hopkins demo geometry refinement. Source geometry and identity provenance are retained; OCR remains unverified and no sales, price, or canonical identity fields are assigned. L-155 child fragments 2 and 3 were replaced with the existing source-bound L-137 and L-156 whole-plot outlines; duplicate top-level source detections are withheld only while this L-155 snapshot is active. The 6.177% parent gap, 15.580% outward extension, and alignment scores are recorded. No printed identities are approved.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-155/proposal.json",
+      "geometry_exceptions": [
+        "6.177% of the original L-155 parent area remains unassigned.",
+        "15.580% of the updated child-union area extends outside the L-155 detection boundary; the retained L-137/L-156 source outlines extend across that incomplete merged detection.",
+        "Boundary-on-ink heuristic is 59.75% for the L-137 replacement child and 80.12% for the L-156 replacement child; both were visually compared against the source plat and remain demo-only geometry."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 93.823,
+        "unassigned_parent_area_percent": 6.177,
+        "outside_parent_area_percent": 15.58,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          59.75,
+          80.12,
+          92.9,
+          96.1
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-155-CVe182d494-01",
+          "parent_detection_id": "L-155",
+          "polygon_pct": [
+            {
+              "x": 25.24561404,
+              "y": 35.14583333
+            },
+            {
+              "x": 25.15789474,
+              "y": 35.89583333
+            },
+            {
+              "x": 25.15789474,
+              "y": 36.45833333
+            },
+            {
+              "x": 25.73684211,
+              "y": 37.72916667
+            },
+            {
+              "x": 26.96491228,
+              "y": 37.9375
+            },
+            {
+              "x": 27.21052632,
+              "y": 35.47916667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-155-CVe182d494-02",
+          "parent_detection_id": "L-155",
+          "polygon_pct": [
+            {
+              "x": 27.2,
+              "y": 36.4
+            },
+            {
+              "x": 27.3,
+              "y": 35.51
+            },
+            {
+              "x": 29.25,
+              "y": 35.81
+            },
+            {
+              "x": 29.1,
+              "y": 36.88
+            },
+            {
+              "x": 27.2,
+              "y": 36.58
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-155-CVe182d494-03",
+          "parent_detection_id": "L-155",
+          "polygon_pct": [
+            {
+              "x": 27.05,
+              "y": 37.71
+            },
+            {
+              "x": 27.2,
+              "y": 36.76
+            },
+            {
+              "x": 29.1,
+              "y": 37.05
+            },
+            {
+              "x": 28.95,
+              "y": 38.18
+            },
+            {
+              "x": 27.05,
+              "y": 37.89
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-155-CVe182d494-04",
+          "parent_detection_id": "L-155",
+          "polygon_pct": [
+            {
+              "x": 25.78947368,
+              "y": 37.83333333
+            },
+            {
+              "x": 26.70175439,
+              "y": 39.8125
+            },
+            {
+              "x": 28.77192982,
+              "y": 40.14583333
+            },
+            {
+              "x": 28.92982456,
+              "y": 38.33333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-155-CVe182d494-05",
+          "parent_detection_id": "L-155",
+          "polygon_pct": [
+            {
+              "x": 26.71929825,
+              "y": 39.875
+            },
+            {
+              "x": 28.19298246,
+              "y": 43.10416667
+            },
+            {
+              "x": 28.50877193,
+              "y": 42.64583333
+            },
+            {
+              "x": 28.75438596,
+              "y": 40.20833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ],
+      "geometry_history": [
+        {
+          "action": "snapshot-revised",
+          "reason": "The L-155 geometry was refined to use the existing full source outlines for the L-137 and L-156 plots.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z",
+          "prior_snapshot_id": "OWNER-DEMO-L-155-e182d4941b71@a4cb4b5a5b167844b0a14351a46fa461a30544c99ef74bd04e29334162da6f73",
+          "prior_revision_fingerprint": "a4cb4b5a5b167844b0a14351a46fa461a30544c99ef74bd04e29334162da6f73",
+          "prior_geometry_evidence": {
+            "parent_coverage_percent": 92.773,
+            "unassigned_parent_area_percent": 7.227,
+            "outside_parent_area_percent": 0.137,
+            "child_boundary_alignment_within_4px_percent": [
+              100,
+              70,
+              90.88,
+              92.9,
+              96.1
+            ],
+            "existing_detection_overlaps": [
+              {
+                "detection_id": "L-137",
+                "child_index": 2,
+                "intersection_px2": 990.23
+              },
+              {
+                "detection_id": "L-156",
+                "child_index": 3,
+                "intersection_px2": 3464.09
+              }
+            ]
+          },
+          "prior_geometry_exceptions": [
+            "7.227% of the original detected area remains unassigned.",
+            "0.137% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+            "Boundary-on-dark-ink heuristic is below 90% for child 2 (70.00%); the score is a raster heuristic, not survey accuracy.",
+            "Proposed child boundaries intersect existing neighboring detections: L-137, L-156."
+          ],
+          "prior_reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-155: 7.227% of the original detected area remains unassigned. 0.137% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 2 (70.00%); the score is a raster heuristic, not survey accuracy. Proposed child boundaries intersect existing neighboring detections: L-137, L-156. OCR/printed identities were intentionally omitted and remain pending human review."
+        },
+        {
+          "action": "child-geometry-refined",
+          "child_id": "DRAFT-L-155-CVe182d494-02",
+          "before_polygon_pct": [
+            {
+              "x": 27.31578947,
+              "y": 35.66666667
+            },
+            {
+              "x": 27.28070175,
+              "y": 35.83333333
+            },
+            {
+              "x": 27.26315789,
+              "y": 35.75
+            },
+            {
+              "x": 27.24561404,
+              "y": 36.16666667
+            },
+            {
+              "x": 27.22807018,
+              "y": 36.0625
+            },
+            {
+              "x": 27.21052632,
+              "y": 36.64583333
+            },
+            {
+              "x": 27.54385965,
+              "y": 36.6875
+            },
+            {
+              "x": 27.52631579,
+              "y": 36.72916667
+            },
+            {
+              "x": 27.73684211,
+              "y": 36.70833333
+            },
+            {
+              "x": 27.8245614,
+              "y": 36.75
+            },
+            {
+              "x": 27.78947368,
+              "y": 36.77083333
+            },
+            {
+              "x": 27.98245614,
+              "y": 36.75
+            }
+          ],
+          "after_polygon_pct": [
+            {
+              "x": 27.2,
+              "y": 36.4
+            },
+            {
+              "x": 27.3,
+              "y": 35.51
+            },
+            {
+              "x": 29.25,
+              "y": 35.81
+            },
+            {
+              "x": 29.1,
+              "y": 36.88
+            },
+            {
+              "x": 27.2,
+              "y": 36.58
+            }
+          ],
+          "source_detection_id": "L-137",
+          "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-137/proposal.json",
+          "source_proposal_fingerprint": "e651a51c5f82396b5196dde90ecaea6fd37c19145a3daa964bf7ad068b1f864b",
+          "reason": "The previous L-155 child was only a partial contour inside printed plot L-137; the existing source-aligned L-137 detection boundary is retained as the full child geometry. The source detection is suppressed separately to avoid duplicate map outlines.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z"
+        },
+        {
+          "action": "child-geometry-refined",
+          "child_id": "DRAFT-L-155-CVe182d494-03",
+          "before_polygon_pct": [
+            {
+              "x": 27.14035088,
+              "y": 36.85416667
+            },
+            {
+              "x": 27.15789474,
+              "y": 37.14583333
+            },
+            {
+              "x": 27.07017544,
+              "y": 37.91666667
+            },
+            {
+              "x": 28.75438596,
+              "y": 38.20833333
+            },
+            {
+              "x": 28.66666667,
+              "y": 38.22916667
+            },
+            {
+              "x": 28.85964912,
+              "y": 38.20833333
+            },
+            {
+              "x": 28.47368421,
+              "y": 37.5625
+            },
+            {
+              "x": 28.45614035,
+              "y": 37.625
+            },
+            {
+              "x": 28.1754386,
+              "y": 37.625
+            },
+            {
+              "x": 28.12280702,
+              "y": 37.5
+            },
+            {
+              "x": 28.12280702,
+              "y": 37.625
+            },
+            {
+              "x": 27.70175439,
+              "y": 37.60416667
+            },
+            {
+              "x": 27.75438596,
+              "y": 37.58333333
+            },
+            {
+              "x": 27.78947368,
+              "y": 37.375
+            },
+            {
+              "x": 27.98245614,
+              "y": 37.375
+            },
+            {
+              "x": 27.9122807,
+              "y": 37.25
+            },
+            {
+              "x": 27.92982456,
+              "y": 37.16666667
+            },
+            {
+              "x": 27.96491228,
+              "y": 37.25
+            },
+            {
+              "x": 27.98245614,
+              "y": 37.14583333
+            },
+            {
+              "x": 28.21052632,
+              "y": 37.14583333
+            },
+            {
+              "x": 28.12280702,
+              "y": 36.97916667
+            },
+            {
+              "x": 28,
+              "y": 36.89583333
+            },
+            {
+              "x": 28.05263158,
+              "y": 36.875
+            },
+            {
+              "x": 27.85964912,
+              "y": 36.89583333
+            },
+            {
+              "x": 27.77192982,
+              "y": 36.85416667
+            },
+            {
+              "x": 27.84210526,
+              "y": 36.83333333
+            },
+            {
+              "x": 27.31578947,
+              "y": 36.79166667
+            }
+          ],
+          "after_polygon_pct": [
+            {
+              "x": 27.05,
+              "y": 37.71
+            },
+            {
+              "x": 27.2,
+              "y": 36.76
+            },
+            {
+              "x": 29.1,
+              "y": 37.05
+            },
+            {
+              "x": 28.95,
+              "y": 38.18
+            },
+            {
+              "x": 27.05,
+              "y": 37.89
+            }
+          ],
+          "source_detection_id": "L-156",
+          "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-156/proposal.json",
+          "source_proposal_fingerprint": "bff188c83cc6815aa8e0265e1c087a9295e98def391dcb0ef4e2f506a240796d",
+          "reason": "The previous L-155 child was only a partial contour inside printed plot L-156; the existing source-aligned L-156 detection boundary is retained as the full child geometry. The source detection is suppressed separately to avoid duplicate map outlines.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-086-b5db558d1e82@ce954e412bcb48344cb8c1070b0566b88db86e931cc4d1293c0fcbaa81990a90",
+      "draft_id": "OWNER-DEMO-L-086-b5db558d1e82",
+      "revision_fingerprint": "ce954e412bcb48344cb8c1070b0566b88db86e931cc4d1293c0fcbaa81990a90",
+      "parent_detection_id": "L-086",
+      "parent_map_reference": "L-086",
+      "parent_polygon_pct": [
+        {
+          "x": 20.65,
+          "y": 26.6
+        },
+        {
+          "x": 22.6,
+          "y": 26.9
+        },
+        {
+          "x": 23.75,
+          "y": 29.16
+        },
+        {
+          "x": 23.55,
+          "y": 31
+        },
+        {
+          "x": 22.65,
+          "y": 30.88
+        },
+        {
+          "x": 20.7,
+          "y": 26.72
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "b5db558d1e827aa2ef37ecef28b052a45066ff23949b7d06650b96b3f420a521",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-086 by 2 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-086: 20.002% of the original detected area remains unassigned. 0.158% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-086/proposal.json",
+      "geometry_exceptions": [
+        "20.002% of the original detected area remains unassigned.",
+        "0.158% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 79.998,
+        "unassigned_parent_area_percent": 20.002,
+        "outside_parent_area_percent": 0.158,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          98.59
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-086-CVb5db558d-01",
+          "parent_detection_id": "L-086",
+          "polygon_pct": [
+            {
+              "x": 20.64912281,
+              "y": 26.60416667
+            },
+            {
+              "x": 21.61403509,
+              "y": 28.6875
+            },
+            {
+              "x": 22.43859649,
+              "y": 28.85416667
+            },
+            {
+              "x": 22.64912281,
+              "y": 27.02083333
+            },
+            {
+              "x": 22.61403509,
+              "y": 26.91666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-086-CVb5db558d-02",
+          "parent_detection_id": "L-086",
+          "polygon_pct": [
+            {
+              "x": 21.68421053,
+              "y": 28.8125
+            },
+            {
+              "x": 22.64912281,
+              "y": 30.875
+            },
+            {
+              "x": 23.54385965,
+              "y": 30.97916667
+            },
+            {
+              "x": 23.73684211,
+              "y": 29.375
+            },
+            {
+              "x": 23.71929825,
+              "y": 29.125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-058-6b293404204b@134504ffc90e42135cf45ba7c91070703de43f2a02e7e4123a69abb8dddcb2bc",
+      "draft_id": "OWNER-DEMO-L-058-6b293404204b",
+      "revision_fingerprint": "134504ffc90e42135cf45ba7c91070703de43f2a02e7e4123a69abb8dddcb2bc",
+      "parent_detection_id": "L-058",
+      "parent_map_reference": "L-058",
+      "parent_polygon_pct": [
+        {
+          "x": 17.4,
+          "y": 19.42
+        },
+        {
+          "x": 19.05,
+          "y": 19.66
+        },
+        {
+          "x": 20.95,
+          "y": 22.39
+        },
+        {
+          "x": 20.5,
+          "y": 26.25
+        },
+        {
+          "x": 17.4,
+          "y": 19.48
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "6b293404204b9fe8e2c1919e6d3bd72a8434b9905b7d6ddbfa14e6c6d3dabf90",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z",
+      "correction_note": "Owner-approved local demo refinement: retain L-058 children 1, 4, and 5; retire overlapping fragments 2 and 3, now represented by the L-048 child outlines. Original fragment geometry is preserved in geometry_history.",
+      "reasoned_waiver": "Owner-approved local Hopkins demo geometry refinement. Source geometry and identity provenance are retained; OCR remains unverified and no sales, price, or canonical identity fields are assigned. The owner approved retiring L-058 child fragments 2 and 3 after they were found to intersect full L-048 plots. The 28.857% parent-area gap, 0.117% outside sliver, and retained child alignment scores (100%, 89.37%, 78.53%) are recorded; this is a local demo reconciliation, not survey approval.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-058/proposal.json",
+      "geometry_exceptions": [
+        "28.857% of the original L-058 parent extent is no longer represented by its three active children because two fragment contours were retired; the complete L-048 source-derived children now represent the shared printed plots in that region.",
+        "0.117% of active child union area lies outside the original detection boundary.",
+        "Boundary-on-ink heuristic is below 90% for retained children 2 (89.37%) and 3 (78.53%)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 71.143,
+        "unassigned_parent_area_percent": 28.857,
+        "outside_parent_area_percent": 0.117,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          89.37,
+          78.53
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-058-CV6b293404-01",
+          "parent_detection_id": "L-058",
+          "polygon_pct": [
+            {
+              "x": 17.40350877,
+              "y": 19.41666667
+            },
+            {
+              "x": 18.50877193,
+              "y": 21.89583333
+            },
+            {
+              "x": 18.84210526,
+              "y": 21.97916667
+            },
+            {
+              "x": 19.0877193,
+              "y": 19.70833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-058-CV6b293404-04",
+          "parent_detection_id": "L-058",
+          "polygon_pct": [
+            {
+              "x": 18.56140351,
+              "y": 22
+            },
+            {
+              "x": 19.1754386,
+              "y": 23.3125
+            },
+            {
+              "x": 20.8245614,
+              "y": 23.54166667
+            },
+            {
+              "x": 20.92982456,
+              "y": 22.375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-058-CV6b293404-05",
+          "parent_detection_id": "L-058",
+          "polygon_pct": [
+            {
+              "x": 19.19298246,
+              "y": 23.375
+            },
+            {
+              "x": 20.50877193,
+              "y": 26.22916667
+            },
+            {
+              "x": 20.80701754,
+              "y": 23.625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ],
+      "geometry_history": [
+        {
+          "action": "snapshot-revised",
+          "reason": "The L-058 geometry was revised after owner approval of the source-aligned L-048 two-plot correction.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z",
+          "prior_snapshot_id": "OWNER-DEMO-L-058-6b293404204b@b6d32cdea1759c8e5a3855732680d80f855e321412c2f95e78b0b0d194b194ab",
+          "prior_revision_fingerprint": "b6d32cdea1759c8e5a3855732680d80f855e321412c2f95e78b0b0d194b194ab",
+          "prior_geometry_evidence": {
+            "parent_coverage_percent": 89.579,
+            "unassigned_parent_area_percent": 10.421,
+            "outside_parent_area_percent": 0.127,
+            "child_boundary_alignment_within_4px_percent": [
+              100,
+              90.03,
+              67.83,
+              89.37,
+              78.53
+            ],
+            "existing_detection_overlaps": [
+              {
+                "detection_id": "L-048",
+                "child_index": 2,
+                "intersection_px2": 3699.25
+              },
+              {
+                "detection_id": "L-048",
+                "child_index": 3,
+                "intersection_px2": 1005.95
+              }
+            ]
+          },
+          "prior_geometry_exceptions": [
+            "10.421% of the original detected area remains unassigned.",
+            "0.127% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+            "Boundary-on-dark-ink heuristic is below 90% for children 3 (67.83%), 4 (89.37%), 5 (78.53%); the score is a raster heuristic, not survey accuracy.",
+            "Proposed child boundaries intersect existing neighboring detections: L-048."
+          ],
+          "prior_reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-058: 10.421% of the original detected area remains unassigned. 0.127% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for children 3 (67.83%), 4 (89.37%), 5 (78.53%); the score is a raster heuristic, not survey accuracy. Proposed child boundaries intersect existing neighboring detections: L-048. OCR/printed identities were intentionally omitted and remain pending human review."
+        },
+        {
+          "action": "retired-child-fragment",
+          "child_id": "DRAFT-L-058-CV6b293404-02",
+          "before_polygon_pct": [
+            {
+              "x": 19.1754386,
+              "y": 19.83333333
+            },
+            {
+              "x": 18.94736842,
+              "y": 21.95833333
+            },
+            {
+              "x": 19.63157895,
+              "y": 22.0625
+            },
+            {
+              "x": 19.61403509,
+              "y": 22.10416667
+            },
+            {
+              "x": 19.89473684,
+              "y": 22.10416667
+            },
+            {
+              "x": 20.01754386,
+              "y": 21.0625
+            },
+            {
+              "x": 19.96491228,
+              "y": 20.97916667
+            },
+            {
+              "x": 19.89473684,
+              "y": 21.0625
+            },
+            {
+              "x": 19.57894737,
+              "y": 21.02083333
+            },
+            {
+              "x": 19.64912281,
+              "y": 20.97916667
+            },
+            {
+              "x": 19.57894737,
+              "y": 20.9375
+            },
+            {
+              "x": 19.61403509,
+              "y": 20.8125
+            },
+            {
+              "x": 19.85964912,
+              "y": 20.83333333
+            },
+            {
+              "x": 19.73684211,
+              "y": 20.64583333
+            },
+            {
+              "x": 19.64912281,
+              "y": 20.77083333
+            },
+            {
+              "x": 19.59649123,
+              "y": 20.6875
+            },
+            {
+              "x": 19.45614035,
+              "y": 20.77083333
+            },
+            {
+              "x": 19.35087719,
+              "y": 20.70833333
+            },
+            {
+              "x": 19.33333333,
+              "y": 20.5625
+            },
+            {
+              "x": 19.38596491,
+              "y": 20.5
+            },
+            {
+              "x": 19.63157895,
+              "y": 20.5
+            }
+          ],
+          "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-048/proposal.json",
+          "source_proposal_fingerprint": "4bb3d9d309cc3d1037536ce6fff543fb65ac3421ea4a228b165b4c5a65a44c79",
+          "reason": "Retired from the active map because source comparison showed these partial contours intersect the complete L-048 plot outlines; original geometry is retained here for recovery.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z"
+        },
+        {
+          "action": "retired-child-fragment",
+          "child_id": "DRAFT-L-058-CV6b293404-03",
+          "before_polygon_pct": [
+            {
+              "x": 20.12280702,
+              "y": 21.20833333
+            },
+            {
+              "x": 20.03508772,
+              "y": 22.125
+            },
+            {
+              "x": 20.43859649,
+              "y": 22.1875
+            },
+            {
+              "x": 20.42105263,
+              "y": 22.22916667
+            },
+            {
+              "x": 20.84210526,
+              "y": 22.25
+            }
+          ],
+          "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-048/proposal.json",
+          "source_proposal_fingerprint": "4bb3d9d309cc3d1037536ce6fff543fb65ac3421ea4a228b165b4c5a65a44c79",
+          "reason": "Retired from the active map because source comparison showed these partial contours intersect the complete L-048 plot outlines; original geometry is retained here for recovery.",
+          "approved_by": "Project owner (explicit local demo approval)",
+          "approved_at": "2026-10-14T23:13:32.262Z"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-028-1161333d3a01@7173cabf21814e0f8b1bc182d031c83c1692c903adc6549d3cc7cdeacdc9835e",
+      "draft_id": "OWNER-DEMO-L-028-1161333d3a01",
+      "revision_fingerprint": "7173cabf21814e0f8b1bc182d031c83c1692c903adc6549d3cc7cdeacdc9835e",
+      "parent_detection_id": "L-028",
+      "parent_map_reference": "L-028",
+      "parent_polygon_pct": [
+        {
+          "x": 9.75,
+          "y": 12.47
+        },
+        {
+          "x": 17.6,
+          "y": 13.72
+        },
+        {
+          "x": 18.4,
+          "y": 16.39
+        },
+        {
+          "x": 18.15,
+          "y": 18.65
+        },
+        {
+          "x": 17.85,
+          "y": 18.71
+        },
+        {
+          "x": 17.1,
+          "y": 18.59
+        },
+        {
+          "x": 14.25,
+          "y": 16.75
+        },
+        {
+          "x": 9.8,
+          "y": 12.53
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "1161333d3a01a94dd571ae71cbc5a3747a458486c899f619cbdc9001ff625565",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-028 by 6 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-028: 11.755% of the original detected area remains unassigned. 0.031% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 6 (19.16%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-028/proposal.json",
+      "geometry_exceptions": [
+        "11.755% of the original detected area remains unassigned.",
+        "0.031% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 6 (19.16%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 88.245,
+        "unassigned_parent_area_percent": 11.755,
+        "outside_parent_area_percent": 0.031,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100,
+          100,
+          100,
+          97.37,
+          19.16
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-028-CV1161333d-01",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 9.75438596,
+              "y": 12.47916667
+            },
+            {
+              "x": 12.05263158,
+              "y": 14.66666667
+            },
+            {
+              "x": 12.26315789,
+              "y": 12.875
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-028-CV1161333d-02",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 12.31578947,
+              "y": 12.89583333
+            },
+            {
+              "x": 12.10526316,
+              "y": 14.70833333
+            },
+            {
+              "x": 13.0877193,
+              "y": 15.64583333
+            },
+            {
+              "x": 13.36842105,
+              "y": 13.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-028-CV1161333d-03",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 13.43859649,
+              "y": 13.0625
+            },
+            {
+              "x": 13.15789474,
+              "y": 15.70833333
+            },
+            {
+              "x": 14.26315789,
+              "y": 16.77083333
+            },
+            {
+              "x": 15.10526316,
+              "y": 16.9375
+            },
+            {
+              "x": 15.50877193,
+              "y": 13.39583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-028-CV1161333d-04",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 15.57894737,
+              "y": 13.41666667
+            },
+            {
+              "x": 15.1754386,
+              "y": 16.9375
+            },
+            {
+              "x": 16.85964912,
+              "y": 17.20833333
+            },
+            {
+              "x": 17.36842105,
+              "y": 16.14583333
+            },
+            {
+              "x": 17.63157895,
+              "y": 13.97916667
+            },
+            {
+              "x": 17.61403509,
+              "y": 13.77083333
+            },
+            {
+              "x": 17.52631579,
+              "y": 13.70833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-028-CV1161333d-05",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 17.42105263,
+              "y": 16.20833333
+            },
+            {
+              "x": 16.89473684,
+              "y": 17.27083333
+            },
+            {
+              "x": 16.78947368,
+              "y": 18.16666667
+            },
+            {
+              "x": 16.9122807,
+              "y": 18.4375
+            },
+            {
+              "x": 17.10526316,
+              "y": 18.58333333
+            },
+            {
+              "x": 17.78947368,
+              "y": 18.70833333
+            },
+            {
+              "x": 18.15789474,
+              "y": 18.64583333
+            },
+            {
+              "x": 18.38596491,
+              "y": 16.375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-028-CV1161333d-06",
+          "parent_detection_id": "L-028",
+          "polygon_pct": [
+            {
+              "x": 15.05263158,
+              "y": 17.27083333
+            },
+            {
+              "x": 15.21052632,
+              "y": 17.375
+            },
+            {
+              "x": 15.87719298,
+              "y": 17.33333333
+            },
+            {
+              "x": 15.9122807,
+              "y": 17.6875
+            },
+            {
+              "x": 15.73684211,
+              "y": 17.70833333
+            },
+            {
+              "x": 15.8245614,
+              "y": 17.77083333
+            },
+            {
+              "x": 16.28070175,
+              "y": 17.77083333
+            },
+            {
+              "x": 16.29824561,
+              "y": 18.0625
+            },
+            {
+              "x": 16.35087719,
+              "y": 18.10416667
+            },
+            {
+              "x": 16.36842105,
+              "y": 17.77083333
+            },
+            {
+              "x": 16.77192982,
+              "y": 17.77083333
+            },
+            {
+              "x": 16.70175439,
+              "y": 17.66666667
+            },
+            {
+              "x": 16.70175439,
+              "y": 17.375
+            },
+            {
+              "x": 16.8245614,
+              "y": 17.33333333
+            },
+            {
+              "x": 16.80701754,
+              "y": 17.27083333
+            },
+            {
+              "x": 16.36842105,
+              "y": 17.27083333
+            },
+            {
+              "x": 16.35087719,
+              "y": 17.20833333
+            },
+            {
+              "x": 16.28070175,
+              "y": 17.27083333
+            },
+            {
+              "x": 15.61403509,
+              "y": 17.27083333
+            },
+            {
+              "x": 15.59649123,
+              "y": 17.08333333
+            },
+            {
+              "x": 15.54385965,
+              "y": 17.08333333
+            },
+            {
+              "x": 15.52631579,
+              "y": 17.27083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-362-df1b1f6ceadb@92553ca711a651fbfaf9a90b6beb7ef5f020013a79957c577d4d9f789d134377",
+      "draft_id": "OWNER-DEMO-L-362-df1b1f6ceadb",
+      "revision_fingerprint": "92553ca711a651fbfaf9a90b6beb7ef5f020013a79957c577d4d9f789d134377",
+      "parent_detection_id": "L-362",
+      "parent_map_reference": "L-362",
+      "parent_polygon_pct": [
+        {
+          "x": 31.75,
+          "y": 57.48
+        },
+        {
+          "x": 33.75,
+          "y": 57.78
+        },
+        {
+          "x": 34.85,
+          "y": 60.04
+        },
+        {
+          "x": 34.65,
+          "y": 61.88
+        },
+        {
+          "x": 33.2,
+          "y": 61.7
+        },
+        {
+          "x": 31.75,
+          "y": 57.54
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "df1b1f6ceadbdec045f22eb8d8d89798a0c711395e4891752fbad7ae134532c1",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-362 by 3 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-362: 4.287% of the original detected area remains unassigned. 0.321% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 2 (78.69%); the score is a raster heuristic, not survey accuracy. Proposed child boundaries intersect existing neighboring detections: L-363. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-362/proposal.json",
+      "geometry_exceptions": [
+        "4.287% of the original detected area remains unassigned.",
+        "0.321% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 2 (78.69%); the score is a raster heuristic, not survey accuracy.",
+        "Proposed child boundaries intersect existing neighboring detections: L-363."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.713,
+        "unassigned_parent_area_percent": 4.287,
+        "outside_parent_area_percent": 0.321,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          78.69,
+          95.33
+        ],
+        "existing_detection_overlaps": [
+          {
+            "detection_id": "L-363",
+            "child_index": 2,
+            "intersection_px2": 2583.27
+          },
+          {
+            "detection_id": "L-363",
+            "child_index": 3,
+            "intersection_px2": 2558.56
+          }
+        ]
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-362-CVdf1b1f6c-01",
+          "parent_detection_id": "L-362",
+          "polygon_pct": [
+            {
+              "x": 31.75438596,
+              "y": 57.47916667
+            },
+            {
+              "x": 32.43859649,
+              "y": 59.54166667
+            },
+            {
+              "x": 33.63157895,
+              "y": 59.72916667
+            },
+            {
+              "x": 33.8245614,
+              "y": 58.04166667
+            },
+            {
+              "x": 33.77192982,
+              "y": 57.79166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-362-CVdf1b1f6c-02",
+          "parent_detection_id": "L-362",
+          "polygon_pct": [
+            {
+              "x": 33.87719298,
+              "y": 58.02083333
+            },
+            {
+              "x": 33.68421053,
+              "y": 59.72916667
+            },
+            {
+              "x": 34.78947368,
+              "y": 59.91666667
+            },
+            {
+              "x": 34.45614035,
+              "y": 59.22916667
+            },
+            {
+              "x": 34.40350877,
+              "y": 59.25
+            },
+            {
+              "x": 34.29824561,
+              "y": 58.89583333
+            },
+            {
+              "x": 34.26315789,
+              "y": 58.9375
+            },
+            {
+              "x": 34.24561404,
+              "y": 58.79166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-362-CVdf1b1f6c-03",
+          "parent_detection_id": "L-362",
+          "polygon_pct": [
+            {
+              "x": 32.47368421,
+              "y": 59.625
+            },
+            {
+              "x": 33.19298246,
+              "y": 61.70833333
+            },
+            {
+              "x": 34.64912281,
+              "y": 61.875
+            },
+            {
+              "x": 34.8245614,
+              "y": 60
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-416-62d7ba3efd02@678b5abedab8bce0077a0fff6d8def43dfa66ed84c629185e30c41bfd9c37868",
+      "draft_id": "OWNER-DEMO-L-416-62d7ba3efd02",
+      "revision_fingerprint": "678b5abedab8bce0077a0fff6d8def43dfa66ed84c629185e30c41bfd9c37868",
+      "parent_detection_id": "L-416",
+      "parent_map_reference": "L-416",
+      "parent_polygon_pct": [
+        {
+          "x": 33.45,
+          "y": 62.53
+        },
+        {
+          "x": 34.95,
+          "y": 62.77
+        },
+        {
+          "x": 36.85,
+          "y": 65.56
+        },
+        {
+          "x": 36.25,
+          "y": 70.72
+        },
+        {
+          "x": 33.5,
+          "y": 62.71
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "62d7ba3efd0213606ca71bbf0bc787eab55908e3f5cb4ea0217c33a39df8e00f",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-416 by 3 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-416: 23.720% of the original detected area remains unassigned. 0.122% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-416/proposal.json",
+      "geometry_exceptions": [
+        "23.720% of the original detected area remains unassigned.",
+        "0.122% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 76.28,
+        "unassigned_parent_area_percent": 23.72,
+        "outside_parent_area_percent": 0.122,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-416-CV62d7ba3e-01",
+          "parent_detection_id": "L-416",
+          "polygon_pct": [
+            {
+              "x": 33.45614035,
+              "y": 62.52083333
+            },
+            {
+              "x": 34.29824561,
+              "y": 65.02083333
+            },
+            {
+              "x": 34.71929825,
+              "y": 65.10416667
+            },
+            {
+              "x": 34.98245614,
+              "y": 62.8125
+            },
+            {
+              "x": 34.87719298,
+              "y": 62.75
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-416-CV62d7ba3e-02",
+          "parent_detection_id": "L-416",
+          "polygon_pct": [
+            {
+              "x": 34.33333333,
+              "y": 65.10416667
+            },
+            {
+              "x": 34.9122807,
+              "y": 66.8125
+            },
+            {
+              "x": 36.66666667,
+              "y": 67.08333333
+            },
+            {
+              "x": 36.84210526,
+              "y": 65.625
+            },
+            {
+              "x": 36.80701754,
+              "y": 65.5
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-416-CV62d7ba3e-03",
+          "parent_detection_id": "L-416",
+          "polygon_pct": [
+            {
+              "x": 34.92982456,
+              "y": 66.875
+            },
+            {
+              "x": 36.24561404,
+              "y": 70.70833333
+            },
+            {
+              "x": 36.64912281,
+              "y": 67.16666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-541-f2ee8bbf0f62@b25f1823a844269164d51e7364f8e02b4e15ab8ab5062eba064bf38334ea83cb",
+      "draft_id": "OWNER-DEMO-L-541-f2ee8bbf0f62",
+      "revision_fingerprint": "b25f1823a844269164d51e7364f8e02b4e15ab8ab5062eba064bf38334ea83cb",
+      "parent_detection_id": "L-541",
+      "parent_map_reference": "L-541",
+      "parent_polygon_pct": [
+        {
+          "x": 36.7,
+          "y": 72.03
+        },
+        {
+          "x": 38.3,
+          "y": 72.27
+        },
+        {
+          "x": 40,
+          "y": 75.42
+        },
+        {
+          "x": 39.85,
+          "y": 76.66
+        },
+        {
+          "x": 38.2,
+          "y": 76.43
+        },
+        {
+          "x": 36.7,
+          "y": 72.09
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "f2ee8bbf0f622c8fb423a85a0cd54f8e38ee7e87d8ef6b2b3ec0d0a8562361bb",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-541 by 2 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-541: 34.355% of the original detected area remains unassigned. 0.332% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-541/proposal.json",
+      "geometry_exceptions": [
+        "34.355% of the original detected area remains unassigned.",
+        "0.332% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 65.645,
+        "unassigned_parent_area_percent": 34.355,
+        "outside_parent_area_percent": 0.332,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          98.77
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-541-CVf2ee8bbf-01",
+          "parent_detection_id": "L-541",
+          "polygon_pct": [
+            {
+              "x": 36.70175439,
+              "y": 72.02083333
+            },
+            {
+              "x": 37.96491228,
+              "y": 75.77083333
+            },
+            {
+              "x": 38.35087719,
+              "y": 72.35416667
+            },
+            {
+              "x": 38.22807018,
+              "y": 72.25
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-541-CVf2ee8bbf-02",
+          "parent_detection_id": "L-541",
+          "polygon_pct": [
+            {
+              "x": 38.10526316,
+              "y": 75.08333333
+            },
+            {
+              "x": 38,
+              "y": 75.89583333
+            },
+            {
+              "x": 38.19298246,
+              "y": 76.4375
+            },
+            {
+              "x": 39.84210526,
+              "y": 76.64583333
+            },
+            {
+              "x": 39.98245614,
+              "y": 75.39583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-622-90493cdc4d92@5df2d0a5b051e8bdefe8c5c9db908ce2eaa96a6f1d5efcf4783063c4dd19c159",
+      "draft_id": "OWNER-DEMO-L-622-90493cdc4d92",
+      "revision_fingerprint": "5df2d0a5b051e8bdefe8c5c9db908ce2eaa96a6f1d5efcf4783063c4dd19c159",
+      "parent_detection_id": "L-622",
+      "parent_map_reference": "L-622",
+      "parent_polygon_pct": [
+        {
+          "x": 53.05,
+          "y": 81.41
+        },
+        {
+          "x": 53.3,
+          "y": 79.16
+        },
+        {
+          "x": 56.8,
+          "y": 79.69
+        },
+        {
+          "x": 56.55,
+          "y": 82.24
+        },
+        {
+          "x": 56.4,
+          "y": 82.42
+        },
+        {
+          "x": 53.05,
+          "y": 81.83
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "90493cdc4d921a59479ef64e7f55f3737561d99724e95cb54d0dffbd4cdc5099",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-622 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-622: 5.489% of the original detected area remains unassigned. 0.145% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 3 (76.27%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-622/proposal.json",
+      "geometry_exceptions": [
+        "5.489% of the original detected area remains unassigned.",
+        "0.145% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 3 (76.27%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.511,
+        "unassigned_parent_area_percent": 5.489,
+        "outside_parent_area_percent": 0.145,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          93.5,
+          76.27,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-622-CV90493cdc-01",
+          "parent_detection_id": "L-622",
+          "polygon_pct": [
+            {
+              "x": 53.29824561,
+              "y": 79.1875
+            },
+            {
+              "x": 53.15789474,
+              "y": 80.5
+            },
+            {
+              "x": 54.89473684,
+              "y": 80.77083333
+            },
+            {
+              "x": 55.03508772,
+              "y": 79.41666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-622-CV90493cdc-02",
+          "parent_detection_id": "L-622",
+          "polygon_pct": [
+            {
+              "x": 55.10526316,
+              "y": 79.4375
+            },
+            {
+              "x": 54.96491228,
+              "y": 80.79166667
+            },
+            {
+              "x": 56.66666667,
+              "y": 81.04166667
+            },
+            {
+              "x": 56.78947368,
+              "y": 79.6875
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-622-CV90493cdc-03",
+          "parent_detection_id": "L-622",
+          "polygon_pct": [
+            {
+              "x": 53.14035088,
+              "y": 80.58333333
+            },
+            {
+              "x": 53.05263158,
+              "y": 81.83333333
+            },
+            {
+              "x": 54.73684211,
+              "y": 82.125
+            },
+            {
+              "x": 54.85964912,
+              "y": 80.83333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-622-CV90493cdc-04",
+          "parent_detection_id": "L-622",
+          "polygon_pct": [
+            {
+              "x": 54.94736842,
+              "y": 80.85416667
+            },
+            {
+              "x": 54.80701754,
+              "y": 82.14583333
+            },
+            {
+              "x": 56.35087719,
+              "y": 82.41666667
+            },
+            {
+              "x": 56.54385965,
+              "y": 82.25
+            },
+            {
+              "x": 56.66666667,
+              "y": 81.125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-650-f7a7e65cc4cc@6826e62b64f7328ceffe1a4778f51db6d372b8253077de3dfd817808e7c3e577",
+      "draft_id": "OWNER-DEMO-L-650-f7a7e65cc4cc",
+      "revision_fingerprint": "6826e62b64f7328ceffe1a4778f51db6d372b8253077de3dfd817808e7c3e577",
+      "parent_detection_id": "L-650",
+      "parent_map_reference": "L-650",
+      "parent_polygon_pct": [
+        {
+          "x": 57.2,
+          "y": 82.13
+        },
+        {
+          "x": 57.5,
+          "y": 79.81
+        },
+        {
+          "x": 61,
+          "y": 80.4
+        },
+        {
+          "x": 60.6,
+          "y": 83.08
+        },
+        {
+          "x": 57.45,
+          "y": 82.6
+        },
+        {
+          "x": 57.2,
+          "y": 82.42
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "f7a7e65cc4cc2286967ee84196f4e22438176ee3f603c3418d2acde35bcfa9e3",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-650 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-650: 5.311% of the original detected area remains unassigned. 0.129% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 4 (83.96%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-650/proposal.json",
+      "geometry_exceptions": [
+        "5.311% of the original detected area remains unassigned.",
+        "0.129% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 4 (83.96%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.689,
+        "unassigned_parent_area_percent": 5.311,
+        "outside_parent_area_percent": 0.129,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          97.18,
+          100,
+          83.96
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-650-CVf7a7e65c-01",
+          "parent_detection_id": "L-650",
+          "polygon_pct": [
+            {
+              "x": 57.50877193,
+              "y": 79.8125
+            },
+            {
+              "x": 57.33333333,
+              "y": 81.14583333
+            },
+            {
+              "x": 59.07017544,
+              "y": 81.4375
+            },
+            {
+              "x": 59.22807018,
+              "y": 80.10416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-650-CVf7a7e65c-02",
+          "parent_detection_id": "L-650",
+          "polygon_pct": [
+            {
+              "x": 59.28070175,
+              "y": 80.10416667
+            },
+            {
+              "x": 59.15789474,
+              "y": 81.45833333
+            },
+            {
+              "x": 60.80701754,
+              "y": 81.70833333
+            },
+            {
+              "x": 60.98245614,
+              "y": 80.39583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-650-CVf7a7e65c-03",
+          "parent_detection_id": "L-650",
+          "polygon_pct": [
+            {
+              "x": 57.31578947,
+              "y": 81.22916667
+            },
+            {
+              "x": 57.19298246,
+              "y": 82.20833333
+            },
+            {
+              "x": 57.21052632,
+              "y": 82.4375
+            },
+            {
+              "x": 57.52631579,
+              "y": 82.625
+            },
+            {
+              "x": 58.92982456,
+              "y": 82.8125
+            },
+            {
+              "x": 59.05263158,
+              "y": 81.5
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-650-CVf7a7e65c-04",
+          "parent_detection_id": "L-650",
+          "polygon_pct": [
+            {
+              "x": 59.12280702,
+              "y": 81.52083333
+            },
+            {
+              "x": 58.98245614,
+              "y": 82.83333333
+            },
+            {
+              "x": 60.59649123,
+              "y": 83.0625
+            },
+            {
+              "x": 60.49122807,
+              "y": 82.95833333
+            },
+            {
+              "x": 60.57894737,
+              "y": 82.8125
+            },
+            {
+              "x": 60.63157895,
+              "y": 82.875
+            },
+            {
+              "x": 60.78947368,
+              "y": 81.79166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-651-741587c87632@36b52e7b954b23d3de2493baedbac1fe5fb2f0f5be84832ec855f7b01a7ec5d0",
+      "draft_id": "OWNER-DEMO-L-651-741587c87632",
+      "revision_fingerprint": "36b52e7b954b23d3de2493baedbac1fe5fb2f0f5be84832ec855f7b01a7ec5d0",
+      "parent_detection_id": "L-651",
+      "parent_map_reference": "L-651",
+      "parent_polygon_pct": [
+        {
+          "x": 61.4,
+          "y": 82.66
+        },
+        {
+          "x": 61.7,
+          "y": 80.46
+        },
+        {
+          "x": 65.15,
+          "y": 81.06
+        },
+        {
+          "x": 64.8,
+          "y": 83.73
+        },
+        {
+          "x": 61.4,
+          "y": 83.14
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "741587c8763292e66c5c10d5abab2c5d58efc10a9942db880ecb53203b362646",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-651 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-651: 5.396% of the original detected area remains unassigned. 0.443% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for children 2 (85.62%), 3 (75.47%), 4 (76.44%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-651/proposal.json",
+      "geometry_exceptions": [
+        "5.396% of the original detected area remains unassigned.",
+        "0.443% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for children 2 (85.62%), 3 (75.47%), 4 (76.44%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.604,
+        "unassigned_parent_area_percent": 5.396,
+        "outside_parent_area_percent": 0.443,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          85.62,
+          75.47,
+          76.44
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-651-CV741587c8-01",
+          "parent_detection_id": "L-651",
+          "polygon_pct": [
+            {
+              "x": 61.70175439,
+              "y": 80.45833333
+            },
+            {
+              "x": 61.52631579,
+              "y": 81.83333333
+            },
+            {
+              "x": 63.24561404,
+              "y": 82.08333333
+            },
+            {
+              "x": 63.38596491,
+              "y": 80.75
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-651-CV741587c8-02",
+          "parent_detection_id": "L-651",
+          "polygon_pct": [
+            {
+              "x": 63.43859649,
+              "y": 80.77083333
+            },
+            {
+              "x": 63.29824561,
+              "y": 82.10416667
+            },
+            {
+              "x": 64.98245614,
+              "y": 82.375
+            },
+            {
+              "x": 65.14035088,
+              "y": 81.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-651-CV741587c8-03",
+          "parent_detection_id": "L-651",
+          "polygon_pct": [
+            {
+              "x": 61.50877193,
+              "y": 81.89583333
+            },
+            {
+              "x": 61.40350877,
+              "y": 82.64583333
+            },
+            {
+              "x": 61.40350877,
+              "y": 83.14583333
+            },
+            {
+              "x": 61.52631579,
+              "y": 82.97916667
+            },
+            {
+              "x": 61.59649123,
+              "y": 83.1875
+            },
+            {
+              "x": 63.0877193,
+              "y": 83.4375
+            },
+            {
+              "x": 63.22807018,
+              "y": 82.16666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-651-CV741587c8-04",
+          "parent_detection_id": "L-651",
+          "polygon_pct": [
+            {
+              "x": 63.28070175,
+              "y": 82.20833333
+            },
+            {
+              "x": 63.1754386,
+              "y": 83.45833333
+            },
+            {
+              "x": 64.80701754,
+              "y": 83.72916667
+            },
+            {
+              "x": 64.66666667,
+              "y": 83.64583333
+            },
+            {
+              "x": 64.77192982,
+              "y": 83.47916667
+            },
+            {
+              "x": 64.8245614,
+              "y": 83.64583333
+            },
+            {
+              "x": 64.98245614,
+              "y": 82.4375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-652-c7a91b0f0080@49dc2e77785271a2dc87ea1209d27f2577af1fb321d97149be0730eff697aba0",
+      "draft_id": "OWNER-DEMO-L-652-c7a91b0f0080",
+      "revision_fingerprint": "49dc2e77785271a2dc87ea1209d27f2577af1fb321d97149be0730eff697aba0",
+      "parent_detection_id": "L-652",
+      "parent_map_reference": "L-652",
+      "parent_polygon_pct": [
+        {
+          "x": 65.55,
+          "y": 83.43
+        },
+        {
+          "x": 65.8,
+          "y": 81.18
+        },
+        {
+          "x": 69.3,
+          "y": 81.71
+        },
+        {
+          "x": 68.95,
+          "y": 84.38
+        },
+        {
+          "x": 65.55,
+          "y": 83.79
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "c7a91b0f0080cf41b84631e241af98f4d1ef23230033d9c0150e83222ccf5c4a",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-652 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-652: 5.288% of the original detected area remains unassigned. 0.093% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for children 2 (81.96%), 3 (76.28%), 4 (61.68%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-652/proposal.json",
+      "geometry_exceptions": [
+        "5.288% of the original detected area remains unassigned.",
+        "0.093% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for children 2 (81.96%), 3 (76.28%), 4 (61.68%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.712,
+        "unassigned_parent_area_percent": 5.288,
+        "outside_parent_area_percent": 0.093,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          81.96,
+          76.28,
+          61.68
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-652-CVc7a91b0f-01",
+          "parent_detection_id": "L-652",
+          "polygon_pct": [
+            {
+              "x": 65.80701754,
+              "y": 81.1875
+            },
+            {
+              "x": 65.66666667,
+              "y": 82.5
+            },
+            {
+              "x": 67.42105263,
+              "y": 82.77083333
+            },
+            {
+              "x": 67.57894737,
+              "y": 81.45833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-652-CVc7a91b0f-02",
+          "parent_detection_id": "L-652",
+          "polygon_pct": [
+            {
+              "x": 67.63157895,
+              "y": 81.45833333
+            },
+            {
+              "x": 67.49122807,
+              "y": 82.79166667
+            },
+            {
+              "x": 69.12280702,
+              "y": 83.04166667
+            },
+            {
+              "x": 69.29824561,
+              "y": 81.70833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-652-CVc7a91b0f-03",
+          "parent_detection_id": "L-652",
+          "polygon_pct": [
+            {
+              "x": 65.64912281,
+              "y": 82.58333333
+            },
+            {
+              "x": 65.54385965,
+              "y": 83.79166667
+            },
+            {
+              "x": 65.66666667,
+              "y": 83.8125
+            },
+            {
+              "x": 65.59649123,
+              "y": 83.79166667
+            },
+            {
+              "x": 65.70175439,
+              "y": 83.625
+            },
+            {
+              "x": 65.73684211,
+              "y": 83.83333333
+            },
+            {
+              "x": 67.28070175,
+              "y": 84.08333333
+            },
+            {
+              "x": 67.40350877,
+              "y": 82.83333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-652-CVc7a91b0f-04",
+          "parent_detection_id": "L-652",
+          "polygon_pct": [
+            {
+              "x": 67.47368421,
+              "y": 82.85416667
+            },
+            {
+              "x": 67.33333333,
+              "y": 84.10416667
+            },
+            {
+              "x": 68.94736842,
+              "y": 84.375
+            },
+            {
+              "x": 68.8245614,
+              "y": 84.3125
+            },
+            {
+              "x": 68.9122807,
+              "y": 84.16666667
+            },
+            {
+              "x": 68.96491228,
+              "y": 84.29166667
+            },
+            {
+              "x": 69.10526316,
+              "y": 83.10416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-653-3b07703f8672@01ede53e3f9c61b08d4b22bfaf16b072629449ae9fa05cc73b3cf3eca1056538",
+      "draft_id": "OWNER-DEMO-L-653-3b07703f8672",
+      "revision_fingerprint": "01ede53e3f9c61b08d4b22bfaf16b072629449ae9fa05cc73b3cf3eca1056538",
+      "parent_detection_id": "L-653",
+      "parent_map_reference": "L-653",
+      "parent_polygon_pct": [
+        {
+          "x": 69.7,
+          "y": 84.38
+        },
+        {
+          "x": 70,
+          "y": 81.83
+        },
+        {
+          "x": 73.5,
+          "y": 82.36
+        },
+        {
+          "x": 73.15,
+          "y": 85.04
+        },
+        {
+          "x": 69.75,
+          "y": 84.5
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "3b07703f867245743a7c6ffcbff22879ab98ae97b275c9691eb62c93f0018ef2",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-653 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-653: 5.360% of the original detected area remains unassigned. 0.163% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for children 2 (86.29%), 3 (77.92%), 4 (59.49%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-653/proposal.json",
+      "geometry_exceptions": [
+        "5.360% of the original detected area remains unassigned.",
+        "0.163% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for children 2 (86.29%), 3 (77.92%), 4 (59.49%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.64,
+        "unassigned_parent_area_percent": 5.36,
+        "outside_parent_area_percent": 0.163,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          86.29,
+          77.92,
+          59.49
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-653-CV3b07703f-01",
+          "parent_detection_id": "L-653",
+          "polygon_pct": [
+            {
+              "x": 70,
+              "y": 81.83333333
+            },
+            {
+              "x": 69.85964912,
+              "y": 83.14583333
+            },
+            {
+              "x": 71.59649123,
+              "y": 83.39583333
+            },
+            {
+              "x": 71.73684211,
+              "y": 82.08333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-653-CV3b07703f-02",
+          "parent_detection_id": "L-653",
+          "polygon_pct": [
+            {
+              "x": 71.78947368,
+              "y": 82.10416667
+            },
+            {
+              "x": 71.64912281,
+              "y": 83.4375
+            },
+            {
+              "x": 73.33333333,
+              "y": 83.6875
+            },
+            {
+              "x": 73.49122807,
+              "y": 82.35416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-653-CV3b07703f-03",
+          "parent_detection_id": "L-653",
+          "polygon_pct": [
+            {
+              "x": 69.84210526,
+              "y": 83.22916667
+            },
+            {
+              "x": 69.71929825,
+              "y": 84.25
+            },
+            {
+              "x": 69.75438596,
+              "y": 84.5
+            },
+            {
+              "x": 71.43859649,
+              "y": 84.77083333
+            },
+            {
+              "x": 71.57894737,
+              "y": 83.5
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-653-CV3b07703f-04",
+          "parent_detection_id": "L-653",
+          "polygon_pct": [
+            {
+              "x": 71.63157895,
+              "y": 83.52083333
+            },
+            {
+              "x": 71.49122807,
+              "y": 84.77083333
+            },
+            {
+              "x": 73.15789474,
+              "y": 85.02083333
+            },
+            {
+              "x": 73.31578947,
+              "y": 83.77083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-677-689db2c37794@9af9ad6342e6235ef0c34ef778995a4f23568b0f9b5abb06fcfc3a2957670578",
+      "draft_id": "OWNER-DEMO-L-677-689db2c37794",
+      "revision_fingerprint": "9af9ad6342e6235ef0c34ef778995a4f23568b0f9b5abb06fcfc3a2957670578",
+      "parent_detection_id": "L-677",
+      "parent_map_reference": "L-677",
+      "parent_polygon_pct": [
+        {
+          "x": 73.9,
+          "y": 84.74
+        },
+        {
+          "x": 74.15,
+          "y": 82.48
+        },
+        {
+          "x": 77.65,
+          "y": 83.02
+        },
+        {
+          "x": 77.4,
+          "y": 85.57
+        },
+        {
+          "x": 77.25,
+          "y": 85.75
+        },
+        {
+          "x": 73.9,
+          "y": 85.1
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "689db2c37794619d868e14281732269560bad428e2bcb92d35b1938a42b6489e",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-677 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-677: 5.561% of the original detected area remains unassigned. 0.362% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 3 (76.00%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-677/proposal.json",
+      "geometry_exceptions": [
+        "5.561% of the original detected area remains unassigned.",
+        "0.362% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 3 (76.00%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.439,
+        "unassigned_parent_area_percent": 5.561,
+        "outside_parent_area_percent": 0.362,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          97.51,
+          76,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-677-CV689db2c3-01",
+          "parent_detection_id": "L-677",
+          "polygon_pct": [
+            {
+              "x": 74.15789474,
+              "y": 82.47916667
+            },
+            {
+              "x": 74.03508772,
+              "y": 83.83333333
+            },
+            {
+              "x": 75.77192982,
+              "y": 84.08333333
+            },
+            {
+              "x": 75.9122807,
+              "y": 82.75
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-677-CV689db2c3-02",
+          "parent_detection_id": "L-677",
+          "polygon_pct": [
+            {
+              "x": 75.98245614,
+              "y": 82.77083333
+            },
+            {
+              "x": 75.8245614,
+              "y": 84.10416667
+            },
+            {
+              "x": 77.52631579,
+              "y": 84.375
+            },
+            {
+              "x": 77.64912281,
+              "y": 83.02083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-677-CV689db2c3-03",
+          "parent_detection_id": "L-677",
+          "polygon_pct": [
+            {
+              "x": 74,
+              "y": 83.89583333
+            },
+            {
+              "x": 73.89473684,
+              "y": 85.10416667
+            },
+            {
+              "x": 73.96491228,
+              "y": 85.10416667
+            },
+            {
+              "x": 74.05263158,
+              "y": 84.95833333
+            },
+            {
+              "x": 74.10526316,
+              "y": 85.14583333
+            },
+            {
+              "x": 75.61403509,
+              "y": 85.4375
+            },
+            {
+              "x": 75.75438596,
+              "y": 84.16666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-677-CV689db2c3-04",
+          "parent_detection_id": "L-677",
+          "polygon_pct": [
+            {
+              "x": 75.8245614,
+              "y": 84.1875
+            },
+            {
+              "x": 75.68421053,
+              "y": 85.45833333
+            },
+            {
+              "x": 77.0877193,
+              "y": 85.72916667
+            },
+            {
+              "x": 77.29824561,
+              "y": 85.6875
+            },
+            {
+              "x": 77.1754386,
+              "y": 85.64583333
+            },
+            {
+              "x": 77.26315789,
+              "y": 85.47916667
+            },
+            {
+              "x": 77.33333333,
+              "y": 85.64583333
+            },
+            {
+              "x": 77.40350877,
+              "y": 85.5625
+            },
+            {
+              "x": 77.50877193,
+              "y": 84.4375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-678-3cf3028f561f@d9494bb2695665cdaa16529cfba0eb36cacaded0e4045969dc6a5951951155fe",
+      "draft_id": "OWNER-DEMO-L-678-3cf3028f561f",
+      "revision_fingerprint": "d9494bb2695665cdaa16529cfba0eb36cacaded0e4045969dc6a5951951155fe",
+      "parent_detection_id": "L-678",
+      "parent_map_reference": "L-678",
+      "parent_polygon_pct": [
+        {
+          "x": 78.05,
+          "y": 85.69
+        },
+        {
+          "x": 78.35,
+          "y": 83.14
+        },
+        {
+          "x": 81.85,
+          "y": 83.67
+        },
+        {
+          "x": 81.6,
+          "y": 86.1
+        },
+        {
+          "x": 81.45,
+          "y": 86.4
+        },
+        {
+          "x": 78.35,
+          "y": 85.93
+        },
+        {
+          "x": 78.05,
+          "y": 85.75
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "3cf3028f561fb34132e2609398ee32c171f6c03ff863fdcb9ccc6e5f84a62591",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-678 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-678: 5.480% of the original detected area remains unassigned. 0.111% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-678/proposal.json",
+      "geometry_exceptions": [
+        "5.480% of the original detected area remains unassigned.",
+        "0.111% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.52,
+        "unassigned_parent_area_percent": 5.48,
+        "outside_parent_area_percent": 0.111,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          98.13,
+          100,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-678-CV3cf3028f-01",
+          "parent_detection_id": "L-678",
+          "polygon_pct": [
+            {
+              "x": 78.35087719,
+              "y": 83.14583333
+            },
+            {
+              "x": 78.21052632,
+              "y": 84.47916667
+            },
+            {
+              "x": 79.96491228,
+              "y": 84.72916667
+            },
+            {
+              "x": 80.0877193,
+              "y": 83.39583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-678-CV3cf3028f-02",
+          "parent_detection_id": "L-678",
+          "polygon_pct": [
+            {
+              "x": 80.15789474,
+              "y": 83.41666667
+            },
+            {
+              "x": 80.03508772,
+              "y": 84.77083333
+            },
+            {
+              "x": 81.70175439,
+              "y": 85.02083333
+            },
+            {
+              "x": 81.84210526,
+              "y": 83.66666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-678-CV3cf3028f-03",
+          "parent_detection_id": "L-678",
+          "polygon_pct": [
+            {
+              "x": 78.19298246,
+              "y": 84.54166667
+            },
+            {
+              "x": 78.07017544,
+              "y": 85.77083333
+            },
+            {
+              "x": 78.43859649,
+              "y": 85.95833333
+            },
+            {
+              "x": 79.80701754,
+              "y": 86.125
+            },
+            {
+              "x": 79.92982456,
+              "y": 84.8125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-678-CV3cf3028f-04",
+          "parent_detection_id": "L-678",
+          "polygon_pct": [
+            {
+              "x": 80,
+              "y": 84.83333333
+            },
+            {
+              "x": 79.85964912,
+              "y": 86.16666667
+            },
+            {
+              "x": 81.47368421,
+              "y": 86.375
+            },
+            {
+              "x": 81.49122807,
+              "y": 86.33333333
+            },
+            {
+              "x": 81.35087719,
+              "y": 86.29166667
+            },
+            {
+              "x": 81.45614035,
+              "y": 86.125
+            },
+            {
+              "x": 81.50877193,
+              "y": 86.29166667
+            },
+            {
+              "x": 81.59649123,
+              "y": 86.10416667
+            },
+            {
+              "x": 81.70175439,
+              "y": 85.08333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-679-2b1a76dff950@abda1bbaaa0b61a523be3c4a69448ebca6097c65d22a3432d4602b2cec17a733",
+      "draft_id": "OWNER-DEMO-L-679-2b1a76dff950",
+      "revision_fingerprint": "abda1bbaaa0b61a523be3c4a69448ebca6097c65d22a3432d4602b2cec17a733",
+      "parent_detection_id": "L-679",
+      "parent_map_reference": "L-679",
+      "parent_polygon_pct": [
+        {
+          "x": 82.25,
+          "y": 86.22
+        },
+        {
+          "x": 82.55,
+          "y": 83.79
+        },
+        {
+          "x": 86,
+          "y": 84.32
+        },
+        {
+          "x": 85.75,
+          "y": 86.88
+        },
+        {
+          "x": 85.6,
+          "y": 87.05
+        },
+        {
+          "x": 82.25,
+          "y": 86.4
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "2b1a76dff950088eae153897c512f65b269159e510bf87540cf29d514ce635a6",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-679 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-679: 5.908% of the original detected area remains unassigned. 0.134% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for children 3 (75.62%), 4 (88.93%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-679/proposal.json",
+      "geometry_exceptions": [
+        "5.908% of the original detected area remains unassigned.",
+        "0.134% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for children 3 (75.62%), 4 (88.93%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.092,
+        "unassigned_parent_area_percent": 5.908,
+        "outside_parent_area_percent": 0.134,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          92.52,
+          75.62,
+          88.93
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-679-CV2b1a76df-01",
+          "parent_detection_id": "L-679",
+          "polygon_pct": [
+            {
+              "x": 82.54385965,
+              "y": 83.79166667
+            },
+            {
+              "x": 82.38596491,
+              "y": 85.14583333
+            },
+            {
+              "x": 84.10526316,
+              "y": 85.41666667
+            },
+            {
+              "x": 84.26315789,
+              "y": 84.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-679-CV2b1a76df-02",
+          "parent_detection_id": "L-679",
+          "polygon_pct": [
+            {
+              "x": 84.31578947,
+              "y": 84.08333333
+            },
+            {
+              "x": 84.1754386,
+              "y": 85.4375
+            },
+            {
+              "x": 85.87719298,
+              "y": 85.66666667
+            },
+            {
+              "x": 85.98245614,
+              "y": 84.33333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-679-CV2b1a76df-03",
+          "parent_detection_id": "L-679",
+          "polygon_pct": [
+            {
+              "x": 82.36842105,
+              "y": 85.22916667
+            },
+            {
+              "x": 82.24561404,
+              "y": 86.39583333
+            },
+            {
+              "x": 82.31578947,
+              "y": 86.41666667
+            },
+            {
+              "x": 82.42105263,
+              "y": 86.25
+            },
+            {
+              "x": 82.47368421,
+              "y": 86.4375
+            },
+            {
+              "x": 83.96491228,
+              "y": 86.72916667
+            },
+            {
+              "x": 84.0877193,
+              "y": 85.47916667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-679-CV2b1a76df-04",
+          "parent_detection_id": "L-679",
+          "polygon_pct": [
+            {
+              "x": 84.15789474,
+              "y": 85.52083333
+            },
+            {
+              "x": 84.03508772,
+              "y": 86.75
+            },
+            {
+              "x": 85.54385965,
+              "y": 87.04166667
+            },
+            {
+              "x": 85.75438596,
+              "y": 86.875
+            },
+            {
+              "x": 85.85964912,
+              "y": 85.77083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-681-fabbf9247ff0@4bc14fa6e922a7edefe6a849e2c94d16ca9a6be43e46fe1579129dd75fa5115f",
+      "draft_id": "OWNER-DEMO-L-681-fabbf9247ff0",
+      "revision_fingerprint": "4bc14fa6e922a7edefe6a849e2c94d16ca9a6be43e46fe1579129dd75fa5115f",
+      "parent_detection_id": "L-681",
+      "parent_map_reference": "L-681",
+      "parent_polygon_pct": [
+        {
+          "x": 86.4,
+          "y": 87
+        },
+        {
+          "x": 86.7,
+          "y": 84.44
+        },
+        {
+          "x": 90.2,
+          "y": 84.98
+        },
+        {
+          "x": 89.95,
+          "y": 87.41
+        },
+        {
+          "x": 89.8,
+          "y": 87.71
+        },
+        {
+          "x": 86.6,
+          "y": 87.23
+        },
+        {
+          "x": 86.4,
+          "y": 87.05
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "fabbf9247ff01d5a3eeb99b3e2a3bf94a56c5ae308f33565e3799658ab996c57",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-681 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-681: 5.518% of the original detected area remains unassigned. 0.066% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-681/proposal.json",
+      "geometry_exceptions": [
+        "5.518% of the original detected area remains unassigned.",
+        "0.066% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.482,
+        "unassigned_parent_area_percent": 5.518,
+        "outside_parent_area_percent": 0.066,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100,
+          100,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-681-CVfabbf924-01",
+          "parent_detection_id": "L-681",
+          "polygon_pct": [
+            {
+              "x": 86.70175439,
+              "y": 84.4375
+            },
+            {
+              "x": 86.54385965,
+              "y": 85.79166667
+            },
+            {
+              "x": 88.29824561,
+              "y": 86.0625
+            },
+            {
+              "x": 88.43859649,
+              "y": 84.70833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-681-CVfabbf924-02",
+          "parent_detection_id": "L-681",
+          "polygon_pct": [
+            {
+              "x": 88.50877193,
+              "y": 84.72916667
+            },
+            {
+              "x": 88.36842105,
+              "y": 86.08333333
+            },
+            {
+              "x": 90.05263158,
+              "y": 86.35416667
+            },
+            {
+              "x": 90.19298246,
+              "y": 84.97916667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-681-CVfabbf924-03",
+          "parent_detection_id": "L-681",
+          "polygon_pct": [
+            {
+              "x": 86.52631579,
+              "y": 85.875
+            },
+            {
+              "x": 86.40350877,
+              "y": 87.04166667
+            },
+            {
+              "x": 86.54385965,
+              "y": 87.1875
+            },
+            {
+              "x": 88.14035088,
+              "y": 87.45833333
+            },
+            {
+              "x": 88.28070175,
+              "y": 86.14583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-681-CVfabbf924-04",
+          "parent_detection_id": "L-681",
+          "polygon_pct": [
+            {
+              "x": 88.35087719,
+              "y": 86.14583333
+            },
+            {
+              "x": 88.21052632,
+              "y": 87.47916667
+            },
+            {
+              "x": 89.8245614,
+              "y": 87.6875
+            },
+            {
+              "x": 89.84210526,
+              "y": 87.64583333
+            },
+            {
+              "x": 89.70175439,
+              "y": 87.60416667
+            },
+            {
+              "x": 89.80701754,
+              "y": 87.4375
+            },
+            {
+              "x": 89.85964912,
+              "y": 87.60416667
+            },
+            {
+              "x": 89.94736842,
+              "y": 87.41666667
+            },
+            {
+              "x": 90.05263158,
+              "y": 86.41666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-683-5834b1bc1c9c@719c6d8195a7420ad7231b468d035bff52cc674967a0dc0a1913957c214d1844",
+      "draft_id": "OWNER-DEMO-L-683-5834b1bc1c9c",
+      "revision_fingerprint": "719c6d8195a7420ad7231b468d035bff52cc674967a0dc0a1913957c214d1844",
+      "parent_detection_id": "L-683",
+      "parent_map_reference": "L-683",
+      "parent_polygon_pct": [
+        {
+          "x": 90.6,
+          "y": 87.47
+        },
+        {
+          "x": 91.05,
+          "y": 78.44
+        },
+        {
+          "x": 93.6,
+          "y": 81.24
+        },
+        {
+          "x": 94.35,
+          "y": 88.36
+        },
+        {
+          "x": 90.75,
+          "y": 87.89
+        },
+        {
+          "x": 90.6,
+          "y": 87.71
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "5834b1bc1c9cbb376922ba06f40bb8fdbfe082c5800a9e15bf0bd880a5248b17",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-683 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-683: 12.515% of the original detected area remains unassigned. 0.028% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-683/proposal.json",
+      "geometry_exceptions": [
+        "12.515% of the original detected area remains unassigned.",
+        "0.028% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 87.485,
+        "unassigned_parent_area_percent": 12.515,
+        "outside_parent_area_percent": 0.028,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100,
+          100,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-683-CV5834b1bc-01",
+          "parent_detection_id": "L-683",
+          "polygon_pct": [
+            {
+              "x": 91.56140351,
+              "y": 79.04166667
+            },
+            {
+              "x": 91.19298246,
+              "y": 82.25
+            },
+            {
+              "x": 93.73684211,
+              "y": 82.64583333
+            },
+            {
+              "x": 93.59649123,
+              "y": 81.25
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-683-CV5834b1bc-02",
+          "parent_detection_id": "L-683",
+          "polygon_pct": [
+            {
+              "x": 91.1754386,
+              "y": 82.35416667
+            },
+            {
+              "x": 91.03508772,
+              "y": 83.89583333
+            },
+            {
+              "x": 93.92982456,
+              "y": 84.35416667
+            },
+            {
+              "x": 93.75438596,
+              "y": 82.70833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-683-CV5834b1bc-03",
+          "parent_detection_id": "L-683",
+          "polygon_pct": [
+            {
+              "x": 91,
+              "y": 83.97916667
+            },
+            {
+              "x": 90.80701754,
+              "y": 85.6875
+            },
+            {
+              "x": 94.12280702,
+              "y": 86.20833333
+            },
+            {
+              "x": 93.92982456,
+              "y": 84.41666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-683-CV5834b1bc-04",
+          "parent_detection_id": "L-683",
+          "polygon_pct": [
+            {
+              "x": 90.80701754,
+              "y": 85.75
+            },
+            {
+              "x": 90.59649123,
+              "y": 87.70833333
+            },
+            {
+              "x": 90.75438596,
+              "y": 87.89583333
+            },
+            {
+              "x": 94.33333333,
+              "y": 88.35416667
+            },
+            {
+              "x": 94.12280702,
+              "y": 86.27083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-719-6d2289ced784@a740dc9314a98393fbabf9533eac5769c4382807c1061745b41a514d7ee39848",
+      "draft_id": "OWNER-DEMO-L-719-6d2289ced784",
+      "revision_fingerprint": "a740dc9314a98393fbabf9533eac5769c4382807c1061745b41a514d7ee39848",
+      "parent_detection_id": "L-719",
+      "parent_map_reference": "L-719",
+      "parent_polygon_pct": [
+        {
+          "x": 92.5,
+          "y": 94.42
+        },
+        {
+          "x": 93.05,
+          "y": 89.55
+        },
+        {
+          "x": 93.4,
+          "y": 89.43
+        },
+        {
+          "x": 94.45,
+          "y": 89.61
+        },
+        {
+          "x": 95.05,
+          "y": 95.01
+        },
+        {
+          "x": 92.5,
+          "y": 94.66
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "6d2289ced78476ea4dbb10cf8b388e46a6a885ee45382f7bc972691160a8a913",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-719 by 2 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-719: 2.089% of the original detected area remains unassigned. 0.259% of proposed child area extends outside the original detection (possible sliver/alignment exception). OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/separation-queue-20261014-v02/L-719/proposal.json",
+      "geometry_exceptions": [
+        "2.089% of the original detected area remains unassigned.",
+        "0.259% of proposed child area extends outside the original detection (possible sliver/alignment exception)."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 97.911,
+        "unassigned_parent_area_percent": 2.089,
+        "outside_parent_area_percent": 0.259,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-719-CV6d2289ce-01",
+          "parent_detection_id": "L-719",
+          "polygon_pct": [
+            {
+              "x": 93.05263158,
+              "y": 89.54166667
+            },
+            {
+              "x": 92.77192982,
+              "y": 92.02083333
+            },
+            {
+              "x": 94.75438596,
+              "y": 92.33333333
+            },
+            {
+              "x": 94.45614035,
+              "y": 89.60416667
+            },
+            {
+              "x": 93.45614035,
+              "y": 89.4375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-719-CV6d2289ce-02",
+          "parent_detection_id": "L-719",
+          "polygon_pct": [
+            {
+              "x": 92.77192982,
+              "y": 92.10416667
+            },
+            {
+              "x": 92.49122807,
+              "y": 94.66666667
+            },
+            {
+              "x": 95.03508772,
+              "y": 95
+            },
+            {
+              "x": 94.77192982,
+              "y": 92.41666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-049-940bf0d3482e@7c4997f70a00f44d934aaf2ea8a79b8ec43fd9663637c343925f59b4f3bdfa84",
+      "draft_id": "OWNER-DEMO-L-049-940bf0d3482e",
+      "revision_fingerprint": "7c4997f70a00f44d934aaf2ea8a79b8ec43fd9663637c343925f59b4f3bdfa84",
+      "parent_detection_id": "L-049",
+      "parent_map_reference": "L-049",
+      "parent_polygon_pct": [
+        {
+          "x": 21.7,
+          "y": 21.91
+        },
+        {
+          "x": 22.25,
+          "y": 17.16
+        },
+        {
+          "x": 24.15,
+          "y": 17.46
+        },
+        {
+          "x": 23.55,
+          "y": 22.57
+        },
+        {
+          "x": 21.7,
+          "y": 22.27
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "940bf0d3482ef6bb85dfe8cec7bf68f02e542e1ec15ecb032394dea44e09fccb",
+      "approved_by": "Project owner (explicit demo-use authorization)",
+      "approved_at": "2026-10-14T21:26:52.147Z",
+      "correction_note": "Owner-authorized local demo replacement of L-049 by 4 source-derived child contours. Children are individually selectable; labels remain pending.",
+      "reasoned_waiver": "The project owner explicitly authorized this proposal's geometry for the local Hopkins demo on 2026-10-14T21:26:52.147Z. This is not source-survey acceptance, approved parcel identity, pricing, availability, or publication. Known geometry exceptions for L-049: 4.637% of the original detected area remains unassigned. 0.126% of proposed child area extends outside the original detection (possible sliver/alignment exception). Boundary-on-dark-ink heuristic is below 90% for child 4 (84.40%); the score is a raster heuristic, not survey accuracy. OCR/printed identities were intentionally omitted and remain pending human review.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/L-049-cv01/proposal.json",
+      "geometry_exceptions": [
+        "4.637% of the original detected area remains unassigned.",
+        "0.126% of proposed child area extends outside the original detection (possible sliver/alignment exception).",
+        "Boundary-on-dark-ink heuristic is below 90% for child 4 (84.40%); the score is a raster heuristic, not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.363,
+        "unassigned_parent_area_percent": 4.637,
+        "outside_parent_area_percent": 0.126,
+        "child_boundary_alignment_within_4px_percent": [
+          99.7,
+          100,
+          97.6,
+          84.4
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-049-CV940bf0d3-01",
+          "parent_detection_id": "L-049",
+          "polygon_pct": [
+            {
+              "x": 22.24561404,
+              "y": 17.16666667
+            },
+            {
+              "x": 22.12280702,
+              "y": 18.35416667
+            },
+            {
+              "x": 24.01754386,
+              "y": 18.66666667
+            },
+            {
+              "x": 24.14035088,
+              "y": 17.45833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-049-CV940bf0d3-02",
+          "parent_detection_id": "L-049",
+          "polygon_pct": [
+            {
+              "x": 22.0877193,
+              "y": 18.47916667
+            },
+            {
+              "x": 21.96491228,
+              "y": 19.6875
+            },
+            {
+              "x": 23.85964912,
+              "y": 19.97916667
+            },
+            {
+              "x": 24,
+              "y": 18.72916667
+            },
+            {
+              "x": 22.21052632,
+              "y": 18.4375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-049-CV940bf0d3-03",
+          "parent_detection_id": "L-049",
+          "polygon_pct": [
+            {
+              "x": 21.96491228,
+              "y": 19.75
+            },
+            {
+              "x": 21.80701754,
+              "y": 20.9375
+            },
+            {
+              "x": 21.85964912,
+              "y": 21.02083333
+            },
+            {
+              "x": 23.70175439,
+              "y": 21.3125
+            },
+            {
+              "x": 23.84210526,
+              "y": 20.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-049-CV940bf0d3-04",
+          "parent_detection_id": "L-049",
+          "polygon_pct": [
+            {
+              "x": 21.78947368,
+              "y": 21.08333333
+            },
+            {
+              "x": 21.70175439,
+              "y": 22.27083333
+            },
+            {
+              "x": 23.54385965,
+              "y": 22.5625
+            },
+            {
+              "x": 23.68421053,
+              "y": 21.375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-048-4bb3d9d309cc@31573bd92a18c35035b16e25e1727791a1e7703db0fc9490dda28d992b4d8e64",
+      "draft_id": "OWNER-DEMO-L-048-4bb3d9d309cc",
+      "revision_fingerprint": "31573bd92a18c35035b16e25e1727791a1e7703db0fc9490dda28d992b4d8e64",
+      "parent_detection_id": "L-048",
+      "parent_map_reference": "L-048",
+      "parent_polygon_pct": [
+        {
+          "x": 18.95,
+          "y": 21.62
+        },
+        {
+          "x": 19.2,
+          "y": 19.71
+        },
+        {
+          "x": 21.2,
+          "y": 20.13
+        },
+        {
+          "x": 20.95,
+          "y": 22.27
+        },
+        {
+          "x": 18.95,
+          "y": 21.91
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "4bb3d9d309cc3d1037536ce6fff543fb65ac3421ea4a228b165b4c5a65a44c79",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z",
+      "correction_note": "Owner-approved local demo replacement of L-048 by 2 CV-derived child outlines. Printed numbers remain unverified and pending.",
+      "reasoned_waiver": "Owner-approved local Hopkins demo geometry refinement. Source geometry and identity provenance are retained; OCR remains unverified and no sales, price, or canonical identity fields are assigned. Accepted for the local demo despite the recorded source-raster exceptions. Parent coverage is 96.548%, with 3.452% unassigned and 0.526% outside-parent area by the extraction report. Boundary alignment heuristics: 96.59%, 62.69%. All printed-number suggestions remain blank/pending and are not approved inventory identities.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-048/proposal.json",
+      "geometry_exceptions": [
+        "3.452% of the original L-048 detection remains unassigned.",
+        "0.526% of proposed child area extends outside the original L-048 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 62.69%; this raster score is not survey accuracy.",
+        "Pre-correction detections overlapped L-058; this snapshot is reviewed against the active replacement outlines and does not publish source OCR."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 96.548,
+        "unassigned_parent_area_percent": 3.452,
+        "outside_parent_area_percent": 0.526,
+        "child_boundary_alignment_within_4px_percent": [
+          96.59,
+          62.69
+        ],
+        "existing_detection_overlaps": [
+          {
+            "detection_id": "L-058",
+            "child_index": 1,
+            "intersection_px2": 4361.19
+          },
+          {
+            "detection_id": "L-058",
+            "child_index": 2,
+            "intersection_px2": 1097.38
+          }
+        ]
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-048-CV4bb3d9d3-01",
+          "parent_detection_id": "L-048",
+          "polygon_pct": [
+            {
+              "x": 19.19298246,
+              "y": 19.70833333
+            },
+            {
+              "x": 18.94736842,
+              "y": 21.5625
+            },
+            {
+              "x": 18.94736842,
+              "y": 21.91666667
+            },
+            {
+              "x": 19.94736842,
+              "y": 22.08333333
+            },
+            {
+              "x": 20.1754386,
+              "y": 19.91666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-048-CV4bb3d9d3-02",
+          "parent_detection_id": "L-048",
+          "polygon_pct": [
+            {
+              "x": 20.22807018,
+              "y": 19.91666667
+            },
+            {
+              "x": 20,
+              "y": 22.10416667
+            },
+            {
+              "x": 20.94736842,
+              "y": 22.25
+            },
+            {
+              "x": 21.19298246,
+              "y": 20.125
+            },
+            {
+              "x": 21.12280702,
+              "y": 20.10416667
+            },
+            {
+              "x": 21.12280702,
+              "y": 20.29166667
+            },
+            {
+              "x": 21,
+              "y": 20.22916667
+            },
+            {
+              "x": 21.07017544,
+              "y": 20.10416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-184-a23920b9b097@e1e54260bf2be7fd8a12be5c1adcc745587865233e1d378e65940e4490ab3d3c",
+      "draft_id": "OWNER-DEMO-L-184-a23920b9b097",
+      "revision_fingerprint": "e1e54260bf2be7fd8a12be5c1adcc745587865233e1d378e65940e4490ab3d3c",
+      "parent_detection_id": "L-184",
+      "parent_map_reference": "L-184",
+      "parent_polygon_pct": [
+        {
+          "x": 40.8,
+          "y": 43.82
+        },
+        {
+          "x": 41.5,
+          "y": 37.71
+        },
+        {
+          "x": 43.35,
+          "y": 38.12
+        },
+        {
+          "x": 42.65,
+          "y": 44.3
+        },
+        {
+          "x": 40.8,
+          "y": 44
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "a23920b9b09781ef1372a5f47135b38b2829554d3ef6855f45076c9b67eee2b7",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z",
+      "correction_note": "Owner-approved local demo replacement of L-184 by 5 CV-derived child outlines. Printed numbers remain unverified and pending.",
+      "reasoned_waiver": "Owner-approved local Hopkins demo geometry refinement. Source geometry and identity provenance are retained; OCR remains unverified and no sales, price, or canonical identity fields are assigned. Accepted for the local demo despite the recorded source-raster exceptions. Parent coverage is 94.328%, with 5.672% unassigned and 0.284% outside-parent area by the extraction report. Boundary alignment heuristics: 74.63%, 87.27%, 84.50%, 84.71%, 84.57%. All printed-number suggestions remain blank/pending and are not approved inventory identities.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-184/proposal.json",
+      "geometry_exceptions": [
+        "5.672% of the original L-184 detection remains unassigned.",
+        "0.284% of proposed child area extends outside the original L-184 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 74.63%; this raster score is not survey accuracy.",
+        "Child 2 boundary-on-dark-ink heuristic is 87.27%; this raster score is not survey accuracy.",
+        "Child 3 boundary-on-dark-ink heuristic is 84.50%; this raster score is not survey accuracy.",
+        "Child 4 boundary-on-dark-ink heuristic is 84.71%; this raster score is not survey accuracy.",
+        "Child 5 boundary-on-dark-ink heuristic is 84.57%; this raster score is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.328,
+        "unassigned_parent_area_percent": 5.672,
+        "outside_parent_area_percent": 0.284,
+        "child_boundary_alignment_within_4px_percent": [
+          74.63,
+          87.27,
+          84.5,
+          84.71,
+          84.57
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-184-CVa23920b9-01",
+          "parent_detection_id": "L-184",
+          "polygon_pct": [
+            {
+              "x": 41.49122807,
+              "y": 37.70833333
+            },
+            {
+              "x": 41.35087719,
+              "y": 38.89583333
+            },
+            {
+              "x": 43.22807018,
+              "y": 39.1875
+            },
+            {
+              "x": 43.33333333,
+              "y": 38.125
+            },
+            {
+              "x": 43.28070175,
+              "y": 38.10416667
+            },
+            {
+              "x": 43.31578947,
+              "y": 38.22916667
+            },
+            {
+              "x": 43.24561404,
+              "y": 38.25
+            },
+            {
+              "x": 43.15789474,
+              "y": 38.20833333
+            },
+            {
+              "x": 43.19298246,
+              "y": 38.08333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-184-CVa23920b9-02",
+          "parent_detection_id": "L-184",
+          "polygon_pct": [
+            {
+              "x": 41.35087719,
+              "y": 38.97916667
+            },
+            {
+              "x": 41.21052632,
+              "y": 40.1875
+            },
+            {
+              "x": 43.0877193,
+              "y": 40.47916667
+            },
+            {
+              "x": 43.22807018,
+              "y": 39.27083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-184-CVa23920b9-03",
+          "parent_detection_id": "L-184",
+          "polygon_pct": [
+            {
+              "x": 41.21052632,
+              "y": 40.25
+            },
+            {
+              "x": 41.07017544,
+              "y": 41.47916667
+            },
+            {
+              "x": 42.92982456,
+              "y": 41.77083333
+            },
+            {
+              "x": 43.07017544,
+              "y": 40.5625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-184-CVa23920b9-04",
+          "parent_detection_id": "L-184",
+          "polygon_pct": [
+            {
+              "x": 41.05263158,
+              "y": 41.5625
+            },
+            {
+              "x": 40.92982456,
+              "y": 42.75
+            },
+            {
+              "x": 42.78947368,
+              "y": 43.04166667
+            },
+            {
+              "x": 42.92982456,
+              "y": 41.85416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-184-CVa23920b9-05",
+          "parent_detection_id": "L-184",
+          "polygon_pct": [
+            {
+              "x": 40.9122807,
+              "y": 42.83333333
+            },
+            {
+              "x": 40.80701754,
+              "y": 44
+            },
+            {
+              "x": 42.64912281,
+              "y": 44.29166667
+            },
+            {
+              "x": 42.78947368,
+              "y": 43.125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-235-d1ffa93f8972@2c009562823833788d0e058542ac71ca2b9f2920357f573119c956b97e14b2fd",
+      "draft_id": "OWNER-DEMO-L-235-d1ffa93f8972",
+      "revision_fingerprint": "2c009562823833788d0e058542ac71ca2b9f2920357f573119c956b97e14b2fd",
+      "parent_detection_id": "L-235",
+      "parent_map_reference": "L-235",
+      "parent_polygon_pct": [
+        {
+          "x": 56.9,
+          "y": 47.21
+        },
+        {
+          "x": 57.35,
+          "y": 43.29
+        },
+        {
+          "x": 60.55,
+          "y": 46.62
+        },
+        {
+          "x": 60.4,
+          "y": 47.92
+        },
+        {
+          "x": 56.9,
+          "y": 47.33
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "d1ffa93f8972569d6ac5bf42fddcc951aaad9f9882b1bc92c03862e6ebc30ac1",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z",
+      "correction_note": "Owner-approved local demo replacement of L-235 by 3 CV-derived child outlines. Printed numbers remain unverified and pending.",
+      "reasoned_waiver": "Owner-approved local Hopkins demo geometry refinement. Source geometry and identity provenance are retained; OCR remains unverified and no sales, price, or canonical identity fields are assigned. Accepted for the local demo despite the recorded source-raster exceptions. Parent coverage is 96.125%, with 3.875% unassigned and 0.226% outside-parent area by the extraction report. Boundary alignment heuristics: 100.00%, 94.93%, 80.31%. All printed-number suggestions remain blank/pending and are not approved inventory identities.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/fine-tune-review-v02-20261014/L-235/proposal.json",
+      "geometry_exceptions": [
+        "3.875% of the original L-235 detection remains unassigned.",
+        "0.226% of proposed child area extends outside the original L-235 detection.",
+        "Child 3 boundary-on-dark-ink heuristic is 80.31%; this raster score is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 96.125,
+        "unassigned_parent_area_percent": 3.875,
+        "outside_parent_area_percent": 0.226,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          94.93,
+          80.31
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-235-CVd1ffa93f-01",
+          "parent_detection_id": "L-235",
+          "polygon_pct": [
+            {
+              "x": 57.35087719,
+              "y": 43.29166667
+            },
+            {
+              "x": 57.03508772,
+              "y": 45.95833333
+            },
+            {
+              "x": 58.77192982,
+              "y": 46.27083333
+            },
+            {
+              "x": 58.92982456,
+              "y": 44.9375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-235-CVd1ffa93f-02",
+          "parent_detection_id": "L-235",
+          "polygon_pct": [
+            {
+              "x": 58.98245614,
+              "y": 45
+            },
+            {
+              "x": 58.68421053,
+              "y": 47.625
+            },
+            {
+              "x": 60.40350877,
+              "y": 47.91666667
+            },
+            {
+              "x": 60.54385965,
+              "y": 46.625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-235-CVd1ffa93f-03",
+          "parent_detection_id": "L-235",
+          "polygon_pct": [
+            {
+              "x": 57.01754386,
+              "y": 46.08333333
+            },
+            {
+              "x": 56.89473684,
+              "y": 47.33333333
+            },
+            {
+              "x": 58.63157895,
+              "y": 47.625
+            },
+            {
+              "x": 58.75438596,
+              "y": 46.33333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-365-80d63327b12f@48f5d37910831145d71b0fbdaec8a8cd60743e9cddc8225476934baa203e5ade",
+      "draft_id": "OWNER-DEMO-L-365-80d63327b12f",
+      "revision_fingerprint": "48f5d37910831145d71b0fbdaec8a8cd60743e9cddc8225476934baa203e5ade",
+      "parent_detection_id": "L-365",
+      "parent_map_reference": "L-365",
+      "parent_polygon_pct": [
+        {
+          "x": 42.2,
+          "y": 61.7
+        },
+        {
+          "x": 42.45,
+          "y": 59.5
+        },
+        {
+          "x": 42.6,
+          "y": 59.2
+        },
+        {
+          "x": 45.75,
+          "y": 59.68
+        },
+        {
+          "x": 46,
+          "y": 59.86
+        },
+        {
+          "x": 45.7,
+          "y": 62.47
+        },
+        {
+          "x": 42.2,
+          "y": 61.88
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "80d63327b12f5bd6bbc747cf5694c78f73650ae71f5fd658b07894876667a6d5",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-365 with 4 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 94.926%, leaving 5.074% unassigned; 0.103% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 100.00%, 100.00%, 100.00%, 96.88%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-365-hue-all/proposal.json",
+      "geometry_exceptions": [
+        "5.074% of the original L-365 detection remains unassigned.",
+        "0.103% of proposed child union lies outside the original L-365 detection."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.926,
+        "unassigned_parent_area_percent": 5.074,
+        "outside_parent_area_percent": 0.103,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          100,
+          100,
+          96.88
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-365-CV80d63327-01",
+          "parent_detection_id": "L-365",
+          "polygon_pct": [
+            {
+              "x": 42.57894737,
+              "y": 59.22916667
+            },
+            {
+              "x": 42.45614035,
+              "y": 59.5
+            },
+            {
+              "x": 42.35087719,
+              "y": 60.52083333
+            },
+            {
+              "x": 44.0877193,
+              "y": 60.79166667
+            },
+            {
+              "x": 44.22807018,
+              "y": 59.45833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-365-CV80d63327-02",
+          "parent_detection_id": "L-365",
+          "polygon_pct": [
+            {
+              "x": 44.29824561,
+              "y": 59.45833333
+            },
+            {
+              "x": 44.15789474,
+              "y": 60.8125
+            },
+            {
+              "x": 45.85964912,
+              "y": 61.10416667
+            },
+            {
+              "x": 45.98245614,
+              "y": 60.0625
+            },
+            {
+              "x": 45.96491228,
+              "y": 59.83333333
+            },
+            {
+              "x": 45.68421053,
+              "y": 59.66666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-365-CV80d63327-03",
+          "parent_detection_id": "L-365",
+          "polygon_pct": [
+            {
+              "x": 42.33333333,
+              "y": 60.58333333
+            },
+            {
+              "x": 42.19298246,
+              "y": 61.875
+            },
+            {
+              "x": 43.92982456,
+              "y": 62.16666667
+            },
+            {
+              "x": 44.0877193,
+              "y": 60.875
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-365-CV80d63327-04",
+          "parent_detection_id": "L-365",
+          "polygon_pct": [
+            {
+              "x": 44.14035088,
+              "y": 60.875
+            },
+            {
+              "x": 43.98245614,
+              "y": 62.1875
+            },
+            {
+              "x": 45.70175439,
+              "y": 62.45833333
+            },
+            {
+              "x": 45.8245614,
+              "y": 61.14583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-338-eba80374ac36@38ee977b3890878827fa6c6f192bb9b2c1d1f9f4a673510b878b13b94f7f9e7c",
+      "draft_id": "OWNER-DEMO-L-338-eba80374ac36",
+      "revision_fingerprint": "38ee977b3890878827fa6c6f192bb9b2c1d1f9f4a673510b878b13b94f7f9e7c",
+      "parent_detection_id": "L-338",
+      "parent_map_reference": "L-338",
+      "parent_polygon_pct": [
+        {
+          "x": 41.85,
+          "y": 57.72
+        },
+        {
+          "x": 42.1,
+          "y": 55.46
+        },
+        {
+          "x": 46,
+          "y": 56.12
+        },
+        {
+          "x": 45.65,
+          "y": 58.49
+        },
+        {
+          "x": 42,
+          "y": 57.96
+        },
+        {
+          "x": 41.85,
+          "y": 57.78
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "eba80374ac3698e9587b46c4a35da5e184bb5d80e98d826475f1d6bdfba58988",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-338 with 4 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 94.977%, leaving 5.023% unassigned; 0.140% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 100.00%, 84.71%, 100.00%, 87.04%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-338-hue-all/proposal.json",
+      "geometry_exceptions": [
+        "5.023% of the original L-338 detection remains unassigned.",
+        "0.140% of proposed child union lies outside the original L-338 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 84.71%; this image metric is not survey accuracy.",
+        "Child 4 boundary-on-dark-ink heuristic is 87.04%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.977,
+        "unassigned_parent_area_percent": 5.023,
+        "outside_parent_area_percent": 0.14,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          84.71,
+          100,
+          87.04
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-338-CVeba80374-01",
+          "parent_detection_id": "L-338",
+          "polygon_pct": [
+            {
+              "x": 42.10526316,
+              "y": 55.45833333
+            },
+            {
+              "x": 41.98245614,
+              "y": 56.6875
+            },
+            {
+              "x": 43.9122807,
+              "y": 57
+            },
+            {
+              "x": 44.05263158,
+              "y": 55.79166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-338-CVeba80374-02",
+          "parent_detection_id": "L-338",
+          "polygon_pct": [
+            {
+              "x": 44.10526316,
+              "y": 55.8125
+            },
+            {
+              "x": 43.96491228,
+              "y": 57
+            },
+            {
+              "x": 45.8245614,
+              "y": 57.3125
+            },
+            {
+              "x": 45.98245614,
+              "y": 56.125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-338-CVeba80374-03",
+          "parent_detection_id": "L-338",
+          "polygon_pct": [
+            {
+              "x": 41.96491228,
+              "y": 56.75
+            },
+            {
+              "x": 41.84210526,
+              "y": 57.77083333
+            },
+            {
+              "x": 42,
+              "y": 57.95833333
+            },
+            {
+              "x": 43.77192982,
+              "y": 58.22916667
+            },
+            {
+              "x": 43.89473684,
+              "y": 57.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-338-CVeba80374-04",
+          "parent_detection_id": "L-338",
+          "polygon_pct": [
+            {
+              "x": 43.96491228,
+              "y": 57.08333333
+            },
+            {
+              "x": 43.8245614,
+              "y": 58.22916667
+            },
+            {
+              "x": 45.64912281,
+              "y": 58.47916667
+            },
+            {
+              "x": 45.54385965,
+              "y": 58.41666667
+            },
+            {
+              "x": 45.64912281,
+              "y": 58.25
+            },
+            {
+              "x": 45.68421053,
+              "y": 58.29166667
+            },
+            {
+              "x": 45.80701754,
+              "y": 57.375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-337-5b1138717333@2baad7d3599912a075615ae0cc277c67c4d250d10142a58eba2e5f52842a5e3f",
+      "draft_id": "OWNER-DEMO-L-337-5b1138717333",
+      "revision_fingerprint": "2baad7d3599912a075615ae0cc277c67c4d250d10142a58eba2e5f52842a5e3f",
+      "parent_detection_id": "L-337",
+      "parent_map_reference": "L-337",
+      "parent_polygon_pct": [
+        {
+          "x": 37.25,
+          "y": 57.01
+        },
+        {
+          "x": 37.55,
+          "y": 54.75
+        },
+        {
+          "x": 41.45,
+          "y": 55.4
+        },
+        {
+          "x": 41.1,
+          "y": 57.78
+        },
+        {
+          "x": 37.55,
+          "y": 57.24
+        },
+        {
+          "x": 37.25,
+          "y": 57.07
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "5b11387173335ebb397e46201819b37ecc83293e80c3cdecb8406c55e5231cea",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-337 with 4 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 95.329%, leaving 4.671% unassigned; 0.433% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 100.00%, 99.09%, 100.00%, 89.05%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-337-hue-all/proposal.json",
+      "geometry_exceptions": [
+        "4.671% of the original L-337 detection remains unassigned.",
+        "0.433% of proposed child union lies outside the original L-337 detection.",
+        "Child 4 boundary-on-dark-ink heuristic is 89.05%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.329,
+        "unassigned_parent_area_percent": 4.671,
+        "outside_parent_area_percent": 0.433,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          99.09,
+          100,
+          89.05
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-337-CV5b113871-01",
+          "parent_detection_id": "L-337",
+          "polygon_pct": [
+            {
+              "x": 37.54385965,
+              "y": 54.75
+            },
+            {
+              "x": 37.38596491,
+              "y": 55.95833333
+            },
+            {
+              "x": 39.35087719,
+              "y": 56.25
+            },
+            {
+              "x": 39.47368421,
+              "y": 55.0625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-337-CV5b113871-02",
+          "parent_detection_id": "L-337",
+          "polygon_pct": [
+            {
+              "x": 39.52631579,
+              "y": 55.08333333
+            },
+            {
+              "x": 39.40350877,
+              "y": 56.29166667
+            },
+            {
+              "x": 41.28070175,
+              "y": 56.58333333
+            },
+            {
+              "x": 41.43859649,
+              "y": 55.39583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-337-CV5b113871-03",
+          "parent_detection_id": "L-337",
+          "polygon_pct": [
+            {
+              "x": 37.36842105,
+              "y": 56.02083333
+            },
+            {
+              "x": 37.26315789,
+              "y": 57.08333333
+            },
+            {
+              "x": 37.63157895,
+              "y": 57.27083333
+            },
+            {
+              "x": 39.21052632,
+              "y": 57.5
+            },
+            {
+              "x": 39.33333333,
+              "y": 56.33333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-337-CV5b113871-04",
+          "parent_detection_id": "L-337",
+          "polygon_pct": [
+            {
+              "x": 39.38596491,
+              "y": 56.35416667
+            },
+            {
+              "x": 39.26315789,
+              "y": 57.5
+            },
+            {
+              "x": 41.10526316,
+              "y": 57.77083333
+            },
+            {
+              "x": 40.98245614,
+              "y": 57.66666667
+            },
+            {
+              "x": 41.07017544,
+              "y": 57.52083333
+            },
+            {
+              "x": 41.12280702,
+              "y": 57.6875
+            },
+            {
+              "x": 41.26315789,
+              "y": 56.64583333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-505-c0a25e302e30@e05910eb51c17c39765c7820113c4366645a79dab8e630dcac467689b10d2f08",
+      "draft_id": "OWNER-DEMO-L-505-c0a25e302e30",
+      "revision_fingerprint": "e05910eb51c17c39765c7820113c4366645a79dab8e630dcac467689b10d2f08",
+      "parent_detection_id": "L-505",
+      "parent_map_reference": "L-505",
+      "parent_polygon_pct": [
+        {
+          "x": 75.35,
+          "y": 72.03
+        },
+        {
+          "x": 75.9,
+          "y": 68.17
+        },
+        {
+          "x": 79.25,
+          "y": 68.82
+        },
+        {
+          "x": 78.8,
+          "y": 72.86
+        },
+        {
+          "x": 75.35,
+          "y": 72.33
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "c0a25e302e303705dbb0e263a5767b67f0d4ced954b9d6ea9b55e1e3e884d986",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-505 with 6 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 93.844%, leaving 6.156% unassigned; 0.347% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 84.81%, 72.14%, 99.69%, 99.38%, 99.69%, 97.78%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-505/proposal.json",
+      "geometry_exceptions": [
+        "6.156% of the original L-505 detection remains unassigned.",
+        "0.347% of proposed child union lies outside the original L-505 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 84.81%; this image metric is not survey accuracy.",
+        "Child 2 boundary-on-dark-ink heuristic is 72.14%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 93.844,
+        "unassigned_parent_area_percent": 6.156,
+        "outside_parent_area_percent": 0.347,
+        "child_boundary_alignment_within_4px_percent": [
+          84.81,
+          72.14,
+          99.69,
+          99.38,
+          99.69,
+          97.78
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-01",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 75.89473684,
+              "y": 68.16666667
+            },
+            {
+              "x": 75.70175439,
+              "y": 69.52083333
+            },
+            {
+              "x": 77.38596491,
+              "y": 69.77083333
+            },
+            {
+              "x": 77.52631579,
+              "y": 68.47916667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-02",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 77.57894737,
+              "y": 68.5
+            },
+            {
+              "x": 77.43859649,
+              "y": 69.79166667
+            },
+            {
+              "x": 79.12280702,
+              "y": 70.02083333
+            },
+            {
+              "x": 79.24561404,
+              "y": 68.8125
+            },
+            {
+              "x": 79.19298246,
+              "y": 68.8125
+            },
+            {
+              "x": 79.22807018,
+              "y": 68.91666667
+            },
+            {
+              "x": 79.15789474,
+              "y": 68.9375
+            },
+            {
+              "x": 79.07017544,
+              "y": 68.89583333
+            },
+            {
+              "x": 79.07017544,
+              "y": 68.77083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-03",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 75.68421053,
+              "y": 69.60416667
+            },
+            {
+              "x": 75.50877193,
+              "y": 70.95833333
+            },
+            {
+              "x": 77.21052632,
+              "y": 71.1875
+            },
+            {
+              "x": 77.35087719,
+              "y": 69.85416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-04",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 77.42105263,
+              "y": 69.875
+            },
+            {
+              "x": 77.28070175,
+              "y": 71.22916667
+            },
+            {
+              "x": 78.96491228,
+              "y": 71.47916667
+            },
+            {
+              "x": 79.10526316,
+              "y": 70.125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-05",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 75.49122807,
+              "y": 71.02083333
+            },
+            {
+              "x": 75.35087719,
+              "y": 71.97916667
+            },
+            {
+              "x": 75.35087719,
+              "y": 72.33333333
+            },
+            {
+              "x": 77.07017544,
+              "y": 72.58333333
+            },
+            {
+              "x": 77.21052632,
+              "y": 71.29166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-505-CVc0a25e30-06",
+          "parent_detection_id": "L-505",
+          "polygon_pct": [
+            {
+              "x": 77.26315789,
+              "y": 71.3125
+            },
+            {
+              "x": 77.12280702,
+              "y": 72.60416667
+            },
+            {
+              "x": 78.80701754,
+              "y": 72.85416667
+            },
+            {
+              "x": 78.94736842,
+              "y": 71.5625
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-504-7e359de97efc@e3119216fbd692046084ecac20e11acc4de11fed9e463018a009274e845a19fd",
+      "draft_id": "OWNER-DEMO-L-504-7e359de97efc",
+      "revision_fingerprint": "e3119216fbd692046084ecac20e11acc4de11fed9e463018a009274e845a19fd",
+      "parent_detection_id": "L-504",
+      "parent_map_reference": "L-504",
+      "parent_polygon_pct": [
+        {
+          "x": 71.15,
+          "y": 71.56
+        },
+        {
+          "x": 71.7,
+          "y": 67.52
+        },
+        {
+          "x": 74.95,
+          "y": 67.99
+        },
+        {
+          "x": 75.1,
+          "y": 68.17
+        },
+        {
+          "x": 74.65,
+          "y": 72.21
+        },
+        {
+          "x": 71.15,
+          "y": 71.62
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "7e359de97efca81ac47e616922e235b08cc7d2cc027f314870746ca8b4dd60b0",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-504 with 6 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 94.350%, leaving 5.650% unassigned; 0.100% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 85.13%, 99.37%, 99.07%, 100.00%, 98.12%, 100.00%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-504/proposal.json",
+      "geometry_exceptions": [
+        "5.650% of the original L-504 detection remains unassigned.",
+        "0.100% of proposed child union lies outside the original L-504 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 85.13%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 94.35,
+        "unassigned_parent_area_percent": 5.65,
+        "outside_parent_area_percent": 0.1,
+        "child_boundary_alignment_within_4px_percent": [
+          85.13,
+          99.37,
+          99.07,
+          100,
+          98.12,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-504-CV7e359de9-01",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 71.70175439,
+              "y": 67.52083333
+            },
+            {
+              "x": 71.54385965,
+              "y": 68.85416667
+            },
+            {
+              "x": 73.19298246,
+              "y": 69.10416667
+            },
+            {
+              "x": 73.35087719,
+              "y": 67.77083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-504-CV7e359de9-02",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 73.40350877,
+              "y": 67.77083333
+            },
+            {
+              "x": 73.26315789,
+              "y": 69.125
+            },
+            {
+              "x": 74.96491228,
+              "y": 69.375
+            },
+            {
+              "x": 75.0877193,
+              "y": 68.16666667
+            },
+            {
+              "x": 74.94736842,
+              "y": 68
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-504-CV7e359de9-03",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 71.50877193,
+              "y": 68.91666667
+            },
+            {
+              "x": 71.33333333,
+              "y": 70.27083333
+            },
+            {
+              "x": 73.03508772,
+              "y": 70.54166667
+            },
+            {
+              "x": 73.1754386,
+              "y": 69.16666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-504-CV7e359de9-04",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 73.24561404,
+              "y": 69.1875
+            },
+            {
+              "x": 73.0877193,
+              "y": 70.54166667
+            },
+            {
+              "x": 74.80701754,
+              "y": 70.8125
+            },
+            {
+              "x": 74.96491228,
+              "y": 69.45833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-504-CV7e359de9-05",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 71.31578947,
+              "y": 70.33333333
+            },
+            {
+              "x": 71.15789474,
+              "y": 71.625
+            },
+            {
+              "x": 72.87719298,
+              "y": 71.91666667
+            },
+            {
+              "x": 73.01754386,
+              "y": 70.60416667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-504-CV7e359de9-06",
+          "parent_detection_id": "L-504",
+          "polygon_pct": [
+            {
+              "x": 73.0877193,
+              "y": 70.625
+            },
+            {
+              "x": 72.94736842,
+              "y": 71.91666667
+            },
+            {
+              "x": 74.64912281,
+              "y": 72.20833333
+            },
+            {
+              "x": 74.78947368,
+              "y": 70.875
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-444-0a3ce9276169@2a2bf15ab1566d21480c1b9ed7589ac237f312e80e7f9c685d43c91417a26684",
+      "draft_id": "OWNER-DEMO-L-444-0a3ce9276169",
+      "revision_fingerprint": "2a2bf15ab1566d21480c1b9ed7589ac237f312e80e7f9c685d43c91417a26684",
+      "parent_detection_id": "L-444",
+      "parent_map_reference": "L-444",
+      "parent_polygon_pct": [
+        {
+          "x": 75.9,
+          "y": 67.16
+        },
+        {
+          "x": 76.35,
+          "y": 63.18
+        },
+        {
+          "x": 79.5,
+          "y": 66.45
+        },
+        {
+          "x": 79.3,
+          "y": 67.87
+        },
+        {
+          "x": 76.1,
+          "y": 67.4
+        },
+        {
+          "x": 75.9,
+          "y": 67.22
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "0a3ce9276169bc011df65a334ca5fe2723c1ad6fa47632f4bd5fcba02ec4bc8c",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-444 with 3 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 95.444%, leaving 4.556% unassigned; 0.069% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 98.87%, 80.77%, 100.00%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-444/proposal.json",
+      "geometry_exceptions": [
+        "4.556% of the original L-444 detection remains unassigned.",
+        "0.069% of proposed child union lies outside the original L-444 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 80.77%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.444,
+        "unassigned_parent_area_percent": 4.556,
+        "outside_parent_area_percent": 0.069,
+        "child_boundary_alignment_within_4px_percent": [
+          98.87,
+          80.77,
+          100
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-444-CV0a3ce927-01",
+          "parent_detection_id": "L-444",
+          "polygon_pct": [
+            {
+              "x": 76.35087719,
+              "y": 63.20833333
+            },
+            {
+              "x": 76.0877193,
+              "y": 65.60416667
+            },
+            {
+              "x": 77.8245614,
+              "y": 65.85416667
+            },
+            {
+              "x": 77.92982456,
+              "y": 64.83333333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-444-CV0a3ce927-02",
+          "parent_detection_id": "L-444",
+          "polygon_pct": [
+            {
+              "x": 78,
+              "y": 64.89583333
+            },
+            {
+              "x": 77.66666667,
+              "y": 67.625
+            },
+            {
+              "x": 79.29824561,
+              "y": 67.85416667
+            },
+            {
+              "x": 79.21052632,
+              "y": 67.83333333
+            },
+            {
+              "x": 79.1754386,
+              "y": 67.75
+            },
+            {
+              "x": 79.26315789,
+              "y": 67.625
+            },
+            {
+              "x": 79.31578947,
+              "y": 67.77083333
+            },
+            {
+              "x": 79.49122807,
+              "y": 66.45833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-444-CV0a3ce927-03",
+          "parent_detection_id": "L-444",
+          "polygon_pct": [
+            {
+              "x": 76.07017544,
+              "y": 65.66666667
+            },
+            {
+              "x": 75.9122807,
+              "y": 67.25
+            },
+            {
+              "x": 76.1754386,
+              "y": 67.41666667
+            },
+            {
+              "x": 77.61403509,
+              "y": 67.625
+            },
+            {
+              "x": 77.80701754,
+              "y": 65.95833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-506-25b0cd3eac64@e18b2cceb337ab68822b5de8eb1c56d4cfeddbda5008d40a8bfad87dca1d9615",
+      "draft_id": "OWNER-DEMO-L-506-25b0cd3eac64",
+      "revision_fingerprint": "e18b2cceb337ab68822b5de8eb1c56d4cfeddbda5008d40a8bfad87dca1d9615",
+      "parent_detection_id": "L-506",
+      "parent_map_reference": "L-506",
+      "parent_polygon_pct": [
+        {
+          "x": 79.5,
+          "y": 72.92
+        },
+        {
+          "x": 80.15,
+          "y": 67.16
+        },
+        {
+          "x": 83.3,
+          "y": 70.43
+        },
+        {
+          "x": 83,
+          "y": 73.52
+        },
+        {
+          "x": 79.5,
+          "y": 72.98
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "25b0cd3eac647b5a9b95bd996a9cb56b54703a511d75d3f482bd5d517d3f8233",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-506 with 5 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 95.140%, leaving 4.860% unassigned; 0.108% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 100.00%, 87.47%, 100.00%, 100.00%, 96.53%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-506/proposal.json",
+      "geometry_exceptions": [
+        "4.860% of the original L-506 detection remains unassigned.",
+        "0.108% of proposed child union lies outside the original L-506 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 87.47%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.14,
+        "unassigned_parent_area_percent": 4.86,
+        "outside_parent_area_percent": 0.108,
+        "child_boundary_alignment_within_4px_percent": [
+          100,
+          87.47,
+          100,
+          100,
+          96.53
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-506-CV25b0cd3e-01",
+          "parent_detection_id": "L-506",
+          "polygon_pct": [
+            {
+              "x": 80.15789474,
+              "y": 67.16666667
+            },
+            {
+              "x": 79.80701754,
+              "y": 70.14583333
+            },
+            {
+              "x": 81.56140351,
+              "y": 70.4375
+            },
+            {
+              "x": 81.73684211,
+              "y": 68.8125
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-506-CV25b0cd3e-02",
+          "parent_detection_id": "L-506",
+          "polygon_pct": [
+            {
+              "x": 81.78947368,
+              "y": 68.875
+            },
+            {
+              "x": 81.45614035,
+              "y": 71.85416667
+            },
+            {
+              "x": 83.14035088,
+              "y": 72.14583333
+            },
+            {
+              "x": 83.29824561,
+              "y": 70.4375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-506-CV25b0cd3e-03",
+          "parent_detection_id": "L-506",
+          "polygon_pct": [
+            {
+              "x": 79.80701754,
+              "y": 70.22916667
+            },
+            {
+              "x": 79.64912281,
+              "y": 71.58333333
+            },
+            {
+              "x": 81.40350877,
+              "y": 71.85416667
+            },
+            {
+              "x": 81.54385965,
+              "y": 70.52083333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-506-CV25b0cd3e-04",
+          "parent_detection_id": "L-506",
+          "polygon_pct": [
+            {
+              "x": 79.63157895,
+              "y": 71.6875
+            },
+            {
+              "x": 79.49122807,
+              "y": 72.97916667
+            },
+            {
+              "x": 81.24561404,
+              "y": 73.25
+            },
+            {
+              "x": 81.38596491,
+              "y": 71.9375
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-506-CV25b0cd3e-05",
+          "parent_detection_id": "L-506",
+          "polygon_pct": [
+            {
+              "x": 81.43859649,
+              "y": 71.95833333
+            },
+            {
+              "x": 81.29824561,
+              "y": 73.25
+            },
+            {
+              "x": 83,
+              "y": 73.5
+            },
+            {
+              "x": 83.12280702,
+              "y": 72.20833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-020-ddc59cc3e5b1@f4fb2479e8ca7e7211abad6a2d4d044d80a7d9212f5215df5a827e43cc1791ba",
+      "draft_id": "OWNER-DEMO-L-020-ddc59cc3e5b1",
+      "revision_fingerprint": "f4fb2479e8ca7e7211abad6a2d4d044d80a7d9212f5215df5a827e43cc1791ba",
+      "parent_detection_id": "L-020",
+      "parent_map_reference": "L-020",
+      "parent_polygon_pct": [
+        {
+          "x": 22.85,
+          "y": 11.64
+        },
+        {
+          "x": 23.3,
+          "y": 7.66
+        },
+        {
+          "x": 25.45,
+          "y": 9.86
+        },
+        {
+          "x": 24.7,
+          "y": 12.29
+        },
+        {
+          "x": 22.85,
+          "y": 12
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "ddc59cc3e5b159f4f119bfdd6a22e41a13d5e6446b14fccd247d1fa7921ab3c0",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-020 with 3 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 89.858%, leaving 10.142% unassigned; 0.167% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 95.69%, 100.00%, 87.62%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-020/proposal.json",
+      "geometry_exceptions": [
+        "10.142% of the original L-020 detection remains unassigned.",
+        "0.167% of proposed child union lies outside the original L-020 detection.",
+        "Child 3 boundary-on-dark-ink heuristic is 87.62%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 89.858,
+        "unassigned_parent_area_percent": 10.142,
+        "outside_parent_area_percent": 0.167,
+        "child_boundary_alignment_within_4px_percent": [
+          95.69,
+          100,
+          87.62
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-020-CVddc59cc3-01",
+          "parent_detection_id": "L-020",
+          "polygon_pct": [
+            {
+              "x": 23.29824561,
+              "y": 7.66666667
+            },
+            {
+              "x": 23.0877193,
+              "y": 9.52083333
+            },
+            {
+              "x": 25.43859649,
+              "y": 9.91666667
+            },
+            {
+              "x": 25.38596491,
+              "y": 9.79166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-020-CVddc59cc3-02",
+          "parent_detection_id": "L-020",
+          "polygon_pct": [
+            {
+              "x": 23.07017544,
+              "y": 9.625
+            },
+            {
+              "x": 22.94736842,
+              "y": 10.79166667
+            },
+            {
+              "x": 24.9122807,
+              "y": 11.10416667
+            },
+            {
+              "x": 25.03508772,
+              "y": 9.91666667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-020-CVddc59cc3-03",
+          "parent_detection_id": "L-020",
+          "polygon_pct": [
+            {
+              "x": 22.94736842,
+              "y": 10.875
+            },
+            {
+              "x": 22.84210526,
+              "y": 11.60416667
+            },
+            {
+              "x": 22.84210526,
+              "y": 12
+            },
+            {
+              "x": 24.70175439,
+              "y": 12.27083333
+            },
+            {
+              "x": 24.8245614,
+              "y": 11.875
+            },
+            {
+              "x": 24.89473684,
+              "y": 11.1875
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "OWNER-DEMO-L-011-d5f0720cc245@9fd37dadc89c1f04a972de38299f29aa732f55c6b31469b9b84b9c3cf8b9c29f",
+      "draft_id": "OWNER-DEMO-L-011-d5f0720cc245",
+      "revision_fingerprint": "9fd37dadc89c1f04a972de38299f29aa732f55c6b31469b9b84b9c3cf8b9c29f",
+      "parent_detection_id": "L-011",
+      "parent_map_reference": "L-011",
+      "parent_polygon_pct": [
+        {
+          "x": 11,
+          "y": 9.68
+        },
+        {
+          "x": 11.2,
+          "y": 8.14
+        },
+        {
+          "x": 13.2,
+          "y": 6.83
+        },
+        {
+          "x": 12.8,
+          "y": 10.27
+        },
+        {
+          "x": 11,
+          "y": 9.98
+        }
+      ],
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "proposal_fingerprint": "d5f0720cc24532b77b567b0f77e58768c6131f7b4d673389f2aeadff39691acb",
+      "approved_by": "Project owner (local Hopkins demo geometry authorization)",
+      "approved_at": "2026-10-15T01:03:06.953Z",
+      "correction_note": "Owner-authorized local demo replacement of L-011 with 2 source-derived child outlines. Printed identities remain pending.",
+      "reasoned_waiver": "The owner requested these local demo geometry refinements on 2026-10-14; source-bound CV contours were visually compared against the original plat and accepted for the demo only. Coverage is 95.516%, leaving 4.484% unassigned; 0.344% outside-parent area is recorded. Boundary-on-dark-ink heuristics: 84.68%, 70.28%. Every printed number remains blank/pending; this does not establish canonical identity, pricing, availability, legal boundary, or hosted publication.",
+      "approval_basis": "owner-authorized-demo-use",
+      "source_proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-011/proposal.json",
+      "geometry_exceptions": [
+        "4.484% of the original L-011 detection remains unassigned.",
+        "0.344% of proposed child union lies outside the original L-011 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 84.68%; this image metric is not survey accuracy.",
+        "Child 2 boundary-on-dark-ink heuristic is 70.28%; this image metric is not survey accuracy."
+      ],
+      "geometry_evidence": {
+        "parent_coverage_percent": 95.516,
+        "unassigned_parent_area_percent": 4.484,
+        "outside_parent_area_percent": 0.344,
+        "child_boundary_alignment_within_4px_percent": [
+          84.68,
+          70.28
+        ],
+        "existing_detection_overlaps": []
+      },
+      "children": [
+        {
+          "id": "DRAFT-L-011-CVd5f0720c-01",
+          "parent_detection_id": "L-011",
+          "polygon_pct": [
+            {
+              "x": 13.19298246,
+              "y": 6.83333333
+            },
+            {
+              "x": 11.21052632,
+              "y": 8.125
+            },
+            {
+              "x": 11.12280702,
+              "y": 8.6875
+            },
+            {
+              "x": 12.94736842,
+              "y": 8.95833333
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        },
+        {
+          "id": "DRAFT-L-011-CVd5f0720c-02",
+          "parent_detection_id": "L-011",
+          "polygon_pct": [
+            {
+              "x": 11.10526316,
+              "y": 8.79166667
+            },
+            {
+              "x": 11,
+              "y": 9.97916667
+            },
+            {
+              "x": 12.80701754,
+              "y": 10.25
+            },
+            {
+              "x": 12.94736842,
+              "y": 9.04166667
+            }
+          ],
+          "printed_number": "",
+          "label_status": "pending"
+        }
+      ]
+    }
+  ],
+  "superseded_detections": [
+    {
+      "detection_id": "L-137",
+      "source_polygon_pct": [
+        {
+          "x": 27.2,
+          "y": 36.4
+        },
+        {
+          "x": 27.3,
+          "y": 35.51
+        },
+        {
+          "x": 29.25,
+          "y": 35.81
+        },
+        {
+          "x": 29.1,
+          "y": 36.88
+        },
+        {
+          "x": 27.2,
+          "y": 36.58
+        }
+      ],
+      "replaced_by_parent_detection_id": "L-155",
+      "replacement_child_id": "DRAFT-L-155-CVe182d494-02",
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "reason": "The source outline for L-137 is now the active geometry of DRAFT-L-155-CVe182d494-02; hide the duplicate top-level source record only when the L-155 approved snapshot is active.",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z"
+    },
+    {
+      "detection_id": "L-156",
+      "source_polygon_pct": [
+        {
+          "x": 27.05,
+          "y": 37.71
+        },
+        {
+          "x": 27.2,
+          "y": 36.76
+        },
+        {
+          "x": 29.1,
+          "y": 37.05
+        },
+        {
+          "x": 28.95,
+          "y": 38.18
+        },
+        {
+          "x": 27.05,
+          "y": 37.89
+        }
+      ],
+      "replaced_by_parent_detection_id": "L-155",
+      "replacement_child_id": "DRAFT-L-155-CVe182d494-03",
+      "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+      "reason": "The source outline for L-156 is now the active geometry of DRAFT-L-155-CVe182d494-03; hide the duplicate top-level source record only when the L-155 approved snapshot is active.",
+      "approved_by": "Project owner (explicit local demo approval)",
+      "approved_at": "2026-10-14T23:13:32.262Z"
+    }
+  ]
+}

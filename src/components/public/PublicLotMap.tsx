@@ -13,6 +13,21 @@ import { MapPolygon, MapRasterLayer } from "../map/MapPolygon";
 import type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 export type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 import {
+  applyApprovedPreviewSplits,
+  localMapPreviewChannelName,
+  localMapPreviewStorageKey,
+  LOCAL_MAP_PREVIEW_UPDATED,
+  parseLocalMapPreviewStore,
+  type LocalPreviewParcelMarker,
+  type LocalMapPreviewScope,
+  type LocalMapPreviewStore,
+} from "../../lib/localMapPreview";
+import {
+  applyHopkinsDemoCorrectionManifest,
+  parseHopkinsDemoCorrectionManifest,
+  type HopkinsDemoCorrectionManifest,
+} from "../../lib/hopkinsDemoCorrections";
+import {
   clampMapPan,
   clientPointToMapCoordinate,
   mapPanAfterZoom,
@@ -23,6 +38,7 @@ import {
   mapViewportBounds,
   type MapPanPadding,
 } from "../../lib/mapGeometry";
+import { demoMapPlotLabel, demoPlotLabel, fitStandardMapLabelFontSize } from "../../lib/hopkinsDemoLabels";
 
 export interface PublicLotParcel {
   /** Generated in the browser only for SVG interaction; never a database key. */
@@ -43,6 +59,8 @@ export interface PublicLotParcel {
   effective_price_cents: number;
   /** Stable correction-workspace key; never a public parcel identifier. */
   correction_key?: string;
+  /** Development-only, approved local map snapshot marker; never public inventory. */
+  local_preview?: LocalPreviewParcelMarker;
 }
 
 type PublicLotStatus = ParcelStatus | "Review pending";
@@ -86,8 +104,12 @@ interface PublicLotMapProps {
    * masterplan_background.webp instead of calling get-public-lots.
    */
   demoDataUrl?: string;
+  /** Hopkins-only, development-only file corrections layered over its source detections. */
+  demoCorrectionManifestUrl?: string;
   /** Authenticated correction-only layer; contains geometry, never sales fields. */
   correctionMapLayer?: CorrectionMapLayer;
+  /** Development-only, project/phase-scoped local geometry preview. Never publication or inventory. */
+  localMapPreviewScope?: LocalMapPreviewScope;
 }
 
 const STATUS_STYLE: Record<PublicLotStatus, { fill: string; stroke: string }> = {
@@ -104,6 +126,9 @@ const CORRECTION_REVIEW_STYLE: Record<CorrectionReviewStatus, { fill: string; st
   unreadable: { fill: "#78716c", stroke: "#57534e", label: "Unreadable" },
   skipped: { fill: "#94a3b8", stroke: "#64748b", label: "Skipped" },
   "geometry-issue": { fill: "#c24132", stroke: "#8f2e26", label: "Geometry issue" },
+  "proposal-candidate": { fill: "#d6a23a", stroke: "#8b5a14", label: "Unaccepted proposal · not approved" },
+  "editable-draft": { fill: "#b7791f", stroke: "#805313", label: "Editable draft · pending review" },
+  "approved-preview": { fill: "#2f7d4e", stroke: "#205a38", label: "Approved internal preview · not published" },
 };
 
 type LotMarkerShape = "circle" | "diamond" | "square";
@@ -115,6 +140,11 @@ const STATUS_MARKER_SHAPE: Record<PublicLotStatus, LotMarkerShape> = {
   "Review pending": "circle",
 };
 
+// Local demo splits have owner-approved geometry but intentionally blank,
+// unapproved printed identities and no sales status. Keep them visually
+// distinct from untouched detections without borrowing an availability color.
+const LOCAL_PREVIEW_GEOMETRY_COLOR = "#596f98";
+
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 
@@ -123,9 +153,6 @@ const HIT_STROKE_PX = 14;
 
 /** Keep the keyboard-accessible search chooser bounded for broad queries. */
 const SEARCH_RESULT_LIMIT = 12;
-
-/** Lot-label ceiling on screen so giant lots don't get billboard text. */
-const MAX_LABEL_PX = 26;
 
 /** Below this viewport width the capped preview rendition wins (bandwidth). */
 const MOBILE_PREVIEW_PX = 768;
@@ -178,6 +205,11 @@ function exitActiveFullscreen(): Promise<void> {
  */
 const DEMO_PREVIEW = import.meta.env.DEV;
 
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Compatibility wrappers keep this buyer component focused on its parcel contract. */
 type PanPads = MapPanPadding;
 const NO_PADS: PanPads = { left: 0, right: 0, top: 0, bottom: 0 };
@@ -198,6 +230,14 @@ function polygonMarkerPoints(shape: Exclude<LotMarkerShape, "circle">, cx: numbe
   return `${cx - half},${cy - half} ${cx + half},${cy - half} ${cx + half},${cy + half} ${cx - half},${cy + half}`;
 }
 
+function parcelHeading(parcel: PublicLotParcel, localDemo = false): string {
+  return localDemo ? demoPlotLabel(parcel) : parcel.local_preview ? `Preview child ${parcel.local_preview.childNumber}` : `Lot ${parcel.lot_number}`;
+}
+
+function parcelSearchLabel(parcel: PublicLotParcel, localDemo = false): string {
+  return localDemo ? demoPlotLabel(parcel) : parcel.local_preview ? `Preview child ${parcel.local_preview.childNumber}` : `Lot ${parcel.lot_number}`;
+}
+
 export function PublicLotMap({
   tenantSlug,
   projectSlug,
@@ -212,10 +252,17 @@ export function PublicLotMap({
   onClearSelection,
   onParcelsLoaded,
   demoDataUrl,
+  demoCorrectionManifestUrl,
   correctionMapLayer,
+  localMapPreviewScope,
 }: PublicLotMapProps) {
   const pickMode = typeof onToggleLot === "function";
-  const [payload, setPayload] = useState<MapPayload | null>(null);
+  const [basePayload, setBasePayload] = useState<MapPayload | null>(null);
+  const [localPreviewStore, setLocalPreviewStore] = useState<LocalMapPreviewStore | null>(null);
+  const [localPreviewStoreError, setLocalPreviewStoreError] = useState<string | null>(null);
+  const [localPreviewStoreReady, setLocalPreviewStoreReady] = useState(false);
+  const [hopkinsDemoCorrectionManifest, setHopkinsDemoCorrectionManifest] = useState<HopkinsDemoCorrectionManifest | null>(null);
+  const [hopkinsDemoCorrectionError, setHopkinsDemoCorrectionError] = useState<string | null>(null);
   const [reviewPendingDemo, setReviewPendingDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -241,7 +288,7 @@ export function PublicLotMap({
     () => typeof window !== "undefined" && window.innerWidth < MOBILE_PREVIEW_PX,
   );
   const masterplanUrl =
-    wantPreview && payload?.masterplan_preview_url ? payload.masterplan_preview_url : (payload?.masterplan_image_url ?? null);
+    wantPreview && basePayload?.masterplan_preview_url ? basePayload.masterplan_preview_url : (basePayload?.masterplan_image_url ?? null);
   const [disabledTiers, setDisabledTiers] = useState<string[]>([]);
   const [filter, setFilter] = useState<PublicLotFilter>(initialFilter);
   const [colourView, setColourView] = useState<PublicLotColourView>(initialView);
@@ -362,17 +409,21 @@ export function PublicLotMap({
 
   useEffect(() => {
     let cancelled = false;
-    async function loadDemo(base: string) {
+    async function loadDemo(base: string, correctionManifestUrl?: string) {
       setLoading(true);
       setError(null);
       setReviewPendingDemo(false);
+      setHopkinsDemoCorrectionManifest(null);
+      setHopkinsDemoCorrectionError(null);
       try {
         const [lotsRes, tiersRes] = await Promise.all([
           fetch(`${base}/lots.json`),
           fetch(`${base}/tiers.json`),
         ]);
         if (!lotsRes.ok || !tiersRes.ok) throw new Error("Demo map files not found.");
+        const lotsBytes = correctionManifestUrl ? await lotsRes.clone().arrayBuffer() : null;
         const lots = (await lotsRes.json()) as Array<{
+          id?: string;
           lot_number: string;
           tier_key: string;
           price: number;
@@ -387,9 +438,10 @@ export function PublicLotMap({
         const parcels: PublicLotParcel[] = lots.map((lot, index) => ({
           local_key: index + 1,
           public_ref: null,
+          ...(lot.id ? { correction_key: lot.id } : {}),
           lot_number: lot.lot_number,
           status: validStatuses.has(lot.status ?? "") ? lot.status as ParcelStatus : "Review pending",
-          price: Number(lot.price),
+          price: Number.isFinite(Number(lot.price)) ? Number(lot.price) : 0,
           dimensions: null,
           area_sqm: typeof lot.area_sqm === "number" && lot.area_sqm > 0 ? lot.area_sqm : null,
           map_polygon: lot.polygon_pct,
@@ -397,13 +449,46 @@ export function PublicLotMap({
           tier_label: tiers[lot.tier_key]?.label ?? lot.tier_key,
           tier_color_hex: tiers[lot.tier_key]?.legend ?? "#999999",
           is_corner: false,
-          effective_price_cents: Math.round(Number(lot.price) * 100),
+          effective_price_cents: Math.round((Number.isFinite(Number(lot.price)) ? Number(lot.price) : 0) * 100),
         }));
+        let corrections: HopkinsDemoCorrectionManifest | null = null;
+        if (correctionManifestUrl && lotsBytes) {
+          try {
+            const correctionResponse = await fetch(correctionManifestUrl);
+            // The committed, synthetic-safe Hopkins fixture intentionally has
+            // no private correction manifest. A missing optional file is not
+            // an approval warning; malformed or mismatched real manifests
+            // still fail closed below.
+            if (correctionResponse.status !== 404) {
+              const sourceResponse = await fetch(`${base}/masterplan_background.webp`);
+              if (!correctionResponse.ok || !sourceResponse.ok) throw new Error("The Hopkins correction manifest or source image could not be loaded.");
+              const rawManifest = await correctionResponse.json() as unknown;
+              const [sourceBytes, detectionSha] = await Promise.all([
+                sourceResponse.arrayBuffer(),
+                sha256Hex(lotsBytes),
+              ]);
+              const verifiedImageSha = await sha256Hex(sourceBytes);
+              corrections = parseHopkinsDemoCorrectionManifest(rawManifest, {
+                scope: localMapPreviewScope ?? { tenantSlug: "hopkins-grove", projectSlug: "map-review", phaseSlug: "default" },
+                sourceImageSha256: verifiedImageSha,
+                sourceImageWidth: 5700,
+                sourceImageHeight: 4800,
+                detectionSourceSha256: detectionSha,
+                sourceParcels: parcels,
+              });
+            }
+          } catch (correctionError) {
+            if (!cancelled) setHopkinsDemoCorrectionError(correctionError instanceof Error
+              ? `Local Hopkins corrections were not applied: ${correctionError.message}`
+              : "Local Hopkins corrections were not applied because their manifest could not be verified.");
+          }
+        }
         if (cancelled) return;
+        setHopkinsDemoCorrectionManifest(corrections);
         setReviewPendingDemo(pendingStatuses);
-        setPayload({
-          tenant: { name: "Hopkins Grove (preview)", slug: "demo" },
-          project: null,
+        setBasePayload({
+          tenant: { name: "Hopkins Grove (preview)", slug: tenantSlug || "demo" },
+          project: projectSlug ? { slug: projectSlug, name: projectSlug } : null,
           masterplan_image_url: `${base}/masterplan_background.webp`,
           masterplan_preview_url: null,
           theme: null,
@@ -455,7 +540,7 @@ export function PublicLotMap({
           is_corner: parcel.is_corner === true,
           effective_price_cents: Number(parcel.effective_price_cents ?? 0),
         }));
-        setPayload({ ...responsePayload, parcels });
+        setBasePayload({ ...responsePayload, parcels });
         onParcelsLoaded?.(parcels);
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Map request failed.");
@@ -470,7 +555,7 @@ export function PublicLotMap({
       };
     }
     if (DEMO_PREVIEW && demoDataUrl) {
-      void loadDemo(demoDataUrl);
+      void loadDemo(demoDataUrl, demoCorrectionManifestUrl);
       return () => {
         cancelled = true;
       };
@@ -484,7 +569,75 @@ export function PublicLotMap({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug, projectSlug, demoDataUrl, loadAttempt]);
+  }, [tenantSlug, projectSlug, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt]);
+
+  let localPreviewScopeKey: string | null = null;
+  if (DEMO_PREVIEW && localMapPreviewScope) {
+    try { localPreviewScopeKey = localMapPreviewStorageKey(localMapPreviewScope); }
+    catch { localPreviewScopeKey = null; }
+  }
+  const localPreviewMode = Boolean(localPreviewScopeKey && localMapPreviewScope);
+
+  useEffect(() => {
+    if (!localPreviewScopeKey || !localMapPreviewScope) {
+      setLocalPreviewStore(null);
+      setLocalPreviewStoreError(null);
+      setLocalPreviewStoreReady(true);
+      return;
+    }
+    const key = localPreviewScopeKey;
+    const scope = localMapPreviewScope;
+    setLocalPreviewStoreReady(false);
+    const refresh = () => {
+      try {
+        setLocalPreviewStore(parseLocalMapPreviewStore(localStorage.getItem(key), scope));
+        setLocalPreviewStoreError(null);
+      } catch (previewError) {
+        setLocalPreviewStore(null);
+        setLocalPreviewStoreError(previewError instanceof Error ? previewError.message : "Local preview data could not be read safely.");
+      } finally {
+        setLocalPreviewStoreReady(true);
+      }
+    };
+    refresh();
+    function onStorage(event: StorageEvent) {
+      if (event.key === key || event.key === null) refresh();
+    }
+    function onLocalUpdate(event: Event) {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key === key) refresh();
+    }
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(LOCAL_MAP_PREVIEW_UPDATED, onLocalUpdate);
+    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(localMapPreviewChannelName);
+    if (channel) channel.onmessage = (event: MessageEvent<{ key?: string }>) => {
+      if (event.data?.key === key) refresh();
+    };
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(LOCAL_MAP_PREVIEW_UPDATED, onLocalUpdate);
+      channel?.close();
+    };
+  }, [localPreviewScopeKey, localMapPreviewScope]);
+
+  const localPreviewResult = useMemo(() => {
+    if (!basePayload) return { parcels: [], warnings: [] as string[] };
+    if (localPreviewMode && !localPreviewStoreReady) return { parcels: basePayload.parcels, warnings: [] as string[] };
+    if (localPreviewMode && localPreviewStoreError) {
+      return { parcels: basePayload.parcels, warnings: ["File-based proposals were withheld because existing local correction state could not be read safely."] };
+    }
+    if (hopkinsDemoCorrectionManifest && localPreviewMode && localMapPreviewScope) {
+      return applyHopkinsDemoCorrectionManifest(basePayload.parcels, hopkinsDemoCorrectionManifest, localMapPreviewScope, localPreviewStore);
+    }
+    if (!localPreviewMode || !localPreviewStore) return { parcels: basePayload.parcels, warnings: [] as string[] };
+    return applyApprovedPreviewSplits(basePayload.parcels, localPreviewStore);
+  }, [basePayload, hopkinsDemoCorrectionManifest, localMapPreviewScope, localPreviewMode, localPreviewStore, localPreviewStoreError, localPreviewStoreReady]);
+  const payload: MapPayload | null = useMemo(() => basePayload
+    ? { ...basePayload, parcels: localPreviewResult.parcels }
+    : null, [basePayload, localPreviewResult]);
+  const localPreviewWarnings = [localPreviewStoreError, hopkinsDemoCorrectionError, ...localPreviewResult.warnings]
+    .filter((warning): warning is string => Boolean(warning));
+  const reviewPending = reviewPendingDemo || localPreviewMode;
 
   const correctionReviewTitle = correctionMapLayer?.title;
   const correctionReviewImageUrl = correctionMapLayer?.imageUrl;
@@ -510,7 +663,7 @@ export function PublicLotMap({
     }));
     setError(null);
     setReviewPendingDemo(true);
-    setPayload({
+    setBasePayload({
       tenant: { name: correctionReviewTitle, slug: "correction-review" },
       project: null,
       masterplan_image_url: correctionReviewImageUrl ?? null,
@@ -539,20 +692,22 @@ export function PublicLotMap({
     if (!payload) return [];
     const needle = query.trim().toLowerCase();
     return payload.parcels.filter((parcel) => {
-      if (!reviewPendingDemo && filter === "available" && parcel.status !== "Available") return false;
-      if (!reviewPendingDemo && parcel.tier_key && disabledTiers.includes(parcel.tier_key)) return false;
+      if (!reviewPending && filter === "available" && parcel.status !== "Available") return false;
+      if (!reviewPending && parcel.tier_key && disabledTiers.includes(parcel.tier_key)) return false;
       if (needle) {
-        const haystack = `${parcel.lot_number} ${(parcel.tier_label ?? parcel.tier_key ?? "")} ${parcel.status}`.toLowerCase();
+        const previewTerms = parcel.local_preview ? `child ${parcel.local_preview.childNumber} ${parcel.local_preview.parentDetectionId} ${parcel.local_preview.childId}` : "";
+        const demoLabel = localPreviewMode ? demoPlotLabel(parcel) : "";
+        const haystack = `${demoLabel} ${parcel.lot_number} ${previewTerms} ${(parcel.tier_label ?? parcel.tier_key ?? "")} ${parcel.status}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       return true;
     });
-  }, [payload, filter, disabledTiers, query, reviewPendingDemo]);
+  }, [payload, filter, disabledTiers, query, reviewPending, localPreviewMode]);
   // Wamule's current tenant-level staging feed has no approved project scope
   // or register signal. Treat its sales fields as preview values until that
   // approval state is represented by the public payload.
   const unapprovedWamulePreview = Boolean(payload && tenantSlug.toLowerCase() === "wamule" && !payload.project);
-  const proofOfConcept = reviewPendingDemo || unapprovedWamulePreview;
+  const proofOfConcept = reviewPending || unapprovedWamulePreview;
   const previewLayout = proofOfConcept && !correctionMapLayer;
   const normalizedQuery = query.trim();
   const searchResults = normalizedQuery ? visibleParcels.slice(0, SEARCH_RESULT_LIMIT) : [];
@@ -581,14 +736,15 @@ export function PublicLotMap({
     }
     const target = (initialLotNumber ?? "").trim().toLowerCase();
     if (!target || !payload) return;
-    const hit = payload.parcels.find((parcel) => parcel.lot_number.toLowerCase() === target);
+    const hit = payload.parcels.find((parcel) => parcel.lot_number.toLowerCase() === target
+      || (localPreviewMode && demoPlotLabel(parcel).toLowerCase() === target));
     if (hit) {
       setInternalSelectedKey(hit.local_key);
       if (previewLayout) zoomToParcel(hit);
       onSelectLot?.(hit);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, previewLayout, imageAspect, initialLotNumber, correctionMapLayer?.selectedKey]);
+  }, [payload, previewLayout, imageAspect, initialLotNumber, correctionMapLayer?.selectedKey, localPreviewMode]);
 
   // Probe the masterplan's intrinsic aspect so the viewBox matches it.
   // (The image itself lives *inside* the SVG below, so zoom/pan move the
@@ -630,7 +786,7 @@ export function PublicLotMap({
   const focusLot = payload?.parcels.find((parcel) => parcel.local_key === highlighted[0]) ?? null;
   const focusLotKey = focusLot?.local_key ?? null;
   const demoDisplayName = payload?.tenant.name.replace(/\s+\(preview\)$/i, "") ?? "Land plan preview";
-  const mapTitle = reviewPendingDemo
+  const mapTitle = reviewPending
     ? correctionMapLayer?.title ?? demoDisplayName
     : correctionMapLayer?.title ?? (payload?.branding.company_name || payload?.tenant.name || "Lot availability");
 
@@ -1079,6 +1235,25 @@ export function PublicLotMap({
     gestureRef.current = null;
     pinchRef.current = null;
     if (!g || g.moved) return;
+    if (correctionMapLayer?.splitTrace) {
+      const svg = svgRef.current;
+      const rect = svg?.getBoundingClientRect();
+      if (!svg || !rect?.width || !rect.height) return;
+      const mapPoint = clientPointToMapCoordinate(
+        event.clientX,
+        event.clientY,
+        rect,
+        mapViewportBounds(panRef.current, zoomRef.current, 100, viewBoxHRef.current, cardPadRef.current),
+      );
+      if (mapPoint) {
+        const yScale = viewBoxHRef.current / 100;
+        correctionMapLayer.splitTrace.onMapPoint({
+          x: Math.max(0, Math.min(100, mapPoint.x)),
+          y: Math.max(0, Math.min(100, mapPoint.y / yScale)),
+        });
+      }
+      return;
+    }
     // Tap/click with no drag: decide at pointerup. Prefer the lot under the
     // release point (finger slop), fall back to the down-target lot, else an
     // empty release clears the unlocked selection. No click events involved.
@@ -1095,9 +1270,10 @@ export function PublicLotMap({
   }
 
   function beginGesture(event: React.PointerEvent<SVGSVGElement>) {
+    const target = event.target as Element | null;
+    if (target?.closest?.("[role='slider']")) return;
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (!gestureRef.current) {
-      const target = event.target as Element | null;
       const id = target?.closest?.("[data-lot-key]")?.getAttribute("data-lot-key");
       gestureRef.current = {
         startX: event.clientX,
@@ -1254,20 +1430,29 @@ export function PublicLotMap({
           <strong className="block max-w-full truncate text-base font-semibold tracking-tight text-primary">
             {mapTitle}
           </strong>
-          {proofOfConcept ? (
+          {localPreviewMode ? (
+            <span className="max-w-full rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] font-semibold leading-4 text-foreground" aria-label="Hopkins Grove demo">
+              Demo
+            </span>
+          ) : proofOfConcept ? (
             <span className="max-w-full rounded-full border border-secondary/25 bg-secondary-soft px-2.5 py-1 text-[11px] font-semibold leading-4 text-secondary" aria-label="Proof of concept; sales details are unapproved">
               Proof of concept · sample data
             </span>
           ) : null}
-          <span className="mt-0.5 block basis-full truncate text-xs font-medium text-muted-foreground">
+          {localPreviewMode ? null : <span className="mt-0.5 block basis-full truncate text-xs font-medium text-muted-foreground">
             {correctionMapLayer
               ? "Internal correction view · review states are not sales status"
-              : reviewPendingDemo
+              : reviewPending
               ? "Land plan · source review pending"
               : unapprovedWamulePreview
                 ? "Sales details are not approved for publication."
               : payload?.project?.name ?? "Explore the development plan"}
-          </span>
+          </span>}
+          {localPreviewWarnings.length ? (
+            <span role="status" aria-live="polite" className="basis-full text-xs font-medium text-warning-foreground">
+              {localPreviewWarnings.join(" ")}
+            </span>
+          ) : null}
         </div>
         <div className="relative order-1 w-full md:order-none md:w-auto">
           <input
@@ -1283,8 +1468,12 @@ export function PublicLotMap({
                 setQuery("");
               }
             }}
-            placeholder={correctionMapLayer ? "Search detection reference" : reviewPendingDemo ? "Search plan label" : "Search lot, tier, status"}
-            aria-label={correctionMapLayer ? "Search detected polygons by reference" : "Search lots"}
+            placeholder={correctionMapLayer
+              ? "Search detection reference"
+              : localPreviewMode
+              ? "Search demo plot or source reference"
+              : reviewPending ? "Search plan label or pending child" : "Search lot, tier, status"}
+            aria-label={correctionMapLayer ? "Search detected polygons by reference" : localPreviewMode ? "Search demo plots" : "Search lots"}
             aria-controls={searchResultsId}
             aria-describedby={`${searchResultsId}-instructions`}
             aria-expanded={normalizedQuery.length > 0}
@@ -1293,6 +1482,8 @@ export function PublicLotMap({
           <span id={`${searchResultsId}-instructions`} className="sr-only">
             {correctionMapLayer
               ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a detected polygon to select it."
+              : localPreviewMode
+              ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a demo plot to select it."
               : "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a lot to open its details."}
           </span>
           {normalizedQuery ? (
@@ -1300,15 +1491,15 @@ export function PublicLotMap({
               ref={searchResultsRef}
               id={searchResultsId}
               role="region"
-              aria-label={correctionMapLayer ? "Detection search results" : "Lot search results"}
+              aria-label={correctionMapLayer ? "Detection search results" : localPreviewMode ? "Demo plot search results" : "Lot search results"}
               className="absolute left-0 right-auto top-full z-50 mt-1 max-h-64 w-72 max-w-[calc(100vw-1.5rem)] overflow-auto rounded-md border border-border bg-card p-2 shadow-lg"
             >
               <p className="px-1 pb-1 text-xs text-muted-foreground" role="status" aria-live="polite">
                 {visibleParcels.length === 0
                   ? correctionMapLayer ? "No matching detected polygons." : "No matching lots."
                   : visibleParcels.length > SEARCH_RESULT_LIMIT
-                    ? `Showing ${SEARCH_RESULT_LIMIT} of ${visibleParcels.length} matching ${correctionMapLayer ? "detected polygons" : "lots"}; refine your search.`
-                    : `${visibleParcels.length} matching ${correctionMapLayer ? (visibleParcels.length === 1 ? "detected polygon" : "detected polygons") : (visibleParcels.length === 1 ? "lot" : "lots")}.`}
+                    ? `Showing ${SEARCH_RESULT_LIMIT} of ${visibleParcels.length} matching ${correctionMapLayer ? "detected polygons" : localPreviewMode ? "demo plots" : "lots"}; refine your search.`
+                    : `${visibleParcels.length} matching ${correctionMapLayer ? (visibleParcels.length === 1 ? "detected polygon" : "detected polygons") : localPreviewMode ? (visibleParcels.length === 1 ? "demo plot" : "demo plots") : (visibleParcels.length === 1 ? "lot" : "lots")}.`}
               </p>
               {searchResults.length > 0 ? (
                 <ul className="grid gap-1">
@@ -1318,7 +1509,9 @@ export function PublicLotMap({
                         type="button"
                         aria-label={correctionMapLayer
                           ? `Select detected polygon ${parcel.lot_number}`
-                          : `Show details for Lot ${parcel.lot_number}, ${reviewPendingDemo ? "source review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
+                          : localPreviewMode
+                            ? `Select ${demoPlotLabel(parcel)}`
+                            : `Show details for Lot ${parcel.lot_number}, ${reviewPending ? "source review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
                         onKeyDown={(event) => {
                           if (event.key === "ArrowUp") {
                             event.preventDefault();
@@ -1346,10 +1539,20 @@ export function PublicLotMap({
                         }}
                         className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded px-3 py-2 text-left text-sm hover:bg-primary-soft"
                       >
-                        <span className="font-semibold text-foreground">{correctionMapLayer ? `Detection ${parcel.lot_number}` : `Lot ${parcel.lot_number}`}</span>
+                        <span className="font-semibold text-foreground">
+                          {correctionMapLayer
+                            ? `Detection ${parcel.lot_number}`
+                            : localPreviewMode
+                              ? demoPlotLabel(parcel)
+                            : parcel.local_preview
+                              ? `Preview child ${parcel.local_preview.childNumber}`
+                                : parcelSearchLabel(parcel)}
+                        </span>
                         <span className="truncate text-muted-foreground">
-                          {reviewPendingDemo
-                            ? "Review pending"
+                          {parcel.local_preview
+                            ? localPreviewMode ? "Applied correction" : "Demo geometry applied · printed identity pending"
+                            : reviewPending
+                            ? localPreviewMode ? "Original outline" : "Review pending"
                             : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"} · ${parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}
                         </span>
                       </button>
@@ -1360,7 +1563,7 @@ export function PublicLotMap({
             </div>
           ) : null}
         </div>
-        {!reviewPendingDemo ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Colour view">
+        {!reviewPending ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Colour view">
           {(["status", "tier"] as PublicLotColourView[]).map((value) => (
             <button
               key={value}
@@ -1378,7 +1581,7 @@ export function PublicLotMap({
             </button>
           ))}
         </div> : null}
-        {!reviewPendingDemo ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Lot filter">
+        {!reviewPending ? <div className="order-2 flex min-w-0 flex-1 rounded-md border border-border md:order-none md:flex-initial" role="group" aria-label="Lot filter">
           {(["all", "available"] as PublicLotFilter[]).map((value) => (
             <button
               key={value}
@@ -1397,7 +1600,7 @@ export function PublicLotMap({
           ))}
         </div> : null}
       </div>
-      {!reviewPendingDemo && tierOptions.length && colourView === "tier" ? (
+      {!reviewPending && tierOptions.length && colourView === "tier" ? (
         <div className="border-b border-border bg-card px-3 py-1.5">
           <button
             type="button"
@@ -1434,24 +1637,36 @@ export function PublicLotMap({
           ) : null}
         </div>
       ) : null}
-      {reviewPendingDemo ? (
+      {reviewPending ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-4 py-2" aria-label="Map legend">
           {correctionMapLayer ? (Object.entries(CORRECTION_REVIEW_STYLE) as Array<[CorrectionReviewStatus, typeof CORRECTION_REVIEW_STYLE[CorrectionReviewStatus]]>).map(([status, style]) => (
             <span key={status} className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: style.fill }} />
               {style.label}
             </span>
-          )) : <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
-              <path d="M1 8h22" stroke="var(--lotmap-muted)" strokeWidth="2" />
-            </svg>
-            Candidate outline · review pending
-          </span>}
+          )) : (
+            <>
+              <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+                  <path d="M1 8h22" stroke="var(--lotmap-muted)" strokeWidth="2" />
+                </svg>
+                {localPreviewMode ? "Original outline" : "Candidate outline · review pending"}
+              </span>
+              {localPreviewMode && payload?.parcels.some((parcel) => parcel.local_preview) ? (
+                <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
+                    <path d="M1 8h22" stroke={LOCAL_PREVIEW_GEOMETRY_COLOR} strokeWidth="3" />
+                  </svg>
+                  Applied correction
+                </span>
+              ) : null}
+            </>
+          )}
           <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
             <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
               <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
             </svg>
-            {correctionMapLayer ? "Selected polygon" : "Selected lot"}
+            {correctionMapLayer ? "Selected polygon" : localPreviewMode ? "Selected plot" : "Selected lot"}
           </span>
         </div>
       ) : colourView === "status" ? (
@@ -1478,7 +1693,7 @@ export function PublicLotMap({
             <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
               <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
             </svg>
-            Selected lot
+            {localPreviewMode ? "Selected plot" : "Selected lot"}
           </span>
         </div>
       ) : colourView === "tier" ? (
@@ -1486,13 +1701,15 @@ export function PublicLotMap({
           <svg aria-hidden="true" className="h-4 w-6 shrink-0" viewBox="0 0 24 16">
             <path d="M1 8h22" stroke="var(--lotmap-accent)" strokeWidth="4" />
           </svg>
-          Selected lot
+          {localPreviewMode ? "Selected plot" : "Selected lot"}
         </div>
       ) : null}
 
       <span id={mapInstructionsId} className="sr-only">
         {correctionMapLayer
           ? "Use the arrow keys to move between nearby detected polygons. Press Enter or Space to select the polygon; press Escape to return to detection search. Search uses detection references, not official lot numbers."
+          : localPreviewMode
+          ? "Use the arrow keys to move between nearby demo plots. Press Enter or Space to select a plot; press Escape to return to demo plot search."
           : "Use the arrow keys to move between nearby lots. Press Enter or Space to open lot details; press Escape to return to lot search. Search can find any lot by identifier, tier, or status."}
       </span>
 
@@ -1563,12 +1780,16 @@ export function PublicLotMap({
               viewBox={viewBox}
               preserveAspectRatio="xMidYMid meet"
               className={cn("absolute inset-0 h-full w-full", zoom > MIN_ZOOM && "touch-none")}
-              style={{ cursor: "grab" }}
+              style={{ cursor: correctionMapLayer?.splitTrace?.drawingEnabled ? "crosshair" : "grab" }}
               role="group"
               aria-label={correctionMapLayer ? "Interactive correction map" : "Interactive lot map"}
               onPointerDown={beginGesture}
             >
-              <title>Lot map. Drag to pan; use the controls or pinch to zoom.</title>
+              <title>{correctionMapLayer?.splitTrace
+                ? correctionMapLayer.splitTrace.drawingEnabled
+                  ? "Polygon trace mode. Tap to add a boundary point; drag to pan the source drawing."
+                  : "Polygon drawing paused. Choose Start Next Polygon before tracing another child; drag to pan the source drawing."
+                : "Lot map. Drag to pan; use the controls or pinch to zoom."}</title>
               {masterplanUrl ? (
                 <MapRasterLayer
                   src={masterplanUrl}
@@ -1592,21 +1813,22 @@ export function PublicLotMap({
               {visibleParcels.map((parcel) => {
                 const polygon = polygonFor(parcel);
                 if (polygon.length < 3) return null;
-                const style = fillFor(parcel, reviewPendingDemo ? "status" : colourView);
+                const style = fillFor(parcel, reviewPending ? "status" : colourView);
                 const review = reviewStyle(parcel);
                 const selected = highlighted.includes(parcel.local_key);
                 const hovered = parcel.local_key === hoveredLocalKey;
                 const picked = pickMode && selected;
+                const localPreviewChild = localPreviewMode && Boolean(parcel.local_preview);
                 return (
                   <MapPolygon
                     key={parcel.local_key}
                     data-lot-key={parcel.local_key}
                     coordinates={polygon}
                     coordinateScale={{ y: yScale }}
-                    fill={selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.fill : "none"}
-                    fillOpacity={selected ? 0.32 : correctionMapLayer ? 0.13 : 0}
-                    stroke={picked ? "#1d4ed8" : selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.stroke : style.stroke}
-                    strokeWidth={selected ? 3.5 : hovered || picked ? 1.6 : reviewPendingDemo ? 1.1 : 0.8}
+                    fill={selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.fill : localPreviewChild ? LOCAL_PREVIEW_GEOMETRY_COLOR : "none"}
+                    fillOpacity={selected ? 0.32 : correctionMapLayer ? 0.13 : localPreviewChild ? 0.1 : 0}
+                    stroke={picked ? "#1d4ed8" : selected ? "var(--lotmap-accent)" : correctionMapLayer ? review.stroke : localPreviewChild ? LOCAL_PREVIEW_GEOMETRY_COLOR : style.stroke}
+                    strokeWidth={selected ? 3.5 : hovered || picked ? 1.6 : localPreviewChild ? 1.8 : reviewPending ? 1.1 : 0.8}
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
@@ -1619,7 +1841,7 @@ export function PublicLotMap({
               <g
                 id={mapListboxId}
                 role="listbox"
-                aria-label={correctionMapLayer ? "Detected polygons on the map" : "Lots on the map"}
+                aria-label={correctionMapLayer ? "Detected polygons on the map" : localPreviewMode ? "Hopkins Grove demo plots" : "Lots on the map"}
                 aria-describedby={mapInstructionsId}
                 aria-activedescendant={mapCursorOptionId}
                 aria-multiselectable={pickMode || undefined}
@@ -1642,15 +1864,17 @@ export function PublicLotMap({
                     const polygon = polygonFor(parcel);
                     if (polygon.length < 3) return null;
                     const picked = pickMode && highlighted.includes(parcel.local_key);
-                    const tappable = Boolean(correctionMapLayer) || parcel.status === "Available" || parcel.status === "Reserved";
+                    const tappable = Boolean(correctionMapLayer) || localPreviewMode || Boolean(parcel.local_preview) || parcel.status === "Available" || parcel.status === "Reserved";
                     return (
                       <MapPolygon
                         key={`hit-${parcel.local_key}`}
                         id={`${mapListboxId}-option-${parcel.local_key}`}
                         role="option"
-                        aria-label={correctionMapLayer
-                          ? `Detected polygon ${parcel.lot_number}, ${reviewStyle(parcel).label}`
-                          : `Lot ${parcel.lot_number}, ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
+                        aria-label={localPreviewMode
+                          ? `Select ${demoPlotLabel(parcel)}`
+                          : correctionMapLayer
+                            ? `Detected polygon ${parcel.lot_number}, ${reviewStyle(parcel).label}`
+                            : `Lot ${parcel.lot_number}, ${reviewPending ? "review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
                         aria-selected={pickMode ? highlighted.includes(parcel.local_key) : internalSelectedKey === parcel.local_key}
                         data-lot-key={parcel.local_key}
                         coordinates={polygon}
@@ -1664,17 +1888,86 @@ export function PublicLotMap({
                         onMouseEnter={() => setHoveredLocalKey(parcel.local_key)}
                         onMouseLeave={() => setHoveredLocalKey((current) => (current === parcel.local_key ? null : current))}
                       >
-                      <title>{correctionMapLayer
-                        ? `Detected polygon ${parcel.lot_number} — ${reviewStyle(parcel).label}${internalSelectedKey === parcel.local_key ? " — selected" : ""}`
-                        : `Lot ${parcel.lot_number} — ${reviewPendingDemo ? "review pending" : `${parcel.tier_label ?? parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}${picked ? " — selected" : ""}`}</title>
+                      <title>{localPreviewMode
+                        ? demoPlotLabel(parcel)
+                        : correctionMapLayer
+                          ? `Detected polygon ${parcel.lot_number} — ${reviewStyle(parcel).label}${internalSelectedKey === parcel.local_key ? " — selected" : ""}`
+                          : `Lot ${parcel.lot_number} — ${reviewPending ? "review pending" : `${parcel.tier_label ?? parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}${picked ? " — selected" : ""}`}</title>
                       </MapPolygon>
                     );
                   })}
               </g>
+              {correctionMapLayer?.splitTrace ? (
+                <g aria-hidden="true" pointerEvents="none" data-testid="polygon-split-trace-overlay" data-drawing={correctionMapLayer.splitTrace.drawingEnabled ? "true" : "false"}>
+                  <MapPolygon
+                    coordinates={correctionMapLayer.splitTrace.parentPolygon}
+                    coordinateScale={{ y: yScale }}
+                    fill="none"
+                    stroke="#a64b2a"
+                    strokeWidth={2.2}
+                    strokeDasharray="5 3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {correctionMapLayer.splitTrace.completedChildren.map((polygon, index) => (
+                    <MapPolygon
+                      key={`trace-child-${index}`}
+                      coordinates={correctionMapLayer.splitTrace?.editedChildIndex === index
+                        ? correctionMapLayer.splitTrace.editedChildPolygon ?? polygon
+                        : polygon}
+                      coordinateScale={{ y: yScale }}
+                      fill="#3f7a55"
+                      fillOpacity={0.16}
+                      stroke="#21633d"
+                      strokeWidth={2.4}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                  {correctionMapLayer.splitTrace.activePoints.length >= 3 ? (
+                    <MapPolygon
+                      coordinates={correctionMapLayer.splitTrace.activePoints}
+                      coordinateScale={{ y: yScale }}
+                      fill={correctionMapLayer.splitTrace.activeIssue ? "#b42318" : "#c88719"}
+                      fillOpacity={0.2}
+                      stroke={correctionMapLayer?.splitTrace?.activeIssue ? "#b42318" : "#a96810"}
+                      strokeWidth={2.8}
+                      strokeDasharray="5 2"
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                      data-testid="active-child-draft"
+                      data-state={correctionMapLayer.splitTrace.activeIssue ? "needs-correction" : "drawing"}
+                    />
+                  ) : correctionMapLayer.splitTrace.activePoints.length > 1 ? (
+                    <polyline
+                      points={correctionMapLayer.splitTrace.activePoints.map((point) => `${point.x},${point.y * yScale}`).join(" ")}
+                      fill="none"
+                      stroke={correctionMapLayer.splitTrace.activeIssue ? "#b42318" : "#c88719"}
+                      strokeWidth={2.8}
+                      strokeLinejoin="round"
+                      strokeDasharray="4 2"
+                      vectorEffect="non-scaling-stroke"
+                      data-testid="active-child-draft"
+                      data-state={correctionMapLayer.splitTrace.activeIssue ? "needs-correction" : "drawing"}
+                    />
+                  ) : null}
+                  {correctionMapLayer.splitTrace.activePoints.map((point, index) => (
+                    <circle
+                      key={`trace-point-${index}`}
+                      cx={point.x}
+                      cy={point.y * yScale}
+                      r={0.65}
+                      fill="#fff"
+                      stroke={correctionMapLayer?.splitTrace?.activeIssue ? "#b42318" : "#a96810"}
+                      strokeWidth={1.6}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              ) : null}
               {/* Status markers pair color with distinct shapes; tier mode
                   uses one neutral marker shape. Above the hit layer and
                   pointer-transparent (never steals taps or hovers). */}
-              {!reviewPendingDemo ? <g aria-hidden="true">
+              {!reviewPending ? <g aria-hidden="true">
                 {visibleParcels.map((parcel) => {
                   const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                   if (polygon.length < 3) return null;
@@ -1747,31 +2040,34 @@ export function PublicLotMap({
                     // label. The transparent hit layer stays active for all lots. The
                     // fs*zoom readability gate below still hides lots that
                     // would render unreadably small.
-                    if (parcel.local_key !== (focusLotKey ?? hoveredLocalKey)) return null;
+                    const isFocused = parcel.local_key === (focusLotKey ?? hoveredLocalKey);
+                    const showNearbyDemoLabels = localPreviewMode && zoom >= 2.2;
+                    if (!isFocused && !showNearbyDemoLabels) return null;
                     const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
                     if (polygon.length < 3) return null;
                     const xs = polygon.map((p) => p.x);
                     const ys = polygon.map((p) => p.y * yScale);
                     const lotW = Math.max(...xs) - Math.min(...xs);
                     const lotH = Math.max(...ys) - Math.min(...ys);
-                    // Label fitted to its own lot on both axes: height-capped
-                    // at half the lot height, width-capped so the full lot
-                    // number fits inside the lot width — plus a screen-pixel
-                    // cap so labels on very large lots (creek/commercial)
-                    // don't blow up to billboard size at high zoom. Lots that
-                    // would render below a readable size are skipped until
-                    // deeper zoom (fs is viewBox units; fs*zoom ≈ screen/15).
-                    const label = parcel.lot_number;
-                    const pxPerUnit = (svgRef.current?.clientWidth || 800) / (100 / zoom);
-                    const fs = Math.min(
-                      lotH * 0.5,
-                      lotW / (Math.max(label.length, 1) * 0.62),
-                      MAX_LABEL_PX / pxPerUnit,
+                    // Keep every visible map label at one screen size. Lots
+                    // that cannot fit the complete reference wait until a
+                    // closer zoom rather than shrinking to inconsistent text.
+                    const label = localPreviewMode ? demoMapPlotLabel(parcel) : parcel.local_preview ? "Pending" : parcel.lot_number;
+                    // Derive the current scale from React state and the SVG's
+                    // measured box. getScreenCTM() still reflects the previous
+                    // viewBox during render immediately after a zoom update.
+                    const svgWidth = svgRef.current?.clientWidth || 800;
+                    const svgHeight = svgRef.current?.clientHeight || 600;
+                    const pxPerUnit = Math.min(
+                      svgWidth / (100 / zoom),
+                      svgHeight / (viewBoxH / zoom),
                     );
-                    if (!(fs > 0) || fs * zoom < 1.1) return null;
+                    const fs = fitStandardMapLabelFontSize({ width: lotW, height: lotH }, label, pxPerUnit);
+                    if (!fs) return null;
                     return (
                       <text
                         key={`label-${parcel.local_key}`}
+                        data-map-label="true"
                         x={(Math.max(...xs) + Math.min(...xs)) / 2}
                         y={(Math.max(...ys) + Math.min(...ys)) / 2}
                         textAnchor="middle"
@@ -1784,7 +2080,7 @@ export function PublicLotMap({
                         paintOrder="stroke"
                         pointerEvents="none"
                       >
-                        {parcel.lot_number}
+                        {label}
                       </text>
                     );
                   })}
@@ -1975,22 +2271,62 @@ export function PublicLotMap({
         </div>
         {previewLayout && !loading && !error ? (
           <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-t border-border bg-card px-4 py-4 md:rounded-xl md:border md:px-6 md:py-6" aria-label="Lot details">
-            {focusLot ? reviewPendingDemo ? (
+            {focusLot ? (localPreviewMode ? (
               <section
                 ref={detailsPanelRef}
                 role="region"
-                aria-label={`Details for Lot ${focusLot.lot_number}`}
+                aria-label={`Details for ${demoPlotLabel(focusLot)}`}
                 tabIndex={-1}
+                data-testid="local-preview-detail"
+                className="focus-ring flex flex-col gap-3 outline-none md:gap-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-muted-foreground">Demo plot</p>
+                    <h2 className="mt-1 text-xl font-semibold leading-tight text-primary">{demoPlotLabel(focusLot)}</h2>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Close details for ${demoPlotLabel(focusLot)}`}
+                    onClick={clearSelection}
+                    className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Zoom to ${demoPlotLabel(focusLot)}`}
+                  disabled={!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3}
+                  onClick={() => zoomToParcel(focusLot)}
+                  className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Zoom to plot
+                </button>
+              </section>
+            ) : reviewPending ? (
+              <section
+                ref={detailsPanelRef}
+                role="region"
+                aria-label={localPreviewMode && !focusLot.local_preview
+                  ? `Details for detection ${focusLot.lot_number}`
+                  : `Details for ${parcelHeading(focusLot)}`}
+                tabIndex={-1}
+                data-testid={focusLot.local_preview ? "local-preview-detail" : undefined}
                 className="focus-ring flex flex-col gap-2 outline-none md:gap-4"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-muted-foreground">Plan label</p>
-                    <h2 className="mt-1 text-xl font-semibold leading-tight text-primary">Lot {focusLot.lot_number}</h2>
+                    <p className="text-sm font-semibold text-muted-foreground">
+                      {focusLot.local_preview ? "Internal map reference" : localPreviewMode ? "Detection reference · not an official lot number" : "Plan label"}
+                    </p>
+                    <h2 className="mt-1 text-xl font-semibold leading-tight text-primary">
+                      {focusLot.local_preview ? `${parcelHeading(focusLot)} · printed identity pending` : localPreviewMode ? `Detection ${focusLot.lot_number}` : parcelHeading(focusLot)}
+                    </h2>
                   </div>
                   <button
                     type="button"
-                    aria-label={`Close details for Lot ${focusLot.lot_number}`}
+                    aria-label={`Close details for ${parcelHeading(focusLot)}`}
                     onClick={clearSelection}
                     className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
@@ -1998,28 +2334,45 @@ export function PublicLotMap({
                   </button>
                 </div>
                 <p className="inline-flex w-fit items-center rounded-full border border-border bg-muted px-3 py-1 text-sm font-semibold text-foreground">
-                  Review pending
+                  {focusLot.local_preview?.approvalBasis === "owner-authorized-demo-use"
+                    ? "Owner-authorized demo geometry · not published"
+                    : focusLot.local_preview ? "Approved local preview · not published" : "Review pending"}
                 </p>
                 <p className="max-w-prose text-sm leading-5 text-muted-foreground">
-                  Traced from the sales plat · register match pending.
+                  {focusLot.local_preview
+                    ? focusLot.local_preview.approvalBasis === "owner-authorized-demo-use"
+                      ? `Proposal-derived child geometry replaces parent detection ${focusLot.local_preview.parentDetectionId} in this local demo. Printed identity remains pending; no OCR suggestion is displayed or treated as verified.`
+                      : `Child geometry from parent detection ${focusLot.local_preview.parentDetectionId}. The printed number remains pending human review.`
+                    : localPreviewMode
+                    ? "Candidate boundary from the source drawing. Printed lot number, register match, and sales classification remain unapproved."
+                    : "Traced from the sales plat · register match pending."}
                 </p>
+                {focusLot.local_preview?.geometryExceptions?.length ? (
+                  <section className="rounded-md border border-warning/30 bg-accent-soft/50 p-3 text-xs leading-5 text-foreground" aria-label="Known geometry exceptions">
+                    <p className="font-semibold">Known geometry exceptions · demo waiver recorded</p>
+                    <ul className="mt-1 list-disc pl-4">
+                      {focusLot.local_preview.geometryExceptions.map((exception) => <li key={exception}>{exception}</li>)}
+                    </ul>
+                    {focusLot.local_preview.reasonedWaiver ? <p className="mt-2 text-muted-foreground">{focusLot.local_preview.reasonedWaiver}</p> : null}
+                  </section>
+                ) : null}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border py-3 text-sm md:gap-y-4 md:py-4">
                   <div className="min-w-0">
-                    <dt className="text-xs text-muted-foreground">Plan classification</dt>
+                    <dt className="text-xs text-muted-foreground">{focusLot.local_preview ? "Printed lot number" : "Plan classification"}</dt>
                     <dd className="mt-1 break-words font-medium text-foreground">
-                      {focusLot.tier_label ? `Sample · ${focusLot.tier_label}` : "Not confirmed"}
+                      {focusLot.local_preview ? "Pending source review" : focusLot.tier_label ? `Sample · ${focusLot.tier_label}` : "Not confirmed"}
                     </dd>
                   </div>
                   <div className="min-w-0">
                     <dt className="text-xs text-muted-foreground">Plan price</dt>
                     <dd className="mt-1 break-words font-medium text-foreground">
-                      {showPrices && cardConfig.showPrice && focusLot.price > 0 ? `${money(focusLot.price)} · sample` : "Not confirmed"}
+                      {!localPreviewMode && showPrices && cardConfig.showPrice && focusLot.price > 0 ? `${money(focusLot.price)} · sample` : "Not confirmed"}
                     </dd>
                   </div>
                   <div className="min-w-0">
-                    <dt className="text-xs text-muted-foreground">Lot area</dt>
+                    <dt className="text-xs text-muted-foreground">{focusLot.local_preview ? "Parent detection" : "Lot area"}</dt>
                     <dd className="mt-1 break-words font-medium text-foreground">
-                      {focusLot.area_sqm ? `${formatAreaDualUnit(focusLot.area_sqm)} · sample` : focusLot.dimensions ? `${focusLot.dimensions} · sample` : "Awaiting reviewed labels"}
+                      {focusLot.local_preview ? focusLot.local_preview.parentDetectionId : localPreviewMode ? "Not confirmed" : focusLot.area_sqm ? `${formatAreaDualUnit(focusLot.area_sqm)} · sample` : focusLot.dimensions ? `${focusLot.dimensions} · sample` : "Awaiting reviewed labels"}
                     </dd>
                   </div>
                   <div className="min-w-0">
@@ -2029,15 +2382,21 @@ export function PublicLotMap({
                 </dl>
                 <button
                   type="button"
-                  aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                  aria-label={focusLot.local_preview
+                    ? `Zoom to Preview child ${focusLot.local_preview.childNumber}`
+                    : localPreviewMode ? `Zoom to detection ${focusLot.lot_number}` : applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                   disabled={!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3}
                   onClick={() => zoomToParcel(focusLot)}
                   className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {applyCardText(cardConfig.zoomText, focusLot.lot_number)}
+                  {focusLot.local_preview
+                    ? "Zoom to child outline"
+                    : localPreviewMode ? "Zoom to candidate outline" : applyCardText(cardConfig.zoomText, focusLot.lot_number)}
                 </button>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Sample source values only. The approved register and human crop review are still outstanding.
+                  {focusLot.local_preview
+                    ? "Local preview geometry only. No canonical lot identity, price, availability or hosted inventory was changed."
+                    : "Sample source values only. The approved register and human crop review are still outstanding."}
                 </p>
               </section>
             ) : (
@@ -2116,25 +2475,29 @@ export function PublicLotMap({
                   <p className="text-xs leading-4 text-muted-foreground">Inquiry is not configured for this lot yet.</p>
                 )}
               </section>
-            ) : reviewPendingDemo ? (
+            )) : reviewPending ? (
               <section className="flex h-full flex-col justify-center gap-3" aria-label="No lot selected">
                 <p className="text-sm font-semibold text-muted-foreground">Explore the land plan</p>
                 <h2 className="text-xl font-semibold leading-tight text-primary">Choose an outlined lot</h2>
                 <p className="max-w-prose text-sm leading-6 text-muted-foreground">
-                  Tap a lot on the map, or search for its printed label. The outline and source notes will appear here.
+                  {localPreviewMode
+                    ? "Choose any outlined plot, or search by its demo label. Zoom in to see labels across the area."
+                    : "Tap a lot on the map, or search for its printed label. The outline and source notes will appear here."}
                 </p>
                 <div className="mt-1 grid grid-cols-2 gap-4 border-y border-border py-4">
                   <div>
                     <p className="text-2xl font-semibold tabular-nums text-primary">{totalMappedParcels}</p>
-                    <p className="mt-1 text-xs font-medium text-muted-foreground">Candidate outlines</p>
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">{localPreviewMode ? "Demo plots" : "Candidate outlines"}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Under review</p>
-                    <p className="mt-1 text-xs font-medium text-muted-foreground">Sales details not published</p>
+                    <p className="text-sm font-semibold text-foreground">{localPreviewMode ? "Map controls ready" : "Under review"}</p>
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">Select, search, zoom</p>
                   </div>
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Plan labels and classifications are samples; price, size, status and register approval are not complete.
+                  {localPreviewMode
+                    ? "Each plot has a stable demo label. Source annotations and corrections remain in the internal records."
+                    : "Plan labels and classifications are samples; price, size, status and register approval are not complete."}
                 </p>
               </section>
             ) : (

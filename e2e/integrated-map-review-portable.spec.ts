@@ -11,6 +11,29 @@ const [sourceBytes, lotsBytes] = await Promise.all([
 const benchmark = createSyntheticReviewManifest(sourceBytes, lotsBytes);
 const sourceSha = benchmark.source_image.sha256;
 
+async function clickSourceCoordinate(page: Page, x: number, y: number): Promise<void> {
+  const point = await page.locator("svg[aria-label='Interactive correction map']").evaluate((svg, sourcePoint) => {
+    const element = svg as SVGSVGElement;
+    const mapPoint = element.createSVGPoint();
+    mapPoint.x = sourcePoint.x;
+    mapPoint.y = sourcePoint.y * (4800 / 5700);
+    const client = mapPoint.matrixTransform(element.getScreenCTM()!);
+    return { x: client.x, y: client.y };
+  }, { x, y });
+  await page.mouse.click(point.x, point.y);
+}
+
+async function traceSyntheticChild(page: Page, bounds: [number, number, number, number]): Promise<void> {
+  const [left, top, right, bottom] = bounds;
+  const startNext = page.getByRole("button", { name: "Start Next Polygon" });
+  if (await startNext.count()) await startNext.click();
+  await clickSourceCoordinate(page, left, top);
+  await clickSourceCoordinate(page, right, top);
+  await clickSourceCoordinate(page, right, bottom);
+  await clickSourceCoordinate(page, left, bottom);
+  await page.getByRole("button", { name: "Finish Polygon" }).click();
+}
+
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
   const dimensions = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
@@ -133,16 +156,136 @@ test("keyboard map navigation selects a reviewed detection without using the mou
   await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
 });
 
+test("one synthetic detection spanning three plots can be split, labeled independently, resumed, exported, and undone", async ({ page }) => {
+  await page.getByLabel("Reviewer").fill("Split workflow QA");
+  const parentOption = page.getByRole("option", { name: /Detected polygon TEST-006/ });
+  await parentOption.click();
+  await expect(page.getByRole("heading", { name: "Case SYN-006" })).toBeVisible();
+  await page.getByLabel("What looks wrong? (optional)").fill("One detected outline covers three printed source lots.");
+  await page.getByRole("button", { name: "Flag geometry issue" }).click();
+  await expect(page.getByRole("button", { name: "Confirm printed number" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Split Polygon" }).click();
+  await expect(page.getByTestId("polygon-split-mode")).toBeVisible();
+  await clickSourceCoordinate(page, 35.7, 32);
+  await clickSourceCoordinate(page, 39.2, 32);
+  await clickSourceCoordinate(page, 39.2, 39);
+  await page.getByRole("button", { name: "Cancel Split" }).click();
+  await expect(page.getByRole("option", { name: /Detected polygon TEST-006/ })).toBeVisible();
+  expect(await page.evaluate(() => {
+    const review = Object.entries(localStorage).find(([key]) => key.startsWith("wamule-lot-number-benchmark-v1:"))?.[1];
+    return review ? JSON.parse(review).split_operations.length : 0;
+  })).toBe(0);
+
+  await page.getByRole("button", { name: "Split Polygon" }).click();
+  const x1 = 1995 / 57;
+  const x2 = 2261 / 57;
+  const x3 = 2527 / 57;
+  const x4 = 2793 / 57;
+  await traceSyntheticChild(page, [35, 31, x2, 43]);
+  await traceSyntheticChild(page, [x2, 31, x3, 43]);
+  await traceSyntheticChild(page, [x3, 31, 49, 43]);
+  await expect(page.getByTestId("split-drawn-progress")).toContainText("3 polygons drawn");
+  await page.getByRole("button", { name: "Edit Child 2" }).click();
+  await page.getByRole("slider", { name: "Move boundary point 1" }).press("ArrowRight");
+  await page.getByRole("button", { name: "Save adjustment" }).click();
+  await page.getByRole("button", { name: "Preview split" }).click();
+  await page.getByRole("button", { name: "Confirm Split" }).click();
+
+  await expect(page.getByRole("option", { name: /Draft child 1 · not canonical/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Draft child 2 · not canonical/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Draft child 3 · not canonical/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Detected polygon TEST-006/ })).toHaveCount(0);
+  const firstChildHeading = page.getByRole("heading", { name: /Draft child · DRAFT-FIX-006-S1-C1/ });
+  await expect(firstChildHeading).toBeVisible();
+  await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
+  await expect(page.getByText(/not part of the benchmark target geometry/)).toBeVisible();
+
+  await page.getByLabel("Printed lot number · digits only").last().fill("601");
+  await page.getByRole("button", { name: "Save number review" }).click();
+  await clickSourceCoordinate(page, (x2 + x3) / 2, 37);
+  await expect(page.getByRole("heading", { name: /Draft child · DRAFT-FIX-006-S1-C2/ })).toBeVisible();
+  await page.getByLabel("Printed lot number · digits only").last().fill("601");
+  await expect(page.getByRole("alert")).toContainText("Possible duplicate 601");
+  await page.getByLabel("Printed lot number · digits only").last().fill("602");
+  await page.getByRole("button", { name: "Save number review" }).click();
+  await clickSourceCoordinate(page, (x3 + x4) / 2, 37);
+  await expect(page.getByRole("heading", { name: /Draft child · DRAFT-FIX-006-S1-C3/ })).toBeVisible();
+  await page.getByLabel("Printed lot number · digits only").last().fill("603");
+  await page.getByRole("button", { name: "Save number review" }).click();
+  await expect(page.getByTestId("split-review-progress")).toContainText("3 / 3 reviewed");
+
+  // A map drag remains a pan while child hit targets continue to select the right outline.
+  const map = page.locator("svg[aria-label='Interactive correction map']");
+  const mapBounds = await map.boundingBox();
+  expect(mapBounds).not.toBeNull();
+  await page.mouse.move(mapBounds!.x + mapBounds!.width / 2, mapBounds!.y + mapBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(mapBounds!.x + mapBounds!.width / 2 + 22, mapBounds!.y + mapBounds!.height / 2 + 14, { steps: 2 });
+  await page.mouse.up();
+  await clickSourceCoordinate(page, (x1 + x2) / 2, 37);
+  await expect(page.getByRole("heading", { name: /Draft child · DRAFT-FIX-006-S1-C1/ })).toBeVisible();
+
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export review JSON" }).click(),
+  ]);
+  const exported = JSON.parse(await readFile((await jsonDownload.path())!, "utf8")) as {
+    source_image: { sha256: string };
+    benchmark_case_geometry_unchanged: boolean;
+    cases: Array<{ id: string; original_polygon_pct: unknown; status: string }>;
+    geometry_issues: Array<{ correction_key: string }>;
+    proposed_polygon_splits: Array<{ parent_detection_id: string; parent_polygon_pct: unknown; children: Array<{ id: string; polygon_pct: unknown; review: { printed_number: string } }> }>;
+  };
+  expect(exported.source_image.sha256).toBe(sourceSha);
+  expect(exported.benchmark_case_geometry_unchanged).toBe(true);
+  expect(exported.cases.find((item) => item.id === "SYN-006")?.original_polygon_pct).toEqual(benchmark.cases.find((item) => item.id === "SYN-006")?.polygon_pct);
+  expect(exported.cases.find((item) => item.id === "SYN-006")?.status).toBe("pending");
+  expect(exported.geometry_issues).toContainEqual(expect.objectContaining({ correction_key: "FIX-006" }));
+  expect(exported.proposed_polygon_splits[0]).toMatchObject({
+    parent_detection_id: "FIX-006",
+    source_image_sha256: sourceSha,
+  });
+  expect(exported.proposed_polygon_splits[0].children.map((child) => child.review.printed_number)).toEqual(["601", "602", "603"]);
+
+  await page.reload();
+  const resumedChild = page.getByRole("option", { name: /Draft child 1 · not canonical/ });
+  await expect(resumedChild).toBeVisible();
+  await resumedChild.click();
+  await expect(page.getByRole("heading", { name: /Draft child · DRAFT-FIX-006-S1-C1/ })).toBeVisible();
+  await expect(page.getByLabel("Printed lot number · digits only").last()).toHaveValue("601");
+  await page.getByRole("button", { name: "Undo split · restore parent" }).click();
+  await expect(page.getByRole("option", { name: /Detected polygon TEST-006/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Draft child 1 · not canonical/ })).toHaveCount(0);
+  await page.reload();
+  const splitHistory = await page.evaluate(() => {
+    const review = Object.entries(localStorage).find(([key]) => key.startsWith("wamule-lot-number-benchmark-v1:"))?.[1];
+    return review ? JSON.parse(review).split_operations : [];
+  });
+  expect(splitHistory).toHaveLength(1);
+  expect(splitHistory[0].status).toBe("undone");
+  expect(splitHistory[0].children.map((child: { review: { printed_number: string } }) => child.review.printed_number)).toEqual(["601", "602", "603"]);
+});
+
 test("mobile review canvas and actions remain usable at 390px and 320px", async ({ page }, testInfo) => {
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 820 });
     await expect(page.locator("svg[aria-label='Interactive correction map']")).toBeVisible();
     await assertNoHorizontalOverflow(page);
-    await page.getByRole("button", { name: "Open current target", exact: true }).click();
+    await page.getByRole("option", { name: /Detected polygon TEST-001/ }).click();
+    await expect(page.getByRole("heading", { name: "Case SYN-001" })).toBeVisible();
     await expect(page.locator("[data-testid='source-polygon-crop']")).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm printed number" })).toBeVisible();
+    const splitButton = page.getByRole("button", { name: "Split Polygon", exact: true });
+    await expect(splitButton).toBeVisible();
+    await splitButton.click();
+    await expect(page.getByRole("heading", { name: "Split Mode · TEST-001" })).toBeVisible();
+    await expect(page.getByText(/Tap or click each visible corner/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Preview split" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Confirm Split" })).toBeDisabled();
     await assertNoHorizontalOverflow(page);
-    await page.screenshot({ path: testInfo.outputPath(`portable-editor-${width}px.png`), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`portable-editor-split-mode-${width}px.png`), fullPage: true });
+    await page.getByRole("button", { name: "Cancel Split" }).click();
     await page.reload();
   }
 });

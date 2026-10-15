@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { PublicLotMap, type PublicLotColourView, type PublicLotFilter } from "../../components/public/PublicLotMap";
+import { demoPlotLabel } from "../../lib/hopkinsDemoLabels";
 
 export function EmbeddableMapPage() {
   const { tenant_slug = "", project_slug } = useParams<{ tenant_slug: string; project_slug?: string }>();
@@ -8,27 +10,36 @@ export function EmbeddableMapPage() {
   const initialFilter: PublicLotFilter = searchParams.get("filter") === "available" ? "available" : "all";
   const initialView: PublicLotColourView = searchParams.get("view") === "tier" ? "tier" : "status";
   const initialLot = searchParams.get("lot") ?? undefined;
-  // Demo fixtures are dev-only. `?demo=1` is the synthetic test fixture;
-  // `?demo=hopkins` is the local candidate-geometry review using the sales
-  // plat. Vite's serve-only fixture middleware and this DEV branch are both
-  // absent from production output, so neither source files nor this route
-  // can reach dist/.
+  // Dev-only Hopkins fixture and correction manifest. The normal Hopkins
+  // demo route shares the canonical project/phase preview store; the former
+  // preview=local query remains a backward-compatible alias.
   const demoMode = searchParams.get("demo");
-  const demoDataUrl = import.meta.env.DEV && demoMode
-    ? demoMode === "hopkins" ? "/demo-hopkins-map" : "/demo-map"
+  const demoDataUrl = import.meta.env.DEV
+    ? demoMode === "hopkins" ? "/demo-hopkins-map" : demoMode === "1" ? "/demo-map" : undefined
     : undefined;
+  const isHopkinsDemoRoute = (tenant_slug === "demo" && !project_slug)
+    || (tenant_slug === "hopkins-grove" && (!project_slug || project_slug === "map-review"));
+  const localPreviewEnabled = import.meta.env.DEV && demoMode === "hopkins" && isHopkinsDemoRoute;
+  const requestedPhase = searchParams.get("phase") ?? "default";
+  const localMapPreviewScope = useMemo(() => {
+    if (!localPreviewEnabled) return undefined;
+    const phaseSlug = /^[a-z0-9][a-z0-9-]{0,62}$/.test(requestedPhase) ? requestedPhase : "default";
+    return { tenantSlug: "hopkins-grove", projectSlug: "map-review", phaseSlug };
+  }, [localPreviewEnabled, requestedPhase]);
 
   return (
     <main className="flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>
       <PublicLotMap
         tenantSlug={tenant_slug}
         projectSlug={project_slug}
-        enableInquiry
-        showPrices
+        showPrices={!localPreviewEnabled}
+        enableInquiry={!localPreviewEnabled}
         initialFilter={initialFilter}
         initialView={initialView}
         initialLotNumber={initialLot}
         demoDataUrl={demoDataUrl}
+        demoCorrectionManifestUrl={localPreviewEnabled && demoDataUrl ? `${demoDataUrl}/local-corrections.json` : undefined}
+        localMapPreviewScope={localMapPreviewScope}
         onClearSelection={() => {
           const params = Object.fromEntries(searchParams.entries());
           delete params.lot;
@@ -36,7 +47,7 @@ export function EmbeddableMapPage() {
         }}
         onSelectLot={(parcel) => {
           const params = Object.fromEntries(searchParams.entries());
-          params.lot = parcel.lot_number;
+          params.lot = localPreviewEnabled ? demoPlotLabel(parcel) : parcel.lot_number;
           setSearchParams(params, { replace: true });
         }}
       />

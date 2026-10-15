@@ -1,6 +1,50 @@
 {
  "pdf": "2026 Hopkins Map.pdf",
  "bytes": 1395476715,
+ "sha256": "fa50eb70248a43776201726db62ab2f6adfd93d92c0749e3a4e77b1f3bd529dc",
+ "checksum_method": "SHA-256 streamed in 1024 KiB chunks",
+ "tool_versions": {
+  "python": "3.12.0",
+  "pdfinfo": "pdfinfo version 25.11.0",
+  "pdfimages": "pdfimages version 25.11.0",
+  "pdftotext": "pdftotext version 25.11.0",
+  "pypdfium2": "4.30.0"
+ },
+ "processing_limits": {
+  "sha256_chunk_bytes": 1048576,
+  "external_command_timeout_seconds": 300,
+  "raster_decode": false
+ },
+ "pdfium_geometry": {
+  "status": "verified",
+  "pypdfium2_version": "4.30.0",
+  "page_count": 1,
+  "page_size_pt": [
+   547.200012,
+   460.799988
+  ],
+  "page_rotation_degrees": 0,
+  "page_orientation": "landscape",
+  "page_object_types": {
+   "PdfImage": 17
+  },
+  "non_image_object_count": 0,
+  "embedded_image_count": 17,
+  "detector_image_index": 0,
+  "first_image_size_px": [
+   5700,
+   4800
+  ],
+  "first_image_matrix_pt": [
+   547.200012,
+   0.0,
+   0.0,
+   460.799988,
+   0.0,
+   0.0
+  ],
+  "first_image_covers_page_at_origin": true
+ },
  "checks": [
   {
    "hypothesis": "PDF magic header %PDF-1.x in first 8 bytes",
@@ -43,5 +87,5 @@
    "verdict": "confirmed"
   }
  ],
- "method": "pdfinfo + pdfimages -list + pdftotext (structure/text layers only; no raster decode, no PPM dump)"
+ "method": "pdfinfo + pdfimages -list + pdftotext + pypdfium2 page-object geometry/type inventory (no raster decode, no PPM dump)"
 }

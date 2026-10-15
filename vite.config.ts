@@ -14,11 +14,10 @@ const FIXTURE_MIME: Record<string, string> = {
 };
 
 /**
- * Serves the synthetic test fixture and the private Hopkins review fixture
- * at separate paths in dev only (`apply: "serve"` — `vite build` never runs
- * this, so no fixture file can reach dist/). The synthetic source may be
- * overridden for isolated local checks with E2E_FIXTURE_DIR; `/demo-hopkins-map`
- * always serves the explicit local candidate-review fixture.
+ * Serves map fixtures in dev only (`apply: "serve"` — `vite build` never runs
+ * this, so no fixture file can reach dist/). `/demo-hopkins-map` defaults to
+ * the committed Hopkins preview fixture; set WAMULE_HOPKINS_MAP_DIR=out/hopkins-ocr
+ * for the high-resolution, source-aligned local Hopkins review map.
  */
 function e2eFixturePlugin(): Plugin {
   return {
@@ -31,7 +30,7 @@ function e2eFixturePlugin(): Plugin {
           route: "/demo-map",
           dir: resolve(root, process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic"),
         },
-        { route: "/demo-hopkins-map", dir: resolve(root, "e2e/fixtures/hopkins") },
+        { route: "/demo-hopkins-map", dir: resolve(root, process.env.WAMULE_HOPKINS_MAP_DIR ?? "e2e/fixtures/hopkins") },
       ];
       for (const fixture of fixtures) {
         const prefix = fixture.dir.replace(/\\/g, "/");
@@ -41,6 +40,14 @@ function e2eFixturePlugin(): Plugin {
           if (file !== prefix && !file.startsWith(`${prefix}/`)) {
             res.statusCode = 403;
             res.end();
+            return;
+          }
+          if (fixture.route === "/demo-hopkins-map"
+            && req.url.split("?")[0] === "/local-corrections.json"
+            && !existsSync(file)) {
+            res.statusCode = 404;
+            res.setHeader("Content-Type", "application/json");
+            res.end("{}");
             return;
           }
           if (!existsSync(file) || !statSync(file).isFile()) return next();

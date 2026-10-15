@@ -7,7 +7,7 @@ export default defineConfig({
   reporter: "line",
   outputDir: "./test-results",
   use: {
-    baseURL: "http://localhost:5174",
+    baseURL: "http://127.0.0.1:5174",
     trace: "off",
   },
   projects: [
@@ -20,9 +20,12 @@ export default defineConfig({
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "webkit-mobile", use: { ...devices["iPhone 13"] } },
   ],
-  webServer: {
-    command: "npx vite --port 5174 --strictPort",
-    url: "http://localhost:5174",
+  // Local-source map runs can point at an already-running isolated Vite
+  // server (for example one serving private Hopkins assets); don't start or
+  // disturb the shared default test server in that mode.
+  webServer: process.env.PLAYWRIGHT_EXTERNAL_SERVER === "1" ? undefined : {
+    command: "npx vite --host 127.0.0.1 --port 5174 --strictPort",
+    url: "http://127.0.0.1:5174",
     reuseExistingServer: true,
     timeout: 120000,
     // Fixture served at /demo-map by the serve-only vite plugin. Default is

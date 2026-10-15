@@ -2,8 +2,8 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
-const DEMO_URL = "/embed/demo?demo=hopkins";
-const SCREENSHOTS = resolve(process.cwd(), "artifacts/demo-recovery");
+const DEMO_URL = `${process.env.HOPKINS_NATIVE_PREVIEW_ORIGIN ?? ""}/embed/demo?demo=hopkins`;
+const SCREENSHOTS = resolve(process.env.DEMO_RECOVERY_SCREENSHOTS ?? "artifacts/demo-recovery");
 
 test("Hopkins buyer preview frames the source plat and supports the lot journey at phone sizes", async ({ page }, testInfo) => {
   mkdirSync(SCREENSHOTS, { recursive: true });
@@ -16,9 +16,10 @@ test("Hopkins buyer preview frames the source plat and supports the lot journey 
   const options = map.getByRole("option");
   await expect.poll(() => options.count(), { timeout: 30000 }).toBe(719);
   await expect(page.getByText("Hopkins Grove", { exact: true })).toBeVisible();
-  await expect(page.getByText("Proof of concept, sample data", { exact: true })).toBeVisible();
-  await expect(page.getByText("traced from sales plat", { exact: true })).toBeVisible();
-  await expect(page.getByText("Candidate outline · review pending", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Hopkins Grove demo", { exact: true })).toHaveText("Demo");
+  await expect(page.getByText(/Local Hopkins corrections were not applied/)).toHaveCount(0);
+  await expect(page.getByText("Candidate outline · review pending", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Review pending", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "No lot selected" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Colour view" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Lot filter" })).toHaveCount(0);
@@ -46,15 +47,14 @@ test("Hopkins buyer preview frames the source plat and supports the lot journey 
   const chosenOption = map.locator('[role="option"][aria-selected="true"]');
   await expect(chosenOption).toHaveCount(1);
   const selectedLabel = await chosenOption.getAttribute("aria-label");
-  const lotNumber = selectedLabel?.match(/^Lot ([^,]+)/)?.[1];
-  expect(lotNumber).toBeTruthy();
-  const details = page.getByRole("region", { name: `Details for Lot ${lotNumber}` });
+  const demoLabel = selectedLabel?.match(/^Select (Demo Plot .+)$/)?.[1];
+  expect(demoLabel).toBeTruthy();
+  const details = page.getByRole("region", { name: `Details for ${demoLabel}` });
   await expect(details).toBeVisible();
   await expect.poll(() => map.getAttribute("viewBox")).not.toBe(initialPhoneView);
-  await expect(details.getByText("Review pending", { exact: true })).toBeVisible();
-  await expect(details).toContainText("Plan price");
-  await expect(details).toContainText("sample");
-  await expect(details).toContainText("Not published");
+  await expect(details.getByRole("heading", { name: demoLabel! })).toBeVisible();
+  await expect(details.getByRole("button", { name: `Zoom to ${demoLabel}` })).toBeVisible();
+  await expect(details.getByText(/price|availability|pending|not confirmed|candidate outline/i)).toHaveCount(0);
   const phoneBounds = await mapFrame.boundingBox();
   expect(phoneBounds).not.toBeNull();
   expect(phoneBounds!.width).toBeGreaterThan(360);
@@ -73,11 +73,11 @@ test("Hopkins buyer preview frames the source plat and supports the lot journey 
   await page.mouse.up();
   await expect.poll(() => map.getAttribute("viewBox")).not.toBe(selectedView);
   const pannedView = await map.getAttribute("viewBox");
-  await details.getByRole("button", { name: `Zoom to Lot ${lotNumber}` }).click();
+  await details.getByRole("button", { name: `Zoom to ${demoLabel}` }).click();
   await expect.poll(() => map.getAttribute("viewBox")).not.toBe(pannedView);
   await page.getByRole("button", { name: "Reset zoom" }).click();
   await expect.poll(() => map.getAttribute("viewBox")).toBe(initialPhoneView);
-  await details.getByRole("button", { name: `Close details for Lot ${lotNumber}` }).click();
+  await details.getByRole("button", { name: `Close details for ${demoLabel}` }).click();
   await expect(page.getByRole("region", { name: "No lot selected" })).toBeVisible();
   expect(new URL(page.url()).searchParams.has("lot")).toBe(false);
 

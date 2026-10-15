@@ -1,6 +1,12 @@
 # M1 Source Audit (verified 11 Oct 2026)
 
-**Method:** `scripts/pdf-source-audit.py` — `pdfinfo` + `pdfimages -list` + `pdftotext` (structure/text layers only; no raster decode, no PPM dump). Raw evidence: `source-audit.json` (same directory).
+**Method:** `scripts/pdf-source-audit.py` — `pdfinfo` + `pdfimages -list` + `pdftotext` + pypdfium2 page/object geometry (metadata only; no raster decode, no PPM dump). Raw evidence: `source-audit.json` (same directory).
+
+**Source identity:** `2026 Hopkins Map.pdf`, 1,395,476,715 bytes; SHA-256 `fa50eb70248a43776201726db62ab2f6adfd93d92c0749e3a4e77b1f3bd529dc` (streamed in 1 MiB chunks).
+
+**Toolchain/limits:** Poppler 25.11.0 (`pdfinfo`, `pdfimages`, `pdftotext`), pypdfium2 4.30.0, Python version and processing limits are recorded in `source-audit.json`. Hashing uses a fixed 1 MiB buffer; external PDF commands time out after 300 seconds; no raster bytes are decoded by this audit.
+
+**Page objects and geometry:** pypdfium2 reports one landscape page at 547.2 × 460.8 pt, rotation 0°, containing 17 image objects and no non-image page objects. `pdfinfo -box` reports all page boxes equal the full page at the origin. The detector's image index 0 is 5700 × 4800 px and its transform covers that page. This confirms the first-object extraction path; it does not establish survey scale or georeferencing. The PDF exposes no selectable text or vector drawing objects through these checks, and its 750 ppi raster metadata is image resolution—not ground control.
 
 ## Hypotheses vs observations — 8/8 confirmed
 
@@ -15,10 +21,8 @@
 | 17 embedded 5700x4800 rasters | 17 images, all 5700x4800, ICC RGB, ~78.3MB each @750ppi | confirmed |
 | No selectable text | 0 chars extracted | confirmed |
 
-**Implications (recorded, not yet implemented):** the 17 full-page rasters explain the file size (17 × ~78MB) and why `pdfimages -j` must never be used (fills disk with PPMs); the single-image extract in `detect-lots.py` is the correct approach. No text/vector layer exists, so the raster OCR path is the only machine-reading option — benchmark + human labels remain mandatory.
+**Build implications:** the 17 full-page rasters explain the file size (17 × ~78MB) and why `pdfimages -j` must never be used (fills disk with PPMs). The detector's first-image extraction is confirmed as full-page. No text/vector layer or survey coordinate system was identified, so raster OCR is the only machine-reading option; benchmark + human labels and owner-provided scale references remain mandatory.
 
 ## Not audited (blocked / out of scope)
 
-- Which of the 17 rasters the detector's "first embedded raster" actually is (needs pipeline cross-check, M1 follow-up).
-- Native dimensions/orientation/transforms beyond MediaBox (needs owner drawing/survey context).
-- Checksum manifest (deferred: whole-file hash on 1.4GB is a deliberate run, not part of this slice).
+- Survey coordinates, ground scale, and georeferencing (need owner-approved drawing/survey references and road clicks).

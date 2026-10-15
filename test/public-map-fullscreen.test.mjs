@@ -18,7 +18,8 @@ test("embedded map chrome stays neutral while tenant theme tokens carry styling"
   const [app, map] = await Promise.all([read("src/App.tsx"), read("src/components/public/PublicLotMap.tsx")]);
   assert.match(app, /role="status" aria-live="polite">Loading…/);
   assert.doesNotMatch(app, /Loading Wamule/);
-  assert.match(map, /const mapTitle = reviewPendingDemo/);
+  // Local approved-preview mode shares the same neutral review-map chrome.
+  assert.match(map, /const mapTitle = reviewPending/);
   assert.match(map, /payload\?\.branding\.company_name \|\| payload\?\.tenant\.name/);
   assert.match(map, /Proof of concept · sample data/);
   assert.match(map, /fontFamily: theme\.tokens\.fontFamily/);
@@ -134,7 +135,7 @@ test("public map exposes accessible loading, empty, failure, and retry states", 
   assert.match(map, /Map unavailable/);
   assert.match(map, /Try again/);
   assert.match(map, /setLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
-  assert.match(map, /\[tenantSlug, projectSlug, demoDataUrl, loadAttempt\]/);
+  assert.match(map, /\[tenantSlug, projectSlug, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt\]/);
 });
 
 test("small lots get an invisible pointer halo without changing the visuals", async () => {

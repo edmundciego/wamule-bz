@@ -7,7 +7,10 @@ export type CorrectionReviewStatus =
   | "ambiguous"
   | "unreadable"
   | "skipped"
-  | "geometry-issue";
+  | "geometry-issue"
+  | "proposal-candidate"
+  | "editable-draft"
+  | "approved-preview";
 
 /** Editor-owned overlay contract; contains no buyer, price, or inventory fields. */
 export interface CorrectionMapLayer {
@@ -17,6 +20,18 @@ export interface CorrectionMapLayer {
   selectedKey: string | null;
   reviewStatusByKey: Record<string, CorrectionReviewStatus>;
   geometryEdit?: { key: string; polygon: MapCoordinate[] } | null;
+  /** A local-only trace gesture. Map clicks are converted back into source-relative percentages. */
+  splitTrace?: {
+    parentKey: string;
+    parentPolygon: MapCoordinate[];
+    completedChildren: MapCoordinate[][];
+    activePoints: MapCoordinate[];
+    drawingEnabled: boolean;
+    activeIssue: string | null;
+    editedChildIndex: number | null;
+    editedChildPolygon: MapCoordinate[] | null;
+    onMapPoint: (point: MapCoordinate) => void;
+  } | null;
   onSelect: (key: string) => void;
   onGeometryDraftChange?: (key: string, polygon: MapCoordinate[]) => void;
 }

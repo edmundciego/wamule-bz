@@ -359,6 +359,56 @@ and 43 disagree. Page-wide and area-anchored candidates overlap on 62 lots: 44
 agree and 18 disagree. These are method-disagreement counts, not accuracy.
 No accuracy, coverage-quality or processing-cost claim is established.
 
+**Local plat-digitizer prototype (13 Oct 2026):** Added the repository-local
+Codex skill `.agents/skills/plat-digitizer/SKILL.md`, its local OpenCV/Tesseract
+prototype, requirements, and synthetic regression tests. The repeatable
+command is documented in the skill and accepts either an existing detection
+ID or an explicit source-pixel region. On the private 5700×4800 Hopkins raster,
+L-683 produced four unreviewed connected-fill draft contours with stable draft
+IDs and source-pixel plus Wamule percentage coordinates. Local Tesseract
+suggested 281, 280, 279 and 278; these are not human-verified labels. The
+legacy padded-parent OCR candidate `282` includes text from neighboring
+parcels and is explicitly not assigned to a child. Geometric checks found
+valid child shapes, zero pairwise child overlaps, zero overlaps with the other
+718 detections, 0.028% area outside the parent, and 87.485% parent coverage;
+12.515% remains unassigned and requires source review. All four simplified
+boundary sample sets were within 4 source pixels of dark ink, a raster
+alignment heuristic, not survey accuracy. Overlay and report are local at
+`out/plat-digitizer/L-683-cv01/`. The proposal binds the raster, private PDF,
+and detection fingerprints; rerun produced the same proposal fingerprint
+`05320da4696a2fa24da75ca13dea75cc3725dc3d59a4457ce34c25ad4467aeb4`.
+Two synthetic tests and the skill validator pass. No external AI/API was
+called, no canonical or source geometry changed, and the independent 60-case
+benchmark remains 0/60. This establishes a promising CV prototype for this
+color-filled region only—not OCR accuracy, association accuracy, or readiness
+to process the full subdivision. Human review of the overlay, uncovered area,
+and each proposed boundary/number is required before expanding.
+
+**Owner-selected merged-detection queue (14 Oct 2026):** Ran the local
+plat-digitizer over L-155, L-086, L-058, L-028, L-362, L-416, L-541, L-622,
+L-650, L-651, L-652, L-653, L-677, L-678, L-679, L-681, L-683 and L-719.
+Version 0.1.2 produced 68 valid, source-coordinate draft contours. Local
+Tesseract supplied 52 single-number suggestions; one child has conflicting
+reads (90/990), and 15 have no candidate. These are not verified printed
+numbers. Every target has an unassigned-parent gap above 2% (coverage ranges
+65.645–97.911%, mean 90.240%). There are no within-proposal child overlaps;
+three parents intersect neighboring detections (L-155/L-137 and L-156,
+L-058/L-048, L-362/L-363). The boundary-to-dark-ink metric is a raster
+heuristic only; its lowest child score is 19.16% on L-028 and is not survey
+accuracy. Source and detection hashes, parent references, output manifests,
+and equivalence of the corrected-version rerun's polygon coordinates were
+verified. Final local evidence and visual index are under
+`out/plat-digitizer/separation-queue-20261014-v02/`; its first-level folders
+contain per-detection JSON, comparison, overlay, report and manifest. The PDF
+was not reopened in this batch; the existing source-bound 5700×4800 raster was
+used, with no external AI upload. No source geometry, canonical identity,
+business inventory, browser state, or benchmark evidence was edited. The
+independent benchmark remains 0/60 human-reviewed; L-028/S015 remains separately
+exposure-flagged. This is a scoped proposal batch, not approval to expand
+digitization. The focused portable digitizer unit suite passed **2/2** after
+the report generator was corrected to distinguish a supplied PDF fingerprint
+from raster-only processing.
+
 **Target-outlined benchmark preparation (12 Oct 2026):** A separate local
 pack now exists at `out/hopkins-lot-number-benchmark-v1/`, generated from the
 5700×4800 reference image and current 719 detection geometries. Seed 7 selected
@@ -472,9 +522,15 @@ detection reference and a high-resolution, target-outlined source crop, and
 records a source-drawing decision: exact printed number, ambiguous,
 unreadable, or skip. OCR/AI suggestions stay hidden until a blind independent
 decision has been saved. Geometry concerns are a separate review state; do
-not silently reshape/split/merge/renumber. Where direct geometry editing is
-not safe in this packet, provide a working handoff into the existing geometry
-correction mode with the target preserved rather than a no-op Edit control.
+not silently reshape/split/merge/renumber. If a detection is confirmed to cover
+multiple printed lots, `Split polygon` must support explicit source-aligned
+child tracing, vertex adjustment, preview, cancel and confirmation. Preserve
+the original detection as provenance, record parent/child lineage and local
+edit history, and require review of gaps or outward corrections. Draft children
+are not canonical parcels and do not change benchmark geometry, business data
+or buyer-visible labels. For geometry operations not supported directly,
+provide a working handoff into the existing correction mode with the target
+preserved rather than a no-op Edit control.
 
 **Dependency and authority chain:** Human source review creates evidence, not
 canonical parcel identity. Reviewed visual labels may then be compared with
@@ -492,8 +548,12 @@ matching existing polygon and source-aligned crop; (2) pan, zoom, fit/reset,
 neighbor navigation and selection remain distinct interactions; (3) a
 reviewer can confirm/correct a printed number or mark ambiguous/unreadable/
 skip without seeing OCR guesses first; (4) geometry can be flagged separately
-and either safely previewed/edited with preserved original and history or
-handed off to the existing geometry-correction mode with selection retained;
+and safely previewed/edited, including an explicitly traced split when one
+detection spans multiple printed lots; the original detection/source
+fingerprint and benchmark target remain fixed, draft children are individually
+selectable/reviewable, and cancel/undo restores the original map while
+preserving correction history; otherwise hand off to the existing
+geometry-correction mode with selection retained;
 (5) reviewed, unresolved, ambiguous, unreadable, skipped and geometry-issue
 progress is visible and filterable without being confused with sale status;
 (6) local save/resume/export preserves benchmark IDs, reviewer, decision,
@@ -502,6 +562,235 @@ interaction checks cover desktop 1440px and mobile 390px/320px; and (8) no
 unreviewed mapping or local-only review is published as an authoritative
 buyer label. Keep this M2 acceptance open until human visual review and the
 required persistence/authorization boundaries are verified.
+
+**Split workflow discoverability fix (13 Oct 2026):** The earlier split action
+was buried in the lower Boundary review controls and was gated on first
+flagging geometry, so a selected detection offered no obvious path into the
+feature. The selected-polygon panel now exposes a prominent **Split Polygon**
+button when source geometry is verified. It opens a labeled **Split Mode**
+with five on-screen steps, polygon/corner progress, visible finish/undo/remove
+and vertex-adjust controls, actionable validation guidance, and Preview/Confirm
+buttons that remain disabled until geometry validation and the required preview
+and reviewer evidence are satisfied. Cancel leaves the original detection in
+place. After confirmation the selected draft child panel explains how to select
+the next outlined child and record its printed number. These are browser-local
+draft corrections only; original detections and independent benchmark geometry
+remain unchanged, and no buyer or canonical inventory data is changed.
+
+**Verification (13 Oct 2026):** Playwright starts from the visible button on
+the actual Hopkins `/lots/correct?demo=1&mode=labels` route, selects L-683 (case
+S019), checks the instructions and disabled gates, traces four proposed child
+outlines against the source image, previews and confirms, selects children,
+checks crop/review instructions and export provenance, then undoes the split
+and verifies the 719 original detections are restored. Portable synthetic
+editor coverage checks the same gates plus 390px and 320px touch layouts. QA
+screenshots are captured by this test as
+`/private/tmp/wamule-split-ux-20261013-c/integrated-map-review-actu-e0eff-ing-S019-benchmark-geometry-chromium/hopkins-l683-split-button-qa.png` and
+`/private/tmp/wamule-split-ux-20261013-c/integrated-map-review-actu-e0eff-ing-S019-benchmark-geometry-chromium/hopkins-l683-split-mode-instructions-qa.png` (local, untracked QA output). The independent source benchmark remains
+**0/60 human decisions**; this geometry QA reviewer label is explicitly not
+ground truth. Human visual acceptance, complete M2 reconciliation, and M4
+shared persistence/authentication remain open.
+
+**User-reported split completion blocker and correction (13 Oct 2026):**
+Reproduction showed `Finish Polygon` could reject a self-crossing outline by
+writing feedback only at the bottom of the independently scrolling review
+panel. For valid outlines it cleared the active points but silently began
+accepting the next outline without a visible transition or an explicit next
+action. Split mode now shows the action result beside its controls, marks an
+active outline as Drawing or Needs correction (amber/red map overlay), lists
+finished children as Completed/Needs correction/Editing, and exposes **Edit
+Child N** to reopen the vertex handles. Finishing pauses map tracing and
+replaces the action with **Start Next Polygon**; map taps are ignored until
+that is selected. An invalid outline keeps its points, shows the exact reason,
+and cannot be finished or previewed. `Confirm Split` now lists all blockers in
+plain language, including insufficient children, invalid/crossing geometry,
+uncovered area needing acknowledgment, missing reviewer/note, an unfinished
+outline/edit, and the need to preview. Geometry is not loosened to enable
+confirmation; the original detection, correction history, blind benchmark,
+buyer read-only boundary, and browser-local persistence are unchanged.
+
+**Regression verification (13 Oct 2026):** The actual Hopkins L-683 Playwright
+flow uses pointer clicks on the map and the displayed controls. It first draws
+a self-crossing draft and verifies the red/Needs correction state, disabled
+Finish action, and user-facing crossing message; then cancels, draws and
+finishes four separate L-683 children with explicit Start Next actions, edits
+and cancels a child adjustment, previews, acknowledges any source-coverage
+warning, and reaches enabled confirmation only when valid. It then confirms
+and undoes locally while checking S019 benchmark geometry remains unchanged.
+Result: actual-source test **1 passed**; portable editor/buyer/mobile suite
+**6 passed** at 390px/320px; typecheck, targeted lint, production build, and
+public-build artifact guard passed; unit tests **250 passed, 3 skipped**. The
+independent benchmark remains **0/60 human-reviewed**;
+this is geometry QA, not human-approved parcel identity. Owner visual
+acceptance and M2/M4 release gates remain open.
+
+**Local approval preview integration (14 Oct 2026; Hopkins scope only):** The correction workspace's
+separate “Approve and update preview map” action now writes a versioned local
+snapshot under a tenant/project/phase-specific key and notifies open native
+`PublicLotMap` instances through browser storage events and a scoped
+BroadcastChannel update. The existing embed/native map applies only approved
+snapshots: an exact detection reference is preferred, with a displayed lot
+reference accepted only when its polygon also matches the immutable parent
+geometry. A valid split replaces that parent with stable child draft IDs;
+unrelated parcels remain in place. Child numbers remain blank/pending, and
+their public reference, prices, area, tier and availability are stripped.
+Normal map navigation and the existing details card are reused, but details
+state that the geometry is a local unpublished preview and sales inventory is
+unchanged. This is not hosted publishing, does not enable public buyer labels,
+and does not add server persistence. Pending/editable drafts and OCR
+suggestions remain out of the approved preview. Existing geometry validation,
+reasoned-waiver evidence, stale-revision checks and stable-ID draft merging
+remain required.
+
+**Synthetic acceptance withdrawn; actual-source check required (14 Oct 2026):** The earlier portable Chromium flow exercised
+both screens using a valid synthetic split: it opened the correction workspace,
+accepted the editable draft, used the visible one-step approval action, and
+observed the approved children appear in an already-open native map tab without
+refresh. It confirmed the parent disappeared, a child could be selected in the
+ordinary map and its normal details card showed pending identity/no confirmed
+price/no published availability/no inquiry, then reloaded that map and
+confirmed persistence. The test also verified duplicate-click idempotency,
+phase/project isolation, blank labels despite synthetic OCR suggestions, and
+preservation of an unrelated six-child draft. Portable helper tests cover
+source-geometry disambiguation and mismatch refusal. Screenshots of the native
+map before approval, selected child details, and post-reload child selection
+were generated only for the rejected synthetic-map demonstration and are
+withdrawn as acceptance evidence. That extra `/demo-review-map` path, browser
+test, fixture tier file, and its screenshots have been removed. Local preview
+scope is now restricted to `hopkins-grove/map-review`; the native map accepts
+the actual Hopkins fixture only. The exact source image can be served in a
+local development server by setting `WAMULE_HOPKINS_MAP_DIR=out/hopkins-ocr`.
+No reviewed/approved Hopkins correction is currently available in repository
+artifacts: L-049's four-child proposal is still unreviewed, leaves 4.637% of
+the parent uncovered, has a small outside-parent sliver and boundary warnings;
+its printed-number suggestions are unverified. It must remain pending. The
+independent benchmark remains 0/60 human labels. Actual Hopkins visual
+acceptance and M2 reconciliation remain open; M4 authenticated shared-draft
+persistence/publishing is not implemented. The synthetic screenshots were
+removed and must not be used to claim Hopkins approval or persistence.
+
+**Actual Hopkins native-map check (14 Oct 2026):** A fresh isolated Chromium
+context loaded the local full-resolution `out/hopkins-ocr` background (5700 ×
+4800), verified 719 drawable polygon options, selected L-049 through the
+existing search/details interaction, and reloaded the page. The local map now
+calls L-### values detection references—not official lot labels—and does not
+paint those detection IDs over the source plat; original printed marks remain
+part of the raster. Search, selection, detail, zoom and reset controls are
+retained. With no approved snapshot in the fresh project/phase store, L-049
+remained under review after reload. This verifies real-source map rendering
+and pending-state safety only. It is **not** an approved-correction
+before/after acceptance run. The current L-049 proposal remains unreviewed:
+4.637% parent coverage gap, outside-parent sliver, boundary warnings, and
+unverified OCR suggestions. Do not approve it or claim an after-correction
+screenshot until a human has reviewed and resolved or properly waived those
+issues. Local preview URL: `/embed/hopkins-grove/map-review?demo=hopkins&preview=local&phase=default`.
+
+**Owner-authorized local demo geometry and status wording (14 Oct 2026):** The
+owner explicitly authorized the 18 queued parent detections plus L-049 for
+local demo geometry. The data-backed manifest replaces those parents with 72
+children across 19 splits; the inaccessible six-child browser session remains
+pending and was not imported. The native map distinguishes original
+detections (“source review pending”) from demo-applied child geometry
+(“printed identity pending”) in its legend, map strokes, search results, and
+empty-state guidance. This is a presentation clarification only: child printed
+numbers remain blank, no sale status or price is approved, and hosted inventory
+is unchanged. The “Review pending” data placeholder must not be removed or
+reinterpreted as canonical approval. Local Hopkins demo geometry is not M2
+register reconciliation, buyer-label approval, or hosted publishing.
+
+Focused verification recorded: local preview/approval/split unit tests **13/13**;
+native-map cross-tab Playwright **1/1** and approval/stale-revision Playwright
+**3/3** on isolated runs; typecheck, lint, production build, and
+`verify:public-build` passed. The entire `npm test` suite was also attempted;
+the latest run reported 238 passed, 21 failed, 3 skipped while the workstation
+temporary volume was exhausted (PostgreSQL `initdb` bootstrap failures and
+`ENOSPC` creating disposable test fixtures). A combined Playwright rerun under
+the same disk-pressure condition timed out before the correction page's target
+button appeared and could not create its test-results directory. Subsequent
+single-worker isolated reruns passed: native-map flow **1/1**, approval and
+stale-revision flows **3/3**. Repeat the full unit suite after local disk space
+is restored.
+
+**Owner-authorized corrections on the normal Hopkins demo map — baseline manifest revision 19 (14 Oct 2026; superseded for displayed counts by revision 24 below):** The normal embed route consumes the fingerprint-checked
+`out/hopkins-ocr/local-corrections.json`; it does not require a separate
+review-only route or `preview=local`. On the 719-polygon source, 19 exact
+parents are replaced by 72 owner-authorized child outlines, producing **772**
+map plots without drawing children over their replaced parents. Every mapped
+plot is selectable, searchable by stable demo label or source reference, and
+retains the native map controls and details panel. Unchanged source detections
+use `Demo Plot NNN`; split children use `Demo Plot NNN-NN` in search/details
+and compact `D-NNN` / `D-NNN-NN` ink when zoom permits. The header carries one
+discreet `Demo` badge. No confirmed printed-number mapping was available for
+these plots: source `L-###` values remain detection references and child OCR
+values remain unverified, so neither is promoted to a public lot identity.
+Cards omit price and availability entirely. The local manifest retains
+proposal/source fingerprints, OCR uncertainty, known gaps/slivers/alignment
+and intersection exceptions, reasoned waivers, and the inaccessible six-child
+session as `pending-not-imported`. Existing browser drafts are not erased or
+rewritten, and same-parent saved manual approvals keep precedence. The
+owner-approved file manifest changes no canonical inventory or hosted data.
+
+**Actual-map verification (14 Oct 2026):** A fresh local Vite server on port
+5323 was stopped and restarted with `WAMULE_HOPKINS_MAP_DIR=out/hopkins-ocr`;
+the real route `http://127.0.0.1:5323/embed/demo?demo=hopkins&phase=default`
+then passed Chromium Playwright **1/1** after restart and reload. Assertions
+verified 719 source shapes, 19 parent replacements, 72 children, 772 selectable
+map options, absence of all replaced parent options, preserved unrelated
+local-storage sentinel values, selection/details for original L-050 and child
+L-155-01, no price/availability/review-pending/candidate warnings on the
+demo-facing card, and child selection after reload. A clean committed-fixture
+responsive/navigation test passed **1/1**. Typecheck, focused lint (no
+warnings), production build, `verify:public-build`, and Hopkins-manifest/map
+unit tests **9/9** passed. Full `npm test` was attempted but its temporary
+PostgreSQL bootstrap failed at test 25 with `ENOSPC` (“No space left on
+device”); the run was stopped without cleaning any local files. Screenshots
+from the real-source test are in
+`artifacts/hopkins-demo-final-20261014/` (`overview-applied.png`,
+`selected-applied-child.png`, `after-reload-applied.png`). The independent
+label benchmark remains **0/60**; owner visual review, printed-number review,
+register reconciliation, M4 authenticated/shared persistence, and hosted
+publishing remain open.
+
+**Owner-approved fine-tuning on the actual Hopkins demo map (14 Oct 2026; correction-manifest revision 24):** The owner approved local demo geometry work for L-048, L-137, L-156, L-184 and L-235. The source review found that L-048 is a two-plot merged detection; L-137/L-156 are full source outlines duplicated by two partial L-155 child fragments; L-184 spans five printed plots; and L-235 spans three. The manifest now has 22 active parent replacements, 80 child outlines and two conditional source-outline supersessions, for **775 displayed selectable outlines**. L-048's two proposal children replace its parent; the overlapping L-058 fragment children are retired from the active map but retained in `geometry_history`. The L-155 partial children 2/3 now use the existing source-aligned L-137/L-156 polygons, while those exact original rows are withheld only when the L-155 file correction is active; a same-parent local/manual correction still takes precedence and disables those suppressions. L-184 and L-235 use five- and three-child CV proposals respectively. All OCR suggestions remain blank/pending; no canonical parcel, price, availability, contract or hosted data changed. Every exception is recorded in the reasoned-waiver/evidence fields: L-048 has a 3.452% parent gap and 62.69% lowest ink-alignment heuristic; L-058 retains a 28.857% parent-geometry gap after retiring the two fragments; L-155 records a 6.177% gap and 15.580% outward child union; L-184 records a 5.672% gap and 74.63% lowest alignment score; and L-235 records a 3.875% gap and 80.31% lowest score. These are owner-authorized demo shapes, not surveyed/legal boundaries. Source-detection JSON and the prior correction manifest are preserved; the pre-update manifest backup is `artifacts/hopkins-five-plot-approval-20261014/local-corrections.before.json`. The five targets are not among the 60 benchmark detection IDs; the benchmark manifest/labels remain unchanged.
+
+**Fine-tuning verification (14 Oct 2026):** The new source-bound manifest path passed actual-data parsing/application: 719 source detections → 775 displayed outlines, 22 replaced parents, 80 children, two exact conditional supersessions and zero loader warnings. The real Hopkins route on the isolated local server passed Chromium Playwright **1/1**, exercising L-048 (2 children), L-184 (5), L-235 (3), retained L-155 child selection, details and reload; the test also asserts the L-137/L-156 duplicate source options are absent and unrelated plots remain selectable. Hopkins correction, preview and split unit tests passed **14/14**; typecheck and focused lint passed. Screenshots are in `artifacts/hopkins-five-plot-approval-20261014/screenshots/`. This remains local demo geometry only: human survey acceptance, printed-number/register reconciliation, M1's independent 60-case review, M2 release gates, M4 authenticated/shared persistence and hosted publication remain open.
+
+**Additional owner-requested lot refinement and map-label type pass (14 Oct 2026; manifest revision 33):** Source-bound local CV proposals were reviewed against the Hopkins raster for L-258, L-363, L-365, L-338, L-337, L-505, L-504, L-444, L-506, L-020 and L-011. Nine proposals were applied to the local demo as selectable child outlines: L-365 (4), L-338 (4), L-337 (4), L-505 (6), L-504 (6), L-444 (3), L-506 (5), L-020 (3) and L-011 (2). Labels are blank/pending, with source fingerprints, proposal evidence and all coverage/sliver/ink-alignment exceptions preserved. L-258 remains an original selectable detection because its CV output includes a partial contour across printed plot 896. L-363 remains original and selectable because two candidate children conflict materially with the already active L-362 children (about 40.23% and 89.58% of the candidate child areas); these boundaries must be reconciled together before replacement. Revision 33 contains **31 active parent replacements, 117 children and 803 visible outlines**, with no loader warnings. Local map labels now use one 12 CSS-pixel screen size and are hidden until the complete identifier fits, instead of shrinking differently to fit each polygon. The 11 proposal comparisons and a status report are retained under `out/plat-digitizer/font-finetune-review-20261014/` and `artifacts/hopkins-lot-finetune-20261014/`; the exact prior manifest is backed up at `artifacts/hopkins-lot-finetune-20261014/local-corrections.before.json`. Verification passed: TypeScript/production build, public-build guard, focused lint, focused unit tests **21/21**, actual-source Chromium Playwright **1/1** and manifest application verification (803 outlines, zero loader warnings). The browser test checks all nine replacement groups, the two unresolved original detections, label-size consistency, selectable details and reload persistence. Proposal contours are geometry suggestions, not printed-number ground truth; no OCR labels, sales fields or hosted records were changed.
+
+**CV proposal-artifact handoff (13 Oct 2026):** The new `plat-digitizer` skill
+produces an independently recoverable, source-fingerprinted, unreviewed JSON
+artifact and original-versus-proposed image comparison for L-683. Its four
+draft contours pass the listed topology checks, but the parent coverage gap
+(12.515%) remains a human geometry issue. The artifact is deliberately not
+imported into React correction state: this workspace has no proposal-file
+importer or in-map Accept/Edit/Reject flow yet. Keep using the existing manual
+split/correction workflow until that import is implemented and verified; do
+not treat proposal JSON, OCR candidates, or visual agreement as approved
+children. The local source raster/PDF and outputs remain private/ignored. No
+editor page was hot-reloaded or browser-local state cleared during this pass;
+the user's active browser state could not be inspected or backed up through the
+available browser surface, so no claim is made that the proposal was loaded
+into that session. Next M2 step is a recoverable proposal importer that
+previews source-aligned children beside the original detection, exposes
+Accept/Edit/Reject explicitly, and preserves correction history and the
+original benchmark target.
+
+**Follow-up: local proposal import and owner-selected queue (14 Oct 2026):**
+The correction workspace now has a visible **Review AI Proposal** file picker
+that checks source-image, detection-set, selected-parent ID and parent-geometry
+fingerprints before it creates an unapproved, editable local draft. The
+owner-selected queue at
+`out/plat-digitizer/separation-queue-20261014-v02/` contains one proposal JSON
+and source comparison per requested detection. This batch was not imported,
+accepted, split-confirmed, or applied to the native map; its browser-local
+session and the owner's six-child tab were not opened, changed or cleared.
+Review each artifact only against its matching selected parent. Editing or
+rejecting remains a human action; OCR suggestions remain unverified. Approval
+can update only the local Hopkins preview after current validation and
+required evidence; it does not change hosted inventory or publish. All 18
+parent gaps remain above 2%, so no draft is ready for automatic confirmation.
+The 60-case benchmark source remains unchanged, at 0/60 human-reviewed; prior
+S015 exposure remains recorded separately.
 
 **Local implementation checkpoint (12 Oct 2026):** The visible `Lot number
 review` mode is integrated into `CorrectionWorkspacePage.tsx` and uses
@@ -765,10 +1054,96 @@ benchmark geometry/source fingerprints while keeping a geometry proposal in
 separate correction history. These are functional checks, not human review:
 the authoritative benchmark remains 0/60 labeled.
 
+**Merged-detection and explicit split checkpoint (13 Oct 2026):** Inspection of
+the actual Hopkins source crop for detection `L-683` / benchmark case `S019`
+confirmed a segmentation issue, not a hit-testing issue: one six-vertex
+detection covers four separately outlined printed plots (visible numbers
+281–278), and no sibling detection centroid falls inside that target. The map
+correctly hit-tests the single available geometry; it cannot select plots for
+which no separate geometry was detected. The reviewer now has an explicit
+local `Split polygon` workflow on the existing full map: manually trace two or
+more child outlines in source coordinates, adjust child vertices using the
+existing map-edit handles, snap only to existing vertices/edges, preview,
+cancel, or confirm after validation. Self-intersections and overlaps block
+confirmation; unassigned gaps and outward corrections are warnings requiring
+explicit acknowledgment. The operator—not the software—chooses child count
+and boundaries; raster pixels are not treated as inferred lot lines.
+
+Confirmed splits create stable local draft-child references, preserve the
+original detection ID/geometry, source image fingerprint, parent-child
+relationship, proposed starting geometry, reviewer/time and undo history, and
+allow separate child-number review with duplicate warnings and source crops.
+They do not alter `state.lots`, canonical identity, the 60-case manifest or
+sales data. A geometry-flagged benchmark target cannot receive a printed-number
+decision until separately resolved; `S019` remains flagged/pending and its
+original geometry/fingerprint remain unchanged by the split preview. Local
+undo restores the parent and retains the operation as undone history. All
+draft/review persistence remains browser-local and JSON-exported; nothing is
+published or synchronized.
+
+**Split verification:** The portable synthetic fixture now contains one
+detection spanning three visibly separate test plots. Its Chromium flow passed
+cancel, three-child tracing, vertex adjustment, validation, independent child
+selection/number review, duplicate warning, pan, browser reload/resume, JSON/CSV
+export and undo. The actual-source Chromium check passed by loading the 719
+existing detections and 5700×4800 local raster, selecting `L-683`, showing its
+outlined source crop, tracing four QA-only child proposals, and confirming
+that benchmark `S019` remains pending with its original geometry/fingerprint.
+Visual QA captures are local under
+`test-results/integrated-map-review-actu-e0eff-ing-S019-benchmark-geometry-chromium/`
+(`hopkins-l683-before-split-qa.png`,
+`hopkins-l683-after-split-preview-qa.png`); traces/captures are not human-
+reviewed geometry or label evidence. The split preview displays 722 geometry
+overlays (719 original detections, with one replaced by four draft children);
+this does not change the source/reconciliation totals of 719 drawable
+detections and 743 API records, nor reconcile the 24 records without geometry.
+`npm run typecheck`, focused ESLint, `npm test` (250 passed, 0 failed, 3
+skipped), portable editor Playwright (6 passed), actual Hopkins split
+Playwright (1 passed), buyer-map Playwright regressions (31 passed, 3 skipped),
+`npm run build`, and `npm run verify:public-build` passed. The public-build
+guard scanned 82 files / 1,365,917 text bytes and found no development fixtures
+or private source artifacts.
+
+**Local approval-to-preview flow (14 Oct 2026):** “Accept as editable draft”
+remains separate from approval. Accepted proposal children immediately appear
+as internal, selectable draft geometry with blank/pending labels; OCR suggestions
+remain in the evidence panel and never become map labels or canonical identity.
+The single **Approve and update preview map** action checks the current source,
+detection-set and parent geometry fingerprints; the current child revision and
+split validation; reviewer and correction-note evidence; and an explicit,
+reasoned waiver acknowledgement when validation warnings remain. Invalid or
+stale drafts are refused with visible feedback. Approval persists an immutable,
+revision-keyed local snapshot and redraws the internal preview map immediately;
+the snapshot labels remain blank/pending and this is not buyer publication.
+Writes merge by stable draft ID against the latest local store, refuse stale
+same-draft revisions, and preserve other drafts. Duplicate activation is
+idempotent. JSON export remains available for recovery, not as an approval or
+map-update step. A portable Chromium run verified immediate redraw, reload
+resume, one snapshot after duplicate activation, stale-revision refusal,
+reasoned-waiver blockers, pending labels, and preservation of a separate
+six-child manual draft. A separate optional local L-049 test verified its
+proposal fingerprints and unverified-number presentation without accepting or
+approving it. No real Hopkins proposal was approved, and the pre-existing
+six-child browser session was not opened or modified. Unit coverage validates
+stable-ID merge, stale writes, idempotent snapshots, and invalid-overlap refusal.
+Final checks: typecheck and lint passed; the unit suite passed 254 tests with 3
+skipped (an initial run hit an embedded-Postgres startup/lock failure, and the
+immediate clean rerun passed); production build and public-build verification
+passed (82 files, 1,367,670 text bytes); the focused portable/approval Chromium
+suite passed 9/9, including the optional local L-049 import check. This is a
+local internal preview only: shared authenticated persistence, server-side
+revision/evidence validation, hosted publishing, and public inventory approval
+remain M4/release dependencies.
+This implementation and its tests are currently uncommitted changes on the local
+development branch; no push, deployment, migration, or hosted data write occurred.
+
 **Remaining milestone state:** M1 ground truth remains 0/60 human-labeled; no
 printed-number-to-polygon mapping is approved. M2 local review remains
 browser-only, the authenticated hosted route is unverified, and visual review
-acceptance remains open. M3A buyer labels remain disabled until reviewed
+acceptance remains open. The local split capability is not approval of any
+corrected boundary; full polygon/register reconciliation, human review of the
+children, and authenticated visual acceptance remain open. M3A buyer labels
+remain disabled until reviewed
 mappings pass register/public-field gates; buyer visual acceptance remains
 open. The label reviewer is development-only and must not gain production
 access to private Hopkins files as a shortcut. M4 must provide the secure
@@ -786,7 +1161,9 @@ was created.
 
 - [ ] Keep printed-number extraction suggestions in a versioned, source-fingerprinted evidence artifact separate from canonical lot identity. Each suggestion must retain detection ID, proposed number, polygon/source coordinates, crop reference, provider/model/version, raw text, confidence/ambiguity, competing candidates, duplicate/missing flags and reviewer status/correction provenance. New suggestions always start unreviewed.
 
-- [ ] Provide an evidence-led review queue and integrated full-map editing mode as specified above; show the outlined detection polygon on its original-context crop, let the reviewer confirm/correct/mark ambiguous or unreadable, and surface duplicate/conflicting assignments before any reconciliation link is approved. The standalone benchmark crop page remains available as a diagnostic utility, not the primary operator workflow.
+- [x] Implement the local integrated full-map review/editor: direct polygon selection, target crop, blind number decisions, separate geometry flags, vertex editing, explicit split proposals, independently reviewable draft children, duplicate warnings, progress, and local save/resume/export. Keep the standalone crop page as a diagnostic utility. This does not close M2: it is not a hosted authenticated queue and does not approve any geometry or identity.
+
+- [ ] Complete the evidence-led reconciliation queue: compare human-reviewed labels with versioned extraction candidates and the approved register; provide explicit canonical links and proposed diffs without bypassing register, reviewer, overlap, calibration, or publication gates. The Hopkins benchmark remains 0/60 human-labeled.
 
 - [ ] Show unmatched register lots separately from unmatched polygons.
 
@@ -891,6 +1268,10 @@ was created.
 **Persistent-label verification note (12 Oct 2026):** A read-only GET of the staging public-lots feed returned 743 unique nonblank record identifiers: 719 drawable polygons and 24 records without drawable geometry. All 719 public polygon arrays exactly match the local Hopkins detection geometry, but those polygon rows are labeled `L-001`…`L-719` generated detection IDs, not independently verified printed/legal lot numbers. The local OCR build has 618 `unmatched`, 15 `duplicate`, and 86 `matched` detections; all 719 still have `needs_review: true`, and the 86 OCR values are not approved links. No approved register or reviewer-supplied map links/dispositions exist (`docs/implementation/register-reconciliation.md`). Consequently no polygon-to-lot-number association is currently trustworthy enough for persistent buyer labels; the labels were **not implemented or rendered** in this pass. The 24 geometryless records remain an explicit reconciliation item. Do not treat row-level uniqueness or OCR output as M2 approval. M3A label and visual acceptance remain open pending human review evidence and subsequent local visual review.
 
 **Lot-number extraction dependency (12 Oct 2026):** The current 86 page-wide matches, 662 per-crop OCR reads and 509 area-anchored number candidates are extraction suggestions only; none has been independently verified against a human-labeled benchmark or approved register. The existing 100-crop sheet is blank and does not outline the target detection polygon, so it cannot establish polygon-association accuracy. Persistent buyer labels remain blocked until source-grounded human review and explicit M2 reconciliation links are available.
+
+The L-683 plat-digitizer proposal is local M1/M2 evidence only. Its four OCR
+suggestions and draft contours do not satisfy the reviewed-mapping gate and
+must not be rendered as persistent buyer labels.
 
 ### M3B: public data, count and truth review
 
@@ -1011,7 +1392,7 @@ Schema names can follow the existing repository conventions. The required relati
 
 - [ ] Derive write actor from authenticated identity; sanitize client-controlled protected fields.
 
-- [ ] If retaining a development local preview, restore its saved state honestly and keep it separate from the shared path.
+- [ ] If retaining a development local preview, restore its saved state honestly and keep it separate from the shared path. The 14 Oct local-only approved split snapshot is now read by the existing native `PublicLotMap` for an explicit tenant/project/phase scope and can redraw another open same-origin tab; it remains browser-profile-local and is not M4 shared persistence, authenticated synchronization, hosted inventory, or publishing.
 
 - [ ] Remove the local-drafts banner only when the actual server-backed path passes acceptance. Keep it for remaining local paths.
 
@@ -1039,6 +1420,14 @@ loosening the build guard. A production-capable reviewer requires, at minimum:
   by itself canonical parcel identity or sale status.
 - [ ] Tests proving unauthorized asset access fails closed and neither
   unreviewed labels nor local-only decisions can pass publishing gates.
+
+Locally generated plat-digitizer proposals are also private review artifacts,
+not deployable editor data. A production-capable workflow must version and
+authorize proposal inputs/outputs alongside the map source; retain immutable
+parent geometry, proposal revisions, reviewer decisions, and accept/edit/reject
+history; and bind any accepted correction to authenticated reviewer identity
+and the existing M2 gates. Browser storage or an ignored local JSON artifact
+is not shared persistence and must never satisfy publishing approval.
 
 ### 9.3 Endpoint authentication and server authority
 
