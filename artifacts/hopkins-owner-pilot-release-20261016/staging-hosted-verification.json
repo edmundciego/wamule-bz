@@ -1,0 +1,225 @@
+{
+  "generated_at": "2026-10-16T19:45:26.478Z",
+  "staging_project_ref": "kvocwmrcuhiaezlcgzjf",
+  "deployment": {
+    "site_name": "wamule-staging",
+    "site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
+    "deploy_id": "6ad27d78407fab246e6af5f0",
+    "state": "ready",
+    "branch": "staging",
+    "deploy_context": "primary deploy of the wamule-staging site",
+    "public_url": "https://wamule-staging.netlify.app",
+    "unique_url": "https://6ad27d78407fab246e6af5f0--wamule-staging.netlify.app",
+    "commit_ref": null,
+    "candidate_base_commit": "dc4d13b2412ff3650904f68e3d3df3d372220557",
+    "build_mode": "staging",
+    "index_sha256": "7bd7aef7223438610eb4db7e2d0ea393c70dfbac21329f265ddab05836fc34f6",
+    "asset_references_match": true,
+    "assets": [
+      {
+        "path": "/assets/index-BjDQXY6N.js",
+        "bytes": 541217,
+        "sha256": "213feb407d5771008ae4c330d9289825f758c8cd333f4d6c89f187115c0674dc"
+      },
+      {
+        "path": "/assets/index-5HHlBEwn.css",
+        "bytes": 68476,
+        "sha256": "2c5086f731fcbc4ed63313961e807c48373598209ed7af8b07800c32fd0fb39f"
+      }
+    ]
+  },
+  "anonymous_browser_verification": {
+    "no_login": true,
+    "routes": {
+      "wamule_home": "https://wamule-staging.netlify.app/",
+      "hopkins_home": "https://wamule-staging.netlify.app/hopkins",
+      "hopkins_application": "https://wamule-staging.netlify.app/hopkins/application",
+      "hopkins_standalone_map": "https://wamule-staging.netlify.app/embed/hopkins-grove/hopkins-grove?phase=initial"
+    },
+    "template_selection": "wamule-classic",
+    "desktop_1440": {
+      "wamule_home_rendered": true,
+      "hopkins_home_outline_count": 775,
+      "hopkins_home_parcel_count": 0,
+      "homepage_map_instances": 2,
+      "application_map_outline_count": 775,
+      "search": true,
+      "zoom": true,
+      "selection_and_details": true,
+      "source_pricing_legend": true,
+      "reload_retains_775": true,
+      "no_horizontal_overflow": true
+    },
+    "mobile": {
+      "390px": {
+        "hopkins_home_outline_count": 775,
+        "application_map_outline_count": 775,
+        "no_horizontal_overflow": true
+      },
+      "320px": {
+        "hopkins_home_outline_count": 775,
+        "application_map_outline_count": 775,
+        "no_horizontal_overflow": true
+      }
+    },
+    "map_selection": {
+      "generated_reference": "Plot 038",
+      "appears_as_removable_map_preference": true,
+      "not_parcel_id": true,
+      "not_lot_allocation": true
+    },
+    "page_content": {
+      "hopkins_branding": "Ceiba Realty & Development",
+      "no_wamule_fallback_branding_or_payment_terms": true,
+      "source_background_http_statuses": [
+        200,
+        200
+      ]
+    },
+    "screenshots": [
+      {
+        "name": "wamule-root-1440.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/wamule-root-1440.png",
+        "bytes": 282208,
+        "sha256": "9d97574ee9607ba957b4782af2cd37662fe9dff0586110fc36fbc6bd2260ee3a"
+      },
+      {
+        "name": "wamule-phase1-selector-1440.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/wamule-phase1-selector-1440.png",
+        "bytes": 162119,
+        "sha256": "5f1c0bfb2f179056cdbdd8d2cce0bcdb291ae8954a1ef5cc8a9de7752af8950d"
+      },
+      {
+        "name": "hopkins-home-top-1440.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-top-1440.png",
+        "bytes": 135856,
+        "sha256": "763379f739994068ffcb7fd880eb45b548139e2f4f93c903171ffeacbc5f46d2"
+      },
+      {
+        "name": "hopkins-home-1440.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-1440.png",
+        "bytes": 260120,
+        "sha256": "451e344c89462eec6ad6d7c991f7c4dab818d5309ece236384db5fa904d648e7"
+      },
+      {
+        "name": "hopkins-home-390-map.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-390-map.png",
+        "bytes": 82805,
+        "sha256": "aaf9a1156a9d2432c4d6834facbff47a3df239e5b878e4a675d0b3ae26b883a4"
+      },
+      {
+        "name": "hopkins-home-320-map.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-320-map.png",
+        "bytes": 75587,
+        "sha256": "d8e2f85eca997ee95073471cf689d1355fe7744b7620d970846e621be28a09c8"
+      },
+      {
+        "name": "hopkins-application-1440-selected.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-application-1440-selected.png",
+        "bytes": 483769,
+        "sha256": "3cfe51bac2665323973f620bcb947d90deae07e5e35379e5c1e9de736e397782"
+      },
+      {
+        "name": "hopkins-application-390.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-application-390.png",
+        "bytes": 102860,
+        "sha256": "4c13d41d74a15e23042a56f8efc6fc3312ab6b8f0963413542aff075fb0ac99a"
+      },
+      {
+        "name": "hopkins-application-320.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-application-320.png",
+        "bytes": 101276,
+        "sha256": "0f61c762ebcf37ca1217925a8935619165f2441a6d5756c109e1c0141689e60f"
+      }
+    ]
+  },
+  "synthetic_hopkins_application": {
+    "first_submission": "HTTP 201, saved for staff review",
+    "identical_retry": "HTTP 200, deduplicated=true",
+    "application_id": 6,
+    "selected_map_reference_count": 1,
+    "verified_database_scope": {
+      "tenant_slug": "hopkins-grove",
+      "project_slug": "hopkins-grove",
+      "phase_slug": "initial",
+      "application_kind": "project_application",
+      "status": "Pending Review",
+      "parcel_id": null,
+      "map_reference_count": 1
+    },
+    "outbound_notifications_enabled": false,
+    "email_notification_rows_after_test": 10,
+    "note": "One synthetic staging application was added for this verification; no outbound messages were sent."
+  },
+  "staging_data_scope": {
+    "wamule": {
+      "active_default_phase": {
+        "manual_inventory_rows": 20,
+        "total_parcel_rows": 739
+      },
+      "legacy_review_phase": {
+        "manual_inventory_rows": 4,
+        "active": false
+      },
+      "total_parcel_rows": 743,
+      "raster_review_rows": 719,
+      "raster_needs_review_true": 540,
+      "raster_needs_review_false": 179,
+      "raster_status_available_rows": 719,
+      "eligible_manual_buyer_options": 20,
+      "raster_detections_saleable": false
+    },
+    "hopkins": {
+      "active_public_map_outlines": 775,
+      "parcel_inventory_rows": 0,
+      "source_snapshot_version": 2,
+      "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06"
+    },
+    "tenant_scoping": "Wamule buyer API reports tenant=wamule and 20 eligible manual rows; Hopkins public map returns 775 features and zero parcels. Hopkins branding and application scope resolve separately."
+  },
+  "preservation": {
+    "baseline_artifact": "wamule-staging-preservation-before.json",
+    "post_phase_reconciliation_artifact": "wamule-staging-phase-correction-after.json",
+    "unchanged_table_groups": 55,
+    "intentionally_changed_groups": [
+      "public.development_phases",
+      "public.parcels"
+    ],
+    "scope_correction": "Four preserved manual records (IDs 21–24) were assigned to inactive Legacy Review; active Default/Phase 1 retains 20. No records deleted and no replacement geometry invented.",
+    "current_read_only_fingerprints": {
+      "public.parcels": {
+        "rows": 743,
+        "md5": "e462df67b973270fc32dabda83cfb216"
+      },
+      "public.development_phases": {
+        "rows": 2,
+        "md5": "18281e8d33065c363d403c13309808bf"
+      },
+      "public.masterplan_versions": {
+        "rows": 4,
+        "md5": "47644cbcb1cabd062d88e693ebe5da25"
+      }
+    },
+    "matching_post_correction_fingerprints": true,
+    "storage_objects_modified": false,
+    "production_touched": false
+  },
+  "local_validation": {
+    "test_suite": {
+      "total": 302,
+      "passed": 298,
+      "failed": 0,
+      "skipped": 4
+    },
+    "typecheck": "passed",
+    "targeted_eslint": "passed",
+    "staging_build": "passed",
+    "public_build_audit": {
+      "result": "passed",
+      "files": 78,
+      "text_bytes": 1483848,
+      "private_or_dev_source_present": false
+    },
+    "release_package_integrity": "verified by scripts/verify-hopkins-owner-pilot-package.mjs"
+  }
+}

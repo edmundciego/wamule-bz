@@ -241,11 +241,13 @@ test("frontend forms share the contract (no drift)", async () => {
   const arrayBlock = (source, anchor) => {
     const start = source.indexOf(anchor);
     assert.ok(start >= 0, `anchor ${anchor} found`);
-    return source.slice(start, source.indexOf("]", start));
+    const arrayStart = source.indexOf("= [", start);
+    assert.ok(arrayStart >= 0, `array initializer for ${anchor} found`);
+    return source.slice(arrayStart, source.indexOf("]", arrayStart));
   };
   const literals = new Set(
     [
-      ...arrayBlock(page, "const inquiryInterests = [").matchAll(/"([^"]+)"/g),
+      ...arrayBlock(page, "const inquiryInterests").matchAll(/"([^"]+)"/g),
     ].map((m) => m[1]),
   );
   assert.ok(literals.size > 0);

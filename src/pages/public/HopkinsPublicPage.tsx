@@ -2,10 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUpRight, CheckCircle2, MapPin, Send } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { PublicInquiryPanel } from "../ApplicationPage";
 import { PublicLotMap, type PublicLotParcel } from "../../components/public/PublicLotMap";
 import { Button } from "../../components/ui/Button";
+import { Badge } from "../../components/ui/Badge";
 import { Field, Input, Select, Textarea } from "../../components/ui/Field";
 import { ErrorState, LoadingState } from "../../components/ui/State";
+import { WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../../components/public/WamuleClassicTemplate";
 import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import { isHopkinsPublicHost } from "../../lib/publicHosts";
@@ -133,12 +136,13 @@ export function HopkinsPublicPage({
   useEffect(() => {
     if (!page) return;
     if (location.pathname === "/hopkins/application") {
-      window.requestAnimationFrame(() => document.getElementById("application")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      const applicationTarget = templateId === "wamule-classic" && modules.map ? "application-map" : "application";
+      window.requestAnimationFrame(() => document.getElementById(applicationTarget)?.scrollIntoView({ behavior: "smooth", block: "start" }));
       return;
     }
     if (location.pathname !== "/hopkins/apply" && !(isHopkinsPublicHost(window.location.hostname) && location.pathname === "/apply")) return;
     window.requestAnimationFrame(() => document.getElementById("interest")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, [location.pathname, page]);
+  }, [location.pathname, page, templateId, modules.map]);
 
   function toggleMapFeature(parcel: PublicLotParcel) {
     const ref = parcel.map_feature_ref;
@@ -184,8 +188,27 @@ export function HopkinsPublicPage({
   if (isLoading) return <main className="min-h-screen bg-[#fffdf8] px-4 py-20"><LoadingState label="Loading Hopkins Grove information" /></main>;
   if (isError || !page) return <main className="mx-auto grid min-h-screen max-w-3xl content-center gap-4 bg-[#fffdf8] px-4 py-12"><h1 className="font-display text-3xl font-semibold text-[#173f2d]">Hopkins Grove information is temporarily unavailable</h1><ErrorState message={error instanceof Error ? error.message : "Please contact Ceiba Realty & Development directly."} /><a className="text-sm font-semibold text-[#173f2d] underline" href="mailto:properties@ceibabelize.com">Contact the project team</a></main>;
 
+  if (templateId === "wamule-classic") {
+    return <HopkinsWamuleClassicPage
+      page={page}
+      modules={modules}
+      selectedMapFeatureRefs={selectedMapFeatureRefs}
+      mapFeatureLabels={mapFeatureLabels}
+      mapPreferenceError={mapPreferenceError}
+      onToggleMapFeature={toggleMapFeature}
+      onRemoveMapFeature={(ref) => {
+        setSelectedMapFeatureRefs((current) => current.filter((item) => item !== ref));
+        setMapPreferenceError(null);
+      }}
+      onParcelsLoaded={(features) => setMapFeatureLabels(features.flatMap((feature) => feature.map_feature_ref
+        ? [{ ref: feature.map_feature_ref, label: feature.demo_label ?? feature.map_feature_ref }]
+        : []))}
+      hasSupabaseConfig={hasSupabaseConfig}
+    />;
+  }
+
   return (
-    <main data-site-template={templateId} className="min-h-screen overflow-x-hidden bg-[#fffdf8] text-[#2d2317]">
+    <main data-site-template={templateId} data-public-tenant="hopkins-grove" className="min-h-screen overflow-x-hidden bg-[#fffdf8] text-[#2d2317]">
       <header className="sticky top-0 z-30 border-b border-[#173f2d]/10 bg-[#fffdf8]/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="#home" className="min-w-0 leading-tight" aria-label="Hopkins Grove by Ceiba Realty and Development">
@@ -305,9 +328,15 @@ export function HopkinsPublicPage({
 
       {modules.application ? <HopkinsProjectApplication
         page={page}
+        modules={modules}
+        isClassicTemplate={false}
         selectedMapFeatureRefs={selectedMapFeatureRefs}
         mapFeatureLabels={mapFeatureLabels}
         mapPreferenceError={mapPreferenceError}
+        onToggleMapFeature={toggleMapFeature}
+        onParcelsLoaded={(features) => setMapFeatureLabels(features.flatMap((feature) => feature.map_feature_ref
+          ? [{ ref: feature.map_feature_ref, label: feature.demo_label ?? feature.map_feature_ref }]
+          : []))}
         onRemoveMapFeature={(ref) => {
           setSelectedMapFeatureRefs((current) => current.filter((item) => item !== ref));
           setMapPreferenceError(null);
@@ -324,17 +353,163 @@ export function HopkinsPublicPage({
   );
 }
 
-function HopkinsProjectApplication({
+function HopkinsWamuleClassicPage({
   page,
+  modules,
   selectedMapFeatureRefs,
   mapFeatureLabels,
   mapPreferenceError,
+  onToggleMapFeature,
   onRemoveMapFeature,
+  onParcelsLoaded,
+  hasSupabaseConfig,
 }: {
   page: PublicProjectPage;
+  modules: Record<PublicSiteModuleId, boolean>;
   selectedMapFeatureRefs: string[];
   mapFeatureLabels: Array<{ ref: string; label: string }>;
   mapPreferenceError: string | null;
+  onToggleMapFeature: (parcel: PublicLotParcel) => void;
+  onRemoveMapFeature: (ref: string) => void;
+  onParcelsLoaded: (features: PublicLotParcel[]) => void;
+  hasSupabaseConfig: boolean;
+}) {
+  const outlineCount = mapFeatureLabels.length;
+  return (
+    <main data-site-template="wamule-classic" data-public-tenant="hopkins-grove" className="min-h-screen bg-background">
+      <WamuleClassicHeader
+        companyName={page.company.name}
+        logoUrl="/favicon/hopkins-grove.svg"
+        homeHref="/hopkins"
+        mapHref="#lots"
+        applyHref="/hopkins/application"
+        applyLabel="Apply"
+        showApply={modules.application}
+        mapLabel="Project map"
+      />
+
+      <WamuleClassicHero
+        badge={<Badge tone="green">Hopkins Grove · public project</Badge>}
+        title={page.project.name}
+        description={page.company.description}
+        facts={<>
+          <WamuleClassicInfoTile label="Location" value={page.company.location || "Hopkins Village, Belize"} />
+          <WamuleClassicInfoTile label="Project phase" value={page.phase.name} />
+          <WamuleClassicInfoTile label="Map outlines" value={outlineCount ? outlineCount + " outlines" : "Loading map"} />
+        </>}
+        actions={<>
+          {modules.map ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#lots">
+            Explore the project map <ArrowDown className="h-4 w-4" />
+          </a> : null}
+          {modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md border border-primary/20 bg-card px-5 text-sm font-semibold text-primary transition hover:bg-primary-soft" href="/hopkins/application">
+            Start an application <ArrowUpRight className="h-4 w-4" />
+          </a> : null}
+        </>}
+        sideContent={<WamuleClassicPanel
+          title="Project overview"
+          description="Published information for Hopkins Grove"
+        >
+          <div className="grid gap-3 text-sm leading-6 text-foreground">
+            <p>{page.company.location}</p>
+            <p>Explore source-referenced outlines on the project map and ask Ceiba Realty &amp; Development for current information.</p>
+            <p className="rounded-md border border-primary/10 bg-primary-soft/35 p-3 text-xs leading-5 text-muted-foreground">
+              Map outlines are project references. Hopkins currently has no parcel inventory, and a map selection does not assign or reserve a lot.
+            </p>
+          </div>
+        </WamuleClassicPanel>}
+      />
+
+      {modules.map ? <section id="lots" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-8">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-2xl font-semibold text-primary">Hopkins Grove project map</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Select an outline for published source information. Outline references remain separate from saleable parcel inventory.
+            </p>
+          </div>
+          <a className="text-sm font-semibold text-primary underline underline-offset-4" href={MAP_URL}>Open standalone map</a>
+        </div>
+        <div className="h-[560px] min-w-0 overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)] sm:h-[640px] lg:h-[720px]">
+          <PublicLotMap
+            tenantSlug={HOPKINS_SCOPE.tenant}
+            projectSlug={HOPKINS_SCOPE.project}
+            phaseSlug={HOPKINS_SCOPE.phase}
+            showPrices={modules.pricing}
+            enableInquiry
+            initialView="tier"
+            selectedMapFeatureRefs={selectedMapFeatureRefs}
+            onToggleMapFeature={onToggleMapFeature}
+            onParcelsLoaded={onParcelsLoaded}
+          />
+        </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">Source pricing is informational. Selection records an optional map-outline preference only.</p>
+      </section> : null}
+
+      <WamuleClassicNotice
+        title="Hopkins project notice"
+        notice={page.company.publicNotice}
+        companyName={page.company.name}
+        location={page.company.location}
+      />
+
+      {modules.inquiry ? <section id="interest" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-6">
+        <PublicInquiryPanel
+          companyName={page.company.name}
+          tenantSlug={HOPKINS_SCOPE.tenant}
+          projectSlug={HOPKINS_SCOPE.project}
+          phaseSlug={HOPKINS_SCOPE.phase}
+          parcels={[]}
+          showPrices={false}
+          hasSupabaseConfig={hasSupabaseConfig}
+          interestOptions={["General project interest", "Map outline question", "Site visit", "Buying process"]}
+          introPrompt="Planning a project?"
+          introDescription={"Ask Ceiba Realty & Development about " + page.project.name + ", the application process, a site visit, or information shown on the public map."}
+          introNotice="This inquiry is for information only. It does not allocate a map outline, create parcel inventory, or reserve a lot."
+          confirmationNote="Your request was saved for Hopkins. It does not assign a map outline or create parcel inventory."
+          footerNote="Map outlines are references only; an inquiry does not allocate or reserve one."
+          mapHref="#lots"
+        />
+      </section> : null}
+
+      {modules.application ? <HopkinsProjectApplication
+        page={page}
+        modules={modules}
+        isClassicTemplate
+        selectedMapFeatureRefs={selectedMapFeatureRefs}
+        mapFeatureLabels={mapFeatureLabels}
+        mapPreferenceError={mapPreferenceError}
+        onToggleMapFeature={onToggleMapFeature}
+        onRemoveMapFeature={onRemoveMapFeature}
+        onParcelsLoaded={onParcelsLoaded}
+      /> : null}
+
+      <footer className="mx-auto flex max-w-6xl flex-col gap-1 border-t border-border px-4 py-5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <p><span className="font-semibold text-primary">{page.project.name}</span> · {page.company.name}</p>
+        <p>Public project preview · <Link to={MAP_URL} className="font-semibold text-primary underline underline-offset-2">Standalone map</Link></p>
+      </footer>
+    </main>
+  );
+}
+
+function HopkinsProjectApplication({
+  page,
+  modules,
+  isClassicTemplate,
+  selectedMapFeatureRefs,
+  mapFeatureLabels,
+  mapPreferenceError,
+  onToggleMapFeature,
+  onParcelsLoaded,
+  onRemoveMapFeature,
+}: {
+  page: PublicProjectPage;
+  modules: Record<PublicSiteModuleId, boolean>;
+  isClassicTemplate: boolean;
+  selectedMapFeatureRefs: string[];
+  mapFeatureLabels: Array<{ ref: string; label: string }>;
+  mapPreferenceError: string | null;
+  onToggleMapFeature: (parcel: PublicLotParcel) => void;
+  onParcelsLoaded: (features: PublicLotParcel[]) => void;
   onRemoveMapFeature: (ref: string) => void;
 }) {
   const [name, setName] = useState("");
@@ -390,8 +565,31 @@ function HopkinsProjectApplication({
   }
 
   return (
-    <section id="application" className="scroll-mt-20 bg-[#fffdf8] px-4 py-12 sm:px-6 sm:py-16">
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.72fr_1.28fr]">
+    <section id="application" className={isClassicTemplate ? "scroll-mt-20 mx-auto max-w-6xl px-4 py-10 lg:py-12" : "scroll-mt-20 bg-[#fffdf8] px-4 py-12 sm:px-6 sm:py-16"}>
+      {modules.map ? <div id="application-map" className="mb-8 scroll-mt-20">
+        <WamuleClassicPanel
+          title="Choose map-outline preferences"
+          description="Select optional map references for the Hopkins team to review."
+        >
+          <div className="h-[560px] min-w-0 overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)] sm:h-[640px] lg:h-[720px]">
+            <PublicLotMap
+              tenantSlug={HOPKINS_SCOPE.tenant}
+              projectSlug={HOPKINS_SCOPE.project}
+              phaseSlug={HOPKINS_SCOPE.phase}
+              showPrices={modules.pricing}
+              enableInquiry
+              initialView="tier"
+              selectedMapFeatureRefs={selectedMapFeatureRefs}
+              onToggleMapFeature={onToggleMapFeature}
+              onParcelsLoaded={onParcelsLoaded}
+            />
+          </div>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            These are map-outline references, not parcel IDs. Preferences can be removed below and do not allocate a lot.
+          </p>
+        </WamuleClassicPanel>
+      </div> : null}
+      <div className={isClassicTemplate ? "grid gap-8 lg:grid-cols-[0.72fr_1.28fr]" : "mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.72fr_1.28fr]"}>
         <div className="max-w-xl">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8a5a35]">Hopkins Grove · staff review</p>
           <h2 className="mt-2 font-display text-3xl font-semibold text-[#173f2d] sm:text-4xl">Project application</h2>
@@ -403,7 +601,7 @@ function HopkinsProjectApplication({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[#173f2d]/10 bg-white p-5 shadow-sm sm:p-7">
+        <div className={isClassicTemplate ? "min-w-0 rounded-lg border bg-card p-5 shadow-[var(--shadow-card)] sm:p-7" : "rounded-2xl border border-[#173f2d]/10 bg-white p-5 shadow-sm sm:p-7"}>
           {receipt ? (
             <div role="status" className="grid justify-items-start gap-3 py-6">
               <span className="grid h-12 w-12 place-items-center rounded-full bg-[#e6f0e7] text-[#24613e]"><CheckCircle2 className="h-6 w-6" /></span>

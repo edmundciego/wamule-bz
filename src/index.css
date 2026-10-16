@@ -287,9 +287,20 @@
   }
 }
 
-/* Public site templates change presentation tokens only. Each route continues
-   to render its own tenant-scoped content and form requirements. */
-main[data-site-template="hopkins-project"] {
+/* Hopkins brand tokens stay tenant-bound when the presentation template changes. */
+main[data-public-tenant="hopkins-grove"] {
+  --color-primary: #173f2d;
+  --color-primary-hover: #245a40;
+  --color-primary-soft: #e6f0e7;
+  --color-secondary: #8a5a35;
+  --color-secondary-hover: #704629;
+  --color-secondary-soft: #f3e9de;
+  --color-background: #fffdf8;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f5f7f2;
+  --color-text: #2d2317;
+  --color-text-muted: #52635a;
+  --color-border: #dce5dc;
   --background: 48 100% 99%;
   --foreground: 30 15% 14%;
   --card: 0 0% 100%;

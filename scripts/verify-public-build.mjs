@@ -67,7 +67,9 @@ function collectFiles(root, directory, files, errors) {
       errors.push(`private map fixture file is present: ${rel}`);
     }
     const isPdfByName = extname(path).toLowerCase() === ".pdf";
-    if (/hopkins/i.test(rel) || isPdfByName) {
+    const isPublicHopkinsRouteChunk = /^assets\/HopkinsPublicPage-[A-Za-z0-9_-]+\.js$/i.test(rel);
+    const isPublicHopkinsBrandFavicon = /^favicon\/hopkins-grove\.svg$/i.test(rel);
+    if ((/hopkins/i.test(rel) && !isPublicHopkinsRouteChunk && !isPublicHopkinsBrandFavicon) || isPdfByName) {
       errors.push(`private source/tenant artifact is present: ${rel}`);
     } else {
       try {

@@ -44,6 +44,15 @@
       "primary": "#173f2d",
       "background": "#fffdf8",
       "fontFamily": "Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+    },
+    "site_experience": {
+      "templateId": "wamule-classic",
+      "enabledModules": {
+        "map": true,
+        "inquiry": true,
+        "pricing": true,
+        "application": true
+      }
     }
   }
 }

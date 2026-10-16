@@ -5,25 +5,25 @@ import { defaultPublicExperience, normalizePublicExperience, publicExperienceSet
 const wamule = { tenantSlug: "wamule", projectSlug: "wamule", phaseSlug: "default" };
 const hopkins = { tenantSlug: "hopkins-grove", projectSlug: "hopkins-grove", phaseSlug: "initial" };
 
-test("tenant/project scopes retain their existing public template defaults", () => {
+test("public template defaults are independent of tenant and project scope", () => {
   assert.deepEqual(defaultPublicExperience(wamule), {
     templateId: "wamule-classic",
     enabledModules: { map: true, inquiry: true, application: true, pricing: true },
   });
   assert.deepEqual(defaultPublicExperience(hopkins), {
-    templateId: "hopkins-project",
+    templateId: "wamule-classic",
     enabledModules: { map: true, inquiry: true, application: true, pricing: true },
   });
 });
 
-test("invalid template values fall back by scope and never alter application settings", () => {
+test("invalid template values fall back globally and never alter application settings", () => {
   const config = normalizePublicExperience(hopkins, {
     templateId: "unknown",
     enabledModules: { map: false, application: "off", admin: true },
     applicationSettings: { applicationsOpen: false },
   });
   assert.deepEqual(config, {
-    templateId: "hopkins-project",
+    templateId: "wamule-classic",
     enabledModules: { map: false, inquiry: true, application: true, pricing: true },
   });
   assert.equal("applicationSettings" in config, false);

@@ -2,7 +2,7 @@ export const PUBLIC_SITE_TEMPLATES = [
   {
     id: "wamule-classic",
     name: "Wamule Classic",
-    description: "The established Wamule application layout with compact project information and buyer workflow.",
+    description: "The established homepage layout with its two-column hero, project facts, information panels, and familiar form presentation.",
   },
   {
     id: "hopkins-project",
@@ -18,10 +18,9 @@ export const PUBLIC_SITE_MODULES = [
   { id: "pricing", name: "Public prices", description: "Allow the template to show prices when project settings also permit it." },
 ];
 
-export function defaultPublicExperience(scope) {
-  const isHopkins = scope?.tenantSlug === "hopkins-grove" || scope?.projectSlug === "hopkins-grove";
+export function defaultPublicExperience(_scope) {
   return {
-    templateId: isHopkins ? "hopkins-project" : "wamule-classic",
+    templateId: "wamule-classic",
     enabledModules: {
       map: true,
       inquiry: true,

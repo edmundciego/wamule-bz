@@ -36,12 +36,13 @@ test("manual records remain inventory and require an available status plus a cle
 });
 
 test("sales selectors and public payload use provenance-derived eligibility", async () => {
-  const [applications, publicApplication, edgeFunction, dashboard, lots] = await Promise.all([
+  const [applications, publicApplication, edgeFunction, dashboard, lots, publicMap] = await Promise.all([
     readFile(new URL("../src/pages/ApplicationsPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/ApplicationPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../supabase/functions/get-public-lots/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/DashboardPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/LotsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/public/PublicLotMap.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(applications, /\.filter\(isAvailableForSalesSelection\)/);
@@ -50,4 +51,8 @@ test("sales selectors and public payload use provenance-derived eligibility", as
   assert.match(edgeFunction, /isAvailableForSalesSelection/);
   assert.match(dashboard, /isExistingInventoryRecord/);
   assert.match(lots, /isRasterDetection/);
+  assert.match(publicMap, /parcel\.is_map_detection === true\)\.length/);
+  assert.match(publicMap, /raster map detections · review\/display only/);
+  assert.match(publicMap, /not buyer-selection options/);
+  assert.match(publicMap, /not selectable for sale/);
 });

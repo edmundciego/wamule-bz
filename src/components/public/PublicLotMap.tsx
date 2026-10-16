@@ -919,6 +919,7 @@ export function PublicLotMap({
       return true;
     });
   }, [payload, filter, disabledTiers, query, reviewPending, localPreviewMode, hostedDemoMap]);
+  const mapDetectionCount = payload?.parcels.filter((parcel) => parcel.is_map_detection === true).length ?? 0;
   // Wamule's current tenant-level staging feed has no approved project scope
   // or register signal. Treat its sales fields as preview values until that
   // approval state is represented by the public payload.
@@ -1836,6 +1837,19 @@ export function PublicLotMap({
           ))}
         </div> : null}
       </div>
+      {!reviewPending && !hostedDemoMap && mapDetectionCount > 0 ? (
+        <div
+          data-testid="map-detection-disclosure"
+          data-map-detection-count={mapDetectionCount}
+          role="note"
+          aria-label="Map detections are review data, not saleable inventory"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground"
+        >
+          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-[#718078]" aria-hidden="true" />
+          <span className="font-semibold text-foreground">{mapDetectionCount} raster map detections · review/display only.</span>
+          <span>These outlines are separate from parcel inventory and are not buyer-selection options.</span>
+        </div>
+      ) : null}
       {!reviewPending && !hostedDemoMap && tierOptions.length && colourView === "tier" ? (
         <div className="border-b border-border bg-card px-3 py-1.5">
           <button

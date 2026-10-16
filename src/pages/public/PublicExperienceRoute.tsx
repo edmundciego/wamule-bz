@@ -1,6 +1,6 @@
 import { lazy } from "react";
 import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
-import type { PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
+import { defaultPublicExperience, type PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
 
 const ApplicationPage = lazy(() => import("../ApplicationPage").then((module) => ({ default: module.ApplicationPage })));
 const HopkinsPublicPage = lazy(() => import("./HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })));
@@ -14,7 +14,7 @@ export function PublicExperienceRoute({ defaultTemplate }: { defaultTemplate: Pu
   const isHopkinsRoute = defaultTemplate === "hopkins-project";
   const scope = isHopkinsRoute ? scopes.hopkins : scopes.wamule;
   const { data } = usePublicSiteExperience(scope);
-  const templateId = data?.templateId ?? defaultTemplate;
+  const templateId = data?.templateId ?? defaultPublicExperience(scope).templateId;
   const enabledModules = data?.enabledModules;
 
   // Host/path resolution fixes tenant, project, and phase. The selected

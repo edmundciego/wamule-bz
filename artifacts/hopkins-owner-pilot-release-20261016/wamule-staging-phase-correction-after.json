@@ -1,0 +1,327 @@
+{
+  "captured_at": "2026-10-16T19:02:48.798Z",
+  "project_ref": "kvocwmrcuhiaezlcgzjf",
+  "tenant_slug": "wamule",
+  "tenant_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  "algorithm": "Per-table MD5 of newline-joined to_jsonb rows sorted by full JSON text; read-only Supabase SQL.",
+  "expected_scope_changes": [
+    "public.parcels: phase_id only for IDs 21–24; the updated_at trigger records this scope correction.",
+    "public.development_phases: one inactive Legacy Review phase to retain IDs 21–24 outside the active Default/Phase 1 inventory."
+  ],
+  "unchanged_table_count": 55,
+  "fingerprint_differences": [
+    {
+      "table_name": "public.development_phases",
+      "before": {
+        "table_name": "public.development_phases",
+        "row_count": 1,
+        "fingerprint": "82cbaf173c30b62cfb155e622a2c4c0c"
+      },
+      "after": {
+        "table_name": "public.development_phases",
+        "row_count": 2,
+        "fingerprint": "18281e8d33065c363d403c13309808bf"
+      }
+    },
+    {
+      "table_name": "public.parcels",
+      "before": {
+        "table_name": "public.parcels",
+        "row_count": 743,
+        "fingerprint": "d2f661b6988a6d63c339637420f40387"
+      },
+      "after": {
+        "table_name": "public.parcels",
+        "row_count": 743,
+        "fingerprint": "e462df67b973270fc32dabda83cfb216"
+      }
+    }
+  ],
+  "tables": [
+    {
+      "table_name": "public.admin_profiles",
+      "row_count": 1,
+      "fingerprint": "8ba2cf53225db8270ee88d4e87f944f8"
+    },
+    {
+      "table_name": "public.ai_daily_briefs",
+      "row_count": 2,
+      "fingerprint": "321e6d3606dc657ce808723b256b1cf3"
+    },
+    {
+      "table_name": "public.ai_settings",
+      "row_count": 1,
+      "fingerprint": "751629a046f340634220a61eeed16921"
+    },
+    {
+      "table_name": "public.application_ai_reviews",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.application_documents",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.applications",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.audit_events",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.brief_action_items",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.business_settings",
+      "row_count": 7,
+      "fingerprint": "ea14b59e803ff1a0ce45b3ce9749e054"
+    },
+    {
+      "table_name": "public.community_fee_settings",
+      "row_count": 1,
+      "fingerprint": "84fb178ffd410b11d131d020f6f57b74"
+    },
+    {
+      "table_name": "public.contract_void_resolutions",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.contracts",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.correction_drafts",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.correction_edits",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.correction_waivers",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.customer_ai_summaries",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.customers",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.developer_feedback",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.development_phases",
+      "row_count": 2,
+      "fingerprint": "18281e8d33065c363d403c13309808bf"
+    },
+    {
+      "table_name": "public.development_updates",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.email_notifications",
+      "row_count": 10,
+      "fingerprint": "898567c77d00cab5ecbaf0b84ee41ba6"
+    },
+    {
+      "table_name": "public.fee_types",
+      "row_count": 2,
+      "fingerprint": "bef37874ad2577eec212dc8b16b5c5cf"
+    },
+    {
+      "table_name": "public.follow_up_tasks",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.information_packs",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.information_request_topics",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.information_requests",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.information_topics",
+      "row_count": 11,
+      "fingerprint": "0f9a70f2d3d83ca9b3019df8f773bb60"
+    },
+    {
+      "table_name": "public.installment_plans",
+      "row_count": 6,
+      "fingerprint": "9424cae24064ced5e83ff31f959063cc"
+    },
+    {
+      "table_name": "public.lead_activities",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.lead_ai_summaries",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.leads",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.lot_reservations",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.lot_sizes",
+      "row_count": 2,
+      "fingerprint": "7eee7de585af8f9ed377f271795d3ad1"
+    },
+    {
+      "table_name": "public.lot_tiers",
+      "row_count": 7,
+      "fingerprint": "38c68645a9bd756958b4985c25d239de"
+    },
+    {
+      "table_name": "public.map_feature_identities",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.map_feature_snapshots",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.map_features",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.masterplan_versions",
+      "row_count": 4,
+      "fingerprint": "47644cbcb1cabd062d88e693ebe5da25"
+    },
+    {
+      "table_name": "public.notification_settings",
+      "row_count": 3,
+      "fingerprint": "b4842027ce64e763f79ee141b199457b"
+    },
+    {
+      "table_name": "public.onboarding_states",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.organization_secret_refs",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.parcels",
+      "row_count": 743,
+      "fingerprint": "e462df67b973270fc32dabda83cfb216"
+    },
+    {
+      "table_name": "public.payment_documents",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.payment_methods",
+      "row_count": 2,
+      "fingerprint": "8330c70f96c7e73a3865944bfa368145"
+    },
+    {
+      "table_name": "public.payment_requests",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.post_sales_activities",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.post_sales_ai_summaries",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.post_sales_checklists",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.post_sales_tasks",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.project_lot_tiers",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.project_memberships",
+      "row_count": 1,
+      "fingerprint": "958fc16fc0e306f6536c46519d9dd1c1"
+    },
+    {
+      "table_name": "public.project_settings",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.projects",
+      "row_count": 1,
+      "fingerprint": "ff140ffc8e0d6f61f0fdca6c91116c7e"
+    },
+    {
+      "table_name": "public.receipt_jobs",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.reservation_activities",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.site_visits",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table_name": "public.transactions",
+      "row_count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
   "production_project_ref": "mtjlvzrtihslcftxnlso",
   "baseline_ledger_version": "20260715055626",
   "repository_alias_version": "20260715050000",
-  "candidate_migration_count": 23,
+  "candidate_migration_count": 25,
   "ordered_after_alias_reconciliation": [
     {
       "order": 1,
@@ -187,6 +187,22 @@
       "name": "modular_public_site_experience",
       "bytes": 5939,
       "sha256": "c504229ad89cd2bb2631e4d501b7641bb732be731ca939fe41b62753694ba3f1"
+    },
+    {
+      "order": 24,
+      "path": "supabase/migrations/20261016070858_tenant_scoped_ai_settings_singleton.sql",
+      "version": "20261016070858",
+      "name": "tenant_scoped_ai_settings_singleton",
+      "bytes": 927,
+      "sha256": "00ed998dcf6ad7bcbef7a9c5729e0b53465851dc6c720d1918cd94c074950f0e"
+    },
+    {
+      "order": 25,
+      "path": "supabase/migrations/20261016185842_public_template_default_independent_of_scope.sql",
+      "version": "20261016185842",
+      "name": "public_template_default_independent_of_scope",
+      "bytes": 2248,
+      "sha256": "2493e861ff82d818e297e6eb7348baa021686b3f5b2594d7cdd62e7656b66f37"
     }
   ]
 }

@@ -23,6 +23,17 @@ test("public build verifier accepts a private-indexed bundle without dev fixture
   assert.deepEqual(report.errors, []);
 });
 
+test("public Hopkins route code and favicon are allowed without publishing source assets", (t) => {
+  const root = makeBuild(t);
+  writeFileSync(join(root, "assets", "HopkinsPublicPage-a1B2c3.js"), "export const publicRoute = true;");
+  mkdirSync(join(root, "favicon"));
+  writeFileSync(join(root, "favicon", "hopkins-grove.svg"), "<svg></svg>");
+  assert.deepEqual(verifyPublicBuild(root).errors, []);
+
+  writeFileSync(join(root, "assets", "hopkins-775-outline-snapshot.json"), "{}");
+  assert.ok(verifyPublicBuild(root).errors.some((error) => error.includes("private source/tenant artifact")));
+});
+
 test("public build verifier requires noindex metadata", (t) => {
   const root = makeBuild(t);
   writeFileSync(join(root, "index.html"), "<!doctype html><html><head></head></html>");

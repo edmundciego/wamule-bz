@@ -45,8 +45,7 @@ Deno.serve(async (request) => {
     .eq("key", "tenant_theme").maybeSingle();
   if (themeError) return json({ error: "Public site settings are unavailable." }, 503);
 
-  const isHopkins = scope.tenantSlug === "hopkins-grove" || scope.projectSlug === "hopkins-grove";
-  const fallbackTemplate: TemplateId = isHopkins ? "hopkins-project" : "wamule-classic";
+  const fallbackTemplate: TemplateId = "wamule-classic";
   const settings = isObject(theme?.value) && isObject(theme.value.site_experience) ? theme.value.site_experience : {};
   const templateId: TemplateId = settings.templateId === "wamule-classic" || settings.templateId === "hopkins-project"
     ? settings.templateId

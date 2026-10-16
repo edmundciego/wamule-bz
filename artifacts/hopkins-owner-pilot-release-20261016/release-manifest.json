@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T08:14:05.832Z",
+  "generated_at": "2026-10-16T19:41:07.593Z",
   "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
   "source_snapshot_version": 2,
   "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
@@ -87,8 +87,8 @@
     },
     {
       "path": "hopkins-public-site-settings.json",
-      "bytes": 2614,
-      "sha256": "3cfbd64f4d49100624a89c5282793975fc2c701fe6e893099da82fe5714ce70f"
+      "bytes": 2817,
+      "sha256": "45a30e013fbdbcc1fac9c9d808fa7cf0dff3f57b81157c214a587c4dc17f1b7c"
     }
   ],
   "package_files": [
@@ -114,13 +114,13 @@
     },
     {
       "path": "hopkins-public-site-settings.json",
-      "bytes": 2614,
-      "sha256": "3cfbd64f4d49100624a89c5282793975fc2c701fe6e893099da82fe5714ce70f"
+      "bytes": 2817,
+      "sha256": "45a30e013fbdbcc1fac9c9d808fa7cf0dff3f57b81157c214a587c4dc17f1b7c"
     },
     {
       "path": "migration-manifest.json",
-      "bytes": 7123,
-      "sha256": "b74c2187b1cd7bc2994d1b447886b69fcf0a5d022676696ca7faf85c92c26338"
+      "bytes": 7772,
+      "sha256": "67354a2d0e2aaf1132cb5a31a9803e9985930674f608a4e72a9089c67e495c0f"
     },
     {
       "path": "production-baseline.json",
@@ -183,6 +183,11 @@
       "sha256": "416a80808f718f37f1db8aaa4ceabb550ae2a83e2f327069357d530f48d85f5c"
     },
     {
+      "path": "staging-hosted-verification.json",
+      "bytes": 8927,
+      "sha256": "4efcdf0f775aa44f8f9d8d08b67122ad8b91ccec20584a43b8f8dfa7b7b49988"
+    },
+    {
       "path": "staging-regression.json",
       "bytes": 5362,
       "sha256": "5e2756a108a98940e67fb37731718d3cf5d08df750a6641a57149d4d0901da63"
@@ -198,21 +203,130 @@
       "sha256": "3df8fb6df6b52cb32bed44cfe73e0549a82e93c1ee754d0a3dc884bf0433b424"
     },
     {
+      "path": "wamule-staging-manual-records-after.json",
+      "bytes": 13473,
+      "sha256": "55576361e0b4b7801aeec72361b8f0d4bcfe7a8a3d668aa556b3274da7782eb7"
+    },
+    {
+      "path": "wamule-staging-manual-records-before.json",
+      "bytes": 13765,
+      "sha256": "b18f0a71f72fcf06f25dc949194ac2f1a363a393087117e61a067fd4d5cf0731"
+    },
+    {
+      "path": "wamule-staging-phase-correction-after.json",
+      "bytes": 9270,
+      "sha256": "a51384f3c81a7aa6f9e0d57f01d942d30251a13c2f5e56d21a2fe133af260b82"
+    },
+    {
+      "path": "wamule-staging-phase-correction-before.json",
+      "bytes": 8317,
+      "sha256": "b90a13784245fe5364f044ef6fe7e65badbc393ca6de56e8b115a65ddb0328cb"
+    },
+    {
       "path": "wamule-staging-preservation-before.json",
       "bytes": 8178,
       "sha256": "7ba6243c6dfe8df4513d0c8a40f37cc0b3d4ecb0c852123951140a26e58d71a6"
     }
   ],
-  "staging_ai_reconciliation": {
-    "path": "staging-ai-reconciliation.json",
-    "sha256": "416a80808f718f37f1db8aaa4ceabb550ae2a83e2f327069357d530f48d85f5c"
-  },
+  "candidate_base_commit": "dc4d13b2412ff3650904f68e3d3df3d372220557",
+  "candidate_branch": "codex/hopkins-owner-pilot-release-candidate",
   "staging_frontend_deployment": {
     "site_name": "wamule-staging",
-    "deploy_id": "6ad1da33e77b04ee50f1fc9d",
-    "published_url": "https://wamule-staging.netlify.app",
-    "unique_deploy_url": "https://6ad1da33e77b04ee50f1fc9d--wamule-staging.netlify.app",
-    "dist_manifest_sha256": "e95c8a642f0aa75a85fd0825e0f1ce2b5cf2121734d624b0375223c441939ec0",
-    "candidate_base_commit": "571697fd424d58fd8e6779f6584ebbd36e8927aa"
+    "site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
+    "deploy_id": "6ad27d78407fab246e6af5f0",
+    "state": "ready",
+    "branch": "staging",
+    "deploy_context": "primary deploy of the wamule-staging site",
+    "public_url": "https://wamule-staging.netlify.app",
+    "unique_url": "https://6ad27d78407fab246e6af5f0--wamule-staging.netlify.app",
+    "commit_ref": null,
+    "candidate_base_commit": "dc4d13b2412ff3650904f68e3d3df3d372220557",
+    "build_mode": "staging",
+    "index_sha256": "7bd7aef7223438610eb4db7e2d0ea393c70dfbac21329f265ddab05836fc34f6",
+    "asset_references_match": true,
+    "assets": [
+      {
+        "path": "/assets/index-BjDQXY6N.js",
+        "bytes": 541217,
+        "sha256": "213feb407d5771008ae4c330d9289825f758c8cd333f4d6c89f187115c0674dc"
+      },
+      {
+        "path": "/assets/index-5HHlBEwn.css",
+        "bytes": 68476,
+        "sha256": "2c5086f731fcbc4ed63313961e807c48373598209ed7af8b07800c32fd0fb39f"
+      }
+    ]
+  },
+  "staging_hosted_verification": "staging-hosted-verification.json",
+  "staging_scope_verification": {
+    "wamule": {
+      "active_default_phase": {
+        "manual_inventory_rows": 20,
+        "total_parcel_rows": 739
+      },
+      "legacy_review_phase": {
+        "manual_inventory_rows": 4,
+        "active": false
+      },
+      "total_parcel_rows": 743,
+      "raster_review_rows": 719,
+      "raster_needs_review_true": 540,
+      "raster_needs_review_false": 179,
+      "raster_status_available_rows": 719,
+      "eligible_manual_buyer_options": 20,
+      "raster_detections_saleable": false
+    },
+    "hopkins": {
+      "active_public_map_outlines": 775,
+      "parcel_inventory_rows": 0,
+      "source_snapshot_version": 2,
+      "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06"
+    },
+    "tenant_scoping": "Wamule buyer API reports tenant=wamule and 20 eligible manual rows; Hopkins public map returns 775 features and zero parcels. Hopkins branding and application scope resolve separately."
+  },
+  "staging_preservation": {
+    "baseline_artifact": "wamule-staging-preservation-before.json",
+    "post_phase_reconciliation_artifact": "wamule-staging-phase-correction-after.json",
+    "unchanged_table_groups": 55,
+    "intentionally_changed_groups": [
+      "public.development_phases",
+      "public.parcels"
+    ],
+    "scope_correction": "Four preserved manual records (IDs 21–24) were assigned to inactive Legacy Review; active Default/Phase 1 retains 20. No records deleted and no replacement geometry invented.",
+    "current_read_only_fingerprints": {
+      "public.parcels": {
+        "rows": 743,
+        "md5": "e462df67b973270fc32dabda83cfb216"
+      },
+      "public.development_phases": {
+        "rows": 2,
+        "md5": "18281e8d33065c363d403c13309808bf"
+      },
+      "public.masterplan_versions": {
+        "rows": 4,
+        "md5": "47644cbcb1cabd062d88e693ebe5da25"
+      }
+    },
+    "matching_post_correction_fingerprints": true,
+    "storage_objects_modified": false,
+    "production_touched": false
+  },
+  "local_validation": {
+    "test_suite": {
+      "total": 302,
+      "passed": 298,
+      "failed": 0,
+      "skipped": 4
+    },
+    "typecheck": "passed",
+    "targeted_eslint": "passed",
+    "staging_build": "passed",
+    "public_build_audit": {
+      "result": "passed",
+      "files": 78,
+      "text_bytes": 1483848,
+      "private_or_dev_source_present": false
+    },
+    "release_package_integrity": "verified by scripts/verify-hopkins-owner-pilot-package.mjs"
   }
 }
