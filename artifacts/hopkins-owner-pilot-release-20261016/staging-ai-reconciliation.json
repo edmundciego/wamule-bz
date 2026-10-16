@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-16T08:12:14.646Z",
+  "observed_at": "2026-10-16T08:14:05.818Z",
   "staging_project_ref": "kvocwmrcuhiaezlcgzjf",
   "ai_settings_migration": {
     "version": "20261016070858",
@@ -550,5 +550,32 @@
       "all_row_fingerprints_match": true
     },
     "outbound_messages": "disabled; no email or inquiry was sent"
+  },
+  "verification": {
+    "typecheck": "passed",
+    "focused_workspace_regressions": {
+      "passed": 9,
+      "failed": 0
+    },
+    "full_node22_test_suite": {
+      "tests": 298,
+      "passed": 294,
+      "failed": 0,
+      "skipped": 4,
+      "todo": 0
+    },
+    "staging_frontend_build": {
+      "status": "passed",
+      "dist_files": 80
+    },
+    "release_package_validation": {
+      "valid": true,
+      "package_files_verified": 22,
+      "outline_count": 775,
+      "reviewed_printed_number_reads": 80,
+      "ambiguous_outlines": 2,
+      "candidate_migrations": 23,
+      "outbound_notifications_enabled": false
+    }
   }
 }

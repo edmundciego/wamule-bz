@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T08:12:14.746Z",
+  "generated_at": "2026-10-16T08:14:05.832Z",
   "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
   "source_snapshot_version": 2,
   "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
@@ -179,8 +179,8 @@
     },
     {
       "path": "staging-ai-reconciliation.json",
-      "bytes": 19601,
-      "sha256": "ce4cbbfac37394dbee760e0f59241c17cd846aa7db985f12ffb353c080b7eb39"
+      "bytes": 20240,
+      "sha256": "416a80808f718f37f1db8aaa4ceabb550ae2a83e2f327069357d530f48d85f5c"
     },
     {
       "path": "staging-regression.json",
@@ -205,7 +205,7 @@
   ],
   "staging_ai_reconciliation": {
     "path": "staging-ai-reconciliation.json",
-    "sha256": "ce4cbbfac37394dbee760e0f59241c17cd846aa7db985f12ffb353c080b7eb39"
+    "sha256": "416a80808f718f37f1db8aaa4ceabb550ae2a83e2f327069357d530f48d85f5c"
   },
   "staging_frontend_deployment": {
     "site_name": "wamule-staging",
