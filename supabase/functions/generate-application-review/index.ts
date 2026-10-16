@@ -1,5 +1,6 @@
+import { resolveAiWorkspace, resolveAiProviderKey } from "../_shared/aiWorkspace.ts";
+import { generateGeminiJson } from "../_shared/geminiFallback.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -22,6 +23,7 @@ type ReviewPayload = {
 };
 
 Deno.serve(async (request) => {
+  try {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -35,29 +37,43 @@ Deno.serve(async (request) => {
     return json({ error: "Missing authorization token." }, 401);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const serverSupabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(token);
+  const { data: currentUserData, error: currentUserError } = await serverSupabase.auth.getUser(token);
   if (currentUserError || !currentUserData.user) {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const body = await request.json().catch(() => null) as { application_id?: number; tenant_id?: string } | null;
-  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin"]);
-  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
-  const tenantId = workspaceAuth.tenantId;
+  const { data: currentProfile, error: profileError } = await serverSupabase
+    .from("admin_profiles")
+    .select("role, tenant_id")
+    .eq("user_id", currentUserData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return json({ error: profileError.message }, 500);
+  }
+
+  if (!["Super Admin", "Admin"].includes(String(currentProfile?.role ?? ""))) {
+    return json({ error: "Only Super Admin or Admin users can generate AI application reviews." }, 403);
+  }
+
+  const body = await request.json().catch(() => null) as { application_id?: number; tenant_id?: unknown } | null;
   const applicationId = Number(body?.application_id ?? 0);
   if (!applicationId) {
     return json({ error: "application_id is required." }, 400);
   }
 
+  const workspace = await resolveAiWorkspace(token, currentProfile, body?.tenant_id);
+  if (!workspace.ok) return json({ error: workspace.error }, workspace.status);
+  const supabase = workspace.client;
+
   const { data: application, error: applicationError } = await supabase
     .from("applications")
     .select("*, parcels(id, lot_number, dimensions, status, base_price)")
     .eq("id", applicationId)
-    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (applicationError) {
@@ -72,7 +88,6 @@ Deno.serve(async (request) => {
     .from("leads")
     .select("id, pipeline_stage, source, next_action, next_action_due_at, assigned_to")
     .eq("application_id", application.id)
-    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   const preferredParcelIds = Array.isArray(application.preferred_parcel_ids)
@@ -84,7 +99,6 @@ Deno.serve(async (request) => {
       .from("parcels")
       .select("id, lot_number, dimensions, status, base_price")
       .in("id", preferredParcelIds)
-      .eq("tenant_id", tenantId)
     : { data: [], error: null };
 
   if (lotsError) {
@@ -94,13 +108,12 @@ Deno.serve(async (request) => {
   const { data: settings } = await supabase
     .from("ai_settings")
     .select("*")
-    .eq("tenant_id", tenantId)
     .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
 
   const deterministic = buildDeterministicReview(application, preferredLots ?? [], linkedLead);
-  const apiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
+  const apiKey = await resolveAiProviderKey(serverSupabase, workspace.tenantId);
   const aiEnabled = Boolean(settings?.is_enabled && settings?.application_summary_enabled && apiKey);
   let review: ReviewPayload = deterministic;
 
@@ -119,7 +132,6 @@ Deno.serve(async (request) => {
   const { data: savedReview, error: saveError } = await supabase
     .from("application_ai_reviews")
     .upsert({
-      tenant_id: tenantId,
       application_id: application.id,
       summary: review.summary,
       completeness_status: review.completeness_status,
@@ -137,6 +149,10 @@ Deno.serve(async (request) => {
   }
 
   return json({ review: savedReview, fallback: !aiEnabled || review.model === deterministic.model });
+  } catch {
+    console.error("AI workspace operation failed; no provider credentials were logged.");
+    return json({ error: "Could not complete the workspace AI request. Please try again." }, 500);
+  }
 });
 
 function buildDeterministicReview(application: Record<string, unknown>, preferredLots: Array<Record<string, unknown>>, linkedLead?: Record<string, unknown> | null): ReviewPayload {
@@ -170,7 +186,7 @@ function buildDeterministicReview(application: Record<string, unknown>, preferre
     actions.push("Review the approved application and confirm the customer lot assignment record.");
   }
 
-  if (assignedLotConflict) {
+  if (assignedLotConflict && assignedLot) {
     riskFlags.push(`Assigned Lot ${assignedLot.lot_number} is currently ${assignedLot.status}.`);
   }
 
@@ -290,7 +306,7 @@ async function generateGeminiReview({
   model: string;
 }): Promise<ReviewPayload | null> {
   const prompt = [
-    "You are a read-only admin review assistant for Wamule Development land applications.",
+    "You are a read-only admin review assistant for the selected workspace land applications.",
     "You must not approve, decline, edit, reserve lots, create customers, or make final decisions.",
     "Return only JSON with: summary, completeness_status, missing_fields, risk_flags, recommended_admin_actions.",
     "completeness_status must be one of: Complete, Needs Review, Missing Information, Lot Conflict.",
@@ -307,39 +323,17 @@ async function generateGeminiReview({
     `Preferred lots: ${JSON.stringify(preferredLots)}`,
   ].join("\n");
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 700,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) return null;
-    const payload = await response.json();
-    const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    const parsed = JSON.parse(text) as Partial<ReviewPayload>;
-    return {
-      summary: String(parsed.summary || deterministic.summary),
-      completeness_status: normalizeStatus(parsed.completeness_status, deterministic.completeness_status),
-      missing_fields: normalizeStringArray(parsed.missing_fields, deterministic.missing_fields),
-      risk_flags: normalizeStringArray(parsed.risk_flags, deterministic.risk_flags),
-      recommended_admin_actions: normalizeStringArray(parsed.recommended_admin_actions, deterministic.recommended_admin_actions),
-      model,
-    };
-  } catch {
-    return null;
-  }
+  const result = await generateGeminiJson({ apiKey, model, prompt, maxOutputTokens: 700 });
+  if (!result) return null;
+  const parsed = result.value as Partial<ReviewPayload>;
+  return {
+    summary: String(parsed.summary || deterministic.summary),
+    completeness_status: normalizeStatus(parsed.completeness_status, deterministic.completeness_status),
+    missing_fields: normalizeStringArray(parsed.missing_fields, deterministic.missing_fields),
+    risk_flags: normalizeStringArray(parsed.risk_flags, deterministic.risk_flags),
+    recommended_admin_actions: normalizeStringArray(parsed.recommended_admin_actions, deterministic.recommended_admin_actions),
+    model: result.model,
+  };
 }
 
 function redactLead(lead: Record<string, unknown> | null | undefined) {

@@ -1,5 +1,6 @@
+import { resolveAiWorkspace, resolveAiProviderKey } from "../_shared/aiWorkspace.ts";
+import { generateGeminiJson } from "../_shared/geminiFallback.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../_shared/financial.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -25,6 +26,7 @@ type CustomerSummaryOutput = {
 };
 
 type AccountData = {
+  companyName: string;
   customer: Record<string, unknown>;
   application: Record<string, unknown> | null;
   contracts: Record<string, unknown>[];
@@ -37,6 +39,7 @@ type AccountData = {
 };
 
 Deno.serve(async (request) => {
+  try {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -50,23 +53,39 @@ Deno.serve(async (request) => {
     return json({ error: "Missing authorization token." }, 401);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const serverSupabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(token);
+  const { data: currentUserData, error: currentUserError } = await serverSupabase.auth.getUser(token);
   if (currentUserError || !currentUserData.user) {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const body = await request.json().catch(() => null) as { customer_id?: number; tenant_id?: string } | null;
-  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
-  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
-  const tenantId = workspaceAuth.tenantId;
+  const { data: currentProfile, error: profileError } = await serverSupabase
+    .from("admin_profiles")
+    .select("role, tenant_id")
+    .eq("user_id", currentUserData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return json({ error: profileError.message }, 500);
+  }
+
+  const role = String(currentProfile?.role ?? "");
+  if (!["Super Admin", "Admin", "Staff"].includes(role)) {
+    return json({ error: "Only Super Admin, Admin, or Staff users can generate customer AI summaries." }, 403);
+  }
+
+  const body = await request.json().catch(() => null) as { customer_id?: number; tenant_id?: unknown } | null;
   const customerId = Number(body?.customer_id ?? 0);
   if (!customerId) {
     return json({ error: "customer_id is required." }, 400);
   }
+
+  const workspace = await resolveAiWorkspace(token, currentProfile, body?.tenant_id);
+  if (!workspace.ok) return json({ error: workspace.error }, workspace.status);
+  const supabase = workspace.client;
 
   const [customerResult, settingsResult, paymentMethodsResult, feeTypesResult] = await Promise.all([
     supabase
@@ -75,24 +94,20 @@ Deno.serve(async (request) => {
         "*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*)",
       )
       .eq("id", customerId)
-      .eq("tenant_id", tenantId)
       .maybeSingle(),
     supabase
       .from("ai_settings")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("payment_methods")
       .select("id, name, method_type, is_active, is_public")
-      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
     supabase
       .from("fee_types")
       .select("id, name, default_amount, frequency, is_required, is_active")
-      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
   ]);
 
@@ -106,13 +121,14 @@ Deno.serve(async (request) => {
   }
 
   const accountData = buildAccountData({
+    companyName: workspace.tenantName,
     customer: customerResult.data as Record<string, unknown>,
     paymentMethods: paymentMethodsResult.data ?? [],
     feeTypes: feeTypesResult.data ?? [],
   });
   const deterministic = buildDeterministicSummary(accountData);
   const settings = settingsResult.data;
-  const apiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
+  const apiKey = await resolveAiProviderKey(serverSupabase, workspace.tenantId);
   const model = String(settings?.model ?? "gemini-3.1-flash-lite");
   const canUseGemini = Boolean(
     settings?.is_enabled &&
@@ -133,14 +149,13 @@ Deno.serve(async (request) => {
     });
     if (geminiSummary) {
       summary = geminiSummary;
-      usedModel = model;
+      usedModel = geminiSummary.model;
     }
   }
 
   const { data: savedSummary, error: saveError } = await supabase
     .from("customer_ai_summaries")
     .upsert({
-      tenant_id: tenantId,
       customer_id: customerId,
       summary: summary.summary,
       account_status: summary.account_status,
@@ -167,13 +182,19 @@ Deno.serve(async (request) => {
       ? "Customer summary generated with deterministic fallback."
       : "Customer summary generated with Gemini.",
   });
+  } catch {
+    console.error("AI workspace operation failed; no provider credentials were logged.");
+    return json({ error: "Could not complete the workspace AI request. Please try again." }, 500);
+  }
 });
 
 function buildAccountData({
+  companyName,
   customer,
   paymentMethods,
   feeTypes,
 }: {
+  companyName: string;
   customer: Record<string, unknown>;
   paymentMethods: Record<string, unknown>[];
   feeTypes: Record<string, unknown>[];
@@ -181,6 +202,7 @@ function buildAccountData({
   const contracts = relationArray(customer.contracts);
   const activeContract = canonicalActiveContract(contracts);
   return {
+    companyName,
     customer,
     application: (customer.applications as Record<string, unknown> | null | undefined) ?? null,
     contracts,
@@ -265,7 +287,7 @@ function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
     collections_flags: flags.length ? flags : [item("No urgent collections flags", "No urgent collections issues were detected from current records.")],
     missing_items: missingItems,
     recommended_actions: actions,
-    draft_follow_up_message: buildFollowUpMessage(name, accountStatus, remainingBalance, dueDate, openRequests.length),
+    draft_follow_up_message: buildFollowUpMessage(name, accountStatus, remainingBalance, dueDate, openRequests.length, data.companyName),
   };
 }
 
@@ -279,9 +301,9 @@ async function generateGeminiSummary({
   deterministic: CustomerSummaryOutput;
   apiKey: string;
   model: string;
-}): Promise<CustomerSummaryOutput | null> {
+}): Promise<(CustomerSummaryOutput & { model: string }) | null> {
   const prompt = [
-    "You are a read-only customer account and collections assistant for Wamule Development.",
+    "You are a read-only customer account and collections assistant for the selected development workspace.",
     "Summarize only the supplied system data. Do not update records, log payments, create requests, send emails, send WhatsApp messages, change balances, change lot status, or make legal threats.",
     "Return only valid JSON with keys: summary, account_status, balance_summary, payment_summary, collections_flags, missing_items, recommended_actions, draft_follow_up_message.",
     "account_status must be one of: Good Standing, Due Soon, Overdue, Needs Review, Missing Documents, No Active Contract.",
@@ -295,31 +317,9 @@ async function generateGeminiSummary({
     `Customer account data: ${JSON.stringify(data)}`,
   ].join("\n");
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1200,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) return null;
-    const payload = await response.json();
-    const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    return sanitizeSummary(JSON.parse(text), deterministic);
-  } catch {
-    return null;
-  }
+  const result = await generateGeminiJson({ apiKey, model, prompt, maxOutputTokens: 1200 });
+  if (!result) return null;
+  return { ...sanitizeSummary(result.value, deterministic), model: result.model };
 }
 
 function sanitizeSummary(value: Partial<CustomerSummaryOutput>, fallback: CustomerSummaryOutput): CustomerSummaryOutput {
@@ -407,22 +407,22 @@ function chooseStatus({
   return "Good Standing";
 }
 
-function buildFollowUpMessage(name: string, status: AccountStatus, balance: number, dueDate: Date | null, openRequests: number) {
+function buildFollowUpMessage(name: string, status: AccountStatus, balance: number, dueDate: Date | null, openRequests: number, companyName: string) {
   const firstName = name.split(" ")[0] || name;
   const closing = "Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.";
   if (status === "Overdue") {
-    return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records show a balance of ${money(balance)} and a payment item that may need follow-up. ${closing}`;
+    return `Good morning ${firstName}, this is a quick update from ${companyName} regarding your account. Our records show a balance of ${money(balance)} and a payment item that may need follow-up. ${closing}`;
   }
   if (status === "Due Soon") {
-    return `Good morning ${firstName}, this is a friendly update from Wamule Development. Our records show your next payment date is coming up${dueDate ? ` around ${formatDate(dueDate.toISOString())}` : ""}. ${closing}`;
+    return `Good morning ${firstName}, this is a friendly update from ${companyName}. Our records show your next payment date is coming up${dueDate ? ` around ${formatDate(dueDate.toISOString())}` : ""}. ${closing}`;
   }
   if (status === "Missing Documents") {
-    return `Good morning ${firstName}, this is a quick note from Wamule Development. We are reviewing account documents and may need to confirm or update one item on file. ${closing}`;
+    return `Good morning ${firstName}, this is a quick note from ${companyName}. We are reviewing account documents and may need to confirm or update one item on file. ${closing}`;
   }
   if (openRequests > 0) {
-    return `Good morning ${firstName}, this is a quick follow-up from Wamule Development. Our records show an open payment request on your account. ${closing}`;
+    return `Good morning ${firstName}, this is a quick follow-up from ${companyName}. Our records show an open payment request on your account. ${closing}`;
   }
-  return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records are available for review. ${closing}`;
+  return `Good morning ${firstName}, this is a quick update from ${companyName} regarding your account. Our records are available for review. ${closing}`;
 }
 
 function cleanText(value: unknown, fallback: string) {

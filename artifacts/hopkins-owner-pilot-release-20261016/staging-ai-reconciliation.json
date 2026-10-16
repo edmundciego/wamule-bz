@@ -1,0 +1,554 @@
+{
+  "observed_at": "2026-10-16T08:12:14.646Z",
+  "staging_project_ref": "kvocwmrcuhiaezlcgzjf",
+  "ai_settings_migration": {
+    "version": "20261016070858",
+    "name": "tenant_scoped_ai_settings_singleton",
+    "ledger_status": "confirmed applied on staging",
+    "schema_evidence": "ai_settings_one_per_tenant is the unique index on tenant_id",
+    "action_this_turn": "no migration reapplication"
+  },
+  "deployed_functions": [
+    {
+      "name": "generate-lead-summary",
+      "version": 6,
+      "sha256": "f004068a299b8f835a478dc48a337177133e6465737fcc9225903d48672eb555"
+    },
+    {
+      "name": "generate-daily-brief",
+      "version": 6,
+      "sha256": "a7bdbb76bae7693238fc4bc2b73d9f4aca13f337c53f59d8ead58ccb7917c7e"
+    },
+    {
+      "name": "generate-application-review",
+      "version": 6,
+      "sha256": "ac293f0f365953bbf91356666fb9a9c52eb7c78a33956107d941c1e5a816a618"
+    },
+    {
+      "name": "generate-customer-summary",
+      "version": 6,
+      "sha256": "23777d9921d20646ed164133fee29846f94ec8d32749c1b68c9265a1ccbbe082"
+    },
+    {
+      "name": "generate-post-sales-summary",
+      "version": 6,
+      "sha256": "bd58a541ee5ab974af407dfb73b0185c796bb0dbff7ca7e7bb84b09f0404a827"
+    },
+    {
+      "name": "ai-provider-health-check",
+      "version": 7,
+      "sha256": "56265352ffe8cc27d316a0fc3077565d73da94a004fff8f508f6b735deea9af3"
+    }
+  ],
+  "hopkins_ai_settings": {
+    "separate_tenant_row": true,
+    "enabled": true,
+    "model": "gemini-3.1-flash-lite"
+  },
+  "credential_resolution": {
+    "vault_reference_rows": 0,
+    "source": "Supabase Edge Function secret GEMINI_API_KEY from protected .env.staging",
+    "staging_secret_matches_saved_value": true,
+    "local_upstream_probe": {
+      "http_status": 200,
+      "model": "gemini-3.1-flash-lite"
+    },
+    "credential_value_included": false,
+    "hosted_health_check_final": {
+      "status": "reachable",
+      "model": "gemini-3.1-flash-lite"
+    }
+  },
+  "frontend_changes": [
+    "follow-up source join explicitly uses leads!follow_up_tasks_lead_scope_fkey",
+    "Edge Function invocation errors display endpoint HTTP status and curated server message"
+  ],
+  "ai_fix_patch": {
+    "attachment_available_in_task": false,
+    "repository_pr_search_results": 0,
+    "reconciliation_source": "deployed staging function sources and live migration ledger; no PR/attachment was available",
+    "resolution": "deployed staging function sources reconciled into this candidate; no patch attachment or matching PR was available"
+  },
+  "deployment": {
+    "site_name": "wamule-staging",
+    "site_url": "https://wamule-staging.netlify.app",
+    "site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
+    "published": true,
+    "deploy_id": "6ad1da33e77b04ee50f1fc9d",
+    "unique_deploy_url": "https://6ad1da33e77b04ee50f1fc9d--wamule-staging.netlify.app",
+    "management_url": "https://app.netlify.com/projects/wamule-staging/deploys/6ad1da33e77b04ee50f1fc9d",
+    "source_base_commit": "571697fd424d58fd8e6779f6584ebbd36e8927aa",
+    "vite_dist_files": [
+      {
+        "path": "_redirects",
+        "bytes": 19,
+        "sha256": "6036983e5fc00f0169c9e939b1816ed771eee00e27f2fcc517b819041460b9ef"
+      },
+      {
+        "path": "assets/accountDates-DF29nkOR.js",
+        "bytes": 450,
+        "sha256": "689661241524c91bde26811be6aadb3376283e67acb26d0d52dc58bdfb77adb0"
+      },
+      {
+        "path": "assets/AdminLayout-B0G4Ways.js",
+        "bytes": 9206,
+        "sha256": "801f318a7fd6ce9fb760ac7e1d034cc059032fc4535a15cbc2df25dadba648f3"
+      },
+      {
+        "path": "assets/ApplicationPage-Ct0EIC_Y.js",
+        "bytes": 38685,
+        "sha256": "5dfd4f6881c1c6b69fa690b93ab4f11e7986b0ce91a825580cb8a2da6448207f"
+      },
+      {
+        "path": "assets/ApplicationsPage-CelNPBUk.js",
+        "bytes": 38615,
+        "sha256": "ba1a095bd84a6c8e50eb17e0a3ca5a378691ed2a65f02364c4f77d713e0b0b53"
+      },
+      {
+        "path": "assets/arrow-left-BzcKhGMS.js",
+        "bytes": 338,
+        "sha256": "4a7d34f3adc6932c371388922d57b034dd04e6f929036b81440c566afb4ffd37"
+      },
+      {
+        "path": "assets/audit-DETPEcdd.js",
+        "bytes": 2086,
+        "sha256": "7081d1b6592197d7aa56280e84ce8e3df21a9574170deb9995a2d095f8df6550"
+      },
+      {
+        "path": "assets/AuditTrailPage-C7frs96P.js",
+        "bytes": 6028,
+        "sha256": "4679d416779dead79daa2dddd1efe691ab01c6c69f6df9dc8992bd51d9bcc04c"
+      },
+      {
+        "path": "assets/Badge-BCOOKCQB.js",
+        "bytes": 623,
+        "sha256": "1fdb15b9b0adb36fd129cdb6589b123f7e47e56efd497abbd3f04a501e1711ca"
+      },
+      {
+        "path": "assets/bot-XFbXL0qt.js",
+        "bytes": 501,
+        "sha256": "c99f9e23387af77aea78a887e8b4a67145b1db165c96e78027861229eb2203e0"
+      },
+      {
+        "path": "assets/brand-BtQ1RnAm.js",
+        "bytes": 1109,
+        "sha256": "adabd061332cea791e0ab3ccd5bcebc80ac4d3f4441d7ab95ec18b5e167550ab"
+      },
+      {
+        "path": "assets/Button-Bh9GMV9v.js",
+        "bytes": 1225,
+        "sha256": "bed8a336f1a56dd0981d875f66302dcb79d7dbf9c214271421f1e81faf6b4d6e"
+      },
+      {
+        "path": "assets/calendar-days-Dsvk_B_9.js",
+        "bytes": 667,
+        "sha256": "d51568dcf43507505615d4aad85f9f04aa7ea2aa265e419b0063459ecb9a6f62"
+      },
+      {
+        "path": "assets/check-CcRbLjfq.js",
+        "bytes": 292,
+        "sha256": "78378fd9866116f479911d89cc51a6005be82f94bb376ce6bb16cc31e5c4e482"
+      },
+      {
+        "path": "assets/circle-check-B7vbyREx.js",
+        "bytes": 346,
+        "sha256": "2f3afd526c4789c5ff69396c29e39f8a538e65ca25879873a1c18b7221e71de3"
+      },
+      {
+        "path": "assets/circle-x-D_RdRWdP.js",
+        "bytes": 375,
+        "sha256": "bfecb87e87eaafb5a809f7406c3bcf6be4d496d15d93490e302344f4db5d0886"
+      },
+      {
+        "path": "assets/clipboard-y9HAhJBa.js",
+        "bytes": 429,
+        "sha256": "ccc12096918798d88a15b4397680f86b147d50454c118ab75fdf44e3fb17e206"
+      },
+      {
+        "path": "assets/CollectionsPage-DUBoVFLL.js",
+        "bytes": 6639,
+        "sha256": "e41c9bcb951dcf74f4213d32c34443c31d7a87e38d29d6ec3cbfdc1dc267243b"
+      },
+      {
+        "path": "assets/ContractForm-CX2fs7js.js",
+        "bytes": 8552,
+        "sha256": "1a9e4764f2ee0851b8b7dae2317ea120566216a5edf9d84283df6add4a1d100d"
+      },
+      {
+        "path": "assets/ContractsPage-Binku3VU.js",
+        "bytes": 3668,
+        "sha256": "30e8f25174bb6ee0a88cec6e10a356d50d6d69cf5f5e60c575d82e572f144590"
+      },
+      {
+        "path": "assets/CorrectionWorkspacePage-KTS8iIRD.js",
+        "bytes": 46013,
+        "sha256": "cc54711d8d0f888d0d39ea6b2b8d220c94aff4adcd6ced86bac2816158bdb831"
+      },
+      {
+        "path": "assets/credit-card-BzUIFSU7.js",
+        "bytes": 380,
+        "sha256": "c83e14835ace5f0491bf166d599f9b078e6e834a64bc45f7a8a66caedfd81c79"
+      },
+      {
+        "path": "assets/CustomerDetailPage-BQZqNh3b.js",
+        "bytes": 81002,
+        "sha256": "4707d2e6c60d58e11014375ea597085f3420327e1dff844c256941b2d9a7e3fd"
+      },
+      {
+        "path": "assets/CustomersPage-DFiOIyIV.js",
+        "bytes": 2779,
+        "sha256": "6f7bc3222b4f3087c4f4a82fcd87f80568397220936a995514d1e30e08776f2d"
+      },
+      {
+        "path": "assets/DailyBriefsPage-C-KNL7zM.js",
+        "bytes": 30759,
+        "sha256": "a7bceffc1d8f7347cd0e7d5a0ba23b77d2e4380f0a720e32d9e7e21a8cc71744"
+      },
+      {
+        "path": "assets/DashboardPage-B2tNYJ_a.js",
+        "bytes": 32034,
+        "sha256": "126d8547b7d8c4904f6a0e0495a9af3e010ace3dcae074259abc196f86cad845"
+      },
+      {
+        "path": "assets/DocumentPage-CTkL6ghb.js",
+        "bytes": 10047,
+        "sha256": "72a5a9303d8ad0f47691a82d05176f06e1a01e6a1d4f40fb0e82df32b8d40f6a"
+      },
+      {
+        "path": "assets/EmailsPage-F4yfHOUQ.js",
+        "bytes": 9823,
+        "sha256": "6d8fe3f60271a2f1f2b841ec34f19372bc8aec3deadc1123b69c28aec81a53cb"
+      },
+      {
+        "path": "assets/EmbeddableMapPage-DoxkQHL5.js",
+        "bytes": 1106,
+        "sha256": "c16e5399c95550cce458aad8e144cb4183b5d09d2e40d07c39c8c9b92ab80c3f"
+      },
+      {
+        "path": "assets/file-text-BTgQZm6Q.js",
+        "bytes": 506,
+        "sha256": "fd2e02587f4668b7ccaae046eb0a484e265990fcf4984411e71bc1f23fbc27d1"
+      },
+      {
+        "path": "assets/financial-DWwPA7mR.js",
+        "bytes": 588,
+        "sha256": "58b5318e0d9280a4dd4be2f15f28a5cc9badcdbdcd2593d1a124b6346f8c0266"
+      },
+      {
+        "path": "assets/functions-Dd7fo0Mv.js",
+        "bytes": 1706,
+        "sha256": "d483bd6f1399f690b183731062f3d7279142a64130210dd8851ee5b61967a5af"
+      },
+      {
+        "path": "assets/hand-coins-DlmdwA-x.js",
+        "bytes": 583,
+        "sha256": "dd339d30ed07593b52b1c3d0f073691e2d4e2746c7602c743265c7e15ba7eb99"
+      },
+      {
+        "path": "assets/history-knt4Eddd.js",
+        "bytes": 945,
+        "sha256": "a9347ba8951de06df087e051c52f61fa479f4baf31a0439412cb1318b8a694af"
+      },
+      {
+        "path": "assets/HopkinsPublicPage-BymiBrnT.js",
+        "bytes": 25295,
+        "sha256": "9695b92bd31f515a09a10c1031510c4a03b1c98c23b9162d923dc85f0b13ac43"
+      },
+      {
+        "path": "assets/index-CJD0BlLD.js",
+        "bytes": 541009,
+        "sha256": "01654ddce6d95200d660b83aa7b56aee23c31b5351cf04b142fe536f5c90a151"
+      },
+      {
+        "path": "assets/index-Cw1arQ4Q.css",
+        "bytes": 67909,
+        "sha256": "106ee621393d0f717da6cdec4911493d0f2906ec692fbc77e7ad9195ecbe7367"
+      },
+      {
+        "path": "assets/InformationCenterPage-CK2hXlF9.js",
+        "bytes": 26242,
+        "sha256": "b7c8687714a95618c80cbe5c82a78575d9e77d1a51d4850b393f87a0a54b10cb"
+      },
+      {
+        "path": "assets/InformationPackDocumentPage-D1Czr-AF.js",
+        "bytes": 8608,
+        "sha256": "b8303d0569a25c12dfb3d3cb934ade350037e327167125541230a5762316f683"
+      },
+      {
+        "path": "assets/landmark-AVl-_m9O.js",
+        "bytes": 580,
+        "sha256": "7f201c81d89ddb6abcb07155414943ec04a23ffbcd2eaa3e4fec2bed2dc14e28"
+      },
+      {
+        "path": "assets/LeadsPage-CiHPdiwi.js",
+        "bytes": 73644,
+        "sha256": "bbe10e07b51754dfd14fec605cc60934ab21eb95c36c9035fa7ade2f6a8ac5c4"
+      },
+      {
+        "path": "assets/list-checks-BJHommV0.js",
+        "bytes": 452,
+        "sha256": "c088f2bd1f1432c51ee02560b278180ed7446ce0dba62462c56749507b8a37ec"
+      },
+      {
+        "path": "assets/LoginPage-O8GL5aoB.js",
+        "bytes": 5207,
+        "sha256": "fc10f4c051d2f070ba3500448c558636a6304b35db3b21a0d858828194a28880"
+      },
+      {
+        "path": "assets/LogoutPage-BnlEMBjt.js",
+        "bytes": 179,
+        "sha256": "b9e24d8d02b67732e07f611e2133d6b2e26896b97d24897865dc125f030af24b"
+      },
+      {
+        "path": "assets/LotsPage-D7OHGcdE.js",
+        "bytes": 36052,
+        "sha256": "04e459730efe8538be11742df7830907644c2dd88af5ab5c85940de1234ab222"
+      },
+      {
+        "path": "assets/mail-CK_DxlHP.js",
+        "bytes": 383,
+        "sha256": "40609875654b6f9afb3f38b526b5275e107788abf10acd85fbcacb2767c03adb"
+      },
+      {
+        "path": "assets/map-BxSiUSu-.js",
+        "bytes": 598,
+        "sha256": "47e65c1dddc7cd77fd01fa745fd6df704de96169388bc8acbaaad50027c28c51"
+      },
+      {
+        "path": "assets/map-pin-DXlpOBZn.js",
+        "bytes": 427,
+        "sha256": "8b9f6c19c6957c51ff4c59559232e72b94b88cf0cea717ce399d0a92afb5fe19"
+      },
+      {
+        "path": "assets/mapGeometry-82FujUEo.js",
+        "bytes": 1516,
+        "sha256": "60ee5a58d8aff51811de6458a4aa13e0a6df50864e063bb73d8f50a3aa1fbf0a"
+      },
+      {
+        "path": "assets/MapPolygon-5SaFmw4R.js",
+        "bytes": 311,
+        "sha256": "4d0b23d6435639f411fba4f95ace2717b9079171a363c9ce852e908e3e3ddc6c"
+      },
+      {
+        "path": "assets/operationalAttention-BOaTCatD.js",
+        "bytes": 12239,
+        "sha256": "748ac4b1e50b7a7ac9cc3d20bfb0be242cee7c7f011230b46a8a3af89bacb449"
+      },
+      {
+        "path": "assets/PaymentDocumentLinks-CMjIN8BH.js",
+        "bytes": 11190,
+        "sha256": "8e190e74b673c6cba03ff94327a07d648f9ad1b0f85e1e3b4023318569c86219"
+      },
+      {
+        "path": "assets/PaymentsPage-BqVNfcGL.js",
+        "bytes": 8472,
+        "sha256": "7fcc40985245e7fa30c9313d8d34adfc6e71dd1381b41b52aace86509c39bba2"
+      },
+      {
+        "path": "assets/plus-Uqi0ziCE.js",
+        "bytes": 326,
+        "sha256": "7197a62eac3e4261886c00c1e6aa63a6534832af3dfd214e875b0e71ce1829b2"
+      },
+      {
+        "path": "assets/ProtectedRoute-NCfzG2Of.js",
+        "bytes": 831,
+        "sha256": "a6879b76eb10fc5ecff8f52befb2fa327f5263ffa3653984fca3c3bc5233507a"
+      },
+      {
+        "path": "assets/PublicLotMap-DSiTTf84.js",
+        "bytes": 89606,
+        "sha256": "11c7132fc63e57e0b4a26361a459e0a140db807622032713f390d1e52146479c"
+      },
+      {
+        "path": "assets/publicSubmission-DeQg6Vp4.js",
+        "bytes": 303,
+        "sha256": "d9a6e93460f197855071f45ded3b698887c81ad383ad0ec0bb65f86c2501811d"
+      },
+      {
+        "path": "assets/refresh-cw-DjDLtlaS.js",
+        "bytes": 494,
+        "sha256": "b33c74f15fbe2eb7c12d3d4cc7285f7ae7de6c757cafe0fca8bb9aa011be295c"
+      },
+      {
+        "path": "assets/ReportsPage-B_fvHmse.js",
+        "bytes": 47085,
+        "sha256": "04505da942aadaa5bb7a74a7c789d081e73b42936f32d03e611e2144de91372d"
+      },
+      {
+        "path": "assets/reservationSettings-CeXsjAQV.js",
+        "bytes": 2458,
+        "sha256": "a0f2ac78f1cc891370e833cb62694f8b3738b42992c40742c30146fe145fea9f"
+      },
+      {
+        "path": "assets/schemas-DhwhGwtS.js",
+        "bytes": 88785,
+        "sha256": "be5c30f864c679154438804b67e3c0be4127a7930844e9f85a01987d8ddbb0f5"
+      },
+      {
+        "path": "assets/send-UnbqV6Cv.js",
+        "bytes": 463,
+        "sha256": "4c7af05fd08c906c2993991d59acd26484bb39537b4672307e9e3bb834ebed1f"
+      },
+      {
+        "path": "assets/SettingsPage-ClFR9PCT.js",
+        "bytes": 61472,
+        "sha256": "e8adccbc8c66ce062b29d2945a99910c894c0f1d97cf56932e9a25aaedfa382a"
+      },
+      {
+        "path": "assets/shield-check-Dg-M4tWT.js",
+        "bytes": 777,
+        "sha256": "2673043af9be29e731b9a4ae0ea75b8e1212625b00de0b6070fd8a4b3696a4df"
+      },
+      {
+        "path": "assets/smartInsights-COQfP2V5.js",
+        "bytes": 10366,
+        "sha256": "69eec7bb021441bab3c7ede9a7212ce45cdca7b4e61026d62f52ebeddba38c64"
+      },
+      {
+        "path": "assets/SmartInsightsPanel-Dqa6NKWo.js",
+        "bytes": 3564,
+        "sha256": "ad1a481039c319a6f3e9f05589486b40c490ce46f146c71e38d58563cf37a0c2"
+      },
+      {
+        "path": "assets/sparkles-eWK5pEHJ.js",
+        "bytes": 681,
+        "sha256": "0523483722dbdc5f72ca217c211becd625ed10ab802f55828a3c8dc1ffb1685c"
+      },
+      {
+        "path": "assets/statusBadgeTone-Bc3pR18K.js",
+        "bytes": 1190,
+        "sha256": "dad2c7aceba43658b6fad9d9c5e9584f26691b90bdbdffccf1a65420232ccadc"
+      },
+      {
+        "path": "assets/UploadFileSummary-DOMAlxji.js",
+        "bytes": 3073,
+        "sha256": "b9331306c43940d503bbf6c7e202a1d24ee3c409383f89e90c6d4e8fb60e9682"
+      },
+      {
+        "path": "assets/useParcelMap-ByfZ2sWW.js",
+        "bytes": 1591,
+        "sha256": "85d67257faa9b6e705a136388d34c074cb843fa9f75bffbfb43850cdc39edac4"
+      },
+      {
+        "path": "assets/user-round-BVU-58D_.js",
+        "bytes": 350,
+        "sha256": "16d9734b75c99d7321c3d772d24292425371b279d044c12d504aadd8c394c09b"
+      },
+      {
+        "path": "favicon/android-chrome-192x192.png",
+        "bytes": 70529,
+        "sha256": "74e4530accb6ccd21c32a42a899d8a329e13308283bd54b863a4cfa60ece70c2"
+      },
+      {
+        "path": "favicon/android-chrome-512x512.png",
+        "bytes": 364401,
+        "sha256": "a8c5c116ca7b851a326629ea3fa38b2731bbc281f2e617c28afbbc069a4da93d"
+      },
+      {
+        "path": "favicon/apple-touch-icon.png",
+        "bytes": 63516,
+        "sha256": "ccbcd73de48ec1d1df4fa83e7fc0f3ede728391c0d68adcba216eda05601a5ea"
+      },
+      {
+        "path": "favicon/favicon-16x16.png",
+        "bytes": 880,
+        "sha256": "fb34308a8b73a2f08198c65e731ffa06ab18727bc3fd676a0d3484b745e47828"
+      },
+      {
+        "path": "favicon/favicon-32x32.png",
+        "bytes": 2781,
+        "sha256": "8c21eadb1d124dc15a8ccc6a95439b2d441c528d181726b487c0cc81e647b036"
+      },
+      {
+        "path": "favicon/favicon.ico",
+        "bytes": 15406,
+        "sha256": "26f43272d8536b831266279430194b586446b7023142e479747bee335a2f55c8"
+      },
+      {
+        "path": "favicon/hopkins-grove.svg",
+        "bytes": 462,
+        "sha256": "6bb4aaca30bda8d23f5ad954b0070c5aecb358dd0c6b0e998e34a3caedd762ec"
+      },
+      {
+        "path": "favicon/site.webmanifest",
+        "bytes": 400,
+        "sha256": "0964a49316518e7df87d37adcaeadd05aafe584015c694a778e85b0823685b67"
+      },
+      {
+        "path": "index.html",
+        "bytes": 1063,
+        "sha256": "b58e87e9b20f88fb2a337d3f941324e25577ed38840bc68d33711a36e4c2d93b"
+      }
+    ],
+    "vite_dist_manifest_sha256": "e95c8a642f0aa75a85fd0825e0f1ce2b5cf2121734d624b0375223c441939ec0"
+  },
+  "hosted_verification": {
+    "public_homepage": {
+      "url": "https://wamule-staging.netlify.app/hopkins",
+      "opened_without_login_redirect": true,
+      "branding": "Hopkins Grove / Ceiba Realty & Development"
+    },
+    "public_application": {
+      "url": "https://wamule-staging.netlify.app/hopkins/application",
+      "opened_without_login_redirect": true,
+      "full_staff_review_form_visible": true,
+      "submitted": false
+    },
+    "anonymous_public_api": {
+      "endpoint": "/functions/v1/get-public-lots?tenant=hopkins-grove&project=hopkins-grove&phase=initial",
+      "status": 200,
+      "authorization_header_sent": false,
+      "tenant": "hopkins-grove",
+      "project": "hopkins-grove",
+      "phase": "initial",
+      "feature_count": 775,
+      "parcel_count": 0,
+      "mode": "demo"
+    },
+    "map": {
+      "embed_url": "https://wamule-staging.netlify.app/embed/hopkins-grove/hopkins-grove?phase=initial&lot=Plot+392",
+      "no_login_redirect": true,
+      "outlines": 775,
+      "selection": "Plot 392",
+      "reference_kind": "generated demo map reference",
+      "printed_number_match": "none; distinct from generated reference",
+      "tier": "Premium Interior",
+      "displayed_plan_price": "$30,000 per 1/4 acre",
+      "details_loaded": true,
+      "source_tier_colors_present": true
+    },
+    "ai": {
+      "lead_summary": {
+        "status": "saved and present after reload",
+        "provider": "Gemini",
+        "model": "gemini-3.1-flash-lite"
+      },
+      "daily_brief": {
+        "status": "saved and present after reload",
+        "model": "deterministic-fallback",
+        "outbound_email": "Not sent",
+        "related_hopkins_source_record_opened": true,
+        "false_source_unavailable_label": false
+      },
+      "provider_health": {
+        "final_result": "Gemini provider is reachable",
+        "model": "gemini-3.1-flash-lite",
+        "prior_transient_result": "HTTP 503 from gemini-3.1-flash-lite"
+      }
+    },
+    "wamule_preservation": {
+      "baseline_at": "2026-10-16T07:57:13.772Z",
+      "groups_compared": 57,
+      "groups_unchanged": 57,
+      "groups_changed": 0,
+      "parcel_records": 743,
+      "manual_inventory_records": 24,
+      "raster_detections": 719,
+      "detections_needs_review_false": 179,
+      "detections_needs_review_true": 540,
+      "wamule_daily_briefs": 2,
+      "all_row_fingerprints_match": true
+    },
+    "outbound_messages": "disabled; no email or inquiry was sent"
+  }
+}

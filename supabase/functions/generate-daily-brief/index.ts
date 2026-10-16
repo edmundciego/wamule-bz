@@ -1,4 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAiWorkspace, resolveAiProviderKey } from "../_shared/aiWorkspace.ts";
+import { generateGeminiJson } from "../_shared/geminiFallback.ts";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isActiveContract, remainingLandBalance } from "../_shared/financial.ts";
 import { buildOperationalAttention, type OperationalAttentionItem } from "../_shared/operationalAttention.ts";
 
@@ -41,6 +43,8 @@ type CurrentIssue = {
 };
 
 type OperationalData = {
+  mapOutlinesCount: number;
+  rasterDetectionsCount: number;
   periodStart: Date;
   periodEnd: Date;
   applications: Record<string, unknown>[];
@@ -60,6 +64,7 @@ type OperationalData = {
 };
 
 Deno.serve(async (request) => {
+  try {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -73,16 +78,16 @@ Deno.serve(async (request) => {
     return json({ error: "Missing authorization token." }, 401);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const serverSupabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(token);
+  const { data: currentUserData, error: currentUserError } = await serverSupabase.auth.getUser(token);
   if (currentUserError || !currentUserData.user) {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
+  const { data: currentProfile, error: profileError } = await serverSupabase
     .from("admin_profiles")
     .select("role, tenant_id")
     .eq("user_id", currentUserData.user.id)
@@ -96,25 +101,16 @@ Deno.serve(async (request) => {
     return json({ error: "Only Super Admin or Admin users can generate daily briefs." }, 403);
   }
 
-  const body = await request.json().catch(() => null) as { period_start?: string; period_end?: string; tenant_id?: string } | null;
-  const tenantId = body?.tenant_id;
-  if (!tenantId) return json({ error: "A workspace tenant is required." }, 400);
-  if (currentProfile?.role !== "Super Admin" && currentProfile?.tenant_id !== tenantId) {
-    return json({ error: "You cannot generate a brief for a different tenant." }, 403);
-  }
-  const { data: tenant, error: tenantError } = await supabase
-    .from("organizations")
-    .select("id")
-    .eq("id", tenantId)
-    .maybeSingle();
-  if (tenantError) return json({ error: tenantError.message }, 500);
-  if (!tenant) return json({ error: "The selected tenant does not exist." }, 404);
-
+  const body = await request.json().catch(() => null) as { period_start?: string; period_end?: string; tenant_id?: unknown } | null;
   const period = parsePeriod(body?.period_start, body?.period_end);
   if (!period.ok) {
     return json({ error: period.error }, 400);
   }
   const { periodStart, periodEnd } = period;
+
+  const workspace = await resolveAiWorkspace(token, currentProfile, body?.tenant_id);
+  if (!workspace.ok) return json({ error: workspace.error }, workspace.status);
+  const supabase = workspace.client;
 
   const [
     applicationsResult,
@@ -136,77 +132,63 @@ Deno.serve(async (request) => {
     supabase
       .from("applications")
       .select("*, parcels(id, lot_number, status), application_ai_reviews(*)")
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("customers")
       .select("id, first_name, last_name, created_at, updated_at")
-      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("parcels")
       .select("id, lot_number, dimensions, zoning, status, base_price, created_at, updated_at")
-      .eq("tenant_id", tenantId)
+      .neq("geometry_source", "raster-auto")
       .order("lot_number", { ascending: true }),
     supabase
       .from("transactions")
       .select("*, customers(first_name, last_name), contracts(parcels(lot_number)), payment_documents(id, document_type)")
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("payment_documents")
       .select("id, transaction_id, document_type, file_path, uploaded_by, created_at")
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("contracts")
       .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, contract_id, status, created_at)")
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("payment_requests")
       .select("*, customers(first_name, last_name)")
-      .eq("tenant_id", tenantId)
       .order("due_date", { ascending: true }),
     supabase
       .from("leads")
-      .select("*, parcels(id, lot_number, status)")
-      .eq("tenant_id", tenantId)
+      .select("*, parcels!leads_parcel_scope_fkey(id, lot_number, status)")
       .order("updated_at", { ascending: false }),
     supabase
       .from("follow_up_tasks")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("site_visits")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("scheduled_at", { ascending: true }),
     supabase
       .from("lot_reservations")
       .select("*, parcels(id, lot_number, status)")
-      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("post_sales_checklists")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("post_sales_tasks")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("brief_action_items")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("last_seen_on", { ascending: false }),
     supabase
       .from("ai_settings")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -231,7 +213,14 @@ Deno.serve(async (request) => {
     return json({ error: firstError.message }, 500);
   }
 
+  const [mapSnapshots, rasterDetections] = await Promise.all([
+    supabase.from("map_feature_snapshots").select("outline_count").eq("is_active", true),
+    supabase.from("parcels").select("id", { count: "exact", head: true }).eq("geometry_source", "raster-auto"),
+  ]);
+  if (mapSnapshots.error || rasterDetections.error) return json({ error: "Could not load workspace map totals." }, 500);
   const operationalData: OperationalData = {
+    mapOutlinesCount: (mapSnapshots.data ?? []).reduce((total, row) => total + Number(row.outline_count || 0), 0),
+    rasterDetectionsCount: rasterDetections.count ?? 0,
     periodStart,
     periodEnd,
     applications: applicationsResult.data ?? [],
@@ -253,7 +242,7 @@ Deno.serve(async (request) => {
   const currentIssues = buildCurrentIssues(operationalData);
   const deterministic = buildDeterministicBrief(operationalData, currentIssues);
   const settings = settingsResult.data;
-  const apiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
+  const apiKey = await resolveAiProviderKey(serverSupabase, workspace.tenantId);
   const model = String(settings?.model ?? "gemini-3.1-flash-lite");
   const canUseGemini = Boolean(
     settings?.is_enabled &&
@@ -274,14 +263,13 @@ Deno.serve(async (request) => {
     });
     if (geminiBrief) {
       brief = withSourceActions(geminiBrief, currentIssues);
-      usedModel = model;
+      usedModel = geminiBrief.model;
     }
   }
 
   const { data: savedBrief, error: saveError } = await supabase
     .from("ai_daily_briefs")
     .insert({
-      tenant_id: tenantId,
       brief_date: isoDate(periodStart),
       period_start: periodStart.toISOString(),
       period_end: periodEnd.toISOString(),
@@ -304,7 +292,7 @@ Deno.serve(async (request) => {
     return json({ error: saveError.message }, 500);
   }
 
-  const actionItems = await syncBriefActionItems(supabase, savedBrief, currentIssues, tenantId);
+  const actionItems = await syncBriefActionItems(supabase, savedBrief, currentIssues);
 
   return json({
     brief: savedBrief,
@@ -314,6 +302,10 @@ Deno.serve(async (request) => {
       ? "Daily brief generated with deterministic fallback."
       : "Daily brief generated with Gemini.",
   });
+  } catch {
+    console.error("AI workspace operation failed; no provider credentials were logged.");
+    return json({ error: "Could not complete the workspace AI request. Please try again." }, 500);
+  }
 });
 
 function parsePeriod(periodStartInput?: string, periodEndInput?: string) {
@@ -507,7 +499,7 @@ function buildDeterministicBrief(data: OperationalData, currentIssues: CurrentIs
   return {
     summary: `${periodApplications.length} new applications/leads, ${periodUpdatedApplications.length} updated applications/leads, ${periodLeads.length} new CRM leads (${periodPublicApplicationLeads.length} from public applications), ${periodPayments.length} payments totaling ${money(collected)}, and ${periodContracts.length} new contracts were recorded for the selected period. Current snapshot shows ${leadsNeedingFollowUp.length} leads needing follow-up, ${possibleDuplicateLeads.length} possible duplicate leads, and ${currentIssues.length} source-backed open items, including ${newIssues.length} new and ${repeatedIssues.length} repeated unresolved issues.`,
     applications_summary: `${periodApplications.length} new applications/leads. ${periodUpdatedApplications.length} applications/leads updated during the period. ${pendingApplications.length} pending applications/leads. ${incompleteApplications.length} applications are missing key information. ${flaggedReviews.length} applications have AI review flags. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. ${conflictApplications.length} active applications selected unavailable lots. ${approvedWithoutPostSales.length} approved applications do not have a linked post-sales checklist.`,
-    lots_summary: `${data.lots.length} total lots: ${availableLots.length} available, ${reservedLots.length} reserved, ${soldLots.length} sold. ${recentlyUpdatedLots.length} lots were updated during the period. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. Reservations: ${activeReservations.length} active, ${expiringSoonReservations.length} expiring soon, ${expiredReservations.length} needing expiry review.`,
+    lots_summary: `${data.lots.length} existing parcel inventory records: ${availableLots.length} marked available, ${reservedLots.length} reserved, ${soldLots.length} sold. Existing status is not a new sales verification. ${data.mapOutlinesCount} map outlines and ${data.rasterDetectionsCount} raster detections are separate from saleable inventory. ${recentlyUpdatedLots.length} inventory records were updated during the period. ${lotInterest.filter((row) => row.count > 1).length} lots have multiple applicant interest. Reservations: ${activeReservations.length} active, ${expiringSoonReservations.length} expiring soon, ${expiredReservations.length} needing expiry review.`,
     payments_summary: `${periodPayments.length} payments logged during the period. Total collected: ${money(collected)}. Cash: ${money(cashTotal)}. Transfers: ${money(transferTotal)}. ${missingReceipts.length} payments are missing manual receipt numbers. ${missingProof.length} transfer payments are missing uploaded proof. ${duplicateRefs.length} duplicate bank references were detected. ${incompletePayments.length} payments look incomplete.`,
     contracts_summary: `${periodContracts.length} new contracts. ${activeContracts.length} active contracts. ${missingSignedContracts.length} contracts are missing signed uploads. ${incompleteContracts.length} contracts have incomplete fields. ${startingSoon.length} contracts start within 7 days. ${noRecentPayment.length} active contracts have no payment in the last 45 days. Post-sales: ${openPostSalesTasks.length} open tasks, ${overduePostSalesTasks.length} overdue tasks, ${blockedPostSalesChecklists.length} blocked checklists.`,
     collections_summary: `${dueToday.length} customers due today. ${dueThisWeek.length} customers due this week. ${overdue.length} overdue accounts detected. Outstanding land balance is ${money(outstanding)}. ${openPaymentRequests.length} open payment requests, including ${overduePaymentRequests.length} overdue. ${missingReceipts.length} customers/payments have missing receipt numbers. ${missingProof.length} payments are missing proof. ${handoffReady.length} post-sales records are ready for collections handoff.`,
@@ -526,9 +518,9 @@ async function generateGeminiBrief({
   deterministic: BriefOutput;
   apiKey: string;
   model: string;
-}): Promise<BriefOutput | null> {
+}): Promise<(BriefOutput & { model: string }) | null> {
   const prompt = [
-    "You are a read-only daily operations brief assistant for Wamule Development.",
+    "You are a read-only daily operations brief assistant for the selected development workspace.",
     "Summarize only the supplied system data. Do not approve applications, reserve lots, create customers, create contracts, log payments, send email, or update records.",
     "Return only valid JSON with keys: summary, applications_summary, lots_summary, payments_summary, contracts_summary, collections_summary, alerts, recommended_actions.",
     "alerts and recommended_actions must be arrays. Preserve any alert objects with kind='section' from the deterministic baseline so the UI can render expanded operating sections. Keep tone professional, clear, operational, concise, and action-oriented.",
@@ -537,31 +529,9 @@ async function generateGeminiBrief({
     `Operational data: ${JSON.stringify(data)}`,
   ].join("\n");
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1400,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) return null;
-    const payload = await response.json();
-    const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    return sanitizeBrief(JSON.parse(text), deterministic);
-  } catch {
-    return null;
-  }
+  const result = await generateGeminiJson({ apiKey, model, prompt, maxOutputTokens: 1400 });
+  if (!result) return null;
+  return { ...sanitizeBrief(result.value, deterministic), lots_summary: deterministic.lots_summary, model: result.model };
 }
 
 function sanitizeBrief(value: Partial<BriefOutput>, fallback: BriefOutput): BriefOutput {
@@ -583,6 +553,8 @@ function summarizeForPrompt(data: OperationalData) {
     period_start: data.periodStart.toISOString(),
     period_end: data.periodEnd.toISOString(),
     counts: {
+      map_outlines: data.mapOutlinesCount,
+      raster_detections: data.rasterDetectionsCount,
       applications: data.applications.length,
       lots: data.lots.length,
       payments: data.payments.length,
@@ -891,17 +863,15 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 async function syncBriefActionItems(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   brief: Record<string, unknown>,
   currentIssues: CurrentIssue[],
-  tenantId: string,
 ) {
   const seenDate = String(brief.brief_date ?? isoDate(new Date()));
   const currentIssueKeys = new Set(currentIssues.map((issue) => issue.source_key));
   const { data: openExisting } = await supabase
     .from("brief_action_items")
     .select("*")
-    .eq("tenant_id", tenantId)
     .in("status", ["Open", "In Progress"]);
 
   const staleItems = (openExisting ?? []).filter((item: Record<string, unknown>) =>
@@ -915,11 +885,10 @@ async function syncBriefActionItems(
         resolved_at: new Date().toISOString(),
         last_seen_on: seenDate,
       })
-      .eq("id", item.id)
-      .eq("tenant_id", tenantId);
+      .eq("id", item.id);
   }
 
-  const sourceBacked = currentIssues.map((issue) => ({ ...actionItemFromIssue(issue, brief, seenDate), tenant_id: tenantId }));
+  const sourceBacked = currentIssues.map((issue) => actionItemFromIssue(issue, brief, seenDate));
   const normalized = sourceBacked;
 
   const saved: Record<string, unknown>[] = [];
@@ -927,7 +896,6 @@ async function syncBriefActionItems(
     const { data: existing } = await supabase
       .from("brief_action_items")
       .select("*")
-      .eq("tenant_id", tenantId)
       .eq("source_key", item.source_key)
       .in("status", ["Open", "In Progress"])
       .maybeSingle();
@@ -954,7 +922,6 @@ async function syncBriefActionItems(
           last_seen_on: seenDate,
         })
         .eq("id", existing.id)
-        .eq("tenant_id", tenantId)
         .select("*")
         .single();
       if (data) saved.push(data);
@@ -964,7 +931,6 @@ async function syncBriefActionItems(
     const { data: previouslyClosed } = await supabase
       .from("brief_action_items")
       .select("id")
-      .eq("tenant_id", tenantId)
       .eq("source_key", item.source_key)
       .in("status", ["Done", "Dismissed"])
       .limit(1);

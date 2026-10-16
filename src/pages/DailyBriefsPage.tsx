@@ -9,6 +9,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { useCompanyProfile } from "../lib/brand";
 import { getSessionAndProfile } from "../lib/data";
+import { detailedEdgeFunctionErrorMessage } from "../lib/functions";
 import { supabase } from "../lib/supabase";
 import { workspaceScopeKey } from "../lib/workspaceScope";
 import { isOperationalAttentionCurrent } from "../lib/operationalAttention";
@@ -89,7 +90,7 @@ export function DailyBriefsPage() {
     const { data, error: functionError } = await supabase.functions.invoke("generate-daily-brief", { body: { ...body, tenant_id: workspace.tenantId } });
     setGenerating(false);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
     if (data?.error) {
@@ -895,7 +896,7 @@ async function revalidateBriefItems(items: BriefActionItem[], tenantId: string) 
       result[item.id] = "Current";
       return;
     }
-    const select = table === "transactions" ? "*, payment_documents(id)" : table === "follow_up_tasks" ? "*, leads(id, pipeline_stage)" : "*";
+    const select = table === "transactions" ? "*, payment_documents(id)" : table === "follow_up_tasks" ? "*, leads!follow_up_tasks_lead_scope_fkey(id, pipeline_stage)" : "*";
     const { data, error } = await (supabase as unknown as DynamicSourceClient).from(table).select(select).eq("id", recordId).eq("tenant_id", tenantId).maybeSingle();
     if (error || !data) {
       result[item.id] = "Source unavailable";

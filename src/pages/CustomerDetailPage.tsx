@@ -15,6 +15,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { accountDueDate } from "../lib/accountDates";
 import { getSessionAndProfile } from "../lib/data";
+import { detailedEdgeFunctionErrorMessage } from "../lib/functions";
 import { activeContract as canonicalActiveContract, openPaymentRequests, postedLandPaymentsForContract, remainingLandBalance } from "../lib/financial";
 import { customerOperationsInsights, postSalesRecommendedInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
@@ -357,7 +358,7 @@ export function CustomerDetailPage() {
     });
     setGeneratingSummary(false);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
     if (result?.error) {
@@ -378,7 +379,7 @@ export function CustomerDetailPage() {
     });
     setGeneratingPostSalesSummaryId(null);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
     if (result?.error) {

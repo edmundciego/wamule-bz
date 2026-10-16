@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T07:02:37.437Z",
+  "generated_at": "2026-10-16T08:12:14.746Z",
   "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
   "source_snapshot_version": 2,
   "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
@@ -178,6 +178,11 @@
       "sha256": "050e588d4dc0b38bddbb81896df884c44757d698c2a6cc16b1aa1d2ee8b51525"
     },
     {
+      "path": "staging-ai-reconciliation.json",
+      "bytes": 19601,
+      "sha256": "ce4cbbfac37394dbee760e0f59241c17cd846aa7db985f12ffb353c080b7eb39"
+    },
+    {
       "path": "staging-regression.json",
       "bytes": 5362,
       "sha256": "5e2756a108a98940e67fb37731718d3cf5d08df750a6641a57149d4d0901da63"
@@ -191,6 +196,23 @@
       "path": "supabase.production.toml",
       "bytes": 540,
       "sha256": "3df8fb6df6b52cb32bed44cfe73e0549a82e93c1ee754d0a3dc884bf0433b424"
+    },
+    {
+      "path": "wamule-staging-preservation-before.json",
+      "bytes": 8178,
+      "sha256": "7ba6243c6dfe8df4513d0c8a40f37cc0b3d4ecb0c852123951140a26e58d71a6"
     }
-  ]
+  ],
+  "staging_ai_reconciliation": {
+    "path": "staging-ai-reconciliation.json",
+    "sha256": "ce4cbbfac37394dbee760e0f59241c17cd846aa7db985f12ffb353c080b7eb39"
+  },
+  "staging_frontend_deployment": {
+    "site_name": "wamule-staging",
+    "deploy_id": "6ad1da33e77b04ee50f1fc9d",
+    "published_url": "https://wamule-staging.netlify.app",
+    "unique_deploy_url": "https://6ad1da33e77b04ee50f1fc9d--wamule-staging.netlify.app",
+    "dist_manifest_sha256": "e95c8a642f0aa75a85fd0825e0f1ce2b5cf2121734d624b0375223c441939ec0",
+    "candidate_base_commit": "571697fd424d58fd8e6779f6584ebbd36e8927aa"
+  }
 }

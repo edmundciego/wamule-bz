@@ -43,6 +43,20 @@ export async function readEdgeFunctionError(error: unknown): Promise<{ status?: 
   return { status, serverMessage };
 }
 
+/** Prefer the endpoint's curated error body over supabase-js's generic non-2xx text. */
+export async function detailedEdgeFunctionErrorMessage(error: unknown): Promise<string> {
+  const { status, serverMessage } = await readEdgeFunctionError(error);
+  if (serverMessage) return serverMessage;
+
+  const message = edgeFunctionErrorMessage(error);
+  if (/returned a non-2xx/i.test(message)) {
+    return status
+      ? `The request failed with HTTP ${status}; the server did not return an error description.`
+      : "The request failed, but the server did not return an error description.";
+  }
+  return status ? `${message} (HTTP ${status})` : message;
+}
+
 /** Known technical server messages rewritten in buyer-friendly words. */
 const INQUIRY_MESSAGE_OVERRIDES: Array<[RegExp, string]> = [
   [/available public lot/i, "That lot isn't currently listed for inquiry — please choose another available lot."],

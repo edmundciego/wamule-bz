@@ -1,5 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
+import { resolveAiWorkspace, resolveAiProviderKey } from "../_shared/aiWorkspace.ts";
+import { generateGeminiJson } from "../_shared/geminiFallback.ts";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -52,6 +53,7 @@ type PostSalesContext = {
 };
 
 Deno.serve(async (request) => {
+  try {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -65,19 +67,30 @@ Deno.serve(async (request) => {
     return json({ error: "Missing authorization token." }, 401);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const serverSupabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(token);
+  const { data: currentUserData, error: currentUserError } = await serverSupabase.auth.getUser(token);
   if (currentUserError || !currentUserData.user) {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const body = await request.json().catch(() => null) as { checklist_id?: string; tenant_id?: string } | null;
-  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
-  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
-  const tenantId = workspaceAuth.tenantId;
+  const { data: currentProfile, error: profileError } = await serverSupabase
+    .from("admin_profiles")
+    .select("role, tenant_id")
+    .eq("user_id", currentUserData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return json({ error: profileError.message }, 500);
+  }
+
+  if (!["Super Admin", "Admin", "Staff"].includes(String(currentProfile?.role ?? ""))) {
+    return json({ error: "Only Super Admin, Admin, or Staff users can generate post-sales summaries." }, 403);
+  }
+
+  const body = await request.json().catch(() => null) as { checklist_id?: string; tenant_id?: unknown } | null;
   const checklistId = String(body?.checklist_id ?? "").trim();
   if (!checklistId) {
     return json({ error: "checklist_id is required." }, 400);
@@ -86,11 +99,14 @@ Deno.serve(async (request) => {
     return json({ error: "checklist_id must be a valid UUID." }, 400);
   }
 
+  const workspace = await resolveAiWorkspace(token, currentProfile, body?.tenant_id);
+  if (!workspace.ok) return json({ error: workspace.error }, workspace.status);
+  const supabase = workspace.client;
+
   const { data: checklistData, error: checklistError } = await supabase
     .from("post_sales_checklists")
     .select("*")
     .eq("id", checklistId)
-    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (checklistError) {
@@ -122,7 +138,6 @@ Deno.serve(async (request) => {
       .from("post_sales_activities")
       .select("*")
       .eq("checklist_id", checklistId)
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(30),
     customerId
@@ -130,7 +145,6 @@ Deno.serve(async (request) => {
         .from("customers")
         .select("*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*), payment_requests(*)")
         .eq("id", customerId)
-        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     applicationId
@@ -138,7 +152,6 @@ Deno.serve(async (request) => {
         .from("applications")
         .select("*, parcels(id, lot_number, status, dimensions, base_price), application_ai_reviews(*)")
         .eq("id", applicationId)
-        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     contractId
@@ -146,7 +159,6 @@ Deno.serve(async (request) => {
         .from("contracts")
         .select("*, parcels(id, lot_number, status, dimensions, base_price), transactions(*, payment_documents(*))")
         .eq("id", contractId)
-        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     leadId
@@ -154,7 +166,6 @@ Deno.serve(async (request) => {
         .from("leads")
         .select("*")
         .eq("id", leadId)
-        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     reservationId
@@ -162,13 +173,11 @@ Deno.serve(async (request) => {
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status, dimensions, base_price)")
         .eq("id", reservationId)
-        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     supabase
       .from("ai_settings")
       .select("*")
-      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -210,7 +219,7 @@ Deno.serve(async (request) => {
 
   const deterministic = buildDeterministicSummary(context);
   const settings = settingsResult.data;
-  const apiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
+  const apiKey = await resolveAiProviderKey(serverSupabase, workspace.tenantId);
   const model = String(settings?.model ?? "gemini-3.1-flash-lite");
   const canUseGemini = Boolean(
     settings?.is_enabled &&
@@ -231,7 +240,7 @@ Deno.serve(async (request) => {
     });
     if (geminiSummary) {
       summary = geminiSummary;
-      usedModel = model;
+      usedModel = String(geminiSummary.model);
       usedProvider = "Gemini";
     } else {
       usedProvider = "deterministic";
@@ -241,7 +250,6 @@ Deno.serve(async (request) => {
   const { data: savedSummary, error: saveError } = await supabase
     .from("post_sales_ai_summaries")
     .insert({
-      tenant_id: tenantId,
       checklist_id: checklistId,
       customer_id: customerId,
       application_id: applicationId,
@@ -275,9 +283,13 @@ Deno.serve(async (request) => {
       ? "Post-Sales Smart Summary generated with deterministic fallback."
       : "Post-Sales Smart Summary generated with Gemini.",
   });
+  } catch {
+    console.error("AI workspace operation failed; no provider credentials were logged.");
+    return json({ error: "Could not complete the workspace AI request. Please try again." }, 500);
+  }
 });
 
-async function loadPostSalesTasks(supabase: ReturnType<typeof createClient>, checklist: Record<string, unknown>) {
+async function loadPostSalesTasks(supabase: SupabaseClient, checklist: Record<string, unknown>) {
   const customerId = numberOrNull(checklist.customer_id);
   const applicationId = numberOrNull(checklist.application_id);
   const contractId = numberOrNull(checklist.contract_id);
@@ -286,7 +298,6 @@ async function loadPostSalesTasks(supabase: ReturnType<typeof createClient>, che
   const query = supabase
     .from("post_sales_tasks")
     .select("*")
-    .eq("tenant_id", String(checklist.tenant_id ?? ""))
     .order("due_at", { ascending: true, nullsFirst: false });
 
   if (customerId) return query.eq("customer_id", customerId);
@@ -404,8 +415,8 @@ async function generateGeminiSummary({
   model: string;
 }): Promise<PostSalesSummaryOutput | null> {
   const prompt = [
-    "You are a read-only Post-Sales Smart Summary assistant for Wamule Development.",
-    "Use only the supplied Wamule CRM data. Do not guess buyer intent, make legal or financial promises, approve applications, confirm deposits, mark documents approved, say a contract is signed unless source data says so, say payment setup is active unless source data says so, say collections handoff is complete unless source data says so, change post-sales statuses, create tasks, send messages, or update records.",
+    "You are a read-only Post-Sales Smart Summary assistant for the selected development workspace.",
+    "Use only the supplied workspace CRM data. Do not guess buyer intent, make legal or financial promises, approve applications, confirm deposits, mark documents approved, say a contract is signed unless source data says so, say payment setup is active unless source data says so, say collections handoff is complete unless source data says so, change post-sales statuses, create tasks, send messages, or update records.",
     "Return only valid JSON with keys: summary, readiness_status, key_blockers, missing_information, recommended_actions, next_best_action, confidence_notes, model, provider.",
     "readiness_status must be one of: not_started, in_progress, missing_documents, agreement_review, signature_pending, payment_setup_pending, collections_ready, blocked, ready, completed, unknown.",
     "Keep the output concise, operational, calm, and framed for staff review. Recommendations are manual staff review notes only.",
@@ -414,37 +425,9 @@ async function generateGeminiSummary({
     `Post-sales context: ${JSON.stringify(data)}`,
   ].join("\n");
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12_000);
-
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1000,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) return null;
-    const payload = await response.json();
-    const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    return sanitizeSummary(JSON.parse(text), deterministic, model);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const result = await generateGeminiJson({ apiKey, model, prompt, maxOutputTokens: 1000 });
+  if (!result) return null;
+  return sanitizeSummary(result.value, deterministic, result.model);
 }
 
 function sanitizeSummary(value: Partial<PostSalesSummaryOutput>, fallback: PostSalesSummaryOutput, model: string): PostSalesSummaryOutput {

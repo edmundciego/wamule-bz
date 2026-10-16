@@ -13,6 +13,7 @@ import { PublicExperienceTemplateSettings } from "../components/admin/settings/P
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
+import { detailedEdgeFunctionErrorMessage } from "../lib/functions";
 import {
   depositStatusOptions,
   normalizeReservationWorkflowSettings,
@@ -393,10 +394,17 @@ export function SettingsPage() {
     setAiStatus("Checking AI provider...");
     const { data, error: functionError } = await supabase.functions.invoke("ai-provider-health-check", { body: { tenant_id: tenantId } });
     if (functionError) {
-      setAiStatus(functionError.message);
+      setAiStatus(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
-    setAiStatus(String(data?.message ?? "AI status checked."));
+    const diagnostic = data?.diagnostic as { status?: number; model?: string; reason?: string } | undefined;
+    const detail = diagnostic?.status
+      ? ` (HTTP ${diagnostic.status}${diagnostic.model ? ` from ${diagnostic.model}` : ""})`
+      : diagnostic?.reason === "timeout"
+        ? " (request timed out)"
+        : "";
+    const message = String(data?.message ?? "AI status checked.");
+    setAiStatus(detail && !message.includes(String(diagnostic?.status ?? "")) ? `${message}${detail}` : message);
   }
 
   function handleAssistantClick() {

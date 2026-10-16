@@ -27,6 +27,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { getSessionAndProfile } from "../lib/data";
+import { detailedEdgeFunctionErrorMessage } from "../lib/functions";
 import { buildOperationalAttention } from "../lib/operationalAttention";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
@@ -402,7 +403,7 @@ export function LeadsPage() {
     });
     setGeneratingSummaryId(null);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
     if (result?.error) {

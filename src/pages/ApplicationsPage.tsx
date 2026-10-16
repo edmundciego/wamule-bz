@@ -8,6 +8,7 @@ import { Input, Select } from "../components/ui/Field";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
+import { detailedEdgeFunctionErrorMessage } from "../lib/functions";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { applicationSmartInsights, activeReservationStatuses } from "../lib/smartInsights";
@@ -181,7 +182,7 @@ export function ApplicationsPage() {
     });
     setGeneratingReviewId(null);
     if (functionError) {
-      setActionError(functionError.message);
+      setActionError(await detailedEdgeFunctionErrorMessage(functionError));
       return;
     }
     if (result?.error) {
