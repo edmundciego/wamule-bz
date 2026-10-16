@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../components/ui/Badge";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
@@ -9,6 +10,7 @@ import { accountDueDate, startOfDay } from "../lib/accountDates";
 import { remainingLandBalance } from "../lib/financial";
 import { collectionsOperationsInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { formatDate, money } from "../lib/utils";
 
 type ContractCollectionRow = {
@@ -40,21 +42,25 @@ type PaymentCollectionRow = {
 };
 
 export function CollectionsPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const {
     data: contracts,
     isLoading: contractsLoading,
     error: contractsError,
   } = useQuery({
-    queryKey: ["collections-contracts"],
+    queryKey: ["collections-contracts", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contracts")
         .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type)")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("is_active", true)
         .order("payment_due_day");
       if (error) throw error;
       return data as ContractCollectionRow[];
     },
+    enabled: Boolean(workspace),
   });
 
   const {
@@ -62,15 +68,17 @@ export function CollectionsPage() {
     isLoading: paymentsLoading,
     error: paymentsError,
   } = useQuery({
-    queryKey: ["collections-payments"],
+    queryKey: ["collections-payments", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("transactions")
         .select("*, customers(first_name, last_name), payment_documents(id)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as PaymentCollectionRow[];
     },
+    enabled: Boolean(workspace),
   });
 
   const today = startOfDay(new Date());
@@ -95,7 +103,7 @@ export function CollectionsPage() {
     };
   }, [payments]);
 
-  const isLoading = contractsLoading || paymentsLoading;
+  const isLoading = workspaceLoading || contractsLoading || paymentsLoading;
   const error = contractsError || paymentsError;
   const operationsInsights = collectionsOperationsInsights({
     overdueCustomers: contractGroups.overdue.length,
@@ -112,6 +120,7 @@ export function CollectionsPage() {
         <p className="v2-page-description">Account standing, due accounts, missing documents, and follow-up queues.</p>
       </div>
       {isLoading ? <LoadingState /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its collections."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric title="Outstanding land balance" value={money(contractGroups.outstanding)} material="ledger" />

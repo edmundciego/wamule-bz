@@ -26,6 +26,7 @@ type PublicParcelOption = {
   local_key: number;
   lot_number: string;
   status: string | null;
+  sales_selectable: boolean;
   base_price: number;
   dimensions: string | null;
 };
@@ -152,10 +153,11 @@ export function ApplicationPage() {
           local_key: index + 1,
           lot_number: typeof parcel.lot_number === "string" ? parcel.lot_number : "",
           status: typeof parcel.status === "string" ? parcel.status : null,
+          sales_selectable: parcel.sales_selectable === true,
           base_price: Number(parcel.price ?? 0),
           dimensions: typeof parcel.dimensions === "string" ? parcel.dimensions : null,
         }))
-        .filter((parcel) => parcel.public_ref && parcel.status === "Available");
+        .filter((parcel) => parcel.public_ref && parcel.status === "Available" && parcel.sales_selectable);
     },
     enabled: hasSupabaseConfig && Boolean(applicationTenantSlug),
   });

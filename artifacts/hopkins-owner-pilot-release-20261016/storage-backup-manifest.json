@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-16",
+  "target_project_ref": "mtjlvzrtihslcftxnlso",
+  "read_only_inspection": true,
+  "backup_kind": "separate Storage inventory and object-byte backup",
+  "result": "empty-object-backup-validated",
+  "object_count": 0,
+  "total_object_bytes": 0,
+  "object_bytes_exported": 0,
+  "buckets": [
+    {
+      "id": "application-documents",
+      "public": false,
+      "file_size_limit": 10485760,
+      "allowed_mime_types": [
+        "application/pdf",
+        "image/jpeg",
+        "image/png"
+      ]
+    },
+    {
+      "id": "business-assets",
+      "public": true,
+      "file_size_limit": null,
+      "allowed_mime_types": null
+    },
+    {
+      "id": "contracts",
+      "public": false,
+      "file_size_limit": 10485760,
+      "allowed_mime_types": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "payment-documents",
+      "public": false,
+      "file_size_limit": 10485760,
+      "allowed_mime_types": [
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ]
+    },
+    {
+      "id": "receipts",
+      "public": false,
+      "file_size_limit": 10485760,
+      "allowed_mime_types": [
+        "application/pdf"
+      ]
+    }
+  ],
+  "bucket_count": 5,
+  "storage_policy_count": 145,
+  "inventory_source": "production-baseline.json",
+  "limitations": [
+    "No Storage object file bytes existed to copy at capture time; this is a validated empty object backup plus bucket metadata, not a non-empty archive.",
+    "Storage object bytes are separate from database backups; if any object is added before cutover, export it through the Storage API or S3-compatible interface and re-verify count, bytes, and checksums.",
+    "This inventory does not retain Supabase-managed bucket service internals or prove restore on another project."
+  ],
+  "database_baseline_sha256": "c4c7b11d38d2b286b91705fb8c3554292517f4b54ad8b74c66003b2cbd39ee61"
+}

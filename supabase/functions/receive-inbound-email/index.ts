@@ -145,7 +145,8 @@ Deno.serve(async (request) => {
   }
 
   // -- 4. Per-attachment: upload + Vision + draft rows -------------------------
-  const apiKey = String(organization.gemini_api_key ?? "").trim() || masterGeminiKey;
+  const tenantGeminiKey = await resolveOrganizationGeminiKey(supabase, tenantId);
+  const apiKey = tenantGeminiKey || masterGeminiKey;
   const results = [];
 
   for (const attachment of processable) {
@@ -306,22 +307,37 @@ async function resolveOrganization(
   if (lookup.alias) {
     const { data } = await supabase
       .from("organizations")
-      .select("id, slug, inbound_alias, gemini_api_key, is_active")
+      .select("id, slug, inbound_alias, is_active")
       .eq("inbound_alias", lookup.alias)
       .eq("is_active", true)
       .maybeSingle();
-    if (data) return data as { id: string; slug: string; inbound_alias: string | null; gemini_api_key: string | null };
+    if (data) return data as { id: string; slug: string; inbound_alias: string | null };
   }
   if (lookup.slugTag) {
     const { data } = await supabase
       .from("organizations")
-      .select("id, slug, inbound_alias, gemini_api_key, is_active")
+      .select("id, slug, inbound_alias, is_active")
       .eq("slug", lookup.slugTag)
       .eq("is_active", true)
       .maybeSingle();
-    if (data) return data as { id: string; slug: string; inbound_alias: string | null; gemini_api_key: string | null };
+    if (data) return data as { id: string; slug: string; inbound_alias: string | null };
   }
   return null;
+}
+
+async function resolveOrganizationGeminiKey(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("get_organization_gemini_api_key", {
+    p_tenant_id: tenantId,
+  });
+  if (error) {
+    // Never log or include provider credentials in errors or client responses.
+    console.error("Tenant provider credential lookup failed.", error.message);
+    return "";
+  }
+  return typeof data === "string" ? data.trim() : "";
 }
 
 // -- Customer matching ----------------------------------------------------------

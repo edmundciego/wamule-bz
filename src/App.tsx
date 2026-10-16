@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { WorkspaceScopeBoundary } from "./components/auth/WorkspaceScopeBoundary";
 import { featureFlags } from "./lib/featureFlags";
+import { isHopkinsPublicHost } from "./lib/publicHosts";
 
 const AdminLayout = lazy(() =>
   import("./components/layout/AdminLayout").then((module) => ({ default: module.AdminLayout })),
@@ -54,6 +56,9 @@ const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ def
 const EmbeddableMapPage = lazy(() =>
   import("./pages/public/EmbeddableMapPage").then((module) => ({ default: module.EmbeddableMapPage })),
 );
+const HopkinsPublicPage = lazy(() =>
+  import("./pages/public/HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })),
+);
 const LotsPage = lazy(() => import("./pages/LotsPage").then((module) => ({ default: module.LotsPage })));
 const LeadsPage = lazy(() => import("./pages/LeadsPage").then((module) => ({ default: module.LeadsPage })));
 const LogoutPage = lazy(() => import("./pages/LogoutPage").then((module) => ({ default: module.LogoutPage })));
@@ -62,11 +67,16 @@ const ReportsPage = lazy(() => import("./pages/ReportsPage").then((module) => ({
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 
 export default function App() {
+  const hostHomepage = isHopkinsPublicHost(window.location.hostname);
+  const publicHomepage = hostHomepage ? <HopkinsPublicPage /> : <ApplicationPage />;
   return (
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>
-        <Route path="/" element={<ApplicationPage />} />
-        <Route path="/apply" element={<ApplicationPage />} />
+        <Route path="/" element={publicHomepage} />
+        <Route path="/apply" element={hostHomepage ? <HopkinsPublicPage /> : <ApplicationPage />} />
+        <Route path="/hopkins" element={<HopkinsPublicPage />} />
+        <Route path="/hopkins/apply" element={<HopkinsPublicPage />} />
+        <Route path="/hopkins/application" element={<HopkinsPublicPage />} />
         <Route path="/embed/:tenant_slug" element={<EmbeddableMapPage />} />
         <Route path="/embed/:tenant_slug/:project_slug" element={<EmbeddableMapPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -80,7 +90,7 @@ export default function App() {
           path="/documents/:kind/:id"
           element={
             <ProtectedRoute>
-              <DocumentPage />
+              <WorkspaceScopeBoundary><DocumentPage /></WorkspaceScopeBoundary>
             </ProtectedRoute>
           }
         />
@@ -89,7 +99,7 @@ export default function App() {
             path="/information-packs/:id/print"
             element={
               <ProtectedRoute>
-                <InformationPackDocumentPage />
+                <WorkspaceScopeBoundary><InformationPackDocumentPage /></WorkspaceScopeBoundary>
               </ProtectedRoute>
             }
           />

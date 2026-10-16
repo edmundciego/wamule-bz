@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-16",
+  "project_ref": "mtjlvzrtihslcftxnlso",
+  "read_only": true,
+  "required_by_release": [
+    { "name": "pgcrypto", "installed_version": "1.3", "schema": "extensions" },
+    { "name": "supabase_vault", "installed_version": "0.3.1", "schema": "vault" }
+  ],
+  "other_installed_extensions": [
+    { "name": "uuid-ossp", "installed_version": "1.1", "schema": "extensions" },
+    { "name": "plpgsql", "installed_version": "1.0", "schema": "pg_catalog" },
+    { "name": "pg_stat_statements", "installed_version": "1.11", "schema": "extensions" }
+  ],
+  "vault_root_key_exported": false,
+  "native_local_vault_restore_validated": false,
+  "limitations": [
+    "The production project reports Supabase Vault 0.3.1 installed. The local workstation has no native PostgreSQL tools, and the available fixture rehearsal does not contain the production Vault root key.",
+    "Vault secret ciphertext in a logical dump cannot be declared recoverable in a fresh local PostgreSQL instance without the matching Supabase Vault extension and project encryption root key.",
+    "Do not expose or copy the project root key into the repository, release package, or chat. Use an owner-controlled secure restore procedure if export is authorized."
+  ]
+}

@@ -56,6 +56,66 @@ test("application inquiry payload validates without tenant", () => {
   assert.equal(result.specificLotRef, null);
 });
 
+test("demo map inquiry carries project/phase scope and one opaque feature reference", () => {
+  const mapFeatureRef = "7e9b19d2-57b8-4f8f-b1a8-bc9531d84318";
+  const body = buildInquiryPayload({
+    name: "Amara Test",
+    email: "amara@example.com",
+    interests: ["Map outline question"],
+    tenant: "hopkins-grove",
+    project: "hopkins-grove",
+    phase: "initial",
+    specificMapFeatureRef: mapFeatureRef,
+    clientReferenceId: UUID,
+  });
+  assert.equal(body.tenant, "hopkins-grove");
+  assert.equal(body.project, "hopkins-grove");
+  assert.equal(body.phase, "initial");
+  assert.equal(body.specific_map_feature_ref, mapFeatureRef);
+  const validated = validateInquiryPayload(body);
+  assert.ok(!("error" in validated));
+  assert.equal(validated.specificMapFeatureRef, mapFeatureRef);
+  assert.equal(validated.projectSlug, "hopkins-grove");
+  assert.equal(validated.phaseSlug, "initial");
+  assert.equal(validateInquiryPayload({
+    ...body,
+    specific_lot_ref: "plr1:hopkins-grove:48",
+  }).error, "An inquiry can reference one map item at a time.");
+});
+
+test("general project interest has no parcel or map feature reference", () => {
+  const body = buildInquiryPayload({
+    name: "Hopkins Sample",
+    email: "hopkins@example.test",
+    interests: ["General project interest"],
+    tenant: "hopkins-grove",
+    project: "hopkins-grove",
+    phase: "initial",
+    clientReferenceId: UUID,
+  });
+  const validated = validateInquiryPayload(body);
+  assert.ok(!("error" in validated));
+  assert.equal(validated.specificLotRef, null);
+  assert.equal(validated.specificMapFeatureRef, null);
+  assert.deepEqual(validated.interests, ["General project interest"]);
+});
+
+test("public inquiry server binds phase scope, keeps demo features out of sale inventory, and suppresses test email", async () => {
+  const source = await read("supabase/functions/submit-public-inquiry/index.ts");
+  const rpc = await read("supabase/migrations/20261014010000_scoped_public_inquiry_rpc.sql");
+  const modal = await read("src/components/public/PublicInquiryModal.tsx");
+  assert.match(source, /resolveProjectPhase\(supabase, slugTenantId[\s\S]*input\.phaseSlug\)/);
+  assert.match(source, /input\.specificLotRef && scope\.mapExperienceMode === "demo"/);
+  assert.match(source, /p_map_feature_id: input\.specificMapFeatureRef/);
+  assert.match(source, /if \(!rpcResult\.deduplicated && !suppressEmail\)/);
+  assert.match(source, /SUPPRESS_OUTBOUND_EMAILS/);
+  assert.match(rpc, /p\.map_experience_mode='demo'/);
+  assert.match(rpc, /p\.map_experience_mode='sales'/);
+  assert.match(modal, /Ask About Mapped Outline/);
+  assert.match(modal, /not a saleable inventory listing/);
+  assert.match(modal, /I have a question about mapped outline/);
+});
+
 test("lot-authoritative tenant decision covers every case", () => {
   const T = "tenant-1";
   // Lot with tenant + matching slug -> lot tenant wins.
@@ -163,18 +223,21 @@ test("schema rejects bad interest, email, name, lot reference, legacy numeric id
 // Both inquiry forms build their wire body with the shared builder, and
 // every interest literal they can send is in the shared allow-list.
 test("frontend forms share the contract (no drift)", async () => {
-  const [modal, page] = await Promise.all([
+  const [modal, page, hopkinsPage] = await Promise.all([
     read("src/components/public/PublicInquiryModal.tsx"),
     read("src/pages/ApplicationPage.tsx"),
+    read("src/pages/public/HopkinsPublicPage.tsx"),
   ]);
   for (const [file, source] of [["modal", modal], ["page", page]]) {
     assert.match(source, /buildInquiryPayload\(/, `${file} must use the shared payload builder`);
     assert.match(source, /supabase\/functions\/_shared\/inquiry-contract/, `${file} must import the shared contract`);
   }
   assert.match(modal, /specificLotRef: lotRef/);
+  assert.match(modal, /interests: mapFeatureRef \? \["Map outline question"\] : \["Available lots", "A specific lot"\]/);
   assert.match(page, /specificLotRef: specificLotSelected && specificLotRef/);
   assert.match(page, /tenant: tenantSlug/);
   assert.doesNotMatch(page, /specificLotId|specific_lot_id/);
+  assert.match(hopkinsPage, /interests: \["General project interest"\]/);
   const arrayBlock = (source, anchor) => {
     const start = source.indexOf(anchor);
     assert.ok(start >= 0, `anchor ${anchor} found`);
@@ -182,7 +245,6 @@ test("frontend forms share the contract (no drift)", async () => {
   };
   const literals = new Set(
     [
-      ...arrayBlock(modal, "interests: [").matchAll(/"([^"]+)"/g),
       ...arrayBlock(page, "const inquiryInterests = [").matchAll(/"([^"]+)"/g),
     ].map((m) => m[1]),
   );

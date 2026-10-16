@@ -1,9 +1,21 @@
 {
   "tenant": "hopkins-grove",
   "notes": "Tier catalogue for Hopkins Grove raster detection. `legend` is the display swatch from the PoC HTML; `fill` is the saturated map-polygon fill sampled from the extracted raster (fills render MORE saturated than legend swatches due to anti-aliasing/JPEG). Detection anchors on `fill` with per-tier RGB euclidean `tolerance`.",
+  "source_pricing": {
+    "source_pdf": "2026 Hopkins Map.pdf",
+    "currency_symbol": "$",
+    "currency_code": null,
+    "currency_note": "The PDF prints a dollar sign but does not identify a currency code.",
+    "financing_source_note": "In-House Financing Available",
+    "corner_premium": 2500,
+    "corner_premium_note": "The PDF marks this surcharge with a black triangle and says Corner - +$2500.",
+    "residential_basis": "per 1/4 acre"
+  },
   "tiers": {
     "standard": {
       "label": "Standard Interior",
+      "group": "Residential",
+      "price_basis": "per 1/4 acre",
       "price": 25000,
       "legend": "#f4e27a",
       "fill": "#fff798",
@@ -11,6 +23,8 @@
     },
     "premium": {
       "label": "Premium Interior",
+      "group": "Residential",
+      "price_basis": "per 1/4 acre",
       "price": 30000,
       "legend": "#f0c9bd",
       "fill": "#f6cabb",
@@ -18,6 +32,8 @@
     },
     "boulevard": {
       "label": "Premium Boulevard",
+      "group": "Residential",
+      "price_basis": "per 1/4 acre",
       "price": 35000,
       "legend": "#2fd32f",
       "fill": "#12ff00",
@@ -25,20 +41,28 @@
     },
     "creek": {
       "label": "Creekview / Reserve",
+      "group": "Residential",
+      "price_basis": "per 1/4 acre",
       "price": 35000,
       "legend": "#19d3e8",
       "fill": "#19d3e8",
       "tolerance": 80
     },
     "orange": {
-      "label": "Access Road (1/2 ac)",
+      "label": "Access Road · Orange tier",
+      "source_label": "Access Road (1/2 Acre)",
+      "group": "Commercial",
+      "price_basis": "per 1/2 acre",
       "price": 60000,
       "legend": "#ffa319",
       "fill": "#ffa319",
       "tolerance": 70
     },
     "purple": {
-      "label": "Access Road (1/2 ac)",
+      "label": "Access Road · Purple tier",
+      "source_label": "Access Road (1/2 Acre)",
+      "group": "Commercial",
+      "price_basis": "per 1/2 acre",
       "price": 50000,
       "legend": "#a56ae6",
       "fill": "#a56ae6",
@@ -46,6 +70,8 @@
     },
     "red": {
       "label": "Highway Front",
+      "group": "Commercial",
+      "price_basis": "Not stated in the PDF legend",
       "price": 125000,
       "legend": "#e0241d",
       "fill": "#e0241d",

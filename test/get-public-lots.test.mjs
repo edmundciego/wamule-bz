@@ -83,7 +83,8 @@ test("get-public-lots scopes map, settings, tiers, and parcels to a selected pro
 test("get-public-lots normalizes is_default before legacy project rows are filtered", async () => {
   const source = await read("supabase/functions/get-public-lots/index.ts");
   assert.match(source, /applyProjectAndVersionScope,[\s\S]*?chooseResolvedProject,[\s\S]*?from "\.\/project-scope\.mjs"/);
-  assert.match(source, /project: chooseResolvedProject\(rows, slug\)/);
+  assert.match(source, /const selected = chooseResolvedProject\(rows, slug\)/);
+  assert.match(source, /mapExperienceMode: selectedRow\.map_experience_mode === "demo" \? "demo" : "sales"/);
 
   const rows = [
     { id: "default-id", slug: "main", name: "Main", is_default: true },
@@ -108,6 +109,43 @@ test("get-public-lots normalizes is_default before legacy project rows are filte
   assert.equal(projectAllowsTenantFallback(null), true);
   assert.equal(projectAllowsTenantFallback({ isDefault: true }), true);
   assert.equal(projectAllowsTenantFallback({ isDefault: false }), false);
+});
+
+test("demo map response keeps map features scoped and omits parcel sales fields", async () => {
+  const source = await read("supabase/functions/get-public-lots/index.ts");
+  assert.match(source, /const phaseParam = \(url\.searchParams\.get\("phase"\)/);
+  assert.match(source, /resolvePhase\(supabase, organization\.id, project, phaseParam\)/);
+  assert.match(source, /if \(project\?\.mapExperienceMode === "demo"\)/);
+  assert.match(source, /from\("map_feature_snapshots"\)[\s\S]*?\.eq\("project_id", project\.id\)[\s\S]*?\.eq\("phase_id", phase\.id\)[\s\S]*?\.eq\("is_active", true\)/);
+  assert.match(source, /select\("identity_id, demo_label, map_polygon, provenance"\)/);
+  assert.match(source, /features: \(features \?\? \[\]\)\.map/);
+  const demoBranch = source.slice(source.indexOf('if (project?.mapExperienceMode === "demo")'), source.indexOf("// Project and active-version scoping"));
+  for (const field of ["price", "status", "lot_number", "sales_selectable", "inquiry_eligible"]) {
+    assert.doesNotMatch(demoBranch, new RegExp(`output\\.${field}\\s*=`));
+  }
+  assert.match(demoBranch, /output\.source_tier_key = tierKey/);
+  assert.match(demoBranch, /source-image-cross-checked/);
+  assert.match(demoBranch, /source_printed_lot_number_verified/);
+  assert.match(demoBranch, /source-image-ambiguous-multiple-lots/);
+  assert.match(demoBranch, /output\.source_printed_lot_number_candidate = printCandidate/);
+  assert.match(demoBranch, /output\.source_printed_lot_number_candidates_ambiguous = ambiguousPrintNumbers/);
+  assert.match(demoBranch, /output\.source_tier_status/);
+});
+
+test("Hopkins source labels stay distinct from generated map references and retain ambiguity", async () => {
+  const map = await read("src/components/public/PublicLotMap.tsx");
+  assert.match(map, /source-image-cross-checked/);
+  assert.match(map, /source-image-ambiguous-multiple-lots/);
+  assert.match(map, /Printed-number OCR candidate/);
+  assert.match(map, /Generated map reference/);
+  assert.match(map, /source_printed_lot_number_candidates_ambiguous/);
+  assert.match(map, /source-tier-ambiguous-multiple-colors/);
+  // The recreated legend uses the source fill palette, not the older PoC chips.
+  assert.match(map, /backgroundColor: tier\.fill/);
+  assert.doesNotMatch(map, /backgroundColor: tier\.legend/);
+  // Keep the image's source colors intact and show selection with outlines.
+  assert.match(map, /fillOpacity=\{isHopkinsHostedMap \? 0 :/);
+  assert.match(map, /data-testid="selected-source-tier-outline"/);
 });
 
 test("public parcel query is scoped to one project and the active map version", () => {
@@ -215,12 +253,12 @@ test("Supabase serializes project and version boundaries as server-side filters"
 test("get-public-lots exposes tier display fields while keeping QA columns server-side", async () => {
   const source = await read("supabase/functions/get-public-lots/index.ts");
 
-  for (const field of ["tier_key", "tier_label", "tier_color_hex", "is_corner", "effective_price_cents"]) {
+  for (const field of ["tier_key", "tier_label", "tier_color_hex", "is_corner", "effective_price_cents", "sales_selectable", "inquiry_eligible", "is_map_detection"]) {
     assert.ok(source.includes(field), `Public payload must include ${field}.`);
   }
   const allowlistMatch = source.match(/const PUBLIC_PARCEL_FIELDS = \[([^\]]+)\]/s);
   assert.ok(allowlistMatch, "PUBLIC_PARCEL_FIELDS allowlist must be declared.");
-  for (const field of ["tier_key", "tier_label", "tier_color_hex", "is_corner", "effective_price_cents"]) {
+  for (const field of ["tier_key", "tier_label", "tier_color_hex", "is_corner", "effective_price_cents", "sales_selectable", "inquiry_eligible", "is_map_detection"]) {
     assert.ok(allowlistMatch[1].includes(`"${field}"`), `Allowlist must contain ${field}.`);
   }
   // QA/ops inputs may be read server-side for the price math, but must never
@@ -230,5 +268,6 @@ test("get-public-lots exposes tier display fields while keeping QA columns serve
   }
   assert.ok(allowlistMatch[1].includes('"public_ref"'), "Allowlist must provide the project-scoped public reference.");
   assert.ok(!allowlistMatch[1].includes('"id"'), "Internal parcel ids must never leave the public endpoint.");
-  assert.match(source, /\.select\("lot_number, status/);
+  assert.match(source, /\.select\("lot_number, status.*geometry_source, needs_review"\)/);
+  assert.match(source, /sales_selectable: isAvailableForSalesSelection\(parcel\)/);
 });

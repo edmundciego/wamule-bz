@@ -1,0 +1,374 @@
+-- Disposable baseline for the hosted-pilot migration rehearsal.
+-- This is intentionally a fixture, not a replacement for the project's
+-- tracked migration history or an assertion that hosted schemas match it.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
+end $$;
+
+create schema auth;
+create schema vault;
+create table auth.users (
+  id uuid primary key,
+  email text,
+  raw_user_meta_data jsonb not null default '{}'::jsonb
+);
+create function auth.uid() returns uuid language sql stable as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+create function auth.jwt() returns jsonb language sql stable as $$
+  select jsonb_build_object(
+    'sub', nullif(current_setting('request.jwt.claim.sub', true), ''),
+    'role', coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), '')
+  )
+$$;
+-- Safe fake for Vault used only by the embedded database harness. Production
+-- uses the Supabase Vault extension and encrypted storage.
+create table vault.mock_secrets(id uuid primary key default gen_random_uuid(),name text unique,decrypted_secret text not null);
+create view vault.decrypted_secrets as select id,name,decrypted_secret from vault.mock_secrets;
+create function vault.create_secret(p_secret text,p_name text default null,p_description text default null)
+returns uuid language plpgsql security definer set search_path=public,vault,pg_temp as $$
+declare v_id uuid;
+begin
+  insert into vault.mock_secrets(name,decrypted_secret) values (p_name,p_secret) returning id into v_id;
+  return v_id;
+end
+$$;
+
+create table public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  inbound_alias text unique,
+  gemini_api_key text,
+  is_active boolean not null default true,
+  masterplan_image_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table public.admin_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text unique,
+  full_name text,
+  role text not null,
+  tenant_id uuid references public.organizations(id) on delete restrict
+);
+create function public.is_super_admin_user() returns boolean
+language sql stable security definer set search_path=public,auth,pg_temp as $$
+  select exists (select 1 from public.admin_profiles ap where ap.user_id=auth.uid() and ap.role='Super Admin')
+$$;
+create function public.user_has_tenant_access(p_tenant_id uuid) returns boolean
+language sql stable security definer set search_path=public,auth,pg_temp as $$
+  select public.is_super_admin_user() or exists (
+    select 1 from public.admin_profiles ap where ap.user_id=auth.uid() and ap.tenant_id=p_tenant_id
+  )
+$$;
+create function public.is_admin_user() returns boolean language sql stable security definer set search_path=public,auth,pg_temp as $$
+  select exists(select 1 from public.admin_profiles ap where ap.user_id=auth.uid() and ap.role in ('Admin','Super Admin'))
+$$;
+create function public.is_internal_user() returns boolean language sql stable security definer set search_path=public,auth,pg_temp as $$
+  select public.is_super_admin_user() or exists(select 1 from public.admin_profiles ap where ap.user_id=auth.uid())
+$$;
+create function public.can_write_admin_data() returns boolean language sql stable security definer set search_path=public,auth,pg_temp as $$
+  select public.is_internal_user()
+$$;
+
+create table public.business_settings (
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  key text not null,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key(tenant_id,key)
+);
+create table public.projects (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  slug text not null,
+  name text not null,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique(tenant_id,slug)
+);
+create table public.parcels (
+  id bigint generated always as identity primary key,
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  project_id uuid references public.projects(id) on delete set null,
+  lot_number text not null,
+  status text not null default 'Available',
+  base_price numeric not null default 0,
+  dimensions text,
+  updated_at timestamptz not null default now(),
+  map_polygon jsonb not null default '[]'::jsonb,
+  unique(tenant_id,lot_number)
+);
+create table public.customers (
+  id bigint generated by default as identity primary key,
+  tenant_id uuid not null references public.organizations(id),
+  first_name text not null,
+  last_name text not null,
+  application_id bigint unique,
+  phone text,
+  email text,
+  address text,
+  updated_at timestamptz not null default now()
+);
+create table public.applications (
+  id bigint generated by default as identity primary key,
+  tenant_id uuid not null references public.organizations(id),
+  first_name text not null,
+  last_name text not null,
+  phone text not null,
+  email text,
+  applicant_address text,
+  parcel_id bigint references public.parcels(id),
+  status text not null default 'Pending Review',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table public.contracts (
+  id bigint generated by default as identity primary key,
+  tenant_id uuid not null references public.organizations(id),
+  customer_id bigint not null references public.customers(id),
+  parcel_id bigint references public.parcels(id),
+  signed_contract_file_path text,
+  is_active boolean not null default true,
+  status text not null default 'active',
+  void_reason text,
+  voided_at timestamptz,
+  voided_by uuid,
+  final_purchase_price numeric(12,2) not null default 0,
+  created_at timestamptz not null default now()
+);
+create table public.transactions (
+  id bigint generated by default as identity primary key,
+  tenant_id uuid not null references public.organizations(id),
+  customer_id bigint not null references public.customers(id),
+  contract_id bigint references public.contracts(id),
+  receipt_number text not null,
+  status text not null default 'posted',
+  amount numeric(12,2) not null default 0,
+  collection_method text,
+  transaction_type text,
+  created_at timestamptz not null default now(),
+  bank_reference text,
+  manual_receipt_number text,
+  voided_at timestamptz,
+  voided_by uuid,
+  void_reason text,
+  correction_notes text
+);
+create table public.payment_documents (
+  id bigint generated by default as identity primary key,
+  tenant_id uuid not null references public.organizations(id),
+  customer_id bigint not null references public.customers(id),
+  transaction_id bigint references public.transactions(id),
+  file_path text not null,
+  document_type text not null default 'receipt',
+  original_file_name text not null default 'document.pdf',
+  created_at timestamptz not null default now()
+);
+create table public.audit_events (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id),
+  entity_type text not null,
+  entity_id text,
+  action text not null,
+  title text not null,
+  summary text,
+  before_data jsonb,
+  after_data jsonb,
+  metadata jsonb,
+  actor_user_id uuid references auth.users(id),
+  actor_name text,
+  actor_email text,
+  created_at timestamptz not null default now()
+);
+create table public.masterplan_versions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  version_number integer not null,
+  image_url text not null,
+  file_name text not null,
+  is_active boolean not null default false,
+  created_at timestamptz not null default now(),
+  created_by uuid references auth.users(id) on delete set null,
+  unique(tenant_id,version_number)
+);
+create table public.leads (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  full_name text not null,
+  email text,
+  phone text,
+  parcel_id bigint references public.parcels(id) on delete set null,
+  source text,
+  pipeline_stage text not null default 'new_lead',
+  buyer_journey_stage text,
+  preferred_contact_method text,
+  assigned_to uuid references auth.users(id) on delete set null,
+  next_action text,
+  next_action_due_at timestamptz,
+  notes text,
+  created_by uuid references auth.users(id) on delete set null,
+  client_reference_id text,
+  possible_duplicate boolean not null default false,
+  duplicate_reason text,
+  duplicate_checked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create unique index leads_tenant_reference_uniq on public.leads(tenant_id,client_reference_id) where client_reference_id is not null;
+create table public.lot_reservations (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id),
+  lead_id uuid references public.leads(id),
+  application_id bigint references public.applications(id),
+  customer_id bigint references public.customers(id),
+  parcel_id bigint references public.parcels(id),
+  payment_id bigint references public.transactions(id),
+  converted_application_id bigint references public.applications(id),
+  converted_contract_id bigint references public.contracts(id),
+  status text not null default 'reserved',
+  deposit_status text,
+  released_at timestamptz,
+  reserved_at timestamptz,
+  notes text,
+  updated_at timestamptz not null default now()
+);
+create table public.reservation_activities (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id),
+  reservation_id uuid not null references public.lot_reservations(id),
+  activity_type text not null,
+  title text not null,
+  description text,
+  metadata jsonb,
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now()
+);
+create table public.contract_void_resolutions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id),
+  contract_id bigint not null references public.contracts(id),
+  customer_id bigint not null references public.customers(id),
+  parcel_id bigint not null references public.parcels(id),
+  status text not null default 'pending',
+  resolution_type text,
+  reservation_id uuid references public.lot_reservations(id),
+  resolution_reason text,
+  resolved_by uuid references auth.users(id),
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table public.lead_activities (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  lead_id uuid not null references public.leads(id) on delete cascade,
+  activity_type text not null,
+  title text not null,
+  description text,
+  metadata jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table public.follow_up_tasks (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  lead_id uuid references public.leads(id) on delete cascade,
+  title text not null,
+  description text,
+  due_at timestamptz,
+  status text not null default 'open',
+  priority text not null default 'normal',
+  assigned_to uuid references auth.users(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table public.site_visits (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  lead_id uuid references public.leads(id) on delete cascade,
+  scheduled_at timestamptz not null,
+  status text not null default 'scheduled',
+  created_at timestamptz not null default now()
+);
+create table public.information_topics (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  code text not null,
+  name text not null,
+  default_content text not null,
+  unique(tenant_id,code)
+);
+create table public.information_requests (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  lead_id uuid not null references public.leads(id) on delete restrict,
+  parcel_id bigint references public.parcels(id) on delete set null,
+  project_name text not null,
+  follow_up_task_id uuid references public.follow_up_tasks(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table public.information_request_topics (
+  request_id uuid not null references public.information_requests(id) on delete cascade,
+  topic_id uuid not null references public.information_topics(id) on delete restrict,
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  primary key(request_id,topic_id)
+);
+create table public.information_packs (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete restrict,
+  request_id uuid not null references public.information_requests(id) on delete restrict,
+  version integer not null default 1,
+  document_number text not null,
+  title text not null,
+  content_snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create schema storage;
+create table storage.buckets(id text primary key,name text not null,public boolean not null default false);
+create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text not null references storage.buckets(id),name text not null);
+insert into storage.buckets(id,name,public) values
+  ('contracts','contracts',false),
+  ('receipts','receipts',false),
+  ('application-documents','application-documents',false),
+  ('payment-documents','payment-documents',false);
+create function storage.foldername(p_name text) returns text[] language sql immutable as $$
+  select case when array_length(string_to_array(trim(both '/' from p_name),'/'),1)>1
+    then (string_to_array(trim(both '/' from p_name),'/'))[1:array_length(string_to_array(trim(both '/' from p_name),'/'),1)-1]
+    else array[]::text[] end
+$$;
+
+create function public.test_tenant_scope(p_tenant_id uuid) returns boolean
+language sql stable security definer set search_path=public,auth,pg_temp as $$ select public.user_has_tenant_access(p_tenant_id) $$;
+create view public.public_parcel_options as
+  select id,tenant_id,lot_number,status,base_price from public.parcels;
+create view public.parcel_board_view as
+  select p.id,p.tenant_id,p.lot_number,p.status,p.base_price,
+    c.id as contract_id,cu.id as customer_id,
+    trim(cu.first_name || ' ' || cu.last_name) as customer_name
+  from public.parcels p
+  left join public.contracts c on c.parcel_id=p.id and c.is_active
+  left join public.customers cu on cu.id=c.customer_id;
+grant select on public.public_parcel_options to anon,authenticated;
+grant select on public.parcel_board_view to authenticated;
+alter table public.organizations enable row level security;
+grant select on public.organizations to authenticated;
+create policy baseline_internal_org_read on public.organizations
+  for select to authenticated using (public.is_internal_user());
+do $$ declare t text; begin
+  foreach t in array array['parcels','masterplan_versions','leads','lead_activities','follow_up_tasks','information_requests','information_request_topics','information_packs','site_visits','customers','contracts','transactions','payment_documents'] loop
+    execute format('alter table public.%I enable row level security',t);
+    execute format('create policy baseline_tenant_rows on public.%I for all to authenticated using (public.test_tenant_scope(tenant_id)) with check (public.test_tenant_scope(tenant_id))',t);
+    execute format('grant select,insert,update,delete on public.%I to authenticated,service_role',t);
+  end loop;
+end $$;
+alter table storage.objects enable row level security;
+grant usage on schema public,auth,storage to anon,authenticated,service_role;
+grant all on all tables in schema public,auth,storage to service_role;
+grant select,insert,update,delete on storage.objects to authenticated;
+grant select,insert,update,delete on public.customers,public.contracts,public.transactions,public.payment_documents to authenticated;
+grant select on storage.buckets to authenticated;

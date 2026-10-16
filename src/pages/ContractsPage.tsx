@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { ContractForm } from "../components/forms/ContractForm";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { Badge } from "../components/ui/Badge";
 import { Card, CardContent } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { remainingLandBalance } from "../lib/financial";
 import { money } from "../lib/utils";
 import type { Contract, ContractStatus } from "../types/database";
@@ -34,28 +36,34 @@ function contractStatusTone(contract: Pick<Contract, "status" | "is_active">) {
 }
 
 export function ContractsPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const { id: requestedContractId } = useParams<{ id?: string }>();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["contracts"],
+    queryKey: ["contracts", scopeKey],
     queryFn: async () => {
       const { data: contracts, error: queryError } = await supabase
         .from("contracts")
         .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return contracts as ContractListRow[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: pendingVoidResolutions } = useQuery({
-    queryKey: ["contract-void-resolutions"],
+    queryKey: ["contract-void-resolutions", scopeKey],
     queryFn: async () => {
       const { data: rows, error: queryError } = await supabase
         .from("contract_void_resolutions")
         .select("contract_id")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("status", "pending");
       if (queryError) throw queryError;
       return rows as Array<{ contract_id: number }>;
     },
+    enabled: Boolean(workspace),
   });
   const pendingResolutionContractIds = new Set((pendingVoidResolutions ?? []).map((resolution) => resolution.contract_id));
   useEffect(() => {
@@ -70,7 +78,8 @@ export function ContractsPage() {
         <h1 className="v2-page-title">Contracts</h1>
         <p className="v2-page-description">Create purchase agreements and track active balances.</p>
       </div>
-      {isLoading ? <LoadingState /> : null}
+      {workspaceLoading || isLoading ? <LoadingState /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its contracts."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
         <div className="grid content-start gap-3">

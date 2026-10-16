@@ -1,19 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  decideLeadTenant,
   lotDisposition,
-  sameInquiryAs,
   validateInquiryPayload,
-  type InquiryFingerprint,
   type InquiryPayload,
-  type ValidInquiry,
 } from "../_shared/inquiry-contract.ts";
 import { parsePublicLotReference } from "../_shared/public-lot-reference.ts";
-import {
-  applyProjectAndVersionScope,
-  chooseResolvedProject,
-  normalizeActiveVersionLookup,
-} from "../get-public-lots/project-scope.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -33,6 +24,8 @@ type ParcelOption = {
   status: string | null;
 };
 
+type PublicProjectScope = { projectId: string; projectSlug: string; projectName: string; phaseId: string; phaseSlug: string; mapExperienceMode: "sales" | "demo" };
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -51,14 +44,24 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Optional embed caller tenant (slug or inbound alias). The lead's tenant
-  // is authoritative from here on — see decideLeadTenant below.
+  // Scope slugs are selectors only. The service resolves them to tenant,
+  // project, and phase IDs, then the server-only RPC revalidates ownership.
   const slugTenantId = await resolveTenantId(supabase, input.tenantSlug);
+  if (!slugTenantId) return json({ error: "Unknown development. Please check the listing link." }, 400);
+  const lotReferenceProject = input.specificLotRef ? parsePublicLotReference(input.specificLotRef)?.projectSlug ?? null : null;
+  if (input.projectSlug && lotReferenceProject && input.projectSlug !== lotReferenceProject) {
+    return json({ error: "The selected lot does not match the requested development." }, 400);
+  }
+  const scopeResolution = await resolveProjectPhase(supabase, slugTenantId, input.projectSlug ?? lotReferenceProject, input.phaseSlug);
+  if (!scopeResolution.ok) return json({ error: scopeResolution.message }, scopeResolution.status);
+  const scope = scopeResolution.scope;
+  if (input.specificLotRef && scope.mapExperienceMode === "demo") {
+    return json({ error: "This demonstration map does not provide sellable inventory. Please send a general project inquiry." }, 400);
+  }
 
-  // Resolve a project-scoped public locator server-side; database ids never
-  // cross the anonymous request boundary. Reserved lots remain waitlistable.
+  // A public locator is resolved inside exactly the selected project/phase.
   const resolution = input.specificLotRef
-    ? await loadLotByPublicReference(supabase, slugTenantId, input.specificLotRef)
+    ? await loadLotByPublicReference(supabase, slugTenantId, input.specificLotRef, scope)
     : { lot: null, error: null };
   if (resolution.error === "database") {
     return json({ error: "The current lot list could not be verified. Please try again." }, 503);
@@ -72,156 +75,58 @@ Deno.serve(async (request) => {
     return json({ error: "That lot is no longer available." }, 400);
   }
   const waitlist = !!specificLot && lotDisposition(specificLot.status) === "waitlist";
-
-  // Lot-authoritative tenant: the lead inherits the parcel's tenant; a
-  // provided slug must resolve to that same tenant. Without a lot, the slug
-  // must resolve — there is no default fallback.
-  const decision = decideLeadTenant({
-    lotRequested: input.specificLotRef !== null,
-    lotTenantId: specificLot?.tenant_id ? String(specificLot.tenant_id) : null,
-    slugProvided: input.tenantSlug !== null,
-    slugTenantId,
+  const requestRef = input.clientReferenceId ?? crypto.randomUUID();
+  const duplicateReason = specificLot ? await duplicateReasonForInquiry(supabase, {
+    name: input.name, email: input.email, phone: input.phone, parcelId: specificLotId,
+  }, scope.projectId) : null;
+  const { data: result, error: rpcError } = await supabase.rpc("create_scoped_public_inquiry", {
+    p_tenant_id: slugTenantId,
+    p_project_id: scope.projectId,
+    p_phase_id: scope.phaseId,
+    p_name: input.name,
+    p_email: input.email,
+    p_phone: input.phone || null,
+    p_message: input.message || null,
+    p_page_url: safePageUrl,
+    p_interests: input.interests,
+    p_client_reference_id: requestRef,
+    p_parcel_id: specificLotId,
+    p_map_feature_id: input.specificMapFeatureRef,
+    p_duplicate_reason: duplicateReason,
   });
-  if ("error" in decision) return json({ error: decision.error }, 400);
-  const tenantId = decision.tenantId;
-
-  // Idempotency: a retry (user double-submit, network retry after a 500)
-  // carries the same client_reference_id and must not create a second lead.
-  // Same key + divergent payload is a 409, never a second row.
-  if (input.clientReferenceId) {
-    const dedup = await checkDuplicateSubmission(supabase, tenantId, input, specificLotId);
-    if (dedup) return dedup;
+  if (rpcError) {
+    console.error("Scoped public inquiry RPC failed", safeError(rpcError));
+    return json({ error: "We could not verify and save your inquiry. Please try again." }, 503);
   }
+  const rpcResult = result as { ok?: boolean; conflict?: boolean; deduplicated?: boolean; lead_id?: string } | null;
+  if (rpcResult?.conflict) return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
+  if (!rpcResult?.ok || !rpcResult.lead_id) return json({ error: "We could not save your inquiry. Please try again." }, 503);
 
-  const duplicateReason = await duplicateReasonForInquiry(supabase, {
-    name: input.name,
-    email: input.email,
-    phone: input.phone,
-    parcelId: specificLotId,
-  });
-  const now = new Date();
-  const dueAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-  const inquiryNotes = buildInquiryNotes(input, specificLot, waitlist);
-
-  const { data: lead, error: leadError } = await supabase
-    .from("leads")
-    .insert({
-      tenant_id: tenantId,
-      full_name: input.name,
-      email: input.email,
-      phone: input.phone || null,
-      parcel_id: specificLotId,
-      client_reference_id: input.clientReferenceId,
-      source: "public_inquiry",
-      pipeline_stage: "new_lead",
-      buyer_journey_stage: "Public Information Request",
-      preferred_contact_method: input.phone ? "Email or Phone / WhatsApp" : "Email",
-      assigned_to: null,
-      next_action: "Follow up on public project information inquiry",
-      next_action_due_at: dueAt,
-      notes: inquiryNotes,
-      possible_duplicate: Boolean(duplicateReason),
-      duplicate_reason: duplicateReason,
-      duplicate_checked_at: now.toISOString(),
-      created_by: null,
-    })
-    .select("id")
-    .single();
-
-  if (leadError || !lead) {
-    // Lost race: same idempotency key inserted concurrently — resolve it the
-    // same way (dedup or 409), never a second row.
-    const code = (leadError as { code?: string } | null)?.code;
-    if (code === "23505" && input.clientReferenceId) {
-      const dedup = await checkDuplicateSubmission(supabase, tenantId, input, specificLotId);
-      if (dedup) return dedup;
-    }
-    console.error("Public inquiry lead insert failed", safeError(leadError));
-    return json({ error: "We could not save your inquiry. Please try again." }, 500);
+  const suppressEmail = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "not-sent" };
+  if (!rpcResult.deduplicated && !suppressEmail) {
+    const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);
+    emailResult = await sendConfirmationEmail({
+      toEmail: input.email, toName: input.name, companyName: company.companyName,
+      projectName: scope.projectName, publicLink: safePageUrl || company.publicLink, waitlist,
+    });
   }
-
-  const leadId = String(lead.id);
-  const receivedTitle = waitlist ? "Waitlist request received" : "Public information request received";
-  const { error: activityError } = await supabase.from("lead_activities").insert({
-    tenant_id: tenantId,
-    lead_id: leadId,
-    activity_type: "note",
-    title: duplicateReason ? `${receivedTitle} - possible duplicate` : receivedTitle,
-    description: duplicateReason ? `${inquiryNotes}\n\nPossible duplicate: ${duplicateReason}` : inquiryNotes,
-    metadata: {
-      source: "public_inquiry",
-      interests: input.interests,
-      specific_lot_ref: input.specificLotRef,
-      page_url: safePageUrl,
-      possible_duplicate: Boolean(duplicateReason),
-      duplicate_reason: duplicateReason,
-    },
-    created_by: null,
-  });
-  if (activityError) console.error("Public inquiry activity insert failed", safeError(activityError));
-
-  const followUpTitle = waitlist ? "Follow up on waitlist request" : "Follow up on public project information inquiry";
-  const followUpDescription = waitlist
-    ? "Contact the buyer about their waitlist request. The lot is currently Reserved: make no availability promise."
-    : "Contact the buyer about their public project information request and answer their questions.";
-  const { error: taskError } = await supabase.from("follow_up_tasks").insert({
-    tenant_id: tenantId,
-    lead_id: leadId,
-    title: duplicateReason ? "Review possible duplicate public inquiry" : followUpTitle,
-    description: duplicateReason
-      ? `Review this public project information inquiry for possible duplicate records. ${duplicateReason}`
-      : followUpDescription,
-    due_at: dueAt,
-    status: "open",
-    priority: duplicateReason ? "high" : "normal",
-    assigned_to: null,
-    created_by: null,
-  });
-  if (taskError) {
-    console.error("Public inquiry follow-up insert failed", safeError(taskError));
-    return json({ error: "Your inquiry was saved, but the follow-up task could not be created." }, 500);
+  if (!rpcResult.deduplicated) {
+    await supabase.from("lead_activities").insert({
+      tenant_id: slugTenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+      lead_id: rpcResult.lead_id, activity_type: "email",
+      title: suppressEmail ? "Buyer confirmation email suppressed in automated test mode" : emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
+      description: suppressEmail ? "Automated test configuration suppressed outbound communication." : emailResult.ok
+        ? "A public inquiry confirmation email was sent to the buyer."
+        : "The inquiry was saved; staff should follow up from this lead.",
+      metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: suppressEmail }, created_by: null,
+    });
   }
-
-  const company = await loadCompanyContext(supabase, tenantId);
-  const emailResult = await sendConfirmationEmail({
-    toEmail: input.email,
-    toName: input.name,
-    companyName: company.companyName,
-    projectName: company.projectName,
-    publicLink: safePageUrl || company.publicLink,
-    waitlist,
-  });
-
-  await supabase.from("lead_activities").insert({
-    tenant_id: tenantId,
-    lead_id: leadId,
-    activity_type: "email",
-    title: emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
-    description: emailResult.ok
-      ? "A public inquiry confirmation email was sent to the buyer."
-      : "The public inquiry was saved, but the buyer confirmation email could not be sent automatically. Staff should still follow up from this lead.",
-    metadata: {
-      source: "public_inquiry",
-      email_sent: emailResult.ok,
-      email_error: emailResult.ok ? null : emailResult.error,
-    },
-    created_by: null,
-  });
-
-  return json({
-    ok: true,
-    leadCreated: true,
-    followUpCreated: true,
-    emailSent: emailResult.ok,
-    waitlist,
-    message: emailResult.ok
-      ? waitlist
-        ? "You're on the waitlist. A confirmation email was sent."
-        : "Your request was received and a confirmation email was sent."
-      : waitlist
-        ? "You're on the waitlist. Our team will contact you if this lot becomes available."
-        : "Your request was received. Our team will follow up using the contact information you provided.",
-  });
+  return json({ ok: true, leadCreated: !rpcResult.deduplicated, followUpCreated: true,
+    deduplicated: Boolean(rpcResult.deduplicated), emailSent: emailResult.ok, emailSuppressed: suppressEmail,
+    waitlist, message: rpcResult.deduplicated ? "Your request was already received. The team will follow up." : suppressEmail
+      ? "Your request was received. The team will follow up using the contact information you provided."
+      : emailResult.ok ? "Your request was received and a confirmation email was sent." : "Your request was received. The team will follow up using the contact information you provided." });
 });
 
 async function resolveTenantId(
@@ -246,174 +151,69 @@ async function resolveTenantId(
   return byAlias.data ? String((byAlias.data as { id: string }).id) : null;
 }
 
-/**
- * Load any published lot by its project-scoped public reference (status checked by the caller: Available →
- * inquiry, Reserved → waitlist, anything else → friendly 400).
- */
+async function resolveProjectPhase(
+  supabase: ReturnType<typeof createClient>, tenantId: string, projectSlug: string | null, phaseSlug: string | null,
+): Promise<{ ok: true; scope: PublicProjectScope } | { ok: false; status: number; message: string }> {
+  const projects = await supabase.from("projects").select("id,slug,name,is_default,map_experience_mode")
+    .eq("tenant_id", tenantId).order("created_at", { ascending: true });
+  if (projects.error) return { ok: false, status: 503, message: "Could not resolve the selected development." };
+  const rows = (projects.data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean; map_experience_mode: "sales" | "demo" }>;
+  const project = projectSlug ? rows.find((row) => row.slug.toLowerCase() === projectSlug) : rows.find((row) => row.is_default);
+  if (!project) return { ok: false, status: 404, message: "Development not found." };
+  const phases = await supabase.from("development_phases").select("id,slug,name,is_default,is_active")
+    .eq("tenant_id", tenantId).eq("project_id", project.id).eq("is_active", true);
+  if (phases.error) return { ok: false, status: 503, message: "Could not resolve the selected development phase." };
+  const phaseRows = (phases.data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean }>;
+  const phase = phaseSlug ? phaseRows.find((row) => row.slug.toLowerCase() === phaseSlug) : phaseRows.find((row) => row.is_default);
+  if (!phase) return { ok: false, status: 404, message: "Development phase not found." };
+  return { ok: true, scope: { projectId: project.id, projectSlug: project.slug, projectName: project.name, phaseId: phase.id, phaseSlug: phase.slug, mapExperienceMode: project.map_experience_mode === "demo" ? "demo" : "sales" } };
+}
+
 async function loadLotByPublicReference(
-  supabase: ReturnType<typeof createClient>,
-  tenantId: string | null,
-  reference: string,
+  supabase: ReturnType<typeof createClient>, tenantId: string, reference: string, scope: PublicProjectScope,
 ): Promise<{ lot: ParcelOption | null; error: "database" | null }> {
   const parts = parsePublicLotReference(reference);
-  if (!tenantId || !parts) return { lot: null, error: null };
-
-  const { data: projectRows, error: projectsError } = await supabase
-    .from("projects")
-    .select("id, slug, name, is_default, created_at")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: true });
-  if (projectsError) {
-    console.error("Public lot project validation failed", safeError(projectsError));
-    return { lot: null, error: "database" };
-  }
-  const project = chooseResolvedProject(projectRows ?? [], parts.projectSlug);
-  if (!project) return { lot: null, error: null };
-
-  const { data: activeVersion, error: versionError } = await supabase
-    .from("masterplan_versions")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .maybeSingle();
-  const version = normalizeActiveVersionLookup(activeVersion as { id?: unknown } | null, versionError);
-  if (!version.ok) {
-    console.error("Public lot version validation failed", safeError(versionError));
-    return { lot: null, error: "database" };
-  }
-
-  const { data, error } = await applyProjectAndVersionScope(
-    supabase.from("parcels")
-      .select("id, tenant_id, lot_number, dimensions, base_price, status")
-      .eq("tenant_id", tenantId)
-      .eq("lot_number", parts.lotNumber),
-    project,
-    version.versionId,
-  ).limit(2);
-  if (error) {
-    console.error("Public lot reference validation failed", safeError(error));
-    return { lot: null, error: "database" };
-  }
+  if (!parts || parts.projectSlug !== scope.projectSlug) return { lot: null, error: null };
+  const version = await supabase.from("masterplan_versions").select("id")
+    .eq("tenant_id", tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
+    .eq("is_active", true).maybeSingle();
+  if (version.error) return { lot: null, error: "database" };
+  let query = supabase.from("parcels").select("id,tenant_id,lot_number,dimensions,base_price,status")
+    .eq("tenant_id", tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
+    .eq("lot_number", parts.lotNumber);
+  query = version.data?.id
+    ? query.or(`masterplan_version_id.is.null,masterplan_version_id.eq.${version.data.id}`)
+    : query.is("masterplan_version_id", null);
+  const { data, error } = await query.limit(2);
+  if (error) return { lot: null, error: "database" };
   if (!Array.isArray(data) || data.length !== 1) return { lot: null, error: null };
   return { lot: data[0] as ParcelOption, error: null };
-}
-
-type LeadRow = {
-  id: unknown;
-  tenant_id: unknown;
-  full_name: unknown;
-  email: unknown;
-  phone: unknown;
-  parcel_id: unknown;
-};
-
-/**
- * Idempotency resolution for a client_reference_id. Same key + same
- * identifying payload → dedup success (no existing lead data is returned).
- * Same key + divergent payload, or a row owned by another tenant → 409.
- * Null when no prior row exists. Interests come from the recorded activity;
- * when unavailable the core fields alone decide (never 409 on doubt).
- */
-async function checkDuplicateSubmission(
-  supabase: ReturnType<typeof createClient>,
-  tenantId: string,
-  input: ValidInquiry,
-  parcelId: number | null,
-): Promise<Response | null> {
-  const { data: existing } = await supabase
-    .from("leads")
-    .select("id, tenant_id, full_name, email, phone, parcel_id")
-    .eq("client_reference_id", input.clientReferenceId)
-    .maybeSingle();
-  const row = (existing ?? null) as LeadRow | null;
-  if (row === null || typeof row.id === "undefined" || row.id === null) return null;
-  if (String(row.tenant_id ?? "") !== tenantId) {
-    return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
-  }
-  const prior: InquiryFingerprint = {
-    name: typeof row.full_name === "string" ? row.full_name : "",
-    email: typeof row.email === "string" ? row.email : "",
-    phone: typeof row.phone === "string" ? row.phone : "",
-    parcelId: typeof row.parcel_id === "number" ? row.parcel_id : null,
-    interests: await priorInquiryInterests(supabase, String(row.id)),
-  };
-  const current: InquiryFingerprint = {
-    name: input.name,
-    email: input.email,
-    phone: input.phone,
-    parcelId,
-    interests: input.interests,
-  };
-  if (!sameInquiryAs(prior, current)) {
-    return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
-  }
-  return json({
-    ok: true,
-    deduplicated: true,
-    message: "Your request was already received. Our team will follow up using the contact information you provided.",
-  });
-}
-
-async function priorInquiryInterests(supabase: ReturnType<typeof createClient>, leadId: string): Promise<string[] | null> {
-  try {
-    const { data } = await supabase
-      .from("lead_activities")
-      .select("metadata")
-      .eq("lead_id", leadId)
-      .eq("activity_type", "note")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const metadata = (data as { metadata?: unknown } | null)?.metadata;
-    const list =
-      metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).interests : undefined;
-    return Array.isArray(list) ? list.map(String) : null;
-  } catch {
-    return null;
-  }
 }
 
 async function duplicateReasonForInquiry(
   supabase: ReturnType<typeof createClient>,
   input: { name: string; email: string; phone: string; parcelId: number | null },
+  projectId: string,
 ) {
   const reasons: string[] = [];
   const email = normalizeEmail(input.email);
   const phone = normalizePhone(input.phone);
   const name = normalizeName(input.name);
 
-  const [{ data: leads }, { data: applications }] = await Promise.all([
-    supabase.from("leads").select("id, full_name, email, phone, parcel_id").limit(1000),
-    supabase.from("applications").select("id, applicant_full_name, first_name, last_name, email, phone, preferred_parcel_ids").limit(1000),
-  ]);
-
+  const { data: leads } = await supabase.from("leads").select("full_name,email,phone,parcel_id")
+    .eq("project_id", projectId).limit(1000);
   const leadRows = (leads ?? []) as Array<{ full_name: string | null; email: string | null; phone: string | null; parcel_id: number | null }>;
-  const applicationRows = (applications ?? []) as Array<{
-    applicant_full_name: string | null;
-    first_name: string | null;
-    last_name: string | null;
-    email: string | null;
-    phone: string | null;
-    preferred_parcel_ids: unknown;
-  }>;
 
-  if (email && (
-    leadRows.some((row) => normalizeEmail(row.email) === email) ||
-    applicationRows.some((row) => normalizeEmail(row.email) === email)
-  )) {
-    reasons.push("Same email found on another lead or application.");
+  if (email && leadRows.some((row) => normalizeEmail(row.email) === email)) {
+    reasons.push("Same email found on another lead in this project.");
   }
 
-  if (phone && (
-    leadRows.some((row) => normalizePhone(row.phone) === phone) ||
-    applicationRows.some((row) => normalizePhone(row.phone) === phone)
-  )) {
-    reasons.push("Same phone found on another lead or application.");
+  if (phone && leadRows.some((row) => normalizePhone(row.phone) === phone)) {
+    reasons.push("Same phone found on another lead in this project.");
   }
 
   if (name && input.parcelId && (
-    leadRows.some((row) => normalizeName(row.full_name) === name && row.parcel_id === input.parcelId) ||
-    applicationRows.some((row) => normalizeName(applicationName(row)) === name && applicationParcelIds(row.preferred_parcel_ids).includes(input.parcelId!))
+    leadRows.some((row) => normalizeName(row.full_name) === name && row.parcel_id === input.parcelId)
   )) {
     reasons.push("Same applicant name and preferred lot found on another lead or application.");
   }
@@ -421,34 +221,19 @@ async function duplicateReasonForInquiry(
   return reasons.length ? reasons.join(" ") : null;
 }
 
-function buildInquiryNotes(input: ValidInquiry, lot: ParcelOption | null, waitlist: boolean) {
-  return [
-    waitlist ? "Waitlist request for a reserved lot." : "Public project information inquiry.",
-    input.interests.length ? `Interests: ${input.interests.join(", ")}` : null,
-    lot
-      ? waitlist
-        ? `Waitlist lot: Lot ${lot.lot_number}${lot.dimensions ? ` - ${lot.dimensions}` : ""} (currently Reserved — no availability promise)`
-        : `Specific lot interest: Lot ${lot.lot_number}${lot.dimensions ? ` - ${lot.dimensions}` : ""}`
-      : null,
-    input.phone ? `Phone / WhatsApp: ${input.phone}` : null,
-    input.message ? `Buyer message: ${input.message}` : null,
-  ].filter(Boolean).join("\n");
-}
-
-async function loadCompanyContext(supabase: ReturnType<typeof createClient>, tenantId: string | null = null) {
-  const companyQuery = supabase.from("business_settings").select("value").eq("key", "company_profile");
+async function loadCompanyContext(supabase: ReturnType<typeof createClient>, tenantId: string, projectId: string) {
+  const companyQuery = supabase.from("project_settings").select("value").eq("key", "company_profile").eq("project_id", projectId);
   const publicQuery = supabase.from("business_settings").select("value").eq("key", "public_application");
-  if (tenantId) {
-    companyQuery.eq("tenant_id", tenantId);
-    publicQuery.eq("tenant_id", tenantId);
-  }
+  companyQuery.eq("tenant_id", tenantId);
+  publicQuery.eq("tenant_id", tenantId);
   const [{ data: companySetting }, { data: publicSetting }] = await Promise.all([
     companyQuery.maybeSingle(),
     publicQuery.maybeSingle(),
   ]);
   const company = valueObject(companySetting?.value);
   const publicApplication = valueObject(publicSetting?.value);
-  const companyName = cleanText(company.company_name, 140) || "Wamule Development";
+  const project = await supabase.from("projects").select("name").eq("id", projectId).eq("tenant_id", tenantId).maybeSingle();
+  const companyName = cleanText(company.company_name, 140) || cleanText(project.data?.name, 140) || "Development team";
   return {
     companyName,
     projectName: companyName,
@@ -570,16 +355,6 @@ function normalizePhone(value: unknown) {
 
 function normalizeName(value: unknown) {
   return cleanText(value, 160).toLowerCase() || null;
-}
-
-function applicationName(row: { applicant_full_name: string | null; first_name: string | null; last_name: string | null }) {
-  return row.applicant_full_name || `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim();
-}
-
-function applicationParcelIds(value: unknown) {
-  return Array.isArray(value)
-    ? value.map((item) => Number(item)).filter((item) => Number.isInteger(item))
-    : [];
 }
 
 function escapeHtml(value: string) {

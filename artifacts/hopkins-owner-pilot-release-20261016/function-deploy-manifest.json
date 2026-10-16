@@ -1,0 +1,91 @@
+{
+  "production_project_ref": "mtjlvzrtihslcftxnlso",
+  "netlify_site": "wamule-bz",
+  "prune": false,
+  "functions": [
+    {
+      "name": "ai-provider-health-check",
+      "source": "supabase/functions/ai-provider-health-check",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "generate-application-review",
+      "source": "supabase/functions/generate-application-review",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "generate-customer-summary",
+      "source": "supabase/functions/generate-customer-summary",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "generate-daily-brief",
+      "source": "supabase/functions/generate-daily-brief",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "generate-lead-summary",
+      "source": "supabase/functions/generate-lead-summary",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "generate-post-sales-summary",
+      "source": "supabase/functions/generate-post-sales-summary",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "get-public-lots",
+      "source": "supabase/functions/get-public-lots",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
+    },
+    {
+      "name": "manage-admin-user",
+      "source": "supabase/functions/manage-admin-user",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "receive-inbound-email",
+      "source": "supabase/functions/receive-inbound-email",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "send-notification-email",
+      "source": "supabase/functions/send-notification-email",
+      "deploy_with": "--use-api",
+      "verify_jwt": true
+    },
+    {
+      "name": "submit-public-application",
+      "source": "supabase/functions/submit-public-application",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
+    },
+    {
+      "name": "submit-public-inquiry",
+      "source": "supabase/functions/submit-public-inquiry",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
+    },
+    {
+      "name": "get-public-project-page",
+      "source": "supabase/functions/get-public-project-page",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
+    },
+    {
+      "name": "submit-hopkins-project-application",
+      "source": "supabase/functions/submit-hopkins-project-application",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
+    }
+  ]
+}

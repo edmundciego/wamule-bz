@@ -81,12 +81,13 @@ export function normalizeReservationWorkflowSettings(value: unknown): Reservatio
   };
 }
 
-export async function fetchReservationWorkflowSettings() {
-  const { data, error } = await supabase
+export async function fetchReservationWorkflowSettings(tenantId?: string) {
+  let query = supabase
     .from("business_settings")
     .select("value")
-    .eq("key", reservationWorkflowSettingsKey)
-    .maybeSingle();
+    .eq("key", reservationWorkflowSettingsKey);
+  if (tenantId) query = query.eq("tenant_id", tenantId);
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   return normalizeReservationWorkflowSettings(data?.value);

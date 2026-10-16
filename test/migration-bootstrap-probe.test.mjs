@@ -13,8 +13,8 @@ function runProbe(...args) {
 test("legacy foundation candidates replay locally but retain distinct contracts", { timeout: 240_000 }, () => {
   const result = runProbe("--compare-candidates", "--diff-lines", "0");
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /archive candidate:[\s\S]*PASS: all 42 tracked migrations applied in order\./);
-  assert.match(result.stdout, /root candidate:[\s\S]*PASS: all 42 tracked migrations applied in order\./);
+  assert.match(result.stdout, /archive candidate:[\s\S]*PASS: all 42 migrations in the legacy comparison scope applied in order\./);
+  assert.match(result.stdout, /root candidate:[\s\S]*PASS: all 42 migrations in the legacy comparison scope applied in order\./);
   assert.match(result.stdout, /admin_profiles primary key: PRIMARY KEY \(id\)/);
   assert.match(result.stdout, /admin_profiles primary key: PRIMARY KEY \(user_id\)/);
   assert.match(result.stdout, /receipt_job_status: Pending, Processing, Completed, Failed/);
@@ -38,6 +38,8 @@ test("fresh tracked migrations refuse to pass without an app-schema baseline", {
   const result = runProbe();
   assert.equal(result.status, 1, result.stderr || result.stdout);
   assert.match(result.stdout, /BLOCKED: 20260610000100_fix_lots_public_options\.sql/);
-  assert.match(result.stdout, /Applied before blocker: 0\/42/);
+  const trackedCount = result.stdout.match(/Tracked migrations: (\d+)/)?.[1];
+  assert.ok(trackedCount, result.stdout);
+  assert.match(result.stdout, new RegExp(`Applied before blocker: 0/${trackedCount}`));
   assert.match(result.stdout, /type "public\.parcel_status" does not exist/);
 });

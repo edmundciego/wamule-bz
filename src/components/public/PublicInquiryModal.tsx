@@ -8,8 +8,11 @@ import { ErrorState } from "../ui/State";
 
 interface PublicInquiryModalProps {
   tenantSlug: string;
+  projectSlug?: string;
+  phaseSlug?: string;
   tenantName: string;
-  lotRef: string;
+  lotRef?: string;
+  mapFeatureRef?: string;
   lotNumber: string;
   /** Reserved lots open in waitlist mode: no availability promise anywhere. */
   waitlist?: boolean;
@@ -28,12 +31,14 @@ function fallbackUuid(): string {
   });
 }
 
-export function PublicInquiryModal({ tenantSlug, tenantName, lotRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState(
-    waitlist ? `I would like to join the waitlist for Lot ${lotNumber}` : `I am interested in reserving Lot ${lotNumber}`,
+    mapFeatureRef
+      ? `I have a question about mapped outline ${lotNumber}`
+      : waitlist ? `I would like to join the waitlist for Lot ${lotNumber}` : `I am interested in reserving Lot ${lotNumber}`,
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +117,14 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotRef, lotNumber, 
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
-          interests: ["Available lots", "A specific lot"],
+          interests: mapFeatureRef ? ["Map outline question"] : ["Available lots", "A specific lot"],
           specificLotRef: lotRef,
+          specificMapFeatureRef: mapFeatureRef,
           message: message.trim() || undefined,
           pageUrl: window.location.href,
           tenant: tenantSlug,
+          project: projectSlug,
+          phase: phaseSlug,
           clientReferenceId,
         }),
       });
@@ -147,7 +155,9 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotRef, lotNumber, 
               {waitlist ? "You're on the Waitlist!" : "Inquiry Sent!"}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
-              {waitlist
+              {mapFeatureRef
+                ? `The development team will follow up about your question on mapped outline ${lotNumber}. This map feature is not a saleable inventory listing.`
+                : waitlist
                 ? `We'll contact you if Lot ${lotNumber} becomes available. Joining the waitlist does not reserve the lot.`
                 : `The development team will reach out to you shortly about Lot ${lotNumber}.`}
             </p>
@@ -159,7 +169,9 @@ export function PublicInquiryModal({ tenantSlug, tenantName, lotRef, lotNumber, 
           <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
             <div>
               <h2 id={titleId} className="font-display text-xl font-semibold text-primary">
-                {waitlist ? `Join the Waitlist for Lot ${lotNumber}` : `Inquire About Lot ${lotNumber}`}
+                {mapFeatureRef
+                  ? `Ask About Mapped Outline ${lotNumber}`
+                  : waitlist ? `Join the Waitlist for Lot ${lotNumber}` : `Inquire About Lot ${lotNumber}`}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">{tenantName}</p>
             </div>

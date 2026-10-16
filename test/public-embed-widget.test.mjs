@@ -57,7 +57,9 @@ test("available lots open a tenant-tagged inquiry without leaving the iframe", a
   assert.match(modal, /Inquiry Sent!/);
   assert.match(contract, /tenant\?: unknown/);
   assert.match(inquiryFunction, /resolveTenantId/);
-  assert.match(inquiryFunction, /tenant_id: tenantId/);
+  // Public slugs resolve to the trusted tenant ID on the server; callers do
+  // not supply or control tenant IDs directly.
+  assert.match(inquiryFunction, /p_tenant_id: slugTenantId/);
 });
 
 test("snippet generator emits the active tenant slug", async () => {

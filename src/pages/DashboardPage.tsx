@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -18,42 +18,166 @@ import type { ReactNode } from "react";
 import { Badge } from "../components/ui/Badge";
 import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { buildOperationalAttention, groupOperationalAttention, operationalAttentionInsights, type OperationalAttentionGroup, type OperationalAttentionItem } from "../lib/operationalAttention";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { cn, formatDate, money } from "../lib/utils";
+import { isAvailableForSalesSelection, isExistingInventoryRecord, isRasterDetection } from "../../supabase/functions/_shared/parcel-provenance.mjs";
 import type { FollowUpTask, Lead, LotReservation, PostSalesChecklist, PostSalesTask, SiteVisit } from "../types/database";
 
 export function DashboardPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = `${workspaceScopeKey(workspace)}:${workspace?.mapExperienceMode ?? "sales"}`;
   const results = useQueries({
     queries: [
-      { queryKey: ["parcels"], queryFn: async () => (await supabase.from("parcels").select("*")).data ?? [] },
-      { queryKey: ["applications"], queryFn: async () => (await supabase.from("applications").select("*")).data ?? [] },
-      { queryKey: ["transactions"], queryFn: async () => (await supabase.from("transactions").select("*, customers(first_name, last_name), payment_documents(id)")).data ?? [] },
-      { queryKey: ["balances"], queryFn: async () => (await supabase.from("contract_financial_summary").select("*")).data ?? [] },
-      { queryKey: ["dashboard-sales-leads"], queryFn: async () => (await supabase.from("leads").select("*").order("updated_at", { ascending: false })).data as Lead[] ?? [] },
-      { queryKey: ["dashboard-follow-ups"], queryFn: async () => (await supabase.from("follow_up_tasks").select("*").in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false })).data as FollowUpTask[] ?? [] },
-      { queryKey: ["dashboard-site-visits"], queryFn: async () => (await supabase.from("site_visits").select("*").in("status", ["scheduled", "rescheduled"]).order("scheduled_at", { ascending: true })).data as SiteVisit[] ?? [] },
-      { queryKey: ["dashboard-lot-reservations"], queryFn: async () => (await supabase.from("lot_reservations").select("*").order("updated_at", { ascending: false })).data as LotReservation[] ?? [] },
-      { queryKey: ["dashboard-post-sales-tasks"], queryFn: async () => (await supabase.from("post_sales_tasks").select("*").in("status", ["open", "in_progress", "blocked"]).order("due_at", { ascending: true, nullsFirst: false })).data as PostSalesTask[] ?? [] },
-      { queryKey: ["dashboard-post-sales-checklists"], queryFn: async () => (await supabase.from("post_sales_checklists").select("*").order("updated_at", { ascending: false })).data as PostSalesChecklist[] ?? [] },
-      { queryKey: ["dashboard-admin-profiles"], queryFn: async () => (await supabase.from("admin_profiles").select("user_id, full_name, email")).data ?? [] },
-      { queryKey: ["dashboard-payment-requests"], queryFn: async () => (await supabase.from("payment_requests").select("*, customers(first_name, last_name)")).data ?? [] },
+      {
+        queryKey: ["dashboard-parcels", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("parcels").select("*")
+            .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+          if (error) throw error;
+          return data ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-applications", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          let query = supabase.from("applications").select("*").eq("tenant_id", workspace!.tenantId);
+          if (workspace!.tenantSlug === "wamule" && workspace!.isDefaultProject && workspace!.isDefaultPhase) {
+            query = query.or(`and(project_id.eq.${workspace!.projectId},phase_id.eq.${workspace!.phaseId}),and(project_id.is.null,phase_id.is.null)`);
+          } else {
+            query = query.eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+          }
+          const { data, error } = await query;
+          if (error) throw error;
+          return data ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-transactions", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("transactions").select("*, customers(first_name, last_name), payment_documents(id)")
+            .eq("tenant_id", workspace!.tenantId);
+          if (error) throw error;
+          return data ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-sales-leads", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("leads").select("*")
+            .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+            .order("updated_at", { ascending: false });
+          if (error) throw error;
+          return data as Lead[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-follow-ups", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("follow_up_tasks").select("*")
+            .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+            .in("status", ["open", "in_progress"]).order("due_at", { ascending: true, nullsFirst: false });
+          if (error) throw error;
+          return data as FollowUpTask[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-site-visits", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("site_visits").select("*")
+            .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+            .in("status", ["scheduled", "rescheduled"]).order("scheduled_at", { ascending: true });
+          if (error) throw error;
+          return data as SiteVisit[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-lot-reservations", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("lot_reservations").select("*")
+            .eq("tenant_id", workspace!.tenantId).order("updated_at", { ascending: false });
+          if (error) throw error;
+          return data as LotReservation[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-post-sales-tasks", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("post_sales_tasks").select("*")
+            .eq("tenant_id", workspace!.tenantId).in("status", ["open", "in_progress", "blocked"])
+            .order("due_at", { ascending: true, nullsFirst: false });
+          if (error) throw error;
+          return data as PostSalesTask[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-post-sales-checklists", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("post_sales_checklists").select("*")
+            .eq("tenant_id", workspace!.tenantId).order("updated_at", { ascending: false });
+          if (error) throw error;
+          return data as PostSalesChecklist[] ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-admin-profiles", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("admin_profiles").select("user_id, full_name, email")
+            .eq("tenant_id", workspace!.tenantId);
+          if (error) throw error;
+          return data ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-payment-requests", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("payment_requests").select("*, customers(first_name, last_name)")
+            .eq("tenant_id", workspace!.tenantId);
+          if (error) throw error;
+          return data ?? [];
+        },
+      },
+      {
+        queryKey: ["dashboard-map-snapshot", scopeKey], enabled: Boolean(workspace),
+        queryFn: async () => {
+          const { data, error } = await supabase.from("map_feature_snapshots").select("outline_count")
+            .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+            .eq("is_active", true).maybeSingle();
+          if (error) throw error;
+          return data?.outline_count ?? 0;
+        },
+      },
     ],
   });
-  const isLoading = results.some((result) => result.isLoading);
-  const error = results.find((result) => result.error)?.error as Error | undefined;
   const parcels = results[0].data ?? [];
+  const parcelIds = parcels.map((parcel) => parcel.id);
+  const balancesQuery = useQuery({
+    queryKey: ["dashboard-balances", scopeKey, parcelIds.join(",")],
+    enabled: Boolean(workspace && results[0].isSuccess),
+    queryFn: async () => {
+      if (!parcelIds.length) return [];
+      const { data, error } = await supabase.from("contract_financial_summary").select("*").in("parcel_id", parcelIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const isLoading = workspaceLoading || results.some((result) => result.isLoading) || balancesQuery.isLoading;
+  const error = results.find((result) => result.error)?.error as Error | undefined;
+  const dashboardError = error ?? balancesQuery.error as Error | undefined;
   const applications = results[1].data ?? [];
   const transactions = results[2].data ?? [];
-  const balances = results[3].data ?? [];
-  const leads = results[4].data ?? [];
-  const followUps = results[5].data ?? [];
-  const siteVisits = results[6].data ?? [];
-  const reservations = results[7].data ?? [];
-  const postSalesTasks = results[8].data ?? [];
-  const postSalesChecklists = results[9].data ?? [];
-  const adminProfiles = results[10].data ?? [];
-  const paymentRequests = results[11].data ?? [];
+  const balances = balancesQuery.data ?? [];
+  const leads = results[3].data ?? [];
+  const followUps = results[4].data ?? [];
+  const siteVisits = results[5].data ?? [];
+  const reservations = results[6].data ?? [];
+  const postSalesTasks = results[7].data ?? [];
+  const postSalesChecklists = results[8].data ?? [];
+  const adminProfiles = results[9].data ?? [];
+  const paymentRequests = results[10].data ?? [];
+  const mapOutlines = results[11].data ?? 0;
   const ownerNames = new Map<string, string>(adminProfiles.map((profile: { user_id: string; full_name?: string | null; email?: string | null }) => [profile.user_id, profile.full_name || profile.email || "Unassigned"]));
   const totalRevenue = transactions.filter((item) => item.status === "posted").reduce((sum, item) => sum + Number(item.amount), 0);
   const overdueBalance = balances.reduce((sum, item) => sum + Number(item.remaining_balance ?? 0), 0);
@@ -74,18 +198,22 @@ export function DashboardPage() {
   const reservationSummary = reservationDashboardSummary(reservations, attentionGroups);
   const postSalesSummary = postSalesDashboardSummary(postSalesTasks, postSalesChecklists, attentionGroups);
   const pendingApplications = attentionGroups.find((group) => group.kind === "application_review")?.count ?? 0;
-  const availableLots = parcels.filter((lot) => lot.status === "Available").length;
-  const reservedLots = parcels.filter((lot) => lot.status === "Reserved").length;
-  const soldLots = parcels.filter((lot) => lot.status === "Sold").length;
+  const existingInventory = parcels.filter(isExistingInventoryRecord);
+  const rasterDetections = parcels.filter(isRasterDetection);
+  const otherProvenanceRecords = parcels.length - existingInventory.length - rasterDetections.length;
+  const availableLots = existingInventory.filter(isAvailableForSalesSelection).length;
+  const reservedLots = existingInventory.filter((lot) => lot.status === "Reserved").length;
+  const soldLots = existingInventory.filter((lot) => lot.status === "Sold").length;
   const communityDelinquency = balances.filter((row) => Number(row.community_paid) <= 0).length;
   const collectionAlerts = attentionGroups.find((group) => group.kind === "collection_alert")?.count ?? 0;
   const primaryAttention = attentionGroups[0] ?? null;
 
   return (
     <div className="space-y-6">
-      <DashboardHeader />
+      <DashboardHeader workspaceLabel={workspace ? `${workspace.tenantName} · ${workspace.projectName} · ${workspace.phaseName}` : undefined} />
       {isLoading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error.message} /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its dashboard."} /> : null}
+      {dashboardError ? <ErrorState message={dashboardError.message} /> : null}
       <AttentionBand
         primary={primaryAttention}
         groups={attentionGroups}
@@ -110,7 +238,10 @@ export function DashboardPage() {
         <PostSalesWork postSalesSummary={postSalesSummary} />
       </section>
       <SupportingTotals
-        totalLots={parcels.length}
+        existingInventory={existingInventory.length}
+        rasterDetections={rasterDetections.length}
+        otherProvenanceRecords={otherProvenanceRecords}
+        mapOutlines={mapOutlines}
         availableLots={availableLots}
         reservedLots={reservedLots}
         soldLots={soldLots}
@@ -120,7 +251,7 @@ export function DashboardPage() {
   );
 }
 
-function DashboardHeader() {
+function DashboardHeader({ workspaceLabel }: { workspaceLabel?: string }) {
   return (
     <header className="flex flex-col gap-3 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
@@ -129,6 +260,7 @@ function DashboardHeader() {
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
           Your daily view of sales, reservations, collections, and work requiring attention.
         </p>
+        {workspaceLabel ? <p className="mt-2 text-xs font-medium text-primary">Showing {workspaceLabel}</p> : null}
       </div>
       <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-slate shadow-sm">
         <span className="font-medium text-foreground">Today</span>
@@ -362,13 +494,19 @@ function AdvisorPanel({ insights }: { insights: ReturnType<typeof operationalAtt
 }
 
 function SupportingTotals({
-  totalLots,
+  existingInventory,
+  rasterDetections,
+  otherProvenanceRecords,
+  mapOutlines,
   availableLots,
   reservedLots,
   soldLots,
   pendingApplications,
 }: {
-  totalLots: number;
+  existingInventory: number;
+  rasterDetections: number;
+  otherProvenanceRecords: number;
+  mapOutlines: number;
   availableLots: number;
   reservedLots: number;
   soldLots: number;
@@ -376,11 +514,14 @@ function SupportingTotals({
 }) {
   return (
     <section className="rounded-xl border border-border bg-card/70 p-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <SupportingStat title="Total lots" value={totalLots} meta="Inventory" />
-        <SupportingStat title="Available" value={availableLots} meta="Ready for buyers" />
-        <SupportingStat title="Reserved" value={reservedLots} meta="Pending next action" />
-        <SupportingStat title="Sold" value={soldLots} meta="Closed inventory" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+        <SupportingStat title="Existing inventory" value={existingInventory} meta="Manual-provenance parcel records" />
+        <SupportingStat title="Raster detections" value={rasterDetections} meta="Map/review data, not sales inventory" />
+        <SupportingStat title="Other provenance" value={otherProvenanceRecords} meta="Parcel records needing classification" />
+        <SupportingStat title="Map outlines" value={mapOutlines} meta="Display geometry; not inventory" />
+        <SupportingStat title="Available manual records" value={availableLots} meta="Stored status and review flag allow selection" />
+        <SupportingStat title="Reserved manual records" value={reservedLots} meta="Existing inventory records" />
+        <SupportingStat title="Sold manual records" value={soldLots} meta="Existing inventory records" />
         <SupportingStat title="Applications" value={pendingApplications} meta="Pending review" />
       </div>
     </section>

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -72,21 +73,10 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin", "Staff"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate lead summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { lead_id?: string } | null;
+  const body = await request.json().catch(() => null) as { lead_id?: string; tenant_id?: string } | null;
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const leadId = String(body?.lead_id ?? "").trim();
   if (!leadId) {
     return json({ error: "lead_id is required." }, 400);
@@ -100,31 +90,37 @@ Deno.serve(async (request) => {
       .from("leads")
       .select("*, parcels(id, lot_number, status, dimensions, base_price), applications(*, application_ai_reviews(*)), customers(*, customer_ai_summaries(*))")
       .eq("id", leadId)
+      .eq("tenant_id", tenantId)
       .maybeSingle(),
     supabase
       .from("lead_activities")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(20),
     supabase
       .from("follow_up_tasks")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("site_visits")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
       .order("scheduled_at", { ascending: true }),
     supabase
       .from("lot_reservations")
       .select("*, parcels(id, lot_number, status, dimensions, base_price)")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -194,6 +190,7 @@ Deno.serve(async (request) => {
   const { data: savedSummary, error: saveError } = await supabase
     .from("lead_ai_summaries")
     .insert({
+      tenant_id: tenantId,
       lead_id: leadId,
       summary: summary.summary,
       readiness_status: summary.readiness_status,

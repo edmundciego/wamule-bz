@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-10-16T06:15:48.656Z",
+  "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
+  "source_snapshot_version": 2,
+  "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
+  "package_snapshot_sha256": "d9243c9b8cbe140df365f569c85246c4f738f881be528fe524e515c82cfc321a",
+  "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+  "detection_source_sha256": "f70084a8e7c9ba0ea2b0203bfbf4af678d3f09b60a712ec5b469f45ff08aafa0",
+  "correction_manifest_sha256": "0dc71884b13e11e71c597ea2d4bf3db801344d82ad07c438fe44926b14ba56fb",
+  "tier_catalogue_sha256": "f94fbe2dc18465e8a49af2e2d7a2b919820e235a5e1c8248bc0706c8945139a6",
+  "outline_count": 775,
+  "source_number_review": {
+    "reviewed_candidates": 82,
+    "unique_source_reads": 80,
+    "ambiguous_multiple_lot_outlines": 2
+  },
+  "tier_counts": {
+    "standard": 169,
+    "creek": 23,
+    "premium": 358,
+    "boulevard": 174,
+    "purple": 18,
+    "orange": 26,
+    "unassigned-source-fill": 1,
+    "red": 6
+  },
+  "imported_tables": [
+    "map_feature_identities",
+    "map_feature_snapshots",
+    "map_features",
+    "masterplan_versions",
+    "Storage/project-map-public"
+  ],
+  "excluded_staging_data": [
+    "applications",
+    "leads",
+    "lead_activities",
+    "follow_up_tasks",
+    "email_notifications",
+    "Auth users"
+  ],
+  "files": [
+    {
+      "path": "source/number-crosswalk.csv",
+      "bytes": 6777,
+      "sha256": "050e588d4dc0b38bddbb81896df884c44757d698c2a6cc16b1aa1d2ee8b51525"
+    },
+    {
+      "path": "source/hopkins-source-comparison.md",
+      "bytes": 8089,
+      "sha256": "af12e4b9d4327f0218fccdab848d2ee4b58021b99708060917b18527c3c5f49b"
+    },
+    {
+      "path": "source/hopkins-source-review.md",
+      "bytes": 2471,
+      "sha256": "15ae9780b6eeef47822d4f4c92ed9dadfaff4fbed0329adc77d6b232d7834648"
+    },
+    {
+      "path": "source/hopkins-tier-catalogue.json",
+      "bytes": 2519,
+      "sha256": "f94fbe2dc18465e8a49af2e2d7a2b919820e235a5e1c8248bc0706c8945139a6"
+    },
+    {
+      "path": "source/hopkins-project-config.json",
+      "bytes": 955,
+      "sha256": "95813a8a61215e7ff737f3e2b8e7eda73594cdb422de1ff0a9485c45aea7e402"
+    },
+    {
+      "path": "source/hopkins-approved-correction-manifest.json",
+      "bytes": 133734,
+      "sha256": "0dc71884b13e11e71c597ea2d4bf3db801344d82ad07c438fe44926b14ba56fb"
+    },
+    {
+      "path": "source/hopkins-source-detections.json",
+      "bytes": 371381,
+      "sha256": "f70084a8e7c9ba0ea2b0203bfbf4af678d3f09b60a712ec5b469f45ff08aafa0"
+    },
+    {
+      "path": "assets/hopkins-display-background.webp",
+      "bytes": 1868498,
+      "sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be"
+    },
+    {
+      "path": "hopkins-775-outline-snapshot.json",
+      "bytes": 1390651,
+      "sha256": "d9243c9b8cbe140df365f569c85246c4f738f881be528fe524e515c82cfc321a"
+    },
+    {
+      "path": "hopkins-public-site-settings.json",
+      "bytes": 2614,
+      "sha256": "3cfbd64f4d49100624a89c5282793975fc2c701fe6e893099da82fe5714ce70f"
+    }
+  ],
+  "package_files": [
+    {
+      "path": "assets/hopkins-display-background.webp",
+      "bytes": 1868498,
+      "sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be"
+    },
+    {
+      "path": "frontend-production.env.example",
+      "bytes": 315,
+      "sha256": "9b175c04670ef45dc912bfcbd4e7717c6bb8924d418bba70ffab303a2f71f751"
+    },
+    {
+      "path": "function-deploy-manifest.json",
+      "bytes": 2582,
+      "sha256": "3610a45998addfadd64b24fae091a0c83f9760a82e21042a90b3060c4a95908d"
+    },
+    {
+      "path": "hopkins-775-outline-snapshot.json",
+      "bytes": 1390651,
+      "sha256": "d9243c9b8cbe140df365f569c85246c4f738f881be528fe524e515c82cfc321a"
+    },
+    {
+      "path": "hopkins-public-site-settings.json",
+      "bytes": 2614,
+      "sha256": "3cfbd64f4d49100624a89c5282793975fc2c701fe6e893099da82fe5714ce70f"
+    },
+    {
+      "path": "migration-manifest.json",
+      "bytes": 6817,
+      "sha256": "c0039300fb602e0e81c495e0544b57b70ec6099665a7e52b6179261b6439ef9a"
+    },
+    {
+      "path": "production-baseline.json",
+      "bytes": 42516,
+      "sha256": "c4c7b11d38d2b286b91705fb8c3554292517f4b54ad8b74c66003b2cbd39ee61"
+    },
+    {
+      "path": "production-extensions.json",
+      "bytes": 1262,
+      "sha256": "38520ae1c18f691c368413c6f718907c719fc7ba5d5fd41b195a3a092f01f67c"
+    },
+    {
+      "path": "production-target.json",
+      "bytes": 297,
+      "sha256": "80ec8e95f0f7b430c0c2850dd82835ceb579f2e72baf49d3696beb7257d29b3a"
+    },
+    {
+      "path": "release-runbook.md",
+      "bytes": 21559,
+      "sha256": "028340cbdbe3237a45491371fbfce8ddec72bec16eeed22a878b5d8b79f74aae"
+    },
+    {
+      "path": "source/hopkins-approved-correction-manifest.json",
+      "bytes": 133734,
+      "sha256": "0dc71884b13e11e71c597ea2d4bf3db801344d82ad07c438fe44926b14ba56fb"
+    },
+    {
+      "path": "source/hopkins-project-config.json",
+      "bytes": 955,
+      "sha256": "95813a8a61215e7ff737f3e2b8e7eda73594cdb422de1ff0a9485c45aea7e402"
+    },
+    {
+      "path": "source/hopkins-source-comparison.md",
+      "bytes": 8089,
+      "sha256": "af12e4b9d4327f0218fccdab848d2ee4b58021b99708060917b18527c3c5f49b"
+    },
+    {
+      "path": "source/hopkins-source-detections.json",
+      "bytes": 371381,
+      "sha256": "f70084a8e7c9ba0ea2b0203bfbf4af678d3f09b60a712ec5b469f45ff08aafa0"
+    },
+    {
+      "path": "source/hopkins-source-review.md",
+      "bytes": 2471,
+      "sha256": "15ae9780b6eeef47822d4f4c92ed9dadfaff4fbed0329adc77d6b232d7834648"
+    },
+    {
+      "path": "source/hopkins-tier-catalogue.json",
+      "bytes": 2519,
+      "sha256": "f94fbe2dc18465e8a49af2e2d7a2b919820e235a5e1c8248bc0706c8945139a6"
+    },
+    {
+      "path": "source/number-crosswalk.csv",
+      "bytes": 6777,
+      "sha256": "050e588d4dc0b38bddbb81896df884c44757d698c2a6cc16b1aa1d2ee8b51525"
+    },
+    {
+      "path": "storage-backup-manifest.json",
+      "bytes": 1926,
+      "sha256": "85f36a4af0c817cc52252fe9375ecc71a28491158492b8283fa36e0cc2ffc5d9"
+    },
+    {
+      "path": "supabase.production.toml",
+      "bytes": 481,
+      "sha256": "22a0fa21ab04f9bc8c1402a330934e7a18c4d20532103ef4debe29dc76b01509"
+    }
+  ]
+}

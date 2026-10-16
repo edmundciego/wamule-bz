@@ -50,6 +50,12 @@ Deno.serve(async (request) => {
   if (settings.applications_open !== true) return json({ error: "Applications are currently closed." }, 403);
 
   const parts = input.preferred_lot_refs.map((reference) => parsePublicLotReference(reference)!);
+  const projectSlug = parts[0]?.projectSlug;
+  if (!projectSlug || parts.some((part) => part.projectSlug !== projectSlug)) {
+    return json({ error: "Choose preferred lots from one published project." }, 400);
+  }
+  const applicationScope = await resolveDefaultPhaseForProject(supabase, tenant.id, projectSlug);
+  if (!applicationScope) return json({ error: "The selected project phase could not be verified." }, 503);
   const lotResolution = await resolveAvailableLots(supabase, tenant.id, parts);
   if (lotResolution.error === "database") {
     return json({ error: "The current lot list could not be verified. Please try again." }, 503);
@@ -59,6 +65,8 @@ Deno.serve(async (request) => {
   const nameParts = splitApplicantName(input.applicant_full_name);
   const { error: insertError } = await supabase.from("applications").insert({
     tenant_id: tenant.id,
+    project_id: applicationScope.projectId,
+    phase_id: applicationScope.phaseId,
     first_name: nameParts.firstName,
     last_name: nameParts.lastName,
     applicant_full_name: input.applicant_full_name,
@@ -89,6 +97,19 @@ Deno.serve(async (request) => {
 
   return json({ ok: true, message: "Your application was submitted for review." });
 });
+
+async function resolveDefaultPhaseForProject(
+  supabase: ReturnType<typeof createClient>, tenantId: string, projectSlug: string,
+): Promise<{ projectId: string; phaseId: string } | null> {
+  const { data: project, error: projectError } = await supabase.from("projects")
+    .select("id").eq("tenant_id", tenantId).eq("slug", projectSlug).maybeSingle();
+  if (projectError || !project) return null;
+  const { data: phase, error: phaseError } = await supabase.from("development_phases")
+    .select("id").eq("tenant_id", tenantId).eq("project_id", project.id)
+    .eq("is_default", true).eq("is_active", true).maybeSingle();
+  if (phaseError || !phase) return null;
+  return { projectId: project.id, phaseId: phase.id };
+}
 
 async function resolveTenant(
   supabase: ReturnType<typeof createClient>,

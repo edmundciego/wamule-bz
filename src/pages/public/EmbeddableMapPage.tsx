@@ -21,6 +21,7 @@ export function EmbeddableMapPage() {
     || (tenant_slug === "hopkins-grove" && (!project_slug || project_slug === "map-review"));
   const localPreviewEnabled = import.meta.env.DEV && demoMode === "hopkins" && isHopkinsDemoRoute;
   const requestedPhase = searchParams.get("phase") ?? "default";
+  const publicPhaseSlug = searchParams.get("phase") ?? undefined;
   const localMapPreviewScope = useMemo(() => {
     if (!localPreviewEnabled) return undefined;
     const phaseSlug = /^[a-z0-9][a-z0-9-]{0,62}$/.test(requestedPhase) ? requestedPhase : "default";
@@ -32,6 +33,7 @@ export function EmbeddableMapPage() {
       <PublicLotMap
         tenantSlug={tenant_slug}
         projectSlug={project_slug}
+        phaseSlug={publicPhaseSlug}
         showPrices={!localPreviewEnabled}
         enableInquiry={!localPreviewEnabled}
         initialFilter={initialFilter}
@@ -47,7 +49,7 @@ export function EmbeddableMapPage() {
         }}
         onSelectLot={(parcel) => {
           const params = Object.fromEntries(searchParams.entries());
-          params.lot = localPreviewEnabled ? demoPlotLabel(parcel) : parcel.lot_number;
+          params.lot = localPreviewEnabled ? demoPlotLabel(parcel) : parcel.demo_label ?? parcel.lot_number;
           setSearchParams(params, { replace: true });
         }}
       />

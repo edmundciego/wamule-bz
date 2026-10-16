@@ -1,5 +1,6 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { useEffect, useState, type FormEvent } from "react";
 import { Clipboard, CreditCard, FileText, Home, Landmark, RefreshCw, UserRound } from "lucide-react";
 import { ContractForm } from "../components/forms/ContractForm";
@@ -17,6 +18,7 @@ import { getSessionAndProfile } from "../lib/data";
 import { activeContract as canonicalActiveContract, openPaymentRequests, postedLandPaymentsForContract, remainingLandBalance } from "../lib/financial";
 import { customerOperationsInsights, postSalesRecommendedInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
@@ -66,6 +68,7 @@ type PaymentDocumentWithTransaction = PaymentDocument & {
 };
 type CustomerDetail = {
   id: number;
+  tenant_id?: string | null;
   application_id: number;
   first_name: string;
   last_name: string;
@@ -106,6 +109,8 @@ export function CustomerDetailPage() {
   const [searchParams] = useSearchParams();
   const customerId = Number(id);
   const queryClient = useQueryClient();
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [activeSection, setActiveSection] = useState<CustomerSection>("Overview");
   const requestedTab = searchParams.get("tab");
   useEffect(() => {
@@ -131,30 +136,34 @@ export function CustomerDetailPage() {
     queryFn: getSessionAndProfile,
   });
   const { data: aiSettings } = useQuery({
-    queryKey: ["customer-ai-settings"],
+    queryKey: ["customer-ai-settings", scopeKey],
     queryFn: async () => {
       const { data: settings, error: queryError } = await supabase
         .from("ai_settings")
         .select("is_enabled, collections_assistant_enabled")
+        .eq("tenant_id", workspace!.tenantId)
         .order("id", { ascending: true })
         .limit(1)
         .maybeSingle();
       if (queryError) throw queryError;
       return settings;
     },
+    enabled: Boolean(workspace),
   });
   const { data: adminProfiles } = useQuery({
-    queryKey: ["customer-ai-admin-profiles"],
+    queryKey: ["customer-ai-admin-profiles", scopeKey],
     queryFn: async () => {
       const { data: profiles, error: queryError } = await supabase
         .from("admin_profiles")
-        .select("user_id, full_name, email");
+        .select("user_id, full_name, email")
+        .eq("tenant_id", workspace!.tenantId);
       if (queryError) throw queryError;
       return profiles as Array<{ user_id: string; full_name: string | null; email: string | null }>;
     },
+    enabled: Boolean(workspace),
   });
   const { data, isLoading, error } = useQuery({
-    queryKey: ["customer-detail", customerId],
+    queryKey: ["customer-detail", scopeKey, customerId],
     queryFn: async () => {
       const { data: customer, error: queryError } = await supabase
         .from("customers")
@@ -162,116 +171,125 @@ export function CustomerDetailPage() {
           "*, applications(*, parcels(*)), contracts(*, parcels(*)), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*), customer_ai_summaries(*)",
         )
         .eq("id", customerId)
+        .eq("tenant_id", workspace!.tenantId)
         .single();
       if (queryError) throw queryError;
       return customer as CustomerDetail;
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: relatedLeads } = useQuery({
-    queryKey: ["customer-related-leads", customerId],
+    queryKey: ["customer-related-leads", scopeKey, customerId],
     queryFn: async () => {
       const { data: leads, error: queryError } = await supabase
         .from("leads")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
       return leads as Lead[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: relatedReservations } = useQuery({
-    queryKey: ["customer-related-reservations", customerId],
+    queryKey: ["customer-related-reservations", scopeKey, customerId],
     queryFn: async () => {
       const { data: reservations, error: queryError } = await supabase
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status)")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
       return reservations as Array<LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null }>;
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: relatedSiteVisits } = useQuery({
-    queryKey: ["customer-related-site-visits", customerId],
+    queryKey: ["customer-related-site-visits", scopeKey, customerId],
     queryFn: async () => {
       const { data: visits, error: queryError } = await supabase
         .from("site_visits")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("scheduled_at", { ascending: true });
       if (queryError) throw queryError;
       return visits as SiteVisit[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: postSalesChecklists } = useQuery({
-    queryKey: ["customer-post-sales-checklists", customerId],
+    queryKey: ["customer-post-sales-checklists", scopeKey, customerId],
     queryFn: async () => {
       const { data: checklists, error: queryError } = await supabase
         .from("post_sales_checklists")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
       return checklists as PostSalesChecklist[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: postSalesTasks } = useQuery({
-    queryKey: ["customer-post-sales-tasks", customerId],
+    queryKey: ["customer-post-sales-tasks", scopeKey, customerId],
     queryFn: async () => {
       const { data: tasks, error: queryError } = await supabase
         .from("post_sales_tasks")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("due_at", { ascending: true, nullsFirst: false });
       if (queryError) throw queryError;
       return tasks as PostSalesTask[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: postSalesActivities } = useQuery({
-    queryKey: ["customer-post-sales-activities", customerId],
+    queryKey: ["customer-post-sales-activities", scopeKey, customerId],
     queryFn: async () => {
       const { data: activities, error: queryError } = await supabase
         .from("post_sales_activities")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return activities as PostSalesActivity[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: postSalesAiSummaries } = useQuery({
-    queryKey: ["customer-post-sales-ai-summaries", customerId],
+    queryKey: ["customer-post-sales-ai-summaries", scopeKey, customerId],
     queryFn: async () => {
       const { data: summaries, error: queryError } = await supabase
         .from("post_sales_ai_summaries")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .order("generated_at", { ascending: false });
       if (queryError) throw queryError;
       return summaries as PostSalesAiSummary[];
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
   const { data: contractVoidResolutions } = useQuery({
-    queryKey: ["customer-contract-void-resolutions", customerId],
+    queryKey: ["customer-contract-void-resolutions", scopeKey, customerId],
     queryFn: async () => {
       const { data: resolutions, error: queryError } = await supabase
         .from("contract_void_resolutions")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("customer_id", customerId)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return resolutions as Array<{ id: string; contract_id: number; parcel_id: number; status: string; created_at: string }>;
     },
-    enabled: Number.isFinite(customerId),
+    enabled: Boolean(workspace && Number.isFinite(customerId)),
   });
 
   const historicalLandPayments =
@@ -311,13 +329,13 @@ export function CustomerDetailPage() {
   });
 
   function refreshCustomer() {
-    void queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
+    void queryClient.invalidateQueries({ queryKey: ["customer-detail", scopeKey, customerId] });
   }
 
   async function refreshPostSales() {
-    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-checklists", customerId] });
-    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-tasks", customerId] });
-    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-activities", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-checklists", scopeKey, customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-tasks", scopeKey, customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-activities", scopeKey, customerId] });
     await queryClient.invalidateQueries({ queryKey: ["dashboard-post-sales-checklists"] });
     await queryClient.invalidateQueries({ queryKey: ["dashboard-post-sales-tasks"] });
     await queryClient.invalidateQueries({ queryKey: ["application-post-sales-checklists"] });
@@ -330,11 +348,12 @@ export function CustomerDetailPage() {
   }
 
   async function generateAiSummary() {
+    if (!workspace) return setActionError("Choose a workspace before generating a customer summary.");
     setActionError(null);
     setToast(null);
     setGeneratingSummary(true);
     const { data: result, error: functionError } = await supabase.functions.invoke("generate-customer-summary", {
-      body: { customer_id: customerId },
+      body: { customer_id: customerId, tenant_id: workspace!.tenantId },
     });
     setGeneratingSummary(false);
     if (functionError) {
@@ -346,15 +365,16 @@ export function CustomerDetailPage() {
       return;
     }
     setToast(String(result?.message ?? "Customer AI summary generated."));
-    await queryClient.invalidateQueries({ queryKey: ["customer-detail", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-detail", scopeKey, customerId] });
   }
 
   async function generatePostSalesSummary(checklistId: string) {
+    if (!workspace) return setActionError("Choose a workspace before generating a post-sales summary.");
     setActionError(null);
     setToast(null);
     setGeneratingPostSalesSummaryId(checklistId);
     const { data: result, error: functionError } = await supabase.functions.invoke("generate-post-sales-summary", {
-      body: { checklist_id: checklistId },
+      body: { checklist_id: checklistId, tenant_id: workspace!.tenantId },
     });
     setGeneratingPostSalesSummaryId(null);
     if (functionError) {
@@ -366,7 +386,7 @@ export function CustomerDetailPage() {
       return;
     }
     setToast(String(result?.message ?? "Post-Sales Smart Summary generated."));
-    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-ai-summaries", customerId] });
+    await queryClient.invalidateQueries({ queryKey: ["customer-post-sales-ai-summaries", scopeKey, customerId] });
   }
 
   async function copyFollowUpMessage(message: string) {
@@ -381,7 +401,7 @@ export function CustomerDetailPage() {
   }
 
   async function voidContract() {
-    if (!voidContractTarget) return;
+    if (!voidContractTarget || !workspace || data?.tenant_id !== workspace.tenantId) return;
     const reason = voidReason.trim();
     if (!reason) {
       setActionError("Void reason is required.");
@@ -416,6 +436,7 @@ export function CustomerDetailPage() {
     description?: string | null;
   }) {
     const { error } = await supabase.from("post_sales_activities").insert({
+      tenant_id: workspace!.tenantId,
       checklist_id: activity.checklist_id ?? latestPostSalesChecklist?.id ?? null,
       task_id: activity.task_id ?? null,
       customer_id: customerId,
@@ -437,6 +458,7 @@ export function CustomerDetailPage() {
     const { data: checklist, error } = await supabase
       .from("post_sales_checklists")
       .insert({
+        tenant_id: workspace!.tenantId,
         customer_id: customerId,
         application_id: data.application_id,
         contract_id: activeCustomerContract?.id ?? null,
@@ -476,7 +498,7 @@ export function CustomerDetailPage() {
       notes: values.notes.trim() || null,
       completed_at: completed ? checklist.completed_at ?? new Date().toISOString() : null,
       started_at: checklist.started_at ?? new Date().toISOString(),
-    }).eq("id", checklist.id);
+    }).eq("id", checklist.id).eq("tenant_id", workspace!.tenantId);
     if (error) {
       setActionError(error.message);
       return;
@@ -511,6 +533,7 @@ export function CustomerDetailPage() {
     const { data: task, error } = await supabase
       .from("post_sales_tasks")
       .insert({
+        tenant_id: workspace!.tenantId,
         customer_id: customerId,
         application_id: data.application_id,
         contract_id: activeCustomerContract?.id ?? null,
@@ -549,7 +572,7 @@ export function CustomerDetailPage() {
       status,
       completed_at: completed ? new Date().toISOString() : null,
       completed_by: completed ? sessionData.session?.user.id ?? null : null,
-    }).eq("id", task.id);
+    }).eq("id", task.id).eq("tenant_id", workspace!.tenantId);
     if (error) {
       setActionError(error.message);
       return;
@@ -571,7 +594,9 @@ export function CustomerDetailPage() {
 
   return (
     <>
-      {isLoading ? <LoadingState /> : null}
+      {workspaceLoading || isLoading ? <LoadingState /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view customer records."} /> : null}
+      {workspace && !isLoading && !error && !data ? <ErrorState message="This customer is not part of the selected workspace." /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {data ? (
         <div className="mx-auto grid max-w-[1520px] gap-6">
@@ -2051,14 +2076,17 @@ function PaymentRequestsSection({
   onNewRequest: () => void;
   onChanged: () => void;
 }) {
+  const { workspace } = useWorkspaceScope();
   const [status, setStatus] = useState<string | null>(null);
 
   async function updateRequestStatus(id: number, nextStatus: PaymentRequestStatus) {
+    if (!workspace) return;
     setStatus(null);
     const { error } = await supabase
       .from("payment_requests")
       .update({ status: nextStatus })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("tenant_id", workspace.tenantId);
     if (error) {
       setStatus(error.message);
       return;
@@ -2112,6 +2140,7 @@ function PaymentRequestForm({
   contracts: CustomerContract[];
   onSuccess: () => void;
 }) {
+  const { workspace } = useWorkspaceScope();
   const activeContracts = contracts.filter((contract) => isVoidableContract(contract));
   const [contractId, setContractId] = useState(String(activeContracts[0]?.id ?? ""));
   const [amountDue, setAmountDue] = useState("");
@@ -2123,6 +2152,10 @@ function PaymentRequestForm({
 
   async function createRequest(event: FormEvent) {
     event.preventDefault();
+    if (!workspace) {
+      setError("Choose a workspace before creating a payment request.");
+      return;
+    }
     setSaving(true);
     setError(null);
     const { data: sessionData } = await supabase.auth.getSession();
@@ -2134,6 +2167,7 @@ function PaymentRequestForm({
     }
 
     const { error: insertError } = await supabase.from("payment_requests").insert({
+      tenant_id: workspace.tenantId,
       customer_id: customerId,
       contract_id: contractId ? Number(contractId) : null,
       amount_due: Number(amountDue),
@@ -2192,6 +2226,7 @@ function CustomerDocumentUploadForm({
   transactions: CustomerTransaction[];
   onSuccess: () => void;
 }) {
+  const { workspace } = useWorkspaceScope();
   const [transactionId, setTransactionId] = useState("");
   const [documentType, setDocumentType] = useState<PaymentDocumentType>("Manual Receipt Photo");
   const [file, setFile] = useState<PreparedUploadFile | null>(null);
@@ -2202,6 +2237,10 @@ function CustomerDocumentUploadForm({
   async function uploadDocument(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    if (!workspace) {
+      setError("Choose a workspace before uploading a customer document.");
+      return;
+    }
     if (!file) {
       setError("Choose a document to upload.");
       return;
@@ -2229,6 +2268,7 @@ function CustomerDocumentUploadForm({
     }
 
     const { error: insertError } = await supabase.from("payment_documents").insert({
+      tenant_id: workspace.tenantId,
       transaction_id: linkedTransactionId,
       customer_id: customerId,
       document_type: documentType,

@@ -14,6 +14,8 @@ interface ParcelDrawerProps {
   parcel: Parcel | null;
   parcels: CanvasParcel[];
   tenantId?: string | null;
+  projectId?: string | null;
+  phaseId?: string | null;
   /** Aerial/site-map photo URL. Falls back to community-fee masterplan or site map when wired. */
   masterplanImageUrl?: string | null;
   open: boolean;
@@ -29,6 +31,8 @@ export function ParcelDrawer({
   parcel,
   parcels,
   tenantId = null,
+  projectId = null,
+  phaseId = null,
   masterplanImageUrl = null,
   open,
   onClose,
@@ -92,6 +96,10 @@ export function ParcelDrawer({
     if (!activeParcel) return;
     setDetailError(null);
     setSavedMessage(null);
+    if (!tenantId || !projectId || !phaseId) {
+      setDetailError("Choose a complete workspace before saving parcel details.");
+      return;
+    }
     const price = Number(basePrice);
     if (!Number.isFinite(price) || price < 0) {
       setDetailError("Enter a valid non-negative price.");
@@ -103,7 +111,7 @@ export function ParcelDrawer({
       return;
     }
     setDetailSaving(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("parcels")
       .update({
         status,
@@ -114,10 +122,19 @@ export function ParcelDrawer({
         price_override_cents: override === null ? null : Math.round(override * 100),
         needs_review: needsReview,
       })
-      .eq("id", activeParcel.id);
+      .eq("id", activeParcel.id)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", projectId)
+      .eq("phase_id", phaseId)
+      .select("id")
+      .maybeSingle();
     setDetailSaving(false);
     if (error) {
       setDetailError(error.message);
+      return;
+    }
+    if (!data) {
+      setDetailError("This parcel is no longer in the selected workspace. Reload before saving.");
       return;
     }
     setSavedMessage("Lot details saved.");
@@ -133,20 +150,28 @@ export function ParcelDrawer({
       setBoundaryError("Draw at least 3 vertices before saving.");
       return;
     }
-    setBoundarySaving(true);
     // supabase-js serializes the JS array to jsonb; SQL equivalent is
-    // jsonb_build_array(...) / to_jsonb(...). RLS tenant isolation applies;
-    // tenantId is sent explicitly when the caller provides it.
-    const payload: { map_polygon: MapPoint[]; tenant_id?: string } = {
+    // jsonb_build_array(...) / to_jsonb(...). The selected workspace keys are
+    // required before this write is allowed.
+    if (!tenantId || !projectId || !phaseId) {
+      setBoundaryError("Choose a complete workspace before editing parcel geometry.");
+      return;
+    }
+    setBoundarySaving(true);
+    const payload: { map_polygon: MapPoint[]; tenant_id: string } = {
       map_polygon: sanitizePolygon(map.points),
+      tenant_id: tenantId,
     };
-    if (tenantId) payload.tenant_id = tenantId;
-    let query = supabase.from("parcels").update(payload).eq("id", activeParcel.id);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    const { error } = await query;
+    const { data, error } = await supabase.from("parcels").update(payload)
+      .eq("id", activeParcel.id).eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+      .select("id").maybeSingle();
     setBoundarySaving(false);
     if (error) {
       setBoundaryError(error.message);
+      return;
+    }
+    if (!data) {
+      setBoundaryError("This parcel is no longer in the selected workspace. Reload before saving.");
       return;
     }
     setSavedMessage(`Boundary saved (${map.points.length} vertices).`);
@@ -158,16 +183,24 @@ export function ParcelDrawer({
     if (!activeParcel) return;
     setBoundaryError(null);
     setSavedMessage(null);
-    map.clearPolygon();
+    if (!tenantId || !projectId || !phaseId) {
+      setBoundaryError("Choose a complete workspace before editing parcel geometry.");
+      return;
+    }
     setBoundarySaving(true);
-    let query = supabase.from("parcels").update({ map_polygon: [] }).eq("id", activeParcel.id);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    const { error } = await query;
+    const { data, error } = await supabase.from("parcels").update({ map_polygon: [] })
+      .eq("id", activeParcel.id).eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+      .select("id").maybeSingle();
     setBoundarySaving(false);
     if (error) {
       setBoundaryError(error.message);
       return;
     }
+    if (!data) {
+      setBoundaryError("This parcel is no longer in the selected workspace. Reload before clearing.");
+      return;
+    }
+    map.clearPolygon();
     setSavedMessage("Boundary cleared.");
     await queryClient.invalidateQueries({ queryKey: ["lot-board"] });
     onSaved?.(activeParcel.id);

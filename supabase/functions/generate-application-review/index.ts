@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -43,21 +44,10 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin or Admin users can generate AI application reviews." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { application_id?: number } | null;
+  const body = await request.json().catch(() => null) as { application_id?: number; tenant_id?: string } | null;
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const applicationId = Number(body?.application_id ?? 0);
   if (!applicationId) {
     return json({ error: "application_id is required." }, 400);
@@ -67,6 +57,7 @@ Deno.serve(async (request) => {
     .from("applications")
     .select("*, parcels(id, lot_number, dimensions, status, base_price)")
     .eq("id", applicationId)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (applicationError) {
@@ -81,6 +72,7 @@ Deno.serve(async (request) => {
     .from("leads")
     .select("id, pipeline_stage, source, next_action, next_action_due_at, assigned_to")
     .eq("application_id", application.id)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   const preferredParcelIds = Array.isArray(application.preferred_parcel_ids)
@@ -92,6 +84,7 @@ Deno.serve(async (request) => {
       .from("parcels")
       .select("id, lot_number, dimensions, status, base_price")
       .in("id", preferredParcelIds)
+      .eq("tenant_id", tenantId)
     : { data: [], error: null };
 
   if (lotsError) {
@@ -101,6 +94,7 @@ Deno.serve(async (request) => {
   const { data: settings } = await supabase
     .from("ai_settings")
     .select("*")
+    .eq("tenant_id", tenantId)
     .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -125,6 +119,7 @@ Deno.serve(async (request) => {
   const { data: savedReview, error: saveError } = await supabase
     .from("application_ai_reviews")
     .upsert({
+      tenant_id: tenantId,
       application_id: application.id,
       summary: review.summary,
       completeness_status: review.completeness_status,

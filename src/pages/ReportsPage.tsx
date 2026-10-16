@@ -7,10 +7,12 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { exportCsv, reportFileName } from "../lib/csv";
 import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
 import { buildOperationalAttention } from "../lib/operationalAttention";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { cn, formatDate, money } from "../lib/utils";
 import type {
   AdminProfile,
@@ -119,6 +121,8 @@ const reservationStatuses: ReservationStatus[] = ["draft", "reserved", "deposit_
 const postSalesStatuses: PostSalesChecklistStatus[] = ["not_started", "in_progress", "blocked", "completed", "cancelled"];
 
 export function ReportsPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [activeTab, setActiveTab] = useState<ReportTab>("Payments");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -135,150 +139,179 @@ export function ReportsPage() {
   const [postSalesStatus, setPostSalesStatus] = useState("");
 
   const paymentsQuery = useQuery({
-    queryKey: ["reports-payments"],
+    queryKey: ["reports-payments", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("transactions")
         .select("*, customers(first_name, last_name), contracts(parcels(lot_number)), payment_documents(id)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as PaymentReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const contractsQuery = useQuery({
-    queryKey: ["reports-contracts"],
+    queryKey: ["reports-contracts", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contracts")
         .select("*, customers(id, first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, created_at)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as ContractReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const applicationsQuery = useQuery({
-    queryKey: ["reports-applications"],
+    queryKey: ["reports-applications", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("applications")
-        .select("*")
-        .order("created_at", { ascending: false });
+      let query = supabase.from("applications").select("*").eq("tenant_id", workspace!.tenantId)
+        .eq("application_kind", "land_purchase");
+      if (workspace!.tenantSlug === "wamule" && workspace!.isDefaultProject && workspace!.isDefaultPhase) {
+        query = query.or(`and(project_id.eq.${workspace!.projectId},phase_id.eq.${workspace!.phaseId}),and(project_id.is.null,phase_id.is.null)`);
+      } else {
+        query = query.eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("created_at", { ascending: false });
       if (error) throw error;
       return data as ApplicationReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const lotsQuery = useQuery({
-    queryKey: ["reports-lots"],
+    queryKey: ["reports-lots", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("parcel_board_view")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("lot_number", { ascending: true });
       if (error) throw error;
       return data as LotReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const customersQuery = useQuery({
-    queryKey: ["reports-customers"],
+    queryKey: ["reports-customers", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("customers")
         .select("id, first_name, last_name, contracts(id, is_active)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("last_name", { ascending: true });
       if (error) throw error;
       return data as CustomerReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const leadsQuery = useQuery({
-    queryKey: ["reports-leads"],
+    queryKey: ["reports-leads", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
         .select("*, parcels(id, lot_number, status)")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as LeadReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const followUpsQuery = useQuery({
-    queryKey: ["reports-follow-ups"],
+    queryKey: ["reports-follow-ups", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("follow_up_tasks")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("due_at", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return data as FollowUpTask[];
     },
+    enabled: Boolean(workspace),
   });
   const siteVisitsQuery = useQuery({
-    queryKey: ["reports-site-visits"],
+    queryKey: ["reports-site-visits", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("site_visits")
         .select("*, parcels(id, lot_number, status)")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("scheduled_at", { ascending: true });
       if (error) throw error;
       return data as SiteVisitReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const reservationsQuery = useQuery({
-    queryKey: ["reports-reservations"],
+    queryKey: ["reports-reservations", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as ReservationReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const postSalesChecklistsQuery = useQuery({
-    queryKey: ["reports-post-sales-checklists"],
+    queryKey: ["reports-post-sales-checklists", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("post_sales_checklists")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as PostSalesChecklist[];
     },
+    enabled: Boolean(workspace),
   });
   const postSalesTasksQuery = useQuery({
-    queryKey: ["reports-post-sales-tasks"],
+    queryKey: ["reports-post-sales-tasks", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("post_sales_tasks")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("due_at", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return data as PostSalesTask[];
     },
+    enabled: Boolean(workspace),
   });
   const paymentRequestsQuery = useQuery({
-    queryKey: ["reports-payment-requests"],
+    queryKey: ["reports-payment-requests", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payment_requests")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("due_date", { ascending: true });
       if (error) throw error;
       return data as PaymentRequest[];
     },
+    enabled: Boolean(workspace),
   });
   const adminProfilesQuery = useQuery({
-    queryKey: ["reports-admin-profiles"],
+    queryKey: ["reports-admin-profiles", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("admin_profiles")
         .select("user_id, email, full_name, role, created_at, updated_at")
+        .eq("tenant_id", workspace!.tenantId)
         .order("full_name", { ascending: true });
       if (error) throw error;
       return data as AdminProfile[];
     },
+    enabled: Boolean(workspace),
   });
 
-  const isLoading = paymentsQuery.isLoading || contractsQuery.isLoading || applicationsQuery.isLoading || lotsQuery.isLoading || customersQuery.isLoading || leadsQuery.isLoading || followUpsQuery.isLoading || siteVisitsQuery.isLoading || reservationsQuery.isLoading || postSalesChecklistsQuery.isLoading || postSalesTasksQuery.isLoading || paymentRequestsQuery.isLoading || adminProfilesQuery.isLoading;
+  const isLoading = workspaceLoading || paymentsQuery.isLoading || contractsQuery.isLoading || applicationsQuery.isLoading || lotsQuery.isLoading || customersQuery.isLoading || leadsQuery.isLoading || followUpsQuery.isLoading || siteVisitsQuery.isLoading || reservationsQuery.isLoading || postSalesChecklistsQuery.isLoading || postSalesTasksQuery.isLoading || paymentRequestsQuery.isLoading || adminProfilesQuery.isLoading;
   const error = paymentsQuery.error || contractsQuery.error || applicationsQuery.error || lotsQuery.error || customersQuery.error || leadsQuery.error || followUpsQuery.error || siteVisitsQuery.error || reservationsQuery.error || postSalesChecklistsQuery.error || postSalesTasksQuery.error || paymentRequestsQuery.error || adminProfilesQuery.error;
 
   const customerOptions = useMemo(() => {
@@ -441,6 +474,7 @@ export function ReportsPage() {
         <p className="v2-page-description">Operational reports and CSV exports for payments, balances, applications, lots, and cleanup items.</p>
       </div>
       {isLoading ? <LoadingState label="Loading reports" /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its reports."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="v2-archive-panel p-4 text-sm text-primary">
         Reports are read-only summaries for management review. They do not update records or trigger workflow changes.

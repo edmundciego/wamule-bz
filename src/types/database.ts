@@ -196,7 +196,6 @@ export type Organization = {
   name: string;
   slug: string;
   inbound_alias: string | null;
-  gemini_api_key: string | null;
   masterplan_image_url: string | null;
   is_active: boolean;
   created_at: string;
@@ -225,6 +224,8 @@ export type ParcelMapPoint = {
 export type Parcel = {
   id: number;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lot_number: string;
   dimensions: string;
   lot_size_id: number | null;
@@ -308,6 +309,16 @@ export type DevelopmentUpdate = {
 export type Application = {
   id: number;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
+  application_kind?: "land_purchase" | "project_application" | string;
+  preferred_map_feature_refs?: string[] | null;
+  submission_reference?: string | null;
+  submission_fingerprint?: string | null;
+  project_notice_version?: string | null;
+  project_public_notice_snapshot?: string | null;
+  project_acknowledgment_snapshot?: string | null;
+  project_notice_acknowledged_at?: string | null;
   first_name: string;
   last_name: string;
   applicant_full_name: string | null;
@@ -440,6 +451,8 @@ export type BusinessSetting = {
 export type Lead = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   full_name: string;
   email: string | null;
   phone: string | null;
@@ -482,6 +495,8 @@ export type LeadActivity = {
 export type FollowUpTask = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -501,6 +516,8 @@ export type FollowUpTask = {
 export type SiteVisit = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -962,6 +979,24 @@ export type MasterplanVersion = {
   created_by: string | null;
 };
 
+export type MapFeatureSnapshot = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string;
+  snapshot_fingerprint: string;
+  source_image_sha256: string;
+  detection_source_sha256: string;
+  correction_manifest_sha256: string;
+  correction_manifest_revision: number;
+  snapshot_version: number;
+  outline_count: number;
+  is_active: boolean;
+  activated_as_demo_at: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
 export type InformationPack = {
   id: string;
   tenant_id?: string | null;
@@ -1006,6 +1041,11 @@ export type Database = {
         Insert: Omit<ProjectSetting, "updated_at" | "updated_by" | "value"> & Partial<Pick<ProjectSetting, "updated_by" | "value">>;
         Update: Partial<Pick<ProjectSetting, "value" | "updated_by">>;
       };
+      map_feature_snapshots: {
+        Row: MapFeatureSnapshot;
+        Insert: Omit<MapFeatureSnapshot, "id" | "created_at"> & Partial<Pick<MapFeatureSnapshot, "id" | "created_at" | "is_active" | "created_by" | "activated_as_demo_at">>;
+        Update: Partial<Omit<MapFeatureSnapshot, "id" | "created_at" | "tenant_id" | "project_id" | "phase_id">>;
+      };
       project_lot_tiers: {
         Row: ProjectLotTier;
         Insert: Omit<ProjectLotTier, "id" | "created_at" | "updated_at" | "is_active" | "sort_order" | "corner_premium_cents"> &
@@ -1022,6 +1062,16 @@ export type Database = {
             Pick<
               Application,
               | "email"
+              | "project_id"
+              | "phase_id"
+              | "application_kind"
+              | "preferred_map_feature_refs"
+              | "submission_reference"
+              | "submission_fingerprint"
+              | "project_notice_version"
+              | "project_public_notice_snapshot"
+              | "project_acknowledgment_snapshot"
+              | "project_notice_acknowledged_at"
               | "parcel_id"
               | "applicant_full_name"
               | "applicant_address"

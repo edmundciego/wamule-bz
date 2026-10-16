@@ -32,6 +32,9 @@ import {
   type Waiver,
 } from "../lib/correction";
 import { getSessionAndProfile } from "../lib/data";
+import { WorkspaceScopeBoundary } from "../components/auth/WorkspaceScopeBoundary";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
 import { Badge } from "../components/ui/Badge";
@@ -192,7 +195,7 @@ export function CorrectionWorkspacePage() {
       />
     );
   }
-  return <AuthedWorkspace />;
+  return <WorkspaceScopeBoundary><AuthedWorkspace /></WorkspaceScopeBoundary>;
 }
 
 function DemoWorkspace({
@@ -275,41 +278,44 @@ function DemoWorkspace({
       </main>
     );
   }
-  return <WorkspaceShell data={data} />;
+  return <WorkspaceShell key={`${data.tenant}:${data.project}`} data={data} />;
 }
 
 function AuthedWorkspace() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const { data: sessionProfile, isLoading, error } = useQuery({
     queryKey: ["session-profile"],
     queryFn: getSessionAndProfile,
     retry: false,
   });
-  const tenantId = (sessionProfile?.profile as { tenant_id?: string } | null)?.tenant_id ?? null;
+  const tenantId = workspace?.tenantId ?? null;
   const actor =
     (sessionProfile?.session as { user?: { email?: string; id?: string } } | null)?.user?.email ??
     (sessionProfile?.session as { user?: { id?: string } } | null)?.user?.id ??
     "operator";
 
   const board = useQuery({
-    queryKey: ["correction-board", tenantId],
+    queryKey: ["correction-board", scopeKey],
     queryFn: async () => {
-      const { data, error: qErr } = await supabase.from("parcel_board_view").select("*").order("lot_number");
+      const { data, error: qErr } = await supabase.from("parcel_board_view").select("*")
+        .eq("tenant_id", tenantId!).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId).order("lot_number");
       if (qErr) throw qErr;
       return (data ?? []) as Array<Record<string, unknown>>;
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
   const tiersQuery = useQuery({
-    queryKey: ["correction-tiers", tenantId],
+    queryKey: ["correction-tiers", scopeKey],
     queryFn: async () => {
       const { data, error: qErr } = await supabase.from("lot_tiers").select("*").eq("tenant_id", tenantId);
       if (qErr) throw qErr;
       return (data ?? []) as Array<Record<string, unknown>>;
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
   const orgQuery = useQuery({
-    queryKey: ["correction-org", tenantId],
+    queryKey: ["correction-org", scopeKey],
     queryFn: async () => {
       const { data, error: qErr } = await supabase
         .from("organizations")
@@ -319,10 +325,10 @@ function AuthedWorkspace() {
       if (qErr) throw qErr;
       return (data ?? {}) as { masterplan_image_url?: string | null };
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
 
-  if (isLoading) {
+  if (isLoading || workspaceLoading) {
     return (
       <main className="p-6">
         <LoadingState label="Checking session" />
@@ -344,6 +350,9 @@ function AuthedWorkspace() {
       </main>
     );
   }
+  if (!workspace) {
+    return <main className="mx-auto max-w-2xl p-6"><ErrorState message={workspaceError ?? "Choose an accessible workspace before opening the local correction draft."} /></main>;
+  }
   if (board.isLoading || tiersQuery.isLoading) {
     return (
       <main className="p-6">
@@ -361,7 +370,7 @@ function AuthedWorkspace() {
   const adapted = adaptTiers(tiersQuery.data ?? []);
   const data: WorkspaceData = {
     tenant: tenantId ?? "local",
-    project: "default",
+    project: workspace.isDefaultProject ? "default" : workspace.projectId,
     lots: adaptLots(
       (board.data ?? []).map((row) => ({
         id: String(row.id),
@@ -378,7 +387,7 @@ function AuthedWorkspace() {
   };
   // NOTE: rendered outside AdminLayout's Outlet tree (route-level demo
   // bypass requires it); auth is enforced above, and admin nav links here.
-  return <WorkspaceShell data={data} />;
+  return <WorkspaceShell key={`${data.tenant}:${data.project}`} data={data} />;
 }
 
 function storeKey(tenant: string, project: string): string {

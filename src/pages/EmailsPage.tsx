@@ -10,6 +10,8 @@ import { getSessionAndProfile } from "../lib/data";
 import { edgeFunctionErrorMessage } from "../lib/functions";
 import { useCompanyProfile } from "../lib/brand";
 import { supabase } from "../lib/supabase";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { formatDate } from "../lib/utils";
 import type { AppRole, EmailNotification, EmailNotificationStatus } from "../types/database";
 
@@ -33,6 +35,8 @@ function emailTemplates(companyName: string) {
 
 export function EmailsPage() {
   const queryClient = useQueryClient();
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [activeStatus, setActiveStatus] = useState<EmailNotificationStatus>("Pending");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -40,7 +44,7 @@ export function EmailsPage() {
   const [sending, setSending] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [testTemplate, setTestTemplate] = useState<EmailTemplateKey>("test");
-  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile(workspace?.tenantId ?? null);
   const testTemplates = useMemo(() => emailTemplates(companyName), [companyName]);
 
   const { data: sessionProfile, isLoading: profileLoading } = useQuery({
@@ -49,20 +53,21 @@ export function EmailsPage() {
   });
 
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
-  const canSend = currentRole === "Super Admin" || currentRole === "Admin";
+  const canSend = Boolean(workspace) && (currentRole === "Super Admin" || currentRole === "Admin");
 
   const { data: emails, isLoading, error } = useQuery({
-    queryKey: ["email-notifications"],
+    queryKey: ["email-notifications", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("email_notifications")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false })
         .limit(100);
       if (queryError) throw queryError;
       return data as EmailNotification[];
     },
-    enabled: canSend,
+    enabled: canSend && Boolean(workspace),
   });
 
   const filtered = useMemo(() => (emails ?? []).filter((email) => email.status === activeStatus), [emails, activeStatus]);
@@ -92,8 +97,14 @@ export function EmailsPage() {
   async function invokeSend(body: Record<string, unknown>) {
     setActionError(null);
     setActionMessage(null);
+    if (!workspace) {
+      setActionError("Choose a workspace before processing notifications.");
+      return;
+    }
     setSending(true);
-    const { data, error: functionError } = await supabase.functions.invoke("send-notification-email", { body });
+    const { data, error: functionError } = await supabase.functions.invoke("send-notification-email", {
+      body: { ...body, tenant_id: workspace.tenantId },
+    });
     setSending(false);
     if (functionError) {
       setActionError(edgeFunctionErrorMessage(functionError));
@@ -124,6 +135,7 @@ export function EmailsPage() {
     const { data, error: insertError } = await supabase
       .from("email_notifications")
       .insert({
+        tenant_id: workspace!.tenantId,
         recipient_email: recipient,
         recipient_name: "Test Recipient",
         subject: template.subject,
@@ -154,6 +166,8 @@ export function EmailsPage() {
       <EmailCenterHeader canSend={canSend} sending={sending} onProcess={() => void invokeSend({ batch: true })} />
 
       <div className="grid gap-6">
+        {workspaceLoading ? <LoadingState label="Loading selected workspace" /> : null}
+        {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its notifications."} /> : null}
         {isLoading ? <LoadingState label="Loading email notifications" /> : null}
         {error ? <ErrorState message={(error as Error).message} /> : null}
         {actionError ? <ErrorState message={actionError} /> : null}

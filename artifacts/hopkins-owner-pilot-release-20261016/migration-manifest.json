@@ -1,0 +1,184 @@
+{
+  "production_project_ref": "mtjlvzrtihslcftxnlso",
+  "baseline_ledger_version": "20260715055626",
+  "repository_alias_version": "20260715050000",
+  "candidate_migration_count": 22,
+  "ordered_after_alias_reconciliation": [
+    {
+      "order": 1,
+      "path": "supabase/migrations/20260915000000_multi_tenant_foundation.sql",
+      "version": "20260915000000",
+      "name": "multi_tenant_foundation",
+      "bytes": 24038,
+      "sha256": "91c0f8c1eaff88d9d51745f307dacce15f43ba3f35bf390ecd2510d1e5b6d7b5"
+    },
+    {
+      "order": 2,
+      "path": "supabase/migrations/20260916000000_tenant_default_trigger_and_vision.sql",
+      "version": "20260916000000",
+      "name": "tenant_default_trigger_and_vision",
+      "bytes": 14528,
+      "sha256": "065a0b4855aee55918a59c48aa3ab59cb3b2f9ce514fd1b7bf2afd85692c9caa"
+    },
+    {
+      "order": 3,
+      "path": "supabase/migrations/20260917000000_seed_wamule_tenant.sql",
+      "version": "20260917000000",
+      "name": "seed_wamule_tenant",
+      "bytes": 1748,
+      "sha256": "289517148d6c282a6cb34deb609957146b4d64b549f1a0994164b058b871658e"
+    },
+    {
+      "order": 4,
+      "path": "supabase/migrations/20260918000000_masterplan_image_storage.sql",
+      "version": "20260918000000",
+      "name": "masterplan_image_storage",
+      "bytes": 5262,
+      "sha256": "ba264008b317c7640f4a950086319f06a36591eed1421c7c035fa4696079ca0b"
+    },
+    {
+      "order": 5,
+      "path": "supabase/migrations/20260919000000_masterplan_versioning.sql",
+      "version": "20260919000000",
+      "name": "masterplan_versioning",
+      "bytes": 6804,
+      "sha256": "495bb33ac1f8f286b72efcaf0b93d2c6d88756fb9a86ca78eac3d5bf66a4e5d8"
+    },
+    {
+      "order": 6,
+      "path": "supabase/migrations/20260920000000_security_hardening_audit.sql",
+      "version": "20260920000000",
+      "name": "security_hardening_audit",
+      "bytes": 7405,
+      "sha256": "60bbfb5b9230393c6b0ca4c6b2e3eec7e951b96f70dc9c7ee78d0a7b1108925c"
+    },
+    {
+      "order": 7,
+      "path": "supabase/migrations/20260921000000_lot_tiers_and_parcel_extensions.sql",
+      "version": "20260921000000",
+      "name": "lot_tiers_and_parcel_extensions",
+      "bytes": 14871,
+      "sha256": "5816229366e3e33308d9374b171f39e3cb8d5ca74e655fcce3328d265e649e2a"
+    },
+    {
+      "order": 8,
+      "path": "supabase/migrations/20260922000000_inquiry_idempotency.sql",
+      "version": "20260922000000",
+      "name": "inquiry_idempotency",
+      "bytes": 839,
+      "sha256": "c0b3b3cf8f28545dc180191c029bd32c57bb1e449e4bee206bd2b95ee11a40ca"
+    },
+    {
+      "order": 9,
+      "path": "supabase/migrations/20260923000000_brand_spelling.sql",
+      "version": "20260923000000",
+      "name": "brand_spelling",
+      "bytes": 602,
+      "sha256": "38756ab2cf681400375f6bb446efac163c37f12f6faa77a798a11db8a86d1f3f"
+    },
+    {
+      "order": 10,
+      "path": "supabase/migrations/20260924000000_tenant_projects.sql",
+      "version": "20260924000000",
+      "name": "tenant_projects",
+      "bytes": 2049,
+      "sha256": "4451c99507f4020ebe619c7d360fe301eedd88acac702a081d239e6b4ce8694f"
+    },
+    {
+      "order": 11,
+      "path": "supabase/migrations/20260924010000_wamule_default_project_backfill.sql",
+      "version": "20260924010000",
+      "name": "wamule_default_project_backfill",
+      "bytes": 6199,
+      "sha256": "019164dc3e05435483203ce943c340a2c882856c51b3a9fcb08635d02585cace"
+    },
+    {
+      "order": 12,
+      "path": "supabase/migrations/20260925000000_correction_slice15.sql",
+      "version": "20260925000000",
+      "name": "correction_slice15",
+      "bytes": 10005,
+      "sha256": "596c81134f79a25c565243b575738bb2ac3ea175e6ba1070999fe1600d380c5e"
+    },
+    {
+      "order": 13,
+      "path": "supabase/migrations/20261011000000_public_lot_identity_lockdown.sql",
+      "version": "20261011000000",
+      "name": "public_lot_identity_lockdown",
+      "bytes": 757,
+      "sha256": "ae26f24e117a4ab75adca2a422017ee4675bb73743dcb7291697211830fbb65b"
+    },
+    {
+      "order": 14,
+      "path": "supabase/migrations/20261012020651_project_scoped_public_maps.sql",
+      "version": "20261012020651",
+      "name": "project_scoped_public_maps",
+      "bytes": 10695,
+      "sha256": "f8d5f760cf09bc4839894f3db6eee7202a085fb31d6c30726080e94cf19e1b4b"
+    },
+    {
+      "order": 15,
+      "path": "supabase/migrations/20261014000000_project_phase_hosted_pilot.sql",
+      "version": "20261014000000",
+      "name": "project_phase_hosted_pilot",
+      "bytes": 64907,
+      "sha256": "40fdd87c482ca705953d5a00394d01fd57432a4f1f2472f23d68a4f790930c81"
+    },
+    {
+      "order": 16,
+      "path": "supabase/migrations/20261014005000_wamule_default_phase_name.sql",
+      "version": "20261014005000",
+      "name": "wamule_default_phase_name",
+      "bytes": 2494,
+      "sha256": "ff06a1f09cbe23c2ed4b80470129aef06eb7620af40383a4c866fdc8b8de14f8"
+    },
+    {
+      "order": 17,
+      "path": "supabase/migrations/20261014010000_scoped_public_inquiry_rpc.sql",
+      "version": "20261014010000",
+      "name": "scoped_public_inquiry_rpc",
+      "bytes": 8123,
+      "sha256": "981d63dc6b092bc759a22748d3b4d2567e9206d21694c047c1a1a7465a13d244"
+    },
+    {
+      "order": 18,
+      "path": "supabase/migrations/20261015022233_tenant_rpc_secret_application_document_isolation.sql",
+      "version": "20261015022233",
+      "name": "tenant_rpc_secret_application_document_isolation",
+      "bytes": 50477,
+      "sha256": "302533a8ab8f60987bc16407eface4e2f015cef18e2792af1d7427a2227f6bdb"
+    },
+    {
+      "order": 19,
+      "path": "supabase/migrations/20261015100000_hopkins_super_admin_workspace_onboarding.sql",
+      "version": "20261015100000",
+      "name": "hopkins_super_admin_workspace_onboarding",
+      "bytes": 7226,
+      "sha256": "33b677c59c7c0148e0c21724992c9c2fdde845a20f3b90ef9084e675e29da25f"
+    },
+    {
+      "order": 20,
+      "path": "supabase/migrations/20261015195458_parcel_board_workspace_scope.sql",
+      "version": "20261015195458",
+      "name": "parcel_board_workspace_scope",
+      "bytes": 1639,
+      "sha256": "a9153a40c8b08d13d781c570852672a034442a25d49ba87ed145d7090c708698"
+    },
+    {
+      "order": 21,
+      "path": "supabase/migrations/20261015210000_inventory_selection_provenance_guard.sql",
+      "version": "20261015210000",
+      "name": "inventory_selection_provenance_guard",
+      "bytes": 2011,
+      "sha256": "9661f4b54241e1310a1a809e8e585e4ab93a8af1894d688908dfa422c5d2e954"
+    },
+    {
+      "order": 22,
+      "path": "supabase/migrations/20261016054341_hopkins_project_application_workflow.sql",
+      "version": "20261016054341",
+      "name": "hopkins_project_application_workflow",
+      "bytes": 21267,
+      "sha256": "205ac6a7c5aed2b8ec5b419e6b443a776c76453977433d1307f07360abb13b81"
+    }
+  ]
+}

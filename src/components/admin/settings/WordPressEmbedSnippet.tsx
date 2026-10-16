@@ -1,75 +1,30 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../../../lib/supabase";
 import { Button } from "../../ui/Button";
 import { Field, Input, Select } from "../../ui/Field";
-import { ErrorState, LoadingState } from "../../ui/State";
+import { ErrorState } from "../../ui/State";
 
 type EmbedFilter = "all" | "available";
 
 const HEIGHT_PRESETS = ["500px", "700px", "900px"];
 const RADIUS_OPTIONS = ["0px", "8px", "12px", "20px"];
 
-export function WordPressEmbedSnippet() {
-  const [slug, setSlug] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+export function WordPressEmbedSnippet({ tenantSlug, projectSlug }: { tenantSlug: string | null; projectSlug: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState("700px");
   const [radius, setRadius] = useState("12px");
   const [filter, setFilter] = useState<EmbedFilter>("available");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(projectSlug ?? "");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadTenantSlug() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        if (!cancelled) {
-          setError("Sign in again to load your tenant embed details.");
-          setLoading(false);
-        }
-        return;
-      }
-      const { data: profile, error: profileError } = await supabase
-        .from("admin_profiles")
-        .select("tenant_id")
-        .eq("user_id", sessionData.session.user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (profileError) {
-        setError(profileError.message);
-        setLoading(false);
-        return;
-      }
-      const tenantId = (profile as { tenant_id: string | null } | null)?.tenant_id;
-      if (!tenantId) {
-        setError("No tenant is linked to your login.");
-        setLoading(false);
-        return;
-      }
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .select("slug")
-        .eq("id", tenantId)
-        .maybeSingle();
-      if (cancelled) return;
-      setLoading(false);
-      if (orgError) {
-        setError(orgError.message);
-        return;
-      }
-      setSlug((org as { slug: string } | null)?.slug ?? null);
-    }
-    void loadTenantSlug();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setProject(projectSlug ?? "");
+    setError(null);
+  }, [tenantSlug, projectSlug]);
 
   const baseUrl = window.location.origin;
   const projectPath = project.trim().toLowerCase();
-  const mapPath = projectPath ? `/embed/${slug}/${projectPath}` : `/embed/${slug}`;
-  const snippet = slug
+  const mapPath = projectPath ? `/embed/${tenantSlug}/${projectPath}` : `/embed/${tenantSlug}`;
+  const snippet = tenantSlug
     ? `<iframe src="${baseUrl}${mapPath}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
     : "";
 
@@ -84,17 +39,15 @@ export function WordPressEmbedSnippet() {
     }
   }
 
-  if (loading) return <LoadingState label="Loading embed details" />;
-
   return (
     <div className="grid gap-4">
       {error ? <ErrorState message={error} /> : null}
-      {!slug && !error ? (
+      {!tenantSlug && !error ? (
         <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">
           Embed details appear once your login is linked to a tenant.
         </p>
       ) : null}
-      {slug ? (
+      {tenantSlug ? (
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Height">
@@ -149,7 +102,7 @@ export function WordPressEmbedSnippet() {
             </Button>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Live map for tenant <strong>{slug}</strong>
+            Live map for tenant <strong>{tenantSlug}</strong>
             {projectPath ? (
               <>
                 {" "}project <strong>{projectPath}</strong>

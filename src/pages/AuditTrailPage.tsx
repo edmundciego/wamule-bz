@@ -13,6 +13,8 @@ import {
 } from "../lib/audit";
 import { supabase } from "../lib/supabase";
 import type { AuditAction, AuditEntityType, AuditEvent } from "../types/database";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 
 type AuditEventRecord = Omit<AuditEvent, "entity_type" | "action" | "before_data" | "after_data" | "metadata"> & {
   entity_type: string;
@@ -106,6 +108,8 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
 }
 
 export function AuditTrailPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [entityType, setEntityType] = useState<"all" | AuditEntityType>("all");
   const [action, setAction] = useState<"all" | AuditAction>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -113,16 +117,18 @@ export function AuditTrailPage() {
   const [search, setSearch] = useState("");
 
   const { data: events = [], isLoading, error } = useQuery({
-    queryKey: ["audit-events"],
+    queryKey: ["audit-events", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("audit_events")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false })
         .limit(250);
       if (queryError) throw queryError;
       return (data ?? []) as AuditEventRecord[];
     },
+    enabled: Boolean(workspace),
   });
 
   const filteredEvents = useMemo(() => {
@@ -203,6 +209,8 @@ export function AuditTrailPage() {
       </Card>
 
       {isLoading ? <LoadingState label="Loading audit trail" /> : null}
+      {workspaceLoading ? <LoadingState label="Loading selected workspace" /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its audit trail."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
 
       {!isLoading && !error ? (

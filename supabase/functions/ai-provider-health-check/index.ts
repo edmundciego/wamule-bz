@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -32,23 +33,14 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin or Admin users can check AI provider status." }, 403);
-  }
+  const body = await request.json().catch(() => ({})) as { tenant_id?: string };
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body.tenant_id, ["Super Admin", "Admin"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
 
   const { data: settings, error: settingsError } = await supabase
     .from("ai_settings")
     .select("*")
+    .eq("tenant_id", workspaceAuth.tenantId)
     .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();

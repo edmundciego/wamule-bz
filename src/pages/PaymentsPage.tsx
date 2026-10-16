@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PaymentForm } from "../components/forms/PaymentForm";
 import { PaymentDocumentLinks } from "../components/payments/PaymentDocumentLinks";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
@@ -11,6 +12,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { formatDate, money } from "../lib/utils";
 import type { AppRole } from "../types/database";
@@ -19,6 +21,8 @@ const documentTypes = ["Bank Transfer Proof", "Manual Receipt Photo", "Signed Pa
 
 export function PaymentsPage() {
   const queryClient = useQueryClient();
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [searchParams] = useSearchParams();
   const [receiptSearch, setReceiptSearch] = useState("");
   const [correctionOfTransactionId, setCorrectionOfTransactionId] = useState<number | null>(null);
@@ -27,15 +31,17 @@ export function PaymentsPage() {
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
   const canRemovePayments = currentRole === "Super Admin" || currentRole === "Admin";
   const { data, isLoading, error } = useQuery({
-    queryKey: ["payments"],
+    queryKey: ["payments", scopeKey],
     queryFn: async () => {
       const { data: rows, error: queryError } = await supabase
         .from("transactions")
         .select("*, customers(first_name, last_name), contracts(id, parcels(lot_number)), payment_documents(*)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return rows;
     },
+    enabled: Boolean(workspace),
   });
   const filteredPayments = useMemo(() => {
     const search = receiptSearch.trim().toLowerCase();
@@ -59,7 +65,8 @@ export function PaymentsPage() {
         <h1 className="v2-page-title">Payments</h1>
         <p className="v2-page-description">Unified ledger for land installments and community fees.</p>
       </div>
-      {isLoading ? <LoadingState /> : null}
+      {workspaceLoading || isLoading ? <LoadingState /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its payments."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
         <div className="grid min-w-0 content-start gap-3">
@@ -203,6 +210,7 @@ function ExistingPaymentDocumentUpload({
   };
   onUploaded: () => void;
 }) {
+  const { workspace } = useWorkspaceScope();
   const [documentType, setDocumentType] = useState<(typeof documentTypes)[number]>("Manual Receipt Photo");
   const [documentFile, setDocumentFile] = useState<PreparedUploadFile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -210,6 +218,10 @@ function ExistingPaymentDocumentUpload({
 
   async function uploadDocument() {
     setStatus(null);
+    if (!workspace) {
+      setStatus("Choose a workspace before uploading a payment document.");
+      return;
+    }
     if (!documentFile) {
       setStatus("Choose a file to upload.");
       return;
@@ -236,6 +248,7 @@ function ExistingPaymentDocumentUpload({
     }
 
     const { error: documentError } = await supabase.from("payment_documents").insert({
+      tenant_id: workspace.tenantId,
       transaction_id: payment.id,
       customer_id: payment.customer_id,
       document_type: documentType,

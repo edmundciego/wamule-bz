@@ -65,6 +65,49 @@ test("existing migration suite keeps SECURITY DEFINER functions pinnable by the 
   assert.match(combined, /resolve_contract_void_resolution\(\s*p_resolution_id uuid/);
 });
 
+test("hosted pilot migration keeps legacy RPCs tenant-bound and provider secrets server-only", async () => {
+  const [migration, inbound, clientTypes] = await Promise.all([
+    read("supabase/migrations/20261015022233_tenant_rpc_secret_application_document_isolation.sql"),
+    read("supabase/functions/receive-inbound-email/index.ts"),
+    read("src/types/database.ts"),
+  ]);
+
+  for (const [declaration, privilege] of [
+    [/create or replace function public\.approve_application\(p_application_id bigint\)/, /revoke all on function public\.approve_application\(bigint\) from service_role/],
+    [/create or replace function public\.approve_application\(p_application_id bigint,\s*p_parcel_id bigint\)/, /revoke all on function public\.approve_application\(bigint,bigint\) from service_role/],
+    [/create or replace function public\.void_contract\(p_contract_id bigint,p_void_reason text\)/, /revoke all on function public\.void_contract\(bigint,text\) from service_role/],
+    [/create or replace function public\.void_payment_record\(p_transaction_id bigint,p_reason text\)/, /revoke all on function public\.void_payment_record\(bigint,text\) from service_role/],
+    [/create or replace function public\.resolve_contract_void_resolution\([\s\S]*?p_reservation_id uuid default null/, /revoke all on function public\.resolve_contract_void_resolution\(uuid,text,text,uuid\) from service_role/],
+    [/create or replace function public\.release_alternate_reservations\([\s\S]*?p_release_reason text/, /revoke all on function public\.release_alternate_reservations\(uuid,uuid\[\],text\) from service_role/],
+  ]) {
+    assert.ok(declaration.test(migration), `Missing or changed RPC declaration: ${declaration}`);
+    assert.ok(privilege.test(migration), `Missing service_role revoke: ${privilege}`);
+  }
+  assert.match(migration, /public\._assert_tenant_actor\(v_application\.tenant_id/);
+  assert.match(migration, /public\._assert_tenant_actor\(v_contract\.tenant_id/);
+  assert.match(migration, /public\._assert_tenant_actor\(v_payment\.tenant_id/);
+  assert.match(migration, /one or more selected reservations belong to another tenant/i);
+  assert.match(migration, /create or replace function public\.get_organization_gemini_api_key/);
+  assert.match(migration, /auth\.jwt\(\)->>'role'/);
+  assert.match(migration, /vault\.create_secret/);
+  assert.match(migration, /drop column gemini_api_key/);
+  assert.match(migration, /grant execute on function public\.get_organization_gemini_api_key\(uuid\) to service_role/);
+  assert.doesNotMatch(inbound, /select\([^\"]*gemini_api_key/);
+  assert.match(inbound, /rpc\("get_organization_gemini_api_key"/);
+  assert.doesNotMatch(clientTypes, /gemini_api_key/);
+});
+
+test("application documents require immutable tenant/application links for private storage access", async () => {
+  const migration = await read("supabase/migrations/20261015022233_tenant_rpc_secret_application_document_isolation.sql");
+  assert.ok(/foreign key \(application_id, tenant_id\)[\s\S]*?references public\.applications\(id, tenant_id\)/.test(migration));
+  assert.ok(/generated always as[\s\S]*tenant_id::text \|\| '\/' \|\| application_id::text/.test(migration));
+  assert.ok(/prevent_application_document_reparenting/.test(migration));
+  assert.ok(/revoke delete on public\.application_documents from authenticated/.test(migration));
+  assert.ok(/can_read_application_document\(d\.tenant_id,\s*d\.application_id\)/.test(migration));
+  assert.ok(/can_write_application_document\(d\.tenant_id,\s*d\.application_id\)/.test(migration));
+  assert.ok(/no legacy application-file path column/.test(migration));
+});
+
 test("get-public-lots rejects unauthorized field selects and allowlists the public payload", async () => {
   const fn = await read("supabase/functions/get-public-lots/index.ts");
 

@@ -1,0 +1,39 @@
+{
+  "tenant": {
+    "slug": "hopkins-grove",
+    "name": "Hopkins Grove"
+  },
+  "project": {
+    "slug": "hopkins-grove",
+    "name": "Hopkins Grove",
+    "map_experience_mode": "demo"
+  },
+  "phase": {
+    "slug": "initial",
+    "name": "Initial phase"
+  },
+  "membership_role": "owner",
+  "theme": {
+    "tokens": {
+      "primary": "#173f2d",
+      "background": "#fffdf8",
+      "card": "#ffffff",
+      "accent": "#8a5a35",
+      "text": "#2d2317",
+      "muted": "#6b6259",
+      "fontFamily": "Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+    },
+    "card": {
+      "showTier": false,
+      "showArea": false,
+      "showPrice": false,
+      "inquireText": "Ask About This Plot",
+      "waitlistText": "Ask About This Plot",
+      "zoomText": "Zoom to Plot {lot}"
+    }
+  },
+  "company_profile": {
+    "company_name": "Hopkins Grove",
+    "short_description": "A land development in Hopkins Grove."
+  }
+}

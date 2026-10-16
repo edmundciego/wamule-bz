@@ -55,16 +55,26 @@ Deno.serve(async (request) => {
       full_name?: string;
       role?: AppRole;
       password?: string;
+      tenant_id?: string;
     } | null;
 
     const email = body?.email?.trim().toLowerCase();
     const fullName = body?.full_name?.trim() || null;
     const role = body?.role;
     const password = body?.password;
+    const tenantId = body?.tenant_id;
 
-    if (!email || !role || !["Super Admin", "Admin", "Staff", "Read Only"].includes(role)) {
-      return json({ error: "Email and valid role are required." }, 400);
+    if (!email || !role || !["Admin", "Staff", "Read Only"].includes(role) || !tenantId) {
+      return json({ error: "Email, tenant, and a tenant staff role are required." }, 400);
     }
+
+    const { data: tenant, error: tenantError } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (tenantError) return json({ error: tenantError.message }, 500);
+    if (!tenant) return json({ error: "The selected tenant does not exist." }, 404);
 
     if (password && password.length < 8) {
       return json({ error: "Temporary password must be at least 8 characters." }, 400);
@@ -99,15 +109,27 @@ Deno.serve(async (request) => {
       return json({ error: "Could not create or locate auth user." }, 500);
     }
 
-    const { data: profile, error: upsertError } = await supabase
+    const { data: existingProfile, error: existingProfileError } = await supabase
       .from("admin_profiles")
-      .upsert({
+      .select("user_id, tenant_id, role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (existingProfileError) return json({ error: existingProfileError.message }, 500);
+    if (existingProfile && existingProfile.tenant_id !== tenantId) {
+      return json({ error: "This account already belongs to another tenant. Its assignment was preserved." }, 409);
+    }
+
+    const profileQuery = existingProfile
+      ? supabase.from("admin_profiles").update({ email, full_name: fullName, role }).eq("user_id", userId).eq("tenant_id", tenantId)
+      : supabase.from("admin_profiles").insert({
         user_id: userId,
+        tenant_id: tenantId,
         email,
         full_name: fullName,
         role,
-      }, { onConflict: "user_id" })
-      .select("user_id, email, full_name, role, created_at, updated_at")
+      });
+    const { data: profile, error: upsertError } = await profileQuery
+      .select("user_id, tenant_id, email, full_name, role, created_at, updated_at")
       .single();
 
     if (upsertError) {

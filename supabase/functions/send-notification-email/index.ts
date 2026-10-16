@@ -18,6 +18,7 @@ const corsHeaders = {
 
 type EmailNotification = {
   id: number;
+  tenant_id: string;
   recipient_email: string;
   recipient_name: string | null;
   subject: string;
@@ -56,7 +57,7 @@ Deno.serve(async (request) => {
 
   const { data: currentProfile, error: profileError } = await supabase
     .from("admin_profiles")
-    .select("role")
+    .select("role, tenant_id")
     .eq("user_id", currentUserData.user.id)
     .maybeSingle();
 
@@ -69,7 +70,16 @@ Deno.serve(async (request) => {
     email_notification_id?: number;
     batch?: boolean;
     retry_failed?: boolean;
+    tenant_id?: string;
   };
+  const tenantId = body.tenant_id?.trim();
+  if (!tenantId) return json({ error: "Select a tenant workspace before processing notifications." }, 400);
+  if (currentProfile?.role !== "Super Admin" && currentProfile?.tenant_id !== tenantId) {
+    return json({ error: "The selected tenant is outside this account's workspace." }, 403);
+  }
+  const { data: tenant, error: tenantError } = await supabase.from("organizations").select("id").eq("id", tenantId).maybeSingle();
+  if (tenantError) return json({ error: tenantError.message }, 500);
+  if (!tenant) return json({ error: "The selected tenant does not exist." }, 404);
 
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
@@ -80,7 +90,7 @@ Deno.serve(async (request) => {
     return json({ error: "Email sending is not configured. Set RESEND_API_KEY and EMAIL_FROM_ADDRESS Supabase secrets." }, 400);
   }
 
-  let query = supabase.from("email_notifications").select("*").order("created_at", { ascending: true });
+  let query = supabase.from("email_notifications").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true });
   if (body.email_notification_id) {
     query = query.eq("id", body.email_notification_id).in("status", body.retry_failed ? ["Pending", "Failed"] : ["Pending"]);
   } else if (body.batch) {
@@ -93,7 +103,7 @@ Deno.serve(async (request) => {
   if (emailError) return json({ error: emailError.message }, 500);
   if (!emails?.length) return json({ sent: 0, failed: 0, results: [] });
 
-  const branding = await loadEmailBranding(supabase, { fromName, fromAddress });
+  const branding = await loadEmailBranding(supabase, tenantId, { fromName, fromAddress });
   const siteUrl = (Deno.env.get("PUBLIC_SITE_URL") ?? Deno.env.get("SITE_URL") ?? "https://wamule-staging.netlify.app").replace(/\/$/, "");
   const results = [];
   for (const email of emails as EmailNotification[]) {
@@ -103,12 +113,14 @@ Deno.serve(async (request) => {
       await supabase
         .from("email_notifications")
         .update({ status: "Sent", error_message: null, sent_at: new Date().toISOString() })
-        .eq("id", email.id);
+        .eq("id", email.id)
+        .eq("tenant_id", tenantId);
     } else {
       await supabase
         .from("email_notifications")
         .update({ status: "Failed", error_message: result.error })
-        .eq("id", email.id);
+        .eq("id", email.id)
+        .eq("tenant_id", tenantId);
     }
   }
 
@@ -162,12 +174,14 @@ async function sendEmail(
 
 async function loadEmailBranding(
   supabase: ReturnType<typeof createClient>,
+  tenantId: string,
   fallback: { fromName: string; fromAddress: string },
 ): Promise<EmailBranding> {
   const { data } = await supabase
     .from("business_settings")
     .select("value")
     .eq("key", "company_profile")
+    .eq("tenant_id", tenantId)
     .maybeSingle();
   const value = data?.value && typeof data.value === "object" ? data.value as Record<string, unknown> : {};
   return {
@@ -179,6 +193,7 @@ async function loadEmailBranding(
 }
 
 type DailyBriefRow = {
+  tenant_id: string;
   summary: string | null;
   applications_summary: string | null;
   lots_summary: string | null;
@@ -200,8 +215,9 @@ async function renderEmailHtmlForNotification(
     try {
       const { data: brief } = await config.supabase
         .from("ai_daily_briefs")
-        .select("summary, applications_summary, lots_summary, payments_summary, contracts_summary, collections_summary, alerts, recommended_actions, brief_date, period_start, period_end")
+        .select("tenant_id, summary, applications_summary, lots_summary, payments_summary, contracts_summary, collections_summary, alerts, recommended_actions, brief_date, period_start, period_end")
         .eq("id", Number(email.related_record_id))
+        .eq("tenant_id", email.tenant_id)
         .maybeSingle();
       if (brief) {
         const data = await buildDailyBriefEmailData(config.supabase, brief as DailyBriefRow, email.subject);
@@ -226,12 +242,14 @@ async function buildDailyBriefEmailData(
   const { data: items } = await supabase
     .from("brief_action_items")
     .select("title, details, severity, status")
+    .eq("tenant_id", brief.tenant_id)
     .in("status", ["Open", "In Progress"])
     .order("last_seen_on", { ascending: false })
     .limit(10);
   const { count: resolvedCount } = await supabase
     .from("brief_action_items")
     .select("id", { count: "exact", head: true })
+    .eq("tenant_id", brief.tenant_id)
     .eq("status", "Done");
 
   const openItems = ((items ?? []) as Array<{ title: string; details: string | null; severity: string | null; status: string }>)

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../_shared/financial.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -58,22 +59,10 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  const role = String(currentProfile?.role ?? "");
-  if (!["Super Admin", "Admin", "Staff"].includes(role)) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate customer AI summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { customer_id?: number } | null;
+  const body = await request.json().catch(() => null) as { customer_id?: number; tenant_id?: string } | null;
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const customerId = Number(body?.customer_id ?? 0);
   if (!customerId) {
     return json({ error: "customer_id is required." }, 400);
@@ -86,20 +75,24 @@ Deno.serve(async (request) => {
         "*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*)",
       )
       .eq("id", customerId)
+      .eq("tenant_id", tenantId)
       .maybeSingle(),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("payment_methods")
       .select("id, name, method_type, is_active, is_public")
+      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
     supabase
       .from("fee_types")
       .select("id, name, default_amount, frequency, is_required, is_active")
+      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
   ]);
 
@@ -147,6 +140,7 @@ Deno.serve(async (request) => {
   const { data: savedSummary, error: saveError } = await supabase
     .from("customer_ai_summaries")
     .upsert({
+      tenant_id: tenantId,
       customer_id: customerId,
       summary: summary.summary,
       account_status: summary.account_status,

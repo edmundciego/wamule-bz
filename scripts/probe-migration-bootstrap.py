@@ -63,6 +63,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--diff-lines", type=int, default=200, help="maximum unified-diff lines to print")
     parser.add_argument("--emit-public-schema", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--before-hosted-pilot", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -189,7 +190,7 @@ def report_candidate_markers(conn: psycopg.Connection) -> None:
         )
         parcel_summary = cur.fetchone()
 
-    print("Candidate comparison markers after all tracked migrations:")
+    print("Candidate comparison markers after the legacy migration replay:")
     print(f"  admin_profiles columns: {', '.join(profile_columns)}")
     print(f"  admin_profiles primary key: {profile_pk[0] if profile_pk else '(none)'}")
     enum_summary: dict[str, list[str]] = {}
@@ -249,6 +250,7 @@ def compare_candidate_schemas(diff_lines: int) -> int:
             str(Path(__file__).resolve()),
             "--baseline",
             candidate_name,
+            "--before-hosted-pilot",
             "--emit-public-schema",
         ]
         try:
@@ -300,8 +302,8 @@ def compare_candidate_schemas(diff_lines: int) -> int:
     diff = list(difflib.unified_diff(
         archive_dump.splitlines(),
         root_dump.splitlines(),
-        fromfile="archive-foundation + tracked migrations",
-        tofile="root-foundation + tracked migrations",
+        fromfile="archive-foundation + legacy migration scope",
+        tofile="root-foundation + legacy migration scope",
         n=1,
         lineterm="",
     ))
@@ -340,6 +342,16 @@ def main() -> int:
     if args.compare_candidates:
         return compare_candidate_schemas(args.diff_lines)
     migration_files = sorted(MIGRATIONS.glob("*.sql"))
+    if args.before_hosted_pilot:
+        if args.baseline == "none":
+            print("error: --before-hosted-pilot requires a legacy foundation candidate", file=sys.stderr)
+            return 2
+        # The candidate comparison answers a different question from the
+        # project/phase pilot rehearsal. Its legacy schemas do not contain the
+        # reviewed default-project/default-phase preconditions required by the
+        # Oct 14 pilot package, which is separately tested by the local pilot
+        # harness after explicit project/phase setup.
+        migration_files = [path for path in migration_files if path.name < "20261014000000_project_phase_hosted_pilot.sql"]
     if not migration_files:
         print(f"error: no tracked migrations found in {MIGRATIONS}", file=sys.stderr)
         return 2
@@ -355,6 +367,8 @@ def main() -> int:
         print(f"Experimental foundation candidate: {candidate.relative_to(ROOT)}")
         print("Only minimal Auth/Storage SQL stubs are installed; this is not Supabase db reset.")
     print(f"Tracked migrations: {len(migration_files)}")
+    if args.before_hosted_pilot:
+        print("Legacy candidate comparison scope ends before the project/phase hosted-pilot migrations.")
 
     if args.baseline != "none":
         candidate = FOUNDATION_CANDIDATES[args.baseline]
@@ -446,7 +460,8 @@ def main() -> int:
         print(f"error: bootstrap probe could not run: {exc}", file=sys.stderr)
         return 2
 
-    print(f"PASS: all {len(migration_files)} tracked migrations applied in order.")
+    scope_label = "legacy comparison scope" if args.before_hosted_pilot else "tracked migrations"
+    print(f"PASS: all {len(migration_files)} migrations in the {scope_label} applied in order.")
     return 0
 
 

@@ -36,6 +36,7 @@ function formatBytes(bytes: number): string {
 export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanUploadProps) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
+  const [fileTenantId, setFileTenantId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -44,6 +45,7 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
   const [saving, setSaving] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [pendingVersion, setPendingVersion] = useState<MasterplanVersion | null>(null);
+  const [pendingVersionTenantId, setPendingVersionTenantId] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
@@ -63,21 +65,25 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
     setDimensions(null);
     if (!candidate) {
       setFile(null);
+      setFileTenantId(null);
       return;
     }
     if (!(ACCEPTED_MIME_TYPES as readonly string[]).includes(candidate.type)) {
       setFile(null);
+      setFileTenantId(null);
       setError("Unsupported file type. Upload a JPG, PNG, or WEBP image.");
       return;
     }
     if (candidate.size > MAX_FILE_BYTES) {
       setFile(null);
+      setFileTenantId(null);
       setError(`File is too large (${formatBytes(candidate.size)}). Maximum is ${formatBytes(MAX_FILE_BYTES)}.`);
       return;
     }
     setFile(candidate);
+    setFileTenantId(tenantId);
     setStatus("Map image ready. Upload to preview alignment before publishing.");
-  }, []);
+  }, [tenantId]);
 
   async function refreshTenantCaches(url: string | null) {
     onChanged?.(url);
@@ -88,6 +94,10 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
   /** Uploads the file, stores it as an inactive version, and opens alignment preview. */
   async function handleUploadNew() {
     if (!file || !tenantId) return;
+    if (fileTenantId !== tenantId) {
+      setError("This map draft belongs to another workspace. Switch back to that workspace or select the file again.");
+      return;
+    }
     setError(null);
     setSaving(true);
     setStatus("Uploading map...");
@@ -115,10 +125,12 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
       if (insertError || !version) throw new Error(insertError?.message ?? "Version record failed.");
 
       setFile(null);
+      setFileTenantId(null);
       setRefreshSignal((signal) => signal + 1);
       // Activation trigger assigns the version number; refetch for the preview label.
       const created = version as MasterplanVersion;
       setPendingVersion(created);
+      setPendingVersionTenantId(tenantId);
       setStatus("Map uploaded as a draft. Verify alignment, then publish.");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
@@ -217,8 +229,9 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
         </div>
       </Field>
       {status ? <p className="text-sm text-muted-foreground" role="status">{status}</p> : null}
+      {file && fileTenantId !== tenantId ? <p className="text-sm text-amber-800" role="status">This map draft belongs to another workspace. Switch back to upload it or select the file again.</p> : null}
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={!canManage || !file || saving || !tenantId} onClick={() => void handleUploadNew()}>
+        <Button type="button" disabled={!canManage || !file || fileTenantId !== tenantId || saving || !tenantId} onClick={() => void handleUploadNew()}>
           {saving ? "Uploading…" : "Upload New Map"}
         </Button>
         <Button type="button" variant="outline" disabled={!canManage || removing || !tenantId} onClick={() => void handleRemoveActive()}>
@@ -236,15 +249,16 @@ export function MasterplanUpload({ tenantId, canManage, onChanged }: MasterplanU
       />
 
       <MasterplanPreviewModal
-        open={pendingVersion !== null}
+        open={pendingVersion !== null && pendingVersionTenantId === tenantId}
         tenantId={tenantId}
         draftImageUrl={pendingVersion?.image_url ?? null}
         draftLabel={pendingVersion ? `New upload alignment check${pendingVersion.version_number ? ` (Version ${pendingVersion.version_number})` : ""}` : ""}
         draftVersionId={pendingVersion?.id ?? null}
         canManage={canManage}
-        onClose={() => setPendingVersion(null)}
+        onClose={() => { setPendingVersion(null); setPendingVersionTenantId(null); }}
         onPublished={(url) => {
           setPendingVersion(null);
+          setPendingVersionTenantId(null);
           setRefreshSignal((signal) => signal + 1);
           void refreshTenantCaches(url);
           setStatus("Masterplan published and live.");

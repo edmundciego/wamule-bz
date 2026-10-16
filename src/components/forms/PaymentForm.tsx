@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
 import { checkDuplicateBankReference } from "../../lib/data";
+import { useWorkspaceScope } from "../auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../../lib/workspaceScope";
 import { paymentSchema } from "../../lib/schemas";
 import { supabase } from "../../lib/supabase";
 import { prepareUploadFile, type PreparedUploadFile } from "../../lib/uploads";
@@ -34,6 +36,9 @@ export function PaymentForm({
   onSuccess?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { workspace } = useWorkspaceScope();
+  const tenantId = workspace?.tenantId ?? null;
+  const scopeKey = workspaceScopeKey(workspace);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [documentFile, setDocumentFile] = useState<PreparedUploadFile | null>(null);
@@ -49,50 +54,56 @@ export function PaymentForm({
   });
 
   const { data: customers } = useQuery({
-    queryKey: ["payment-customers"],
+    queryKey: ["payment-customers", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").order("last_name");
+      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").eq("tenant_id", tenantId!).order("last_name");
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(tenantId),
   });
   const { data: contracts } = useQuery({
-    queryKey: ["payment-contracts", form.watch("customer_id")],
+    queryKey: ["payment-contracts", scopeKey, form.watch("customer_id")],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("contracts")
         .select("id, customer_id, parcel_id, is_active, status")
         .eq("customer_id", Number(form.watch("customer_id")))
+        .eq("tenant_id", tenantId!)
         .eq("is_active", true)
         .eq("status", "active");
       if (queryError) throw queryError;
       return data;
     },
-    enabled: Boolean(form.watch("customer_id")),
+    enabled: Boolean(tenantId && form.watch("customer_id")),
   });
   const { data: paymentMethods } = useQuery({
-    queryKey: ["active-payment-methods-form"],
+    queryKey: ["active-payment-methods-form", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("payment_methods")
         .select("*")
         .eq("is_active", true)
+        .eq("tenant_id", tenantId!)
         .order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as PaymentMethod[];
     },
+    enabled: Boolean(tenantId),
   });
   const { data: feeTypes } = useQuery({
-    queryKey: ["active-fee-types-form"],
+    queryKey: ["active-fee-types-form", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("fee_types")
         .select("*")
         .eq("is_active", true)
+        .eq("tenant_id", tenantId!)
         .order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as FeeType[];
     },
+    enabled: Boolean(tenantId),
   });
   const collectionOptions = buildCollectionOptions(paymentMethods);
   const transactionOptions = buildTransactionOptions(feeTypes, landPaymentsEnabled);
@@ -101,8 +112,43 @@ export function PaymentForm({
   async function onSubmit(values: PaymentValues) {
     setError(null);
     setSuccessMessage(null);
+    if (!tenantId) {
+      setError("Choose a workspace before recording a payment.");
+      return;
+    }
+    const { data: scopedCustomer, error: customerError } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("id", values.customer_id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (customerError) {
+      setError(customerError.message);
+      return;
+    }
+    if (!scopedCustomer) {
+      setError("The selected customer is outside this workspace. Select a customer from the current tenant.");
+      return;
+    }
+    if (values.contract_id) {
+      const { data: scopedContract, error: contractError } = await supabase
+        .from("contracts")
+        .select("id")
+        .eq("id", Number(values.contract_id))
+        .eq("customer_id", values.customer_id)
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      if (contractError) {
+        setError(contractError.message);
+        return;
+      }
+      if (!scopedContract) {
+        setError("The selected contract is outside this customer’s workspace.");
+        return;
+      }
+    }
     if (values.collection_method === "Online Transfer" && values.bank_reference) {
-      const duplicate = await checkDuplicateBankReference(values.bank_reference);
+      const duplicate = await checkDuplicateBankReference(values.bank_reference, tenantId ?? "");
       if (duplicate) {
         setError("That bank reference has already been recorded.");
         return;
@@ -117,6 +163,7 @@ export function PaymentForm({
     const { data: transaction, error: insertError } = await supabase
       .from("transactions")
       .insert({
+        tenant_id: tenantId,
         customer_id: values.customer_id,
         contract_id: values.contract_id ? Number(values.contract_id) : null,
         amount: values.amount,
@@ -154,6 +201,7 @@ export function PaymentForm({
       }
 
       const { error: documentError } = await supabase.from("payment_documents").insert({
+        tenant_id: tenantId,
         transaction_id: transaction.id,
         customer_id: values.customer_id,
         document_type: values.document_type || "Other",

@@ -13,6 +13,8 @@ import { Field, Input, Select } from "../ui/Field";
 import { ErrorState } from "../ui/State";
 import type { InstallmentPlan } from "../../types/database";
 import { UploadFileSummary } from "../uploads/UploadFileSummary";
+import { useWorkspaceScope } from "../auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../../lib/workspaceScope";
 
 type ContractValues = z.infer<typeof contractSchema>;
 
@@ -45,6 +47,9 @@ export function ContractForm({
   onSuccess?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { workspace } = useWorkspaceScope();
+  const tenantId = workspace?.tenantId ?? null;
+  const scopeKey = workspaceScopeKey(workspace);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<PreparedUploadFile | null>(null);
   const [fileStatus, setFileStatus] = useState<string | null>(null);
@@ -65,16 +70,18 @@ export function ContractForm({
   const term = Number(form.watch("term_months") || 1);
   const monthly = term > 0 ? (finalPrice - deposit) / term : 0;
   const { data: configuredPlans } = useQuery({
-    queryKey: ["active-installment-plans-contract"],
+    queryKey: ["active-installment-plans-contract", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("installment_plans")
         .select("*")
         .eq("is_active", true)
+        .eq("tenant_id", tenantId!)
         .order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as InstallmentPlan[];
     },
+    enabled: Boolean(tenantId),
   });
   const paymentPlans = configuredPlans?.length ? configuredPlans : fallbackPlans;
   const selectedPlan = paymentPlans.find((plan) => plan.id === paymentPlanId) ?? paymentPlans[0];
@@ -93,21 +100,23 @@ export function ContractForm({
   }, [form, paymentPlanId, selectedPlan]);
 
   const { data: customers } = useQuery({
-    queryKey: ["customers-options"],
+    queryKey: ["customers-options", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").order("last_name");
+      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").eq("tenant_id", tenantId!).order("last_name");
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(tenantId),
   });
   const { data: parcels } = useQuery({
-    queryKey: ["contract-customer-authorization", form.watch("customer_id")],
+    queryKey: ["contract-customer-authorization", scopeKey, form.watch("customer_id")],
     queryFn: async () => {
       const customerIdValue = Number(form.watch("customer_id"));
       const { data: customer, error: customerError } = await supabase
         .from("customers")
         .select("application_id, applications(status, parcel_id, parcels(id, lot_number, status))")
         .eq("id", customerIdValue)
+        .eq("tenant_id", tenantId!)
         .maybeSingle();
       if (customerError) throw customerError;
       if (!customer) return null;
@@ -115,6 +124,7 @@ export function ContractForm({
         .from("lot_reservations")
         .select("id, parcel_id, status, updated_at, parcels(id, lot_number, status)")
         .eq("customer_id", customerIdValue)
+        .eq("tenant_id", tenantId!)
         .in("status", ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"])
         .order("updated_at", { ascending: false })
         .limit(1);
@@ -129,7 +139,7 @@ export function ContractForm({
       }
       return null;
     },
-    enabled: Boolean(form.watch("customer_id")),
+    enabled: Boolean(tenantId && form.watch("customer_id")),
   });
 
   useEffect(() => {
@@ -155,6 +165,14 @@ export function ContractForm({
 
   async function onSubmit(values: ContractValues) {
     setError(null);
+    if (!tenantId) {
+      setError("Choose a workspace before creating a contract.");
+      return;
+    }
+    if (!parcels?.parcel || parcels.parcel.id !== values.parcel_id) {
+      setError("A current reservation or approved application must authorize a lot in this workspace before creating a contract.");
+      return;
+    }
     let signed_contract_file_path: string | null = null;
     if (file) {
       setFileStatus("Uploading signed contract...");
@@ -169,6 +187,7 @@ export function ContractForm({
     }
     const { error: insertError } = await supabase.from("contracts").insert({
       ...values,
+      tenant_id: tenantId,
       signed_contract_file_path,
       is_active: true,
     });

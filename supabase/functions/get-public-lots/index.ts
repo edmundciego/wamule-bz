@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { allowlistTheme } from "../../../src/lib/theme.ts";
 import { safeTenantThemeCssUrl } from "./public-theme.mjs";
 import { assignPublicLotReferences } from "../_shared/public-lot-reference.ts";
+import { isAvailableForSalesSelection, isEligibleForPublicInquiry, isRasterDetection } from "../_shared/parcel-provenance.mjs";
 import {
   applyActiveVersionProjectScope,
   applyProjectAndVersionScope,
@@ -42,7 +43,23 @@ const PUBLIC_PARCEL_FIELDS = [
   "tier_color_hex",
   "is_corner",
   "effective_price_cents",
+  "sales_selectable",
+  "inquiry_eligible",
+  "is_map_detection",
 ] as const;
+
+const HOPKINS_SOURCE_TIER_KEYS = new Set([
+  "standard", "premium", "boulevard", "creek", "orange", "purple", "red",
+]);
+
+const HOPKINS_PRINT_LABEL_STATES = new Set([
+  "ocr-match-pending-human-review",
+  "duplicate-ocr-token-pending-human-review",
+  "no-unique-source-match",
+  "split-child-pending-human-review",
+  "source-image-cross-checked",
+  "source-image-ambiguous-multiple-lots",
+]);
 
 type TierRow = {
   tier_key: string;
@@ -105,6 +122,11 @@ function toPublicParcel(
     tier_color_hex: tier ? tier.color_hex : null,
     is_corner: isCorner,
     effective_price_cents: effectiveCents,
+    // These derived booleans disclose only the safe classification the public
+    // UI needs; geometry_source and needs_review remain server-side inputs.
+    sales_selectable: isAvailableForSalesSelection(parcel),
+    inquiry_eligible: isEligibleForPublicInquiry(parcel),
+    is_map_detection: isRasterDetection(parcel),
   };
   // Defensive allowlist serialization: strips any key not in
   // PUBLIC_PARCEL_FIELDS regardless of how it arrived.
@@ -132,6 +154,10 @@ Deno.serve(async (request) => {
   // Optional project slug (?project=): explicit lookup scoped to the tenant.
   // Absent = alias to the tenant's default project (see resolveProject).
   const projectParam = (url.searchParams.get("project") ?? "").trim().toLowerCase() || null;
+  const phaseParam = (url.searchParams.get("phase") ?? "").trim().toLowerCase() || null;
+  if (phaseParam && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(phaseParam)) {
+    return json({ error: "Invalid phase slug." }, 400);
+  }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -152,9 +178,12 @@ Deno.serve(async (request) => {
   if (projectParam && !project) {
     return json({ error: "Project not found." }, 404);
   }
+  const phaseResolution = await resolvePhase(supabase, organization.id, project, phaseParam);
+  if (!phaseResolution.ok) return json({ error: phaseResolution.message }, phaseResolution.status);
+  const phase = phaseResolution.phase;
 
   const [activeVersionResolution, settingsResolution] = await Promise.all([
-    loadActiveVersion(supabase, organization.id, project?.id ?? null),
+    loadActiveVersion(supabase, organization.id, project?.id ?? null, phase?.id ?? null),
     loadPublicSettings(supabase, organization.id, project),
   ]);
   if (!activeVersionResolution.ok || !settingsResolution.ok) {
@@ -163,16 +192,92 @@ Deno.serve(async (request) => {
   const activeVersion = activeVersionResolution.version;
   const publicSettings = settingsResolution.settings;
 
+  const branding = buildBranding(organization, project, activeVersion, publicSettings);
+  const theme = buildTheme(publicSettings, organization.id, project);
+
+  if (project?.mapExperienceMode === "demo") {
+    if (!project.id || !phase?.id) return json({ error: "The demo map has no active project phase." }, 503);
+    const snapshotLookup = await supabase.from("map_feature_snapshots").select("id")
+      .eq("tenant_id", organization.id).eq("project_id", project.id).eq("phase_id", phase.id).eq("is_active", true).maybeSingle();
+    if (snapshotLookup.error) {
+      console.error("get-public-lots demo snapshot lookup failed", snapshotLookup.error.message);
+      return json({ error: "Could not verify the current demo map." }, 503);
+    }
+    if (!snapshotLookup.data) return json({ error: "The demo map is not published yet." }, 503);
+    const { data: features, error: featureError } = await supabase.from("map_features")
+      .select("identity_id, demo_label, map_polygon, provenance")
+      .eq("tenant_id", organization.id).eq("project_id", project.id).eq("phase_id", phase.id)
+      .eq("snapshot_id", snapshotLookup.data.id).eq("is_active", true).eq("public_visible", true)
+      .order("demo_label", { ascending: true });
+    if (featureError) {
+      console.error("get-public-lots demo feature query failed", featureError.message);
+      return json({ error: "Could not load the current demo map." }, 503);
+    }
+    const includeHopkinsSource = organization.slug === "hopkins-grove" && project.slug === "hopkins-grove";
+    return json({
+      tenant: { name: organization.name, slug: organization.slug },
+      project: { slug: project.slug, name: project.name },
+      phase: { slug: phase.slug, name: phase.name },
+      map_experience_mode: "demo",
+      masterplan_image_url: branding.masterplanImageUrl,
+      masterplan_preview_url: branding.masterplanPreviewUrl,
+      branding: branding.public,
+      theme,
+      parcels: [],
+      features: (features ?? []).map((feature) => {
+        const output: Record<string, unknown> = {
+          map_feature_ref: String(feature.identity_id),
+          demo_label: String(feature.demo_label),
+          map_polygon: sanitizePolygon(feature.map_polygon),
+        };
+        if (includeHopkinsSource) {
+          const provenance = feature.provenance && typeof feature.provenance === "object" && !Array.isArray(feature.provenance)
+            ? feature.provenance as Record<string, unknown>
+            : {};
+          const tierKey = typeof provenance.source_tier_key === "string" && HOPKINS_SOURCE_TIER_KEYS.has(provenance.source_tier_key)
+            ? provenance.source_tier_key
+            : null;
+          const printLabelStatus = typeof provenance.source_printed_lot_number_status === "string"
+            && HOPKINS_PRINT_LABEL_STATES.has(provenance.source_printed_lot_number_status)
+            ? provenance.source_printed_lot_number_status
+            : "no-unique-source-match";
+          const printCandidate = printLabelStatus === "source-image-cross-checked"
+            ? (typeof provenance.source_printed_lot_number_verified === "string"
+              ? provenance.source_printed_lot_number_verified
+              : null)
+            : printLabelStatus === "ocr-match-pending-human-review"
+              && typeof provenance.source_printed_lot_number_candidate === "string"
+              ? provenance.source_printed_lot_number_candidate
+              : null;
+          const ambiguousPrintNumbers = printLabelStatus === "source-image-ambiguous-multiple-lots"
+            && Array.isArray(provenance.source_printed_lot_number_candidates_ambiguous)
+            ? provenance.source_printed_lot_number_candidates_ambiguous
+              .filter((value): value is string => typeof value === "string" && /^\d{1,5}$/.test(value))
+              .slice(0, 20)
+            : [];
+          output.source_tier_key = tierKey;
+          output.source_tier_status = typeof provenance.source_tier_status === "string"
+            && provenance.source_tier_status === "source-tier-ambiguous-multiple-colors"
+            ? provenance.source_tier_status
+            : null;
+          output.source_printed_lot_number_candidate = printCandidate;
+          output.source_printed_lot_number_status = printLabelStatus;
+          output.source_printed_lot_number_candidates_ambiguous = ambiguousPrintNumbers;
+        }
+        return output;
+      }),
+    });
+  }
+
   // Project and active-version scoping happen in the database query so the
   // service-role function never loads unrelated tenant parcels into memory.
-  const parcelQuery = applyProjectAndVersionScope(
-    supabase
-      .from("parcels")
-      .select("lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id")
-      .eq("tenant_id", organization.id),
-    project,
-    activeVersion?.id ?? null,
-  ).order("lot_number", { ascending: true });
+  let parcelBase = supabase
+    .from("parcels")
+    .select("lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id, geometry_source, needs_review")
+    .eq("tenant_id", organization.id);
+  if (phase?.id) parcelBase = parcelBase.eq("phase_id", phase.id);
+  const parcelQuery = applyProjectAndVersionScope(parcelBase, project, activeVersion?.id ?? null)
+    .order("lot_number", { ascending: true });
   const [{ data: parcels, error: parcelsError }, tiersResolution] = await Promise.all([
     parcelQuery,
     loadTiers(supabase, organization.id, project),
@@ -186,9 +291,7 @@ Deno.serve(async (request) => {
     return json({ error: "Could not resolve project tier catalogue." }, 500);
   }
 
-  const branding = buildBranding(organization, project, activeVersion, publicSettings);
   const tiersByKey = tiersResolution.tiers;
-  const theme = buildTheme(publicSettings, organization.id, project);
 
   const publicReferences = assignPublicLotReferences(
     project?.slug ?? null,
@@ -198,6 +301,8 @@ Deno.serve(async (request) => {
   return json({
     tenant: { name: organization.name, slug: organization.slug },
     project: project ? { slug: project.slug, name: project.name } : null,
+    phase: phase ? { slug: phase.slug, name: phase.name } : null,
+    map_experience_mode: project?.mapExperienceMode ?? "sales",
     masterplan_image_url: branding.masterplanImageUrl,
     masterplan_preview_url: branding.masterplanPreviewUrl,
     branding: branding.public,
@@ -279,12 +384,13 @@ async function loadActiveVersion(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
   projectId: string | null,
+  phaseId: string | null,
 ): Promise<ActiveVersionResolution> {
-  const { data, error } = await applyActiveVersionProjectScope(
-    supabase.from("masterplan_versions").select("id, image_url, preview_url"),
-    tenantId,
-    projectId,
-  ).maybeSingle();
+  let query = applyActiveVersionProjectScope(
+    supabase.from("masterplan_versions").select("id, image_url, preview_url"), tenantId, projectId,
+  );
+  query = phaseId ? query.eq("phase_id", phaseId) : query.is("phase_id", null);
+  const { data, error } = await query.maybeSingle();
   if (error) {
     console.error("get-public-lots active version lookup failed", error.message);
     return normalizeActiveMapLookup(null, error);
@@ -292,7 +398,7 @@ async function loadActiveVersion(
   return normalizeActiveMapLookup(data as { id?: unknown } | null, null);
 }
 
-type ResolvedProject = { id: string; slug: string; name: string; isDefault: boolean };
+type ResolvedProject = { id: string; slug: string; name: string; isDefault: boolean; mapExperienceMode: "sales" | "demo" };
 type ProjectResolution = { ok: true; project: ResolvedProject | null } | { ok: false };
 
 /**
@@ -306,19 +412,41 @@ async function resolveProject(
 ): Promise<ProjectResolution> {
   const { data, error } = await supabase
     .from("projects")
-    .select("id, slug, name, is_default, created_at")
+    .select("id, slug, name, is_default, map_experience_mode, created_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: true });
   if (error) {
     console.error("get-public-lots project lookup failed", error.message);
     return { ok: false };
   }
-  const rows = ((data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean }>);
+  const rows = ((data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean; map_experience_mode: "sales" | "demo" }>);
   if (!slug && rows.length > 0 && !rows.some((row) => row.is_default)) {
     console.error("get-public-lots tenant has projects but no default project");
     return { ok: false };
   }
-  return { ok: true, project: chooseResolvedProject(rows, slug) };
+  const selected = chooseResolvedProject(rows, slug);
+  const selectedRow = selected ? rows.find((row) => row.id === selected.id) : null;
+  return { ok: true, project: selected && selectedRow ? { ...selected, mapExperienceMode: selectedRow.map_experience_mode === "demo" ? "demo" : "sales" } : null };
+}
+
+type ResolvedPhase = { id: string; slug: string; name: string; isDefault: boolean };
+type PhaseResolution = { ok: true; phase: ResolvedPhase | null } | { ok: false; status: number; message: string };
+
+async function resolvePhase(
+  supabase: ReturnType<typeof createClient>, tenantId: string, project: ResolvedProject | null, slug: string | null,
+): Promise<PhaseResolution> {
+  if (!project) return slug ? { ok: false, status: 404, message: "Project phase not found." } : { ok: true, phase: null };
+  const { data, error } = await supabase.from("development_phases")
+    .select("id, slug, name, is_default, is_active")
+    .eq("tenant_id", tenantId).eq("project_id", project.id).eq("is_active", true);
+  if (error) {
+    console.error("get-public-lots phase lookup failed", error.message);
+    return { ok: false, status: 503, message: "Could not resolve the project phase." };
+  }
+  const phases = (data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean }>;
+  const phase = slug ? phases.find((row) => row.slug.toLowerCase() === slug) : phases.find((row) => row.is_default);
+  if (!phase) return { ok: false, status: 404, message: slug ? "Project phase not found." : "The project has no active default phase." };
+  return { ok: true, phase: { id: phase.id, slug: phase.slug, name: phase.name, isDefault: phase.is_default } };
 }
 
 /**

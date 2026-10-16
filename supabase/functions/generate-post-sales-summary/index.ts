@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -73,21 +74,10 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin", "Staff"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate post-sales summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { checklist_id?: string } | null;
+  const body = await request.json().catch(() => null) as { checklist_id?: string; tenant_id?: string } | null;
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const checklistId = String(body?.checklist_id ?? "").trim();
   if (!checklistId) {
     return json({ error: "checklist_id is required." }, 400);
@@ -100,6 +90,7 @@ Deno.serve(async (request) => {
     .from("post_sales_checklists")
     .select("*")
     .eq("id", checklistId)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (checklistError) {
@@ -131,6 +122,7 @@ Deno.serve(async (request) => {
       .from("post_sales_activities")
       .select("*")
       .eq("checklist_id", checklistId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(30),
     customerId
@@ -138,6 +130,7 @@ Deno.serve(async (request) => {
         .from("customers")
         .select("*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*), payment_requests(*)")
         .eq("id", customerId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     applicationId
@@ -145,6 +138,7 @@ Deno.serve(async (request) => {
         .from("applications")
         .select("*, parcels(id, lot_number, status, dimensions, base_price), application_ai_reviews(*)")
         .eq("id", applicationId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     contractId
@@ -152,6 +146,7 @@ Deno.serve(async (request) => {
         .from("contracts")
         .select("*, parcels(id, lot_number, status, dimensions, base_price), transactions(*, payment_documents(*))")
         .eq("id", contractId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     leadId
@@ -159,6 +154,7 @@ Deno.serve(async (request) => {
         .from("leads")
         .select("*")
         .eq("id", leadId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     reservationId
@@ -166,11 +162,13 @@ Deno.serve(async (request) => {
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status, dimensions, base_price)")
         .eq("id", reservationId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -243,6 +241,7 @@ Deno.serve(async (request) => {
   const { data: savedSummary, error: saveError } = await supabase
     .from("post_sales_ai_summaries")
     .insert({
+      tenant_id: tenantId,
       checklist_id: checklistId,
       customer_id: customerId,
       application_id: applicationId,
@@ -287,6 +286,7 @@ async function loadPostSalesTasks(supabase: ReturnType<typeof createClient>, che
   const query = supabase
     .from("post_sales_tasks")
     .select("*")
+    .eq("tenant_id", String(checklist.tenant_id ?? ""))
     .order("due_at", { ascending: true, nullsFirst: false });
 
   if (customerId) return query.eq("customer_id", customerId);

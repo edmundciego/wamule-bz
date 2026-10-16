@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.get-public-lots]
 verify_jwt = false
+
+[functions.get-public-project-page]
+verify_jwt = false
+
+[functions.submit-hopkins-project-application]
+verify_jwt = false

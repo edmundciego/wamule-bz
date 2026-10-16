@@ -1,0 +1,1433 @@
+{
+  "captured_at": "2026-10-16",
+  "captured_read_only": true,
+  "target": {
+    "name": "Wamule",
+    "supabase_project_ref": "mtjlvzrtihslcftxnlso",
+    "region": "us-west-2",
+    "postgres_engine": "17",
+    "postgres_version": "17.6.1.155"
+  },
+  "migration_ledger": [
+    {
+      "version": "20260610000100",
+      "name": "fix_lots_public_options"
+    },
+    {
+      "version": "20260610000200",
+      "name": "application_form_parity"
+    },
+    {
+      "version": "20260611000100",
+      "name": "allow_unassigned_pending_applications"
+    },
+    {
+      "version": "20260612000100",
+      "name": "manual_receipts_payment_documents"
+    },
+    {
+      "version": "20260612000200",
+      "name": "admin_user_management"
+    },
+    {
+      "version": "20260612000300",
+      "name": "payment_requests_collections"
+    },
+    {
+      "version": "20260613000100",
+      "name": "business_settings_installment_plans"
+    },
+    {
+      "version": "20260614000100",
+      "name": "super_admin_config_ai_foundation"
+    },
+    {
+      "version": "20260614000200",
+      "name": "application_ai_reviews"
+    },
+    {
+      "version": "20260615000100",
+      "name": "ai_daily_briefs"
+    },
+    {
+      "version": "20260615000200",
+      "name": "customer_ai_summaries"
+    },
+    {
+      "version": "20260617000100",
+      "name": "action_email_feedback_foundation"
+    },
+    {
+      "version": "20260618000100",
+      "name": "sales_foundation_phase_1"
+    },
+    {
+      "version": "20260619000100",
+      "name": "reservation_deposit_workflow_phase_2"
+    },
+    {
+      "version": "20260620000100",
+      "name": "post_sales_automation_phase_3"
+    },
+    {
+      "version": "20260623000100",
+      "name": "lead_ai_summaries_phase_4d_1"
+    },
+    {
+      "version": "20260623000200",
+      "name": "post_sales_ai_summaries_phase_4d_2"
+    },
+    {
+      "version": "20260624000100",
+      "name": "audit_events_phase_a"
+    },
+    {
+      "version": "20260624000200",
+      "name": "contract_void_cancel_phase_b"
+    },
+    {
+      "version": "20260624000300",
+      "name": "reservation_release_alternates_phase_c"
+    },
+    {
+      "version": "20260624000400",
+      "name": "reservation_settings_phase_d"
+    },
+    {
+      "version": "20260624000500",
+      "name": "relax_application_payment_option_constraint"
+    },
+    {
+      "version": "20260625000100",
+      "name": "auto_create_lead_from_application"
+    },
+    {
+      "version": "20260625000200",
+      "name": "lead_duplicate_detection"
+    },
+    {
+      "version": "20260714220603",
+      "name": "20260714074603_release_quality_data_management"
+    },
+    {
+      "version": "20260714220611",
+      "name": "20260714203000_controlled_payment_removal"
+    },
+    {
+      "version": "20260714223959",
+      "name": "20260714210447_critical_correctness_batch_1"
+    },
+    {
+      "version": "20260714231118",
+      "name": "operational_attention_source_metadata"
+    },
+    {
+      "version": "20260715055626",
+      "name": "information_centre_foundation"
+    }
+  ],
+  "relation_rowset_fingerprints": {
+    "algorithm": "SHA-256 of UTF-8 newline-joined lexicographically ordered to_jsonb(row)::text values",
+    "table_count": 40,
+    "rows": [
+      {
+        "table_name": "admin_profiles",
+        "row_count": 3,
+        "rowset_sha256": "6b0d375ccdc82c4cd72334c03c1b9e96d9f348a5a1bdcfb7fd6b0baf1f9ce818"
+      },
+      {
+        "table_name": "ai_daily_briefs",
+        "row_count": 15,
+        "rowset_sha256": "6678fdc9b88d37fd9856339fbc82a81e25006a642d89fa77c10891bed98b93b7"
+      },
+      {
+        "table_name": "ai_settings",
+        "row_count": 1,
+        "rowset_sha256": "bc9e5c96d2ab0952c5b7df2d33ee1cebd24fe3496f4ec653457e7a4317456332"
+      },
+      {
+        "table_name": "application_ai_reviews",
+        "row_count": 2,
+        "rowset_sha256": "e5f74a5bbe53dada1f388e99b75df64200fd291e6449626315e70df623e06822"
+      },
+      {
+        "table_name": "applications",
+        "row_count": 4,
+        "rowset_sha256": "5183d9067fbdc8564d1590f05a328cec33c15a2770620e18f3f935634a6afcfe"
+      },
+      {
+        "table_name": "audit_events",
+        "row_count": 4,
+        "rowset_sha256": "36da3401678fee72901e745b5bc9c56fd61b94cb10c0b438decdf5ece802771a"
+      },
+      {
+        "table_name": "brief_action_items",
+        "row_count": 24,
+        "rowset_sha256": "098080369e10592cd09f2e721612f2aab127f25b104e40b422d4fc9b880fdc8a"
+      },
+      {
+        "table_name": "business_settings",
+        "row_count": 5,
+        "rowset_sha256": "8c7bbed8f54515077fa30e3c1e54a865e1dfc09b0c823616127f18f588ca632f"
+      },
+      {
+        "table_name": "community_fee_settings",
+        "row_count": 1,
+        "rowset_sha256": "4443d820839f34f54fc62889498985c9aa60396e3d16981f8c66c128209070d9"
+      },
+      {
+        "table_name": "contract_void_resolutions",
+        "row_count": 2,
+        "rowset_sha256": "fdb8111e92a025b2748def71a84648b6388003e70b6b32cab264e8027d0606be"
+      },
+      {
+        "table_name": "contracts",
+        "row_count": 2,
+        "rowset_sha256": "f4db93390b67c7b54537aae7417d422aadeef133c7a34b3ba26c8f64f6ce6999"
+      },
+      {
+        "table_name": "customer_ai_summaries",
+        "row_count": 1,
+        "rowset_sha256": "6d92b70d70e59de92b83668d02827fed59402844e7ba08dca0ad07c3627b3b37"
+      },
+      {
+        "table_name": "customers",
+        "row_count": 2,
+        "rowset_sha256": "7385304e13ed86ab826a9439dc31cb9b4d23da6ee6d33d3350a204738c9facf7"
+      },
+      {
+        "table_name": "developer_feedback",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "email_notifications",
+        "row_count": 4,
+        "rowset_sha256": "3cd969f01814453b9c33f353fdfc734c83844abc0a1633adc554f24310123e17"
+      },
+      {
+        "table_name": "fee_types",
+        "row_count": 2,
+        "rowset_sha256": "d810b7c68e72c8e940f2f955669478930ca0c32962ebfd112a6597acd3c1656c"
+      },
+      {
+        "table_name": "follow_up_tasks",
+        "row_count": 1,
+        "rowset_sha256": "b92887513dcf736cada556392e6bedcbb05cfcaa1080b7a87279b10a5014c18d"
+      },
+      {
+        "table_name": "information_packs",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "information_request_topics",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "information_requests",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "information_topics",
+        "row_count": 11,
+        "rowset_sha256": "bb10032a0b73fb630fdf012e7dfa9fe3334b50933724e1c1feb594cf7e19cd59"
+      },
+      {
+        "table_name": "installment_plans",
+        "row_count": 6,
+        "rowset_sha256": "4c34dc3e7a30fafbfa7da3e6c72757462fb72ea9a79efd04206d78f8e2c5123b"
+      },
+      {
+        "table_name": "lead_activities",
+        "row_count": 4,
+        "rowset_sha256": "6cebe3fcdd92c454514a4f5382b0e96604a50ef22b8c16b0b638a85774d8d43e"
+      },
+      {
+        "table_name": "lead_ai_summaries",
+        "row_count": 2,
+        "rowset_sha256": "721187f2c927174d518f81947387a2bcee2edbcc75f3b762e6a8cd964cbf8020"
+      },
+      {
+        "table_name": "leads",
+        "row_count": 4,
+        "rowset_sha256": "27c6c7999b65daa650f8d004998eafe2ac5b8adae2eea5812ad56384604bff19"
+      },
+      {
+        "table_name": "lot_reservations",
+        "row_count": 1,
+        "rowset_sha256": "7712ad7958dc78739e5f5e26839b6e64abf8e455f3f71b00d49b27b49e6f7702"
+      },
+      {
+        "table_name": "lot_sizes",
+        "row_count": 2,
+        "rowset_sha256": "5ca5a11b820a10731679d85302f81ccde9fe5fb189cc0442658f3801bcbe852b"
+      },
+      {
+        "table_name": "notification_settings",
+        "row_count": 3,
+        "rowset_sha256": "309f12b561575e3e442e20cd0d80ebd99fe2e663ed5dcbb09bf2360ba0560ad7"
+      },
+      {
+        "table_name": "parcels",
+        "row_count": 24,
+        "rowset_sha256": "81184654dc6eb6d9755a4951c9e6d53440a3e6f24a4823833b6b2cac60121d7c"
+      },
+      {
+        "table_name": "payment_documents",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "payment_methods",
+        "row_count": 2,
+        "rowset_sha256": "95512dbf8a6e6726dd0d53a9c0aa462328d7e8170b3c35d2948109f9d7af7423"
+      },
+      {
+        "table_name": "payment_requests",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "post_sales_activities",
+        "row_count": 1,
+        "rowset_sha256": "b0522c0ff26b6ff0ccfdf5175b6f637bac525b0a73326cf51af94f6b5b723c03"
+      },
+      {
+        "table_name": "post_sales_ai_summaries",
+        "row_count": 1,
+        "rowset_sha256": "12b9e1317dfbcc9266541a7be59981cc7971e7f7387548ae5df569461397b4ef"
+      },
+      {
+        "table_name": "post_sales_checklists",
+        "row_count": 1,
+        "rowset_sha256": "32a6eda196d15be35ecb19e821e8606bb407890f0d510d58824a5323e5cdb3a8"
+      },
+      {
+        "table_name": "post_sales_tasks",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "receipt_jobs",
+        "row_count": 2,
+        "rowset_sha256": "2628d23f32d697fb1aff8c34f33736eb2699b8141e69f1ade0d5e0244e6560cb"
+      },
+      {
+        "table_name": "reservation_activities",
+        "row_count": 2,
+        "rowset_sha256": "7b0d805566f70684b24952196b4da5c137f16c6f5f3b59bfeae60f7c0bc40c9c"
+      },
+      {
+        "table_name": "site_visits",
+        "row_count": 0,
+        "rowset_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table_name": "transactions",
+        "row_count": 2,
+        "rowset_sha256": "562176d4aab3fd6edfb3c73e8c3e45699ac739bdcb7118a549679edc76f4ee78"
+      }
+    ]
+  },
+  "auth": {
+    "users": {
+      "auth_users": 4,
+      "email_confirmed_users": 3,
+      "currently_banned": 0,
+      "deleted_users": 0
+    },
+    "public_settings_endpoint": {
+      "status": 200,
+      "allow_signup": true,
+      "email_autoconfirm": false,
+      "phone_autoconfirm": false,
+      "active_external_providers": [
+        "email"
+      ]
+    },
+    "admin_config_endpoint": {
+      "status": 404,
+      "content_type": "text/plain; charset=utf-8",
+      "note": "Admin URL/redirect allow-list settings were not readable through the available endpoint."
+    },
+    "pii_excluded": true
+  },
+  "storage": {
+    "buckets": [
+      {
+        "id": "application-documents",
+        "name": "application-documents",
+        "public": false,
+        "file_size_limit": 10485760,
+        "allowed_mime_types": [
+          "application/pdf",
+          "image/jpeg",
+          "image/png"
+        ]
+      },
+      {
+        "id": "business-assets",
+        "name": "business-assets",
+        "public": true,
+        "file_size_limit": null,
+        "allowed_mime_types": null
+      },
+      {
+        "id": "contracts",
+        "name": "contracts",
+        "public": false,
+        "file_size_limit": 10485760,
+        "allowed_mime_types": [
+          "application/pdf"
+        ]
+      },
+      {
+        "id": "payment-documents",
+        "name": "payment-documents",
+        "public": false,
+        "file_size_limit": 10485760,
+        "allowed_mime_types": [
+          "application/pdf",
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ]
+      },
+      {
+        "id": "receipts",
+        "name": "receipts",
+        "public": false,
+        "file_size_limit": 10485760,
+        "allowed_mime_types": [
+          "application/pdf"
+        ]
+      }
+    ],
+    "object_count": 0,
+    "total_object_bytes": 0,
+    "policies": [
+      {
+        "schemaname": "public",
+        "tablename": "admin_profiles",
+        "policyname": "Admin profiles manageable by admins",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "admin_profiles",
+        "policyname": "Admin profiles readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "admin_profiles",
+        "policyname": "Internal can read admin profiles",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "admin_profiles",
+        "policyname": "Super Admins manage admin profiles",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_daily_briefs",
+        "policyname": "Admins can create AI daily briefs",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_daily_briefs",
+        "policyname": "Admins can delete AI daily briefs",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_daily_briefs",
+        "policyname": "Admins can update AI daily briefs",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_daily_briefs",
+        "policyname": "Internal can read AI daily briefs",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_settings",
+        "policyname": "Internal can read AI settings",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "ai_settings",
+        "policyname": "Super Admins manage AI settings",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "application_ai_reviews",
+        "policyname": "Admins manage application AI reviews",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "application_ai_reviews",
+        "policyname": "Internal can read application AI reviews",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Applications deletable by admins",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Applications readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Applications writable by admin staff",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Internal can read applications",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Public can submit applications",
+        "cmd": "INSERT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Public can submit pending applications",
+        "cmd": "INSERT",
+        "roles": "{anon,authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Staff can insert applications",
+        "cmd": "INSERT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "applications",
+        "policyname": "Staff can update applications",
+        "cmd": "UPDATE",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "audit_events",
+        "policyname": "Internal can read audit events",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "audit_events",
+        "policyname": "Staff can create audit events",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "brief_action_items",
+        "policyname": "Admins can create brief action items",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "brief_action_items",
+        "policyname": "Admins can update brief action items",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "brief_action_items",
+        "policyname": "Internal can read brief action items",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "business_settings",
+        "policyname": "Business settings insertable by admins",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "business_settings",
+        "policyname": "Business settings readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "business_settings",
+        "policyname": "Business settings updateable by admins",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "business_settings",
+        "policyname": "Public business settings readable by anon",
+        "cmd": "SELECT",
+        "roles": "{anon}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "community_fee_settings",
+        "policyname": "Admins manage fees",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "community_fee_settings",
+        "policyname": "Community fee settings manageable by admins",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "community_fee_settings",
+        "policyname": "Community fee settings readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "community_fee_settings",
+        "policyname": "Internal can read fees",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "contract_void_resolutions",
+        "policyname": "Internal can read contract void resolutions",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "contracts",
+        "policyname": "Contracts readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "contracts",
+        "policyname": "Contracts writable by admin staff",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "contracts",
+        "policyname": "Internal can read contracts",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "contracts",
+        "policyname": "Staff can write contracts",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customer_ai_summaries",
+        "policyname": "Admin staff can create customer AI summaries",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customer_ai_summaries",
+        "policyname": "Admin staff can update customer AI summaries",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customer_ai_summaries",
+        "policyname": "Admins can delete customer AI summaries",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customer_ai_summaries",
+        "policyname": "Internal can read customer AI summaries",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customers",
+        "policyname": "Customers readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customers",
+        "policyname": "Customers writable by admin staff",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customers",
+        "policyname": "Internal can read customers",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "customers",
+        "policyname": "Staff can write customers",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "developer_feedback",
+        "policyname": "Admins can update developer feedback",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "developer_feedback",
+        "policyname": "Internal can create developer feedback",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "developer_feedback",
+        "policyname": "Internal can read own developer feedback",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "email_notifications",
+        "policyname": "Admins can create email notifications",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "email_notifications",
+        "policyname": "Admins can read email notifications",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "email_notifications",
+        "policyname": "Admins can update email notifications",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "fee_types",
+        "policyname": "Admins manage fee types",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "fee_types",
+        "policyname": "Internal can read fee types",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "follow_up_tasks",
+        "policyname": "Admins can delete follow-up tasks",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "follow_up_tasks",
+        "policyname": "Internal can read follow-up tasks",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "follow_up_tasks",
+        "policyname": "Staff can create follow-up tasks",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "follow_up_tasks",
+        "policyname": "Staff can update follow-up tasks",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_packs",
+        "policyname": "Internal can read information packs",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_packs",
+        "policyname": "Staff can create information packs",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_packs",
+        "policyname": "Staff can update information packs",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_request_topics",
+        "policyname": "Internal can read information request topics",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_request_topics",
+        "policyname": "Staff can create information request topics",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_request_topics",
+        "policyname": "Staff can remove information request topics",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_requests",
+        "policyname": "Internal can read information requests",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_requests",
+        "policyname": "Staff can create information requests",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_requests",
+        "policyname": "Staff can update information requests",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_topics",
+        "policyname": "Admins can create information topics",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_topics",
+        "policyname": "Admins can update information topics",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "information_topics",
+        "policyname": "Internal can read information topics",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "installment_plans",
+        "policyname": "Active installment plans readable by anon",
+        "cmd": "SELECT",
+        "roles": "{anon}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "installment_plans",
+        "policyname": "Installment plans readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "installment_plans",
+        "policyname": "Installment plans writable by admins",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_activities",
+        "policyname": "Admins can delete lead activities",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_activities",
+        "policyname": "Internal can read lead activities",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_activities",
+        "policyname": "Staff can create lead activities",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_ai_summaries",
+        "policyname": "Admin staff can create lead AI summaries",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_ai_summaries",
+        "policyname": "Admins can delete lead AI summaries",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lead_ai_summaries",
+        "policyname": "Internal can read lead AI summaries",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "leads",
+        "policyname": "Admins can delete leads",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "leads",
+        "policyname": "Internal can read leads",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "leads",
+        "policyname": "Staff can create leads",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "leads",
+        "policyname": "Staff can update leads",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_reservations",
+        "policyname": "Admins can delete lot reservations",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_reservations",
+        "policyname": "Internal can read lot reservations",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_reservations",
+        "policyname": "Staff can create lot reservations",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_reservations",
+        "policyname": "Staff can update lot reservations",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_sizes",
+        "policyname": "Admins manage lot sizes",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_sizes",
+        "policyname": "Internal can read lot sizes",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "lot_sizes",
+        "policyname": "Public can read active lot sizes",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "notification_settings",
+        "policyname": "Admins can manage notification settings",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "notification_settings",
+        "policyname": "Admins can read notification settings",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "parcels",
+        "policyname": "Parcels readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "parcels",
+        "policyname": "Parcels writable by admin staff",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "parcels",
+        "policyname": "Public can read available parcels",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "parcels",
+        "policyname": "Staff can write parcels",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_documents",
+        "policyname": "Payment documents deletable by admins",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_documents",
+        "policyname": "Payment documents readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_documents",
+        "policyname": "Payment documents updateable by admins",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_documents",
+        "policyname": "Payment documents writable by admin staff",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_methods",
+        "policyname": "Admins manage payment methods",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_methods",
+        "policyname": "Internal can read payment methods",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_methods",
+        "policyname": "Public can read active public payment methods",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_requests",
+        "policyname": "Payment requests deletable by admins",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_requests",
+        "policyname": "Payment requests readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_requests",
+        "policyname": "Payment requests updateable by admin staff",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "payment_requests",
+        "policyname": "Payment requests writable by admin staff",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_activities",
+        "policyname": "Admins can delete post-sales activities",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_activities",
+        "policyname": "Internal can read post-sales activities",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_activities",
+        "policyname": "Staff can create post-sales activities",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_ai_summaries",
+        "policyname": "Admin staff can create post-sales AI summaries",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_ai_summaries",
+        "policyname": "Admins can delete post-sales AI summaries",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_ai_summaries",
+        "policyname": "Internal can read post-sales AI summaries",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_checklists",
+        "policyname": "Admins can delete post-sales checklists",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_checklists",
+        "policyname": "Internal can read post-sales checklists",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_checklists",
+        "policyname": "Staff can create post-sales checklists",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_checklists",
+        "policyname": "Staff can update post-sales checklists",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_tasks",
+        "policyname": "Admins can delete post-sales tasks",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_tasks",
+        "policyname": "Internal can read post-sales tasks",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_tasks",
+        "policyname": "Staff can create post-sales tasks",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "post_sales_tasks",
+        "policyname": "Staff can update post-sales tasks",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "receipt_jobs",
+        "policyname": "Internal can read receipt jobs",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "receipt_jobs",
+        "policyname": "Receipt jobs manageable by admins",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "receipt_jobs",
+        "policyname": "Receipt jobs readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "receipt_jobs",
+        "policyname": "Staff can manage receipt jobs",
+        "cmd": "ALL",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "reservation_activities",
+        "policyname": "Admins can delete reservation activities",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "reservation_activities",
+        "policyname": "Internal can read reservation activities",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "reservation_activities",
+        "policyname": "Staff can create reservation activities",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "site_visits",
+        "policyname": "Admins can delete site visits",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "site_visits",
+        "policyname": "Internal can read site visits",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "site_visits",
+        "policyname": "Staff can create site visits",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "site_visits",
+        "policyname": "Staff can update site visits",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "transactions",
+        "policyname": "Internal can read transactions",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "transactions",
+        "policyname": "Internal writers can create transactions",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "transactions",
+        "policyname": "Transactions adjustable by admins",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "transactions",
+        "policyname": "Transactions readable by internal users",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "transactions",
+        "policyname": "Transactions writable by admin staff",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Admin staff can upload Wamuale files",
+        "cmd": "INSERT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Admins can delete Wamuale files",
+        "cmd": "DELETE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Admins can update Wamuale files",
+        "cmd": "UPDATE",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Business assets managed by admins",
+        "cmd": "ALL",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Business assets readable publicly",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Internal can read private files",
+        "cmd": "SELECT",
+        "roles": "{public}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Internal users can read Wamuale files",
+        "cmd": "SELECT",
+        "roles": "{authenticated}"
+      },
+      {
+        "schemaname": "storage",
+        "tablename": "objects",
+        "policyname": "Staff can upload private files",
+        "cmd": "INSERT",
+        "roles": "{public}"
+      }
+    ]
+  },
+  "notes": [
+    "Fingerprints are change-detection evidence; they do not reveal row contents and are not a substitute for a restorable database backup.",
+    "Storage metadata and object bytes are a separate recovery surface from the PostgreSQL database."
+  ]
+}

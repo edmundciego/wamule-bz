@@ -135,7 +135,7 @@ test("public map exposes accessible loading, empty, failure, and retry states", 
   assert.match(map, /Map unavailable/);
   assert.match(map, /Try again/);
   assert.match(map, /setLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
-  assert.match(map, /\[tenantSlug, projectSlug, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt\]/);
+  assert.match(map, /\[tenantSlug, projectSlug, phaseSlug, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt\]/);
 });
 
 test("small lots get an invisible pointer halo without changing the visuals", async () => {

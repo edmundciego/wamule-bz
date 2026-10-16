@@ -84,7 +84,7 @@ Deno.serve(async (request) => {
 
   const { data: currentProfile, error: profileError } = await supabase
     .from("admin_profiles")
-    .select("role")
+    .select("role, tenant_id")
     .eq("user_id", currentUserData.user.id)
     .maybeSingle();
 
@@ -96,7 +96,20 @@ Deno.serve(async (request) => {
     return json({ error: "Only Super Admin or Admin users can generate daily briefs." }, 403);
   }
 
-  const body = await request.json().catch(() => null) as { period_start?: string; period_end?: string } | null;
+  const body = await request.json().catch(() => null) as { period_start?: string; period_end?: string; tenant_id?: string } | null;
+  const tenantId = body?.tenant_id;
+  if (!tenantId) return json({ error: "A workspace tenant is required." }, 400);
+  if (currentProfile?.role !== "Super Admin" && currentProfile?.tenant_id !== tenantId) {
+    return json({ error: "You cannot generate a brief for a different tenant." }, 403);
+  }
+  const { data: tenant, error: tenantError } = await supabase
+    .from("organizations")
+    .select("id")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (tenantError) return json({ error: tenantError.message }, 500);
+  if (!tenant) return json({ error: "The selected tenant does not exist." }, 404);
+
   const period = parsePeriod(body?.period_start, body?.period_end);
   if (!period.ok) {
     return json({ error: period.error }, 400);
@@ -123,62 +136,77 @@ Deno.serve(async (request) => {
     supabase
       .from("applications")
       .select("*, parcels(id, lot_number, status), application_ai_reviews(*)")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("customers")
       .select("id, first_name, last_name, created_at, updated_at")
+      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("parcels")
       .select("id, lot_number, dimensions, zoning, status, base_price, created_at, updated_at")
+      .eq("tenant_id", tenantId)
       .order("lot_number", { ascending: true }),
     supabase
       .from("transactions")
       .select("*, customers(first_name, last_name), contracts(parcels(lot_number)), payment_documents(id, document_type)")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("payment_documents")
       .select("id, transaction_id, document_type, file_path, uploaded_by, created_at")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("contracts")
       .select("*, customers(first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, contract_id, status, created_at)")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false }),
     supabase
       .from("payment_requests")
       .select("*, customers(first_name, last_name)")
+      .eq("tenant_id", tenantId)
       .order("due_date", { ascending: true }),
     supabase
       .from("leads")
       .select("*, parcels(id, lot_number, status)")
+      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("follow_up_tasks")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("site_visits")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("scheduled_at", { ascending: true }),
     supabase
       .from("lot_reservations")
       .select("*, parcels(id, lot_number, status)")
+      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("post_sales_checklists")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("updated_at", { ascending: false }),
     supabase
       .from("post_sales_tasks")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("brief_action_items")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("last_seen_on", { ascending: false }),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -253,6 +281,7 @@ Deno.serve(async (request) => {
   const { data: savedBrief, error: saveError } = await supabase
     .from("ai_daily_briefs")
     .insert({
+      tenant_id: tenantId,
       brief_date: isoDate(periodStart),
       period_start: periodStart.toISOString(),
       period_end: periodEnd.toISOString(),
@@ -275,7 +304,7 @@ Deno.serve(async (request) => {
     return json({ error: saveError.message }, 500);
   }
 
-  const actionItems = await syncBriefActionItems(supabase, savedBrief, currentIssues);
+  const actionItems = await syncBriefActionItems(supabase, savedBrief, currentIssues, tenantId);
 
   return json({
     brief: savedBrief,
@@ -865,12 +894,14 @@ async function syncBriefActionItems(
   supabase: ReturnType<typeof createClient>,
   brief: Record<string, unknown>,
   currentIssues: CurrentIssue[],
+  tenantId: string,
 ) {
   const seenDate = String(brief.brief_date ?? isoDate(new Date()));
   const currentIssueKeys = new Set(currentIssues.map((issue) => issue.source_key));
   const { data: openExisting } = await supabase
     .from("brief_action_items")
     .select("*")
+    .eq("tenant_id", tenantId)
     .in("status", ["Open", "In Progress"]);
 
   const staleItems = (openExisting ?? []).filter((item: Record<string, unknown>) =>
@@ -884,10 +915,11 @@ async function syncBriefActionItems(
         resolved_at: new Date().toISOString(),
         last_seen_on: seenDate,
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("tenant_id", tenantId);
   }
 
-  const sourceBacked = currentIssues.map((issue) => actionItemFromIssue(issue, brief, seenDate));
+  const sourceBacked = currentIssues.map((issue) => ({ ...actionItemFromIssue(issue, brief, seenDate), tenant_id: tenantId }));
   const normalized = sourceBacked;
 
   const saved: Record<string, unknown>[] = [];
@@ -895,6 +927,7 @@ async function syncBriefActionItems(
     const { data: existing } = await supabase
       .from("brief_action_items")
       .select("*")
+      .eq("tenant_id", tenantId)
       .eq("source_key", item.source_key)
       .in("status", ["Open", "In Progress"])
       .maybeSingle();
@@ -921,6 +954,7 @@ async function syncBriefActionItems(
           last_seen_on: seenDate,
         })
         .eq("id", existing.id)
+        .eq("tenant_id", tenantId)
         .select("*")
         .single();
       if (data) saved.push(data);
@@ -930,6 +964,7 @@ async function syncBriefActionItems(
     const { data: previouslyClosed } = await supabase
       .from("brief_action_items")
       .select("id")
+      .eq("tenant_id", tenantId)
       .eq("source_key", item.source_key)
       .in("status", ["Done", "Dismissed"])
       .limit(1);

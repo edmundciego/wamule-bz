@@ -1,0 +1,18 @@
+# Production-targeted Supabase CLI config for a detached release worktree.
+# It intentionally differs from supabase/config.toml, which remains linked to staging.
+project_id = "mtjlvzrtihslcftxnlso"
+
+[functions.submit-public-inquiry]
+verify_jwt = false
+
+[functions.submit-public-application]
+verify_jwt = false
+
+[functions.get-public-lots]
+verify_jwt = false
+
+[functions.get-public-project-page]
+verify_jwt = false
+
+[functions.submit-hopkins-project-application]
+verify_jwt = false

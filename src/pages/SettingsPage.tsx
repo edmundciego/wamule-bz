@@ -9,9 +9,9 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
 import { WordPressEmbedSnippet } from "../components/admin/settings/WordPressEmbedSnippet";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
-import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import {
   depositStatusOptions,
   normalizeReservationWorkflowSettings,
@@ -19,6 +19,7 @@ import {
   reservationWorkflowDefaults,
 } from "../lib/reservationSettings";
 import { supabase } from "../lib/supabase";
+import { workspaceApplicationDefaults, workspaceCompanyDefaults, workspaceScopeKey } from "../lib/workspaceScope";
 import { prepareUploadFile, type PreparedUploadFile } from "../lib/uploads";
 import { cn, money } from "../lib/utils";
 import type {
@@ -66,33 +67,20 @@ type PublicApplicationSettings = {
   default_confirmation_message: string;
 };
 
-const defaultCompany: CompanyProfileSettings = {
-  ...defaultCompanyProfile,
-  location_address: "Mile 3, Hummingbird Highway, Dangriga Town, Belize",
-};
-
-const defaultApplication: PublicApplicationSettings = {
-  applications_open: true,
-  public_notice_text:
-    `Submission of this application is solely a request to be considered for the purchase of a lot within ${CANONICAL_COMPANY_NAME}.`,
-  application_acknowledgment_text:
-    "By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot.",
-  show_lot_prices_publicly: true,
-  show_available_lot_count_publicly: true,
-  lot_map_tenant_slug: "",
-  default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
-};
-
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const { workspace } = useWorkspaceScope();
+  const tenantId = workspace?.tenantId ?? null;
+  const scopeKey = workspaceScopeKey(workspace);
   const [activeSection, setActiveSection] = useState<SettingsSection>("Company Profile");
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingSection, setSavingSection] = useState<string | null>(null);
-  const [company, setCompany] = useState<CompanyProfileSettings>(defaultCompany);
-  const [application, setApplication] = useState<PublicApplicationSettings>(defaultApplication);
+  const [company, setCompany] = useState<CompanyProfileSettings>(() => workspaceCompanyDefaults());
+  const [application, setApplication] = useState<PublicApplicationSettings>(() => workspaceApplicationDefaults());
   const [reservationSettings, setReservationSettings] = useState<ReservationWorkflowSettings>(reservationWorkflowDefaults);
   const [logoFile, setLogoFile] = useState<PreparedUploadFile | null>(null);
+  const [logoFileTenantId, setLogoFileTenantId] = useState<string | null>(null);
   const [logoStatus, setLogoStatus] = useState<string | null>(null);
   const [paymentMethodsDraft, setPaymentMethodsDraft] = useState<DraftPaymentMethod[]>([]);
   const [plansDraft, setPlansDraft] = useState<DraftInstallmentPlan[]>([]);
@@ -137,74 +125,87 @@ export function SettingsPage() {
   const canManageAi = isSuperAdmin;
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
-    queryKey: ["business-settings"],
+    queryKey: ["business-settings", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("business_settings").select("*");
+      const { data, error: queryError } = await supabase.from("business_settings").select("*").eq("tenant_id", tenantId!);
       if (queryError) throw queryError;
       return data as BusinessSetting[];
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: paymentMethods, isLoading: paymentMethodsLoading } = useQuery({
-    queryKey: ["payment-methods-admin"],
+    queryKey: ["payment-methods-admin", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("payment_methods").select("*").order("sort_order", { ascending: true });
+      const { data, error: queryError } = await supabase.from("payment_methods").select("*").eq("tenant_id", tenantId!).order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as PaymentMethod[];
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: plans, isLoading: plansLoading } = useQuery({
-    queryKey: ["installment-plans-admin"],
+    queryKey: ["installment-plans-admin", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("installment_plans").select("*").order("sort_order", { ascending: true });
+      const { data, error: queryError } = await supabase.from("installment_plans").select("*").eq("tenant_id", tenantId!).order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as InstallmentPlan[];
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: lotSizes, isLoading: lotSizesLoading } = useQuery({
-    queryKey: ["lot-sizes-admin"],
+    queryKey: ["lot-sizes-admin", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("lot_sizes").select("*").order("sort_order", { ascending: true });
+      const { data, error: queryError } = await supabase.from("lot_sizes").select("*").eq("tenant_id", tenantId!).order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as LotSize[];
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: feeTypes, isLoading: feeTypesLoading } = useQuery({
-    queryKey: ["fee-types-admin"],
+    queryKey: ["fee-types-admin", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("fee_types").select("*").order("sort_order", { ascending: true });
+      const { data, error: queryError } = await supabase.from("fee_types").select("*").eq("tenant_id", tenantId!).order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as FeeType[];
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: aiSettings, isLoading: aiLoading } = useQuery({
-    queryKey: ["ai-settings-admin"],
+    queryKey: ["ai-settings-admin", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("ai_settings").select("*").order("id", { ascending: true }).limit(1).maybeSingle();
+      const { data, error: queryError } = await supabase.from("ai_settings").select("*").eq("tenant_id", tenantId!).order("id", { ascending: true }).limit(1).maybeSingle();
       if (queryError) throw queryError;
       return data as AiSetting | null;
     },
+    enabled: Boolean(tenantId),
   });
 
   const { data: users, isLoading: usersLoading } = useQuery({
-    queryKey: ["admin-users"],
+    queryKey: ["admin-users", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("admin_profiles").select("*").order("created_at", { ascending: false });
+      const { data, error: queryError } = await supabase.from("admin_profiles").select("*").eq("tenant_id", tenantId!).order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(tenantId && isSuperAdmin),
   });
 
   useEffect(() => {
-    if (!settings) return;
-    setCompany({ ...defaultCompany, ...settingValue<CompanyProfileSettings>(settings, "company_profile") });
-    setApplication({ ...defaultApplication, ...settingValue<PublicApplicationSettings>(settings, "public_application") });
-    setReservationSettings(normalizeReservationWorkflowSettings(settingValue<ReservationWorkflowSettings>(settings, "reservation_workflow_settings")));
-  }, [settings]);
+    const rows = settings ?? [];
+    setCompany({
+      ...workspaceCompanyDefaults(workspace?.tenantName),
+      ...settingValue<CompanyProfileSettings>(rows, "company_profile"),
+    });
+    setApplication({
+      ...workspaceApplicationDefaults(workspace?.tenantName),
+      ...settingValue<PublicApplicationSettings>(rows, "public_application"),
+    });
+    setReservationSettings(normalizeReservationWorkflowSettings(settingValue<ReservationWorkflowSettings>(rows, "reservation_workflow_settings")));
+  }, [scopeKey, settings, workspace?.tenantName]);
 
   useEffect(() => {
     if (paymentMethods) setPaymentMethodsDraft(paymentMethods);
@@ -227,11 +228,14 @@ export function SettingsPage() {
   }, [aiSettings]);
 
   async function saveBusinessSetting<T extends Record<string, unknown>>(key: BusinessSettingKey, value: T, label: string) {
+    if (!tenantId) return setError("Choose a workspace before saving tenant settings.");
+    if (settingsLoading) return setError("Wait for this workspace's settings to finish loading before saving.");
     setError(null);
     setToast(null);
     setSavingSection(label);
     const { data: session } = await supabase.auth.getSession();
     const { error: upsertError } = await supabase.from("business_settings").upsert({
+      tenant_id: tenantId,
       key,
       value,
       updated_by: session.session?.user.id ?? null,
@@ -246,12 +250,13 @@ export function SettingsPage() {
   }
 
   async function uploadLogo() {
-    if (!logoFile) return;
+    if (!logoFile || !tenantId) return;
+    if (logoFileTenantId !== tenantId) return setError("This logo draft belongs to another workspace. Switch back to that workspace or select the file again.");
     setError(null);
     setSavingSection("Logo");
     setLogoStatus("Uploading logo...");
     const safeName = logoFile.uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const filePath = `company/${Date.now()}-${safeName}`;
+    const filePath = `${tenantId}/company/${Date.now()}-${safeName}`;
     const { error: uploadError } = await supabase.storage.from("business-assets").upload(filePath, logoFile.uploadFile, { upsert: false });
     if (uploadError) {
       setSavingSection(null);
@@ -261,18 +266,21 @@ export function SettingsPage() {
     const nextCompany = { ...company, logo_url: data.publicUrl };
     setCompany(nextCompany);
     setLogoFile(null);
+    setLogoFileTenantId(null);
     setLogoStatus(null);
     await saveBusinessSetting("company_profile", nextCompany, "Company profile");
   }
 
   async function handleLogoChange(file: File | undefined) {
     setLogoFile(null);
+    setLogoFileTenantId(null);
     setLogoStatus(null);
     if (!file) return;
     setLogoStatus("Preparing logo...");
     try {
       const prepared = await prepareUploadFile(file, "business-asset");
       setLogoFile(prepared);
+      setLogoFileTenantId(tenantId);
       setLogoStatus(prepared.wasCompressed ? "Logo compressed and ready to upload." : "Logo ready to upload.");
     } catch (fileError) {
       setLogoStatus((fileError as Error).message);
@@ -296,7 +304,8 @@ export function SettingsPage() {
   }
 
   async function saveAiSettings() {
-    if (!aiDraft) return;
+    if (!aiDraft || !tenantId) return;
+    if (aiLoading) return setError("Wait for this workspace's AI settings to finish loading before saving.");
     setError(null);
     setToast(null);
     setSavingSection("AI settings");
@@ -311,7 +320,8 @@ export function SettingsPage() {
         collections_assistant_enabled: aiDraft.collections_assistant_enabled,
         notes: aiDraft.notes,
       })
-      .eq("id", aiDraft.id);
+      .eq("id", aiDraft.id)
+      .eq("tenant_id", tenantId);
     setSavingSection(null);
     if (updateError) return setError(updateError.message);
     setToast("AI settings saved.");
@@ -319,6 +329,8 @@ export function SettingsPage() {
   }
 
   async function saveReservationSettings() {
+    if (!tenantId) return setError("Choose a workspace before saving tenant settings.");
+    if (settingsLoading) return setError("Wait for this workspace's settings to finish loading before saving.");
     setError(null);
     setToast(null);
     setSavingSection("Reservation settings");
@@ -326,6 +338,7 @@ export function SettingsPage() {
     const cleanedSettings = normalizeReservationWorkflowSettings(reservationSettings);
     const { data: session } = await supabase.auth.getSession();
     const { error: upsertError } = await supabase.from("business_settings").upsert({
+      tenant_id: tenantId,
       key: "reservation_workflow_settings",
       value: cleanedSettings,
       updated_by: session.session?.user.id ?? null,
@@ -352,10 +365,19 @@ export function SettingsPage() {
   }
 
   async function saveRows(label: string, table: "payment_methods" | "installment_plans" | "lot_sizes" | "fee_types", rows: Record<string, unknown>[], queryKeys: string[]) {
+    if (!tenantId) return setError("Choose a workspace before saving tenant settings.");
+    const tableLoading = table === "payment_methods" ? paymentMethodsLoading
+      : table === "installment_plans" ? plansLoading
+      : table === "lot_sizes" ? lotSizesLoading
+      : feeTypesLoading;
+    if (tableLoading) return setError("Wait for this workspace's settings to finish loading before saving.");
+    if (rows.some((row) => typeof row.tenant_id === "string" && row.tenant_id !== tenantId)) {
+      return setError("These settings belong to a different tenant. Reload this workspace before saving.");
+    }
     setError(null);
     setToast(null);
     setSavingSection(label);
-    const { error: upsertError } = await supabase.from(table).upsert(rows);
+    const { error: upsertError } = await supabase.from(table).upsert(rows.map((row) => ({ ...row, tenant_id: tenantId })));
     setSavingSection(null);
     if (upsertError) return setError(upsertError.message);
     setToast(`${label} saved.`);
@@ -363,8 +385,12 @@ export function SettingsPage() {
   }
 
   async function checkAiProvider() {
+    if (!tenantId) {
+      setAiStatus("Choose a workspace before checking AI provider settings.");
+      return;
+    }
     setAiStatus("Checking AI provider...");
-    const { data, error: functionError } = await supabase.functions.invoke("ai-provider-health-check", { body: {} });
+    const { data, error: functionError } = await supabase.functions.invoke("ai-provider-health-check", { body: { tenant_id: tenantId } });
     if (functionError) {
       setAiStatus(functionError.message);
       return;
@@ -382,11 +408,12 @@ export function SettingsPage() {
 
   async function createUser(event: FormEvent) {
     event.preventDefault();
+    if (!tenantId) return setUserError("Choose a workspace before managing its staff.");
     setUserError(null);
     setUserMessage(null);
     setCreatingUser(true);
     const { data: result, error: functionError } = await supabase.functions.invoke("manage-admin-user", {
-      body: { email, full_name: fullName, role, password: temporaryPassword || undefined },
+      body: { email, full_name: fullName, role, password: temporaryPassword || undefined, tenant_id: tenantId },
     });
     setCreatingUser(false);
     if (functionError) return setUserError(await edgeFunctionErrorMessage(functionError));
@@ -400,9 +427,13 @@ export function SettingsPage() {
   }
 
   async function updateRole(userId: string, nextRole: AppRole) {
+    if (nextRole === "Super Admin") return setUserError("A tenant staff account cannot be promoted to a cross-tenant Super Admin from this workspace.");
+    if (!tenantId || !users?.some((user) => user.user_id === userId && user.tenant_id === tenantId)) {
+      return setUserError("This staff record does not belong to the selected workspace.");
+    }
     setUserError(null);
     setUserMessage(null);
-    const { error: updateError } = await supabase.from("admin_profiles").update({ role: nextRole }).eq("user_id", userId);
+    const { error: updateError } = await supabase.from("admin_profiles").update({ role: nextRole }).eq("user_id", userId).eq("tenant_id", tenantId);
     if (updateError) return setUserError(updateError.message);
     setUserMessage("Role updated.");
     await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
@@ -417,6 +448,7 @@ export function SettingsPage() {
           <p className="v2-page-description">Business configuration, payment options, role management, and smart helper foundation.</p>
         </div>
         {settingsLoading ? <LoadingState label="Loading settings" /> : null}
+        {!workspace ? <ErrorState message="Choose an accessible workspace before viewing or changing its settings." /> : null}
         {error ? <ErrorState message={error} /> : null}
         {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
         {!canManageConfig ? (
@@ -452,27 +484,27 @@ export function SettingsPage() {
                   <img src={company.logo_url || "/favicon/android-chrome-192x192.png"} alt={company.company_name} className="h-24 w-24 rounded-md border bg-muted object-cover" />
                   <Field label="Upload logo">
                     <div className="crm-subpanel grid gap-2">
-                      <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogoChange(event.target.files?.[0])} disabled={!canManageConfig} />
+                      <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogoChange(event.target.files?.[0])} disabled={!canManageConfig || settingsLoading} />
                       <UploadFileSummary file={logoFile} status={logoStatus} />
-                      <Button type="button" variant="outline" disabled={!canManageConfig || !logoFile || savingSection === "Logo"} onClick={() => void uploadLogo()}>
+                      <Button type="button" variant="outline" disabled={!canManageConfig || settingsLoading || !logoFile || logoFileTenantId !== tenantId || savingSection === "Logo"} onClick={() => void uploadLogo()}>
                         {savingSection === "Logo" ? "Uploading..." : "Upload logo"}
                       </Button>
                     </div>
                   </Field>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <TextInput label="Company name" value={company.company_name} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, company_name: value })} />
-                  <TextInput label="Contact email" type="email" value={company.contact_email} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, contact_email: value })} />
-                  <TextInput label="Phone number" value={company.phone_number} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, phone_number: value })} />
-                  <TextInput label="Website" value={company.website} disabled={!canManageConfig} onChange={(value) => setCompany({ ...company, website: value })} />
+                  <TextInput label="Company name" value={company.company_name} disabled={!canManageConfig || settingsLoading} onChange={(value) => setCompany({ ...company, company_name: value })} />
+                  <TextInput label="Contact email" type="email" value={company.contact_email} disabled={!canManageConfig || settingsLoading} onChange={(value) => setCompany({ ...company, contact_email: value })} />
+                  <TextInput label="Phone number" value={company.phone_number} disabled={!canManageConfig || settingsLoading} onChange={(value) => setCompany({ ...company, phone_number: value })} />
+                  <TextInput label="Website" value={company.website} disabled={!canManageConfig || settingsLoading} onChange={(value) => setCompany({ ...company, website: value })} />
                 </div>
                 <Field label="Location / address">
-                  <Textarea value={company.location_address} onChange={(event) => setCompany({ ...company, location_address: event.target.value })} disabled={!canManageConfig} />
+                  <Textarea value={company.location_address} onChange={(event) => setCompany({ ...company, location_address: event.target.value })} disabled={!canManageConfig || settingsLoading} />
                 </Field>
                 <Field label="Public-facing short description">
-                  <Textarea value={company.short_description} onChange={(event) => setCompany({ ...company, short_description: event.target.value })} disabled={!canManageConfig} />
+                  <Textarea value={company.short_description} onChange={(event) => setCompany({ ...company, short_description: event.target.value })} disabled={!canManageConfig || settingsLoading} />
                 </Field>
-                <SectionSaveButton disabled={!canManageConfig} saving={savingSection === "Company profile"} onClick={() => void saveBusinessSetting("company_profile", company, "Company profile")} />
+                <SectionSaveButton disabled={!canManageConfig || settingsLoading} saving={savingSection === "Company profile"} onClick={() => void saveBusinessSetting("company_profile", company, "Company profile")} />
               </CardContent>
             </Card>
 
@@ -483,8 +515,8 @@ export function SettingsPage() {
                   Aerial photo used as the background when drawing parcel boundaries on the Lots board. One map per tenant.
                 </p>
                 <MasterplanUpload
-                  tenantId={(currentProfile as { tenant_id?: string | null } | null)?.tenant_id ?? null}
-                  canManage={canManageConfig}
+                  tenantId={tenantId}
+                  canManage={canManageConfig && !settingsLoading}
                 />
               </CardContent>
             </Card>
@@ -492,29 +524,29 @@ export function SettingsPage() {
             <Card className="v2-workflow-panel">
               <CardHeader><CardTitle>Public Application Settings</CardTitle></CardHeader>
               <CardContent className="grid gap-4">
-                <ToggleField label="Applications open" checked={application.applications_open} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, applications_open: checked })} />
+                <ToggleField label="Applications open" checked={application.applications_open} disabled={!canManageConfig || settingsLoading} onChange={(checked) => setApplication({ ...application, applications_open: checked })} />
                 <div className="grid gap-3 md:grid-cols-2">
-                  <ToggleField label="Show lot prices publicly" checked={application.show_lot_prices_publicly} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, show_lot_prices_publicly: checked })} />
-                  <ToggleField label="Show available lot count publicly" checked={application.show_available_lot_count_publicly} disabled={!canManageConfig} onChange={(checked) => setApplication({ ...application, show_available_lot_count_publicly: checked })} />
+                  <ToggleField label="Show lot prices publicly" checked={application.show_lot_prices_publicly} disabled={!canManageConfig || settingsLoading} onChange={(checked) => setApplication({ ...application, show_lot_prices_publicly: checked })} />
+                  <ToggleField label="Show available lot count publicly" checked={application.show_available_lot_count_publicly} disabled={!canManageConfig || settingsLoading} onChange={(checked) => setApplication({ ...application, show_available_lot_count_publicly: checked })} />
                 </div>
                 <Field label="Public notice text">
-                  <Textarea value={application.public_notice_text} onChange={(event) => setApplication({ ...application, public_notice_text: event.target.value })} disabled={!canManageConfig} />
+                  <Textarea value={application.public_notice_text} onChange={(event) => setApplication({ ...application, public_notice_text: event.target.value })} disabled={!canManageConfig || settingsLoading} />
                 </Field>
                 <Field label="Homepage lot map tenant slug (empty hides the map picker)">
                   <Input
                     value={application.lot_map_tenant_slug ?? ""}
                     placeholder="hopkins-grove"
                     onChange={(event) => setApplication({ ...application, lot_map_tenant_slug: event.target.value.trim().toLowerCase() })}
-                    disabled={!canManageConfig}
+                    disabled={!canManageConfig || settingsLoading}
                   />
                 </Field>
                 <Field label="Application acknowledgment text">
-                  <Textarea value={application.application_acknowledgment_text} onChange={(event) => setApplication({ ...application, application_acknowledgment_text: event.target.value })} disabled={!canManageConfig} />
+                  <Textarea value={application.application_acknowledgment_text} onChange={(event) => setApplication({ ...application, application_acknowledgment_text: event.target.value })} disabled={!canManageConfig || settingsLoading} />
                 </Field>
                 <Field label="Default application confirmation message">
-                  <Textarea value={application.default_confirmation_message} onChange={(event) => setApplication({ ...application, default_confirmation_message: event.target.value })} disabled={!canManageConfig} />
+                  <Textarea value={application.default_confirmation_message} onChange={(event) => setApplication({ ...application, default_confirmation_message: event.target.value })} disabled={!canManageConfig || settingsLoading} />
                 </Field>
-                <SectionSaveButton disabled={!canManageConfig} saving={savingSection === "Application settings"} onClick={() => void saveBusinessSetting("public_application", application, "Application settings")} />
+                <SectionSaveButton disabled={!canManageConfig || settingsLoading} saving={savingSection === "Application settings"} onClick={() => void saveBusinessSetting("public_application", application, "Application settings")} />
               </CardContent>
             </Card>
           </div>
@@ -526,7 +558,7 @@ export function SettingsPage() {
               <p className="mb-3 text-sm text-muted-foreground">
                 Embed your live lot map on WordPress, Webflow, or any website with an iframe snippet.
               </p>
-              <WordPressEmbedSnippet />
+              <WordPressEmbedSnippet tenantSlug={workspace?.tenantSlug ?? null} projectSlug={workspace?.projectSlug ?? null} />
             </CardContent>
           </Card>
         ) : null}
@@ -645,7 +677,7 @@ export function SettingsPage() {
         {activeSection === "Reservation Settings" ? (
           <ReservationSettingsSection
             settings={reservationSettings}
-            canEdit={canManageConfig}
+            canEdit={canManageConfig && !settingsLoading}
             saving={savingSection === "Reservation settings"}
             onChange={setReservationSettings}
             onSave={() => void saveReservationSettings()}
@@ -669,16 +701,16 @@ export function SettingsPage() {
                 <>
                   <div className="grid gap-4 md:grid-cols-2">
                     <TextInput label="Provider" value={aiDraft.provider} disabled onChange={() => undefined} />
-                    <TextInput label="Model" value={aiDraft.model} disabled={!canManageAi} onChange={(value) => setAiDraft({ ...aiDraft, model: value })} />
+                    <TextInput label="Model" value={aiDraft.model} disabled={!canManageAi || aiLoading} onChange={(value) => setAiDraft({ ...aiDraft, model: value })} />
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <ToggleField label="AI enabled" checked={aiDraft.is_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, is_enabled: checked })} />
-                    <ToggleField label="Daily brief enabled" checked={aiDraft.daily_brief_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, daily_brief_enabled: checked })} />
-                    <ToggleField label="Application summary enabled" checked={aiDraft.application_summary_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, application_summary_enabled: checked })} />
-                    <ToggleField label="Collections assistant enabled" checked={aiDraft.collections_assistant_enabled} disabled={!canManageAi} onChange={(checked) => setAiDraft({ ...aiDraft, collections_assistant_enabled: checked })} />
+                    <ToggleField label="AI enabled" checked={aiDraft.is_enabled} disabled={!canManageAi || aiLoading} onChange={(checked) => setAiDraft({ ...aiDraft, is_enabled: checked })} />
+                    <ToggleField label="Daily brief enabled" checked={aiDraft.daily_brief_enabled} disabled={!canManageAi || aiLoading} onChange={(checked) => setAiDraft({ ...aiDraft, daily_brief_enabled: checked })} />
+                    <ToggleField label="Application summary enabled" checked={aiDraft.application_summary_enabled} disabled={!canManageAi || aiLoading} onChange={(checked) => setAiDraft({ ...aiDraft, application_summary_enabled: checked })} />
+                    <ToggleField label="Collections assistant enabled" checked={aiDraft.collections_assistant_enabled} disabled={!canManageAi || aiLoading} onChange={(checked) => setAiDraft({ ...aiDraft, collections_assistant_enabled: checked })} />
                   </div>
                   <Field label="Notes">
-                    <Textarea value={aiDraft.notes ?? ""} disabled={!canManageAi} onChange={(event) => setAiDraft({ ...aiDraft, notes: event.target.value })} />
+                    <Textarea value={aiDraft.notes ?? ""} disabled={!canManageAi || aiLoading} onChange={(event) => setAiDraft({ ...aiDraft, notes: event.target.value })} />
                   </Field>
                   {aiStatus ? <div className="crm-subpanel text-sm text-muted-foreground">{aiStatus}</div> : null}
                   <div className="flex flex-wrap justify-end gap-3">
@@ -688,7 +720,7 @@ export function SettingsPage() {
                     <Button type="button" variant="outline" onClick={handleAssistantClick}>
                       <Bot className="h-4 w-4" /> AI Helper
                     </Button>
-                    <Button type="button" disabled={!canManageAi || savingSection === "AI settings"} onClick={() => void saveAiSettings()}>
+                    <Button type="button" disabled={!canManageAi || aiLoading || savingSection === "AI settings"} onClick={() => void saveAiSettings()}>
                       {savingSection === "AI settings" ? "Saving..." : "Save AI settings"}
                     </Button>
                   </div>
@@ -716,7 +748,7 @@ export function SettingsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Role">
                     <Select value={role} onChange={(event) => setRole(event.target.value as AppRole)} disabled={!canManageUsers}>
-                      {roles.map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
+                      {roles.filter((roleOption) => roleOption !== "Super Admin").map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
                     </Select>
                   </Field>
                   <TextInput label="Temporary password" type="password" value={temporaryPassword} disabled={!canManageUsers} onChange={setTemporaryPassword} />
@@ -733,7 +765,7 @@ export function SettingsPage() {
                     <div className="flex items-center gap-2">
                       <Badge tone={user.role === "Super Admin" ? "amber" : user.role === "Admin" ? "green" : user.role === "Staff" ? "blue" : "gray"}>{user.role}</Badge>
                       <Select value={user.role} onChange={(event) => void updateRole(user.user_id, event.target.value as AppRole)} disabled={!canManageUsers}>
-                        {roles.map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
+                        {roles.filter((roleOption) => roleOption !== "Super Admin").map((roleOption) => <option key={roleOption}>{roleOption}</option>)}
                       </Select>
                     </div>
                   </div>
@@ -916,7 +948,7 @@ function ConfigList({
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>{title}</CardTitle>
-          <Button type="button" variant="outline" disabled={!canEdit} onClick={onAdd}>
+          <Button type="button" variant="outline" disabled={!canEdit || loading} onClick={onAdd}>
             <Plus className="h-4 w-4" /> Add
           </Button>
         </div>
@@ -924,7 +956,7 @@ function ConfigList({
       <CardContent className="grid gap-4">
         {loading ? <LoadingState label={`Loading ${title.toLowerCase()}`} /> : null}
         {children}
-        <SectionSaveButton disabled={!canEdit} saving={saving} onClick={onSave} />
+        <SectionSaveButton disabled={!canEdit || loading} saving={saving} onClick={onSave} />
       </CardContent>
     </Card>
   );

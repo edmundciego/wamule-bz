@@ -1,0 +1,49 @@
+{
+  "company_profile": {
+    "website": "https://ceibabelize.com/",
+    "company_name": "Ceiba Realty & Development",
+    "phone_number": "+501-824-4050",
+    "contact_email": "properties@ceibabelize.com",
+    "location_address": "Southern Highway & Hopkins Road, Hopkins Village, Stann Creek District, Belize",
+    "short_description": "Hopkins Grove is a planned community in Hopkins Village, with quarter-acre homesites, a creekside park, and a food forest.",
+    "public_notice_text": "This map is a project reference. Its outlines are not verified saleable parcels or an availability statement. Contact Ceiba Realty & Development for current pricing, availability, and purchase terms. Sending an inquiry does not reserve, purchase, or allocate a lot."
+  },
+  "public_application": {
+    "notice_version": "hopkins-project-application-2026-10-15-v1",
+    "applications_open": true,
+    "public_notice_text": "This is a Hopkins Grove project application for staff review. It does not reserve, allocate, or purchase a parcel, confirm availability, or create ownership rights. Map outline preferences identify areas of interest only; they are not saleable parcels or assigned lots.",
+    "max_map_preferences": 5,
+    "show_prices_publicly": false,
+    "allowed_intended_uses": [
+      "Residential",
+      "Commercial",
+      "Agriculture",
+      "Investment",
+      "Rental Property",
+      "Other"
+    ],
+    "default_confirmation_message": "Your Hopkins Grove project application was received for staff review. No parcel or map outline has been assigned.",
+    "show_available_count_publicly": false,
+    "outbound_notifications_enabled": false,
+    "application_acknowledgment_text": "I understand that my application is submitted for project-team review only. Any map outlines I select are preferences, not an assigned lot or a promise of sale. Submitting this form does not create a purchase agreement or guarantee an outcome. I consent to Ceiba Realty & Development using the information I provide to review and respond to this Hopkins Grove application."
+  },
+  "tenant_theme": {
+    "card": {
+      "showArea": false,
+      "showTier": false,
+      "zoomText": "Zoom to Plot {lot}",
+      "showPrice": false,
+      "inquireText": "Ask About This Plot",
+      "waitlistText": "Ask About This Plot"
+    },
+    "tokens": {
+      "card": "#ffffff",
+      "text": "#2d2317",
+      "muted": "#6b6259",
+      "accent": "#8a5a35",
+      "primary": "#173f2d",
+      "background": "#fffdf8",
+      "fontFamily": "Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+    }
+  }
+}
