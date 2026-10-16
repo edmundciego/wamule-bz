@@ -90,17 +90,19 @@ test("application storage guard keeps the project workflow separate from invento
 });
 
 test("the Hopkins full application and the existing Wamule purchase application remain separate", async () => {
-  const [hopkinsPage, wamulePage, appRoutes, adminPage] = await Promise.all([
+  const [hopkinsPage, hopkinsWizard, wamulePage, appRoutes, adminPage] = await Promise.all([
     readFile(new URL("../src/pages/public/HopkinsPublicPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/public/HopkinsApplicationWizard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/ApplicationPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/ApplicationsPage.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(hopkinsPage, /submit-hopkins-project-application/);
-  assert.match(hopkinsPage, /Register your interest/);
-  assert.match(hopkinsPage, /Project application/);
-  assert.match(hopkinsPage, /preferred_map_feature_refs: selectedMapFeatureRefs/);
-  assert.match(hopkinsPage, /No lot selection, payment choice, or purchase availability is required/);
+  assert.match(hopkinsPage, /<HopkinsApplicationWizard/);
+  assert.match(hopkinsPage, /Planning a project\?/);
+  assert.match(hopkinsWizard, /submit-hopkins-project-application/);
+  assert.match(hopkinsWizard, /preferred_map_feature_refs: selectedMapFeatureRefs/);
+  assert.match(hopkinsWizard, /no plot is offered or assigned/);
+  assert.doesNotMatch(hopkinsWizard, /preferred_parcel_ids|payment_option|Submit project application/);
   assert.match(wamulePage, /submit-public-application/);
   assert.match(appRoutes, /path="\/hopkins\/application"/);
   assert.match(adminPage, /Project applications/);

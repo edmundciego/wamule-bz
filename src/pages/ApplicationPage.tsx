@@ -861,7 +861,7 @@ export function PublicInquiryPanel({
   );
 }
 
-function FormStep({ title, goal, children }: { title: string; goal: string; children: React.ReactNode }) {
+export function FormStep({ title, goal, children }: { title: string; goal: string; children: React.ReactNode }) {
   return (
     <section className="grid gap-6">
       <div>
@@ -873,7 +873,7 @@ function FormStep({ title, goal, children }: { title: string; goal: string; chil
   );
 }
 
-function ChoiceCard({ selected, children }: { selected: boolean; children: React.ReactNode }) {
+export function ChoiceCard({ selected, children }: { selected: boolean; children: React.ReactNode }) {
   return (
     <label
       className={cn(
@@ -1036,7 +1036,7 @@ function buildApplicationSummaryRows({
   return rows;
 }
 
-function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+export function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-white/15 pb-3 last:border-b-0 last:pb-0">
       <span className="text-white/60">{label}</span>

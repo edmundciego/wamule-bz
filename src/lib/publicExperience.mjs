@@ -2,12 +2,7 @@ export const PUBLIC_SITE_TEMPLATES = [
   {
     id: "wamule-classic",
     name: "Wamule Classic",
-    description: "The established homepage layout with its two-column hero, project facts, information panels, and familiar form presentation.",
-  },
-  {
-    id: "hopkins-project",
-    name: "Hopkins Project",
-    description: "The Hopkins project homepage with a prominent map, inquiry form, and project application.",
+    description: "The shared two-column homepage, project facts, information panels, and familiar application form.",
   },
 ];
 
@@ -33,14 +28,14 @@ export function defaultPublicExperience(_scope) {
 export function normalizePublicExperience(scope, value) {
   const defaults = defaultPublicExperience(scope);
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const templateId = PUBLIC_SITE_TEMPLATES.some((template) => template.id === raw.templateId)
-    ? raw.templateId
-    : defaults.templateId;
   const moduleInput = raw.enabledModules && typeof raw.enabledModules === "object" && !Array.isArray(raw.enabledModules)
     ? raw.enabledModules
     : {};
   return {
-    templateId,
+    // Presentation is deliberately fixed to the first shared template.
+    // Tenant, project, phase, branding, and application rules remain scoped
+    // independently by their own configuration and route.
+    templateId: defaults.templateId,
     enabledModules: Object.fromEntries(PUBLIC_SITE_MODULES.map(({ id }) => [
       id,
       typeof moduleInput[id] === "boolean" ? moduleInput[id] : defaults.enabledModules[id],

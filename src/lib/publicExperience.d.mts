@@ -1,4 +1,4 @@
-export type PublicSiteTemplateId = "wamule-classic" | "hopkins-project";
+export type PublicSiteTemplateId = "wamule-classic";
 export type PublicSiteModuleId = "map" | "inquiry" | "application" | "pricing";
 export type PublicExperienceScope = { tenantSlug: string; projectSlug: string; phaseSlug: string };
 export type PublicExperienceConfig = {

@@ -237,7 +237,10 @@ test("frontend forms share the contract (no drift)", async () => {
   assert.match(page, /specificLotRef: specificLotSelected && specificLotRef/);
   assert.match(page, /tenant: tenantSlug/);
   assert.doesNotMatch(page, /specificLotId|specific_lot_id/);
-  assert.match(hopkinsPage, /interests: \["General project interest"\]/);
+  assert.match(hopkinsPage, /interestOptions=\{\["General project interest", "Map outline question", "Site visit", "Buying process"\]\}/);
+  assert.match(hopkinsPage, /tenantSlug=\{HOPKINS_SCOPE\.tenant\}/);
+  assert.match(hopkinsPage, /projectSlug=\{HOPKINS_SCOPE\.project\}/);
+  assert.match(hopkinsPage, /phaseSlug=\{HOPKINS_SCOPE\.phase\}/);
   const arrayBlock = (source, anchor) => {
     const start = source.indexOf(anchor);
     assert.ok(start >= 0, `anchor ${anchor} found`);

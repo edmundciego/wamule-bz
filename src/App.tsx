@@ -69,7 +69,7 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => 
 
 export default function App() {
   const hostHomepage = isHopkinsPublicHost(window.location.hostname);
-  const publicHomepage = <PublicExperienceRoute defaultTemplate={hostHomepage ? "hopkins-project" : "wamule-classic"} />;
+  const publicHomepage = <PublicExperienceRoute scopeName={hostHomepage ? "hopkins" : "wamule"} />;
   return (
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>
