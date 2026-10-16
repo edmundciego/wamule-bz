@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T19:41:07.593Z",
+  "generated_at": "2026-10-16T21:15:06Z",
   "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
   "source_snapshot_version": 2,
   "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
@@ -233,27 +233,26 @@
   "staging_frontend_deployment": {
     "site_name": "wamule-staging",
     "site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
-    "deploy_id": "6ad27d78407fab246e6af5f0",
+    "deploy_id": "6ad292f7208d77184ae8bb14",
     "state": "ready",
     "branch": "staging",
-    "deploy_context": "primary deploy of the wamule-staging site",
+    "deploy_context": "manual publish to the existing staging site; local staging-mode build uploaded with --no-build",
     "public_url": "https://wamule-staging.netlify.app",
-    "unique_url": "https://6ad27d78407fab246e6af5f0--wamule-staging.netlify.app",
+    "unique_url": "https://6ad292f7208d77184ae8bb14--wamule-staging.netlify.app",
     "commit_ref": null,
-    "candidate_base_commit": "dc4d13b2412ff3650904f68e3d3df3d372220557",
+    "release_candidate_commit": "95b56771e97461c51774c4f820dea35ea2031abf",
     "build_mode": "staging",
-    "index_sha256": "7bd7aef7223438610eb4db7e2d0ea393c70dfbac21329f265ddab05836fc34f6",
-    "asset_references_match": true,
+    "index_sha256": "b811f51ce7dce0beed7360dbb355d297ce4ec50a918eabf253599f9c6e6cf9d8",
     "assets": [
       {
-        "path": "/assets/index-BjDQXY6N.js",
-        "bytes": 541217,
-        "sha256": "213feb407d5771008ae4c330d9289825f758c8cd333f4d6c89f187115c0674dc"
+        "path": "/assets/index-BAWwxxfg.js",
+        "bytes": 540690,
+        "sha256": "96180bcb5164d20a562e0964e24798b97c1aa79d80f044281952946c71a4063a"
       },
       {
-        "path": "/assets/index-5HHlBEwn.css",
-        "bytes": 68476,
-        "sha256": "2c5086f731fcbc4ed63313961e807c48373598209ed7af8b07800c32fd0fb39f"
+        "path": "/assets/index-DmKNsojr.css",
+        "bytes": 63880,
+        "sha256": "fd84acccd153131d43708e137a146bb1d0de0e1d887f5311250bf7b7ee8207dc"
       }
     ]
   },
@@ -292,7 +291,7 @@
       "public.development_phases",
       "public.parcels"
     ],
-    "scope_correction": "Four preserved manual records (IDs 21–24) were assigned to inactive Legacy Review; active Default/Phase 1 retains 20. No records deleted and no replacement geometry invented.",
+    "scope_correction": "Four preserved manual records (IDs 21\u201324) were assigned to inactive Legacy Review; active Default/Phase 1 retains 20. No records deleted and no replacement geometry invented.",
     "current_read_only_fingerprints": {
       "public.parcels": {
         "rows": 743,
@@ -313,20 +312,68 @@
   },
   "local_validation": {
     "test_suite": {
-      "total": 302,
-      "passed": 298,
+      "total": 303,
+      "passed": 299,
       "failed": 0,
       "skipped": 4
     },
     "typecheck": "passed",
-    "targeted_eslint": "passed",
-    "staging_build": "passed",
+    "targeted_eslint": "passed for all changed TypeScript/JavaScript files",
+    "repository_lint": "one pre-existing error in untouched supabase/functions/_shared/workspace-auth.ts:6 (no-explicit-any)",
+    "staging_build": "passed with --mode staging",
     "public_build_audit": {
       "result": "passed",
-      "files": 78,
-      "text_bytes": 1483848,
+      "files": 77,
+      "text_bytes": 1471461,
       "private_or_dev_source_present": false
     },
-    "release_package_integrity": "verified by scripts/verify-hopkins-owner-pilot-package.mjs"
+    "release_package_integrity": "passed; 27 package files and 775-outline snapshot verified by scripts/verify-hopkins-owner-pilot-package.mjs"
+  },
+  "release_candidate_commit": "95b56771e97461c51774c4f820dea35ea2031abf",
+  "superseded_staging_frontend_deployments": [
+    {
+      "deploy_id": "6ad29246818a0f47e6ff9004",
+      "state": "ready",
+      "reason": "Initial CLI invocation rebuilt in production context; superseded immediately by staging-mode --no-build upload."
+    }
+  ],
+  "latest_hosted_application_check": {
+    "checked_at": "2026-10-16T21:14:50Z",
+    "route": "https://wamule-staging.netlify.app/hopkins/application",
+    "unique_deploy_route": "https://6ad292f7208d77184ae8bb14--wamule-staging.netlify.app/hopkins/application",
+    "fresh_tab_no_login_redirect": true,
+    "browser_auth_context_proven_anonymous": false,
+    "rendered": {
+      "shared_template": "wamule-classic",
+      "page_heading": "Apply for Hopkins Grove",
+      "five_step_wizard": [
+        "About You",
+        "Project Interest",
+        "Map Preferences",
+        "Additional Details",
+        "Review"
+      ],
+      "applicant_fields": [
+        "Applicant Full Name",
+        "Applicant Address",
+        "Nationality",
+        "Occupation",
+        "Telephone Contact",
+        "Email Address"
+      ],
+      "application_summary_panel": true,
+      "legacy_submit_project_application_copy_absent": true
+    },
+    "map": {
+      "homepage_map_controls_present": true,
+      "feature_data_loaded": false,
+      "observed_error": "Failed to fetch",
+      "get_public_lots_function_active_version": 18,
+      "recent_browser_log_observation": "OPTIONS 200 was logged for the Hopkins get-public-lots request; no matching GET was present in the captured verification window."
+    },
+    "reload": "A fresh reload showed the transient public-project fetch error; the form had rendered before reload on the canonical staging URL.",
+    "application_submission_attempted": false,
+    "production_changed": false,
+    "database_changed": false
   }
 }
