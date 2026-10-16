@@ -184,8 +184,8 @@
     },
     {
       "path": "staging-hosted-verification.json",
-      "bytes": 8927,
-      "sha256": "4efcdf0f775aa44f8f9d8d08b67122ad8b91ccec20584a43b8f8dfa7b7b49988"
+      "bytes": 8937,
+      "sha256": "00cce619a0638f89cf19f344688c5967d23cbd85214a9267f383bab739ed1e11"
     },
     {
       "path": "staging-regression.json",

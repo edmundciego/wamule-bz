@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T19:45:26.478Z",
+  "generated_at": "2026-10-16T19:47:18.322Z",
   "staging_project_ref": "kvocwmrcuhiaezlcgzjf",
   "deployment": {
     "site_name": "wamule-staging",
@@ -90,12 +90,6 @@
         "sha256": "5f1c0bfb2f179056cdbdd8d2cce0bcdb291ae8954a1ef5cc8a9de7752af8950d"
       },
       {
-        "name": "hopkins-home-top-1440.png",
-        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-top-1440.png",
-        "bytes": 135856,
-        "sha256": "763379f739994068ffcb7fd880eb45b548139e2f4f93c903171ffeacbc5f46d2"
-      },
-      {
         "name": "hopkins-home-1440.png",
         "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-1440.png",
         "bytes": 260120,
@@ -130,6 +124,12 @@
         "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-application-320.png",
         "bytes": 101276,
         "sha256": "0f61c762ebcf37ca1217925a8935619165f2441a6d5756c109e1c0141689e60f"
+      },
+      {
+        "name": "hopkins-home-hero-map-1440.png",
+        "path": "/Users/edmundciego/.codex/visualizations/2026/10/15/01a13df5-87c2-77c2-826e-5f3189b9621f/hopkins-staging-final/hopkins-home-hero-map-1440.png",
+        "bytes": 294140,
+        "sha256": "b1d8c2f4b138d4e64799a428ca75040f77bf433879be1dbbc303d9372654e4ff"
       }
     ]
   },
