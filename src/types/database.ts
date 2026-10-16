@@ -1341,6 +1341,19 @@ export type Database = {
         Args: { p_primary_reservation_id: string; p_reservation_ids: string[]; p_release_reason: string };
         Returns: ReleaseAlternateReservationsResult[];
       };
+      get_project_site_experience: {
+        Args: { p_tenant_id: string; p_project_id: string };
+        Returns: { templateId: string; enabledModules: Record<string, boolean> };
+      };
+      save_project_site_experience: {
+        Args: {
+          p_tenant_id: string;
+          p_project_id: string;
+          p_template_id: string;
+          p_enabled_modules: { map: boolean; inquiry: boolean; application: boolean; pricing: boolean };
+        };
+        Returns: { templateId: string; enabledModules: Record<string, boolean> };
+      };
     };
   };
 };

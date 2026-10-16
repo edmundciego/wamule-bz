@@ -21,8 +21,8 @@ test("lots board filters isolate the needs-review queue by status and tier", asy
   assert.match(page, /reviewOnly/);
   assert.match(page, /needs_review === true/);
   assert.match(page, /Tier filter/);
-  assert.match(page, /Status filter/);
-  assert.match(page, /Needs Review/);
+  assert.match(page, /Stored status filter/);
+  assert.match(page, /Needs review only/);
   assert.match(page, /tier_label/);
 });
 
@@ -85,7 +85,7 @@ test("public embed adds tier view, chips, search, zoom, and lot deep-links", asy
   assert.match(page, /searchParams\.get\("filter"\)/);
   assert.match(page, /searchParams\.get\("view"\)/);
   assert.match(page, /searchParams\.get\("lot"\)/);
-  assert.match(page, /params\.lot = localPreviewEnabled \? demoPlotLabel\(parcel\) : parcel\.lot_number/);
+  assert.match(page, /params\.lot = localPreviewEnabled \? demoPlotLabel\(parcel\) : parcel\.demo_label \?\? parcel\.lot_number/);
   assert.match(map, /Tier colours/);
   assert.match(map, /Status colours/);
   assert.match(map, /tier_color_hex/);

@@ -72,7 +72,9 @@ test("snippet generator emits the active tenant slug", async () => {
   assert.match(snippet, /<iframe/);
   assert.match(snippet, /allowfullscreen/);
   assert.match(snippet, /Copy to Clipboard/);
-  assert.match(snippet, /from\("organizations"\)/);
+  assert.match(snippet, /const mapPath = projectPath \?/);
+  assert.match(snippet, /\$\{tenantSlug\}/);
+  assert.match(snippet, /\$\{projectPath\}/);
   assert.match(settings, /Website Integration & Embeds/);
-  assert.match(settings, /WordPressEmbedSnippet/);
+  assert.match(settings, /WordPressEmbedSnippet tenantSlug=\{workspace\?\.tenantSlug/);
 });

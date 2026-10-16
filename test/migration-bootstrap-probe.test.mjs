@@ -13,8 +13,8 @@ function runProbe(...args) {
 test("legacy foundation candidates replay locally but retain distinct contracts", { timeout: 240_000 }, () => {
   const result = runProbe("--compare-candidates", "--diff-lines", "0");
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /archive candidate:[\s\S]*PASS: all 42 migrations in the legacy comparison scope applied in order\./);
-  assert.match(result.stdout, /root candidate:[\s\S]*PASS: all 42 migrations in the legacy comparison scope applied in order\./);
+  assert.match(result.stdout, /archive candidate:[\s\S]*PASS: all 43 migrations in the legacy comparison scope applied in order\./);
+  assert.match(result.stdout, /root candidate:[\s\S]*PASS: all 43 migrations in the legacy comparison scope applied in order\./);
   assert.match(result.stdout, /admin_profiles primary key: PRIMARY KEY \(id\)/);
   assert.match(result.stdout, /admin_profiles primary key: PRIMARY KEY \(user_id\)/);
   assert.match(result.stdout, /receipt_job_status: Pending, Processing, Completed, Failed/);

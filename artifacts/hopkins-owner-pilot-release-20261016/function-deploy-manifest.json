@@ -86,6 +86,12 @@
       "source": "supabase/functions/submit-hopkins-project-application",
       "deploy_with": "--use-api",
       "verify_jwt": false
+    },
+    {
+      "name": "get-public-site-experience",
+      "source": "supabase/functions/get-public-site-experience",
+      "deploy_with": "--use-api",
+      "verify_jwt": false
     }
   ]
 }

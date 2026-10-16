@@ -12,7 +12,9 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
 import { applicationSchema } from "../lib/schemas";
-import { resolveInquirySubmitError } from "../lib/functions";
+import { submitPublicFunction } from "../lib/publicSubmission";
+import { defaultPublicExperience, type PublicSiteModuleId, type PublicSiteTemplateId } from "../lib/publicExperience.mjs";
+import { usePublicSiteExperience } from "../lib/publicSiteExperience";
 import { buildInquiryPayload } from "../../supabase/functions/_shared/inquiry-contract";
 import { buildPublicApplicationPayload } from "../../supabase/functions/_shared/public-application-contract";
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
@@ -42,6 +44,7 @@ const inquiryInterests = [
 
 type InquiryInterest = (typeof inquiryInterests)[number];
 const specificLotInterest: InquiryInterest = "A specific lot";
+const PUBLIC_WAMULE_SCOPE = { tenantSlug: "wamule", projectSlug: "wamule", phaseSlug: "default" } as const;
 
 function fallbackUuid(): string {
   try {
@@ -101,8 +104,18 @@ const defaultLotPhase = {
   public_availability_display: true,
 };
 
-export function ApplicationPage() {
+export function ApplicationPage({
+  templateId: selectedTemplate,
+  enabledModules: selectedModules,
+}: {
+  templateId?: PublicSiteTemplateId;
+  enabledModules?: Record<PublicSiteModuleId, boolean>;
+} = {}) {
   const location = useLocation();
+  const { data: siteExperience } = usePublicSiteExperience(PUBLIC_WAMULE_SCOPE);
+  const experience = siteExperience ?? defaultPublicExperience(PUBLIC_WAMULE_SCOPE);
+  const templateId = selectedTemplate ?? experience.templateId;
+  const modules = selectedModules ?? experience.enabledModules;
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
@@ -230,15 +243,10 @@ export function ApplicationPage() {
       setSubmitError("This application page is not configured. Please contact the development team.");
       return;
     }
-    const { data, error: functionError } = await supabase.functions.invoke("submit-public-application", {
-      body: buildPublicApplicationPayload({ tenant: applicationTenantSlug, ...values }),
-    });
-    if (functionError || data?.error) {
-      setSubmitError(
-        functionError
-          ? await resolveInquirySubmitError(functionError)
-          : String(data?.error ?? "We could not submit your application. Please try again."),
-      );
+    try {
+      await submitPublicFunction("submit-public-application", buildPublicApplicationPayload({ tenant: applicationTenantSlug, ...values }));
+    } catch (failure) {
+      setSubmitError(failure instanceof Error ? failure.message : "We could not submit your application. Please try again.");
       return;
     }
     setSubmitted(true);
@@ -274,7 +282,7 @@ export function ApplicationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main data-site-template={templateId} data-site-map={modules.map} className="min-h-screen bg-background">
       <header className="border-b border-primary/10 bg-card/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <a href="/" className="flex items-center gap-3">
@@ -295,12 +303,12 @@ export function ApplicationPage() {
             <a className="hidden text-slate hover:text-primary sm:inline" href="#lots">
               Lots
             </a>
-            <a
+            {modules.application ? <a
               className="focus-ring inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]"
               href="#application"
             >
               Apply <ArrowRight className="h-4 w-4" />
-            </a>
+            </a> : null}
           </nav>
         </div>
       </header>
@@ -318,7 +326,7 @@ export function ApplicationPage() {
           </p>
           <div className="wave-rule mt-6 h-3 w-56" />
           <div className="mt-7 grid gap-3 sm:grid-cols-3">
-            <InfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office"} />
+            <InfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly && modules.pricing ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office"} />
             <InfoTile label="Lot sizes" value={lotPhase.default_lot_size} />
             <InfoTile label={lotPhase.phase_name} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
           </div>
@@ -354,7 +362,7 @@ export function ApplicationPage() {
                       <span className="rounded-full bg-success/10 px-2 py-1 text-xs font-semibold text-success">{parcel.status}</span>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">{parcel.dimensions}</p>
-                    {applicationSettings.show_lot_prices_publicly ? <span className="mt-2 block font-semibold text-success">{money(parcel.base_price)}</span> : null}
+                    {applicationSettings.show_lot_prices_publicly && modules.pricing ? <span className="mt-2 block font-semibold text-success">{money(parcel.base_price)}</span> : null}
                   </div>
                 ))}
               </div>
@@ -366,15 +374,15 @@ export function ApplicationPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
+      {modules.inquiry ? <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
         <PublicInquiryPanel
           companyName={company.company_name}
           tenantSlug={applicationTenantSlug}
           parcels={parcels}
-          showPrices={applicationSettings.show_lot_prices_publicly}
+          showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
           hasSupabaseConfig={hasSupabaseConfig}
         />
-      </section>
+      </section> : null}
 
       <section className="mx-auto max-w-6xl px-4 pb-4" id="notice">
         <div className="grid gap-4 rounded-xl border border-secondary/20 bg-card p-5 shadow-sm shadow-secondary/5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
@@ -397,7 +405,7 @@ export function ApplicationPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
+      {modules.application ? <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
         <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Application</p>
@@ -508,14 +516,14 @@ export function ApplicationPage() {
 
                     {activeStep === 2 ? (
                       <FormStep title="Choose Your Preferred Lot" goal={applicationSteps[2].goal}>
-                        {applicationSettings.lot_map_tenant_slug || import.meta.env.DEV ? (
+                        {modules.map && (applicationSettings.lot_map_tenant_slug || import.meta.env.DEV) ? (
                           <div className="grid gap-2">
                             <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
                               <PublicLotMap
                                 tenantSlug={applicationTenantSlug || "demo"}
                                 selectedLocalKeys={selectedLocalKeys}
                                 onToggleLot={toggleMapLot}
-                                showPrices={applicationSettings.show_lot_prices_publicly}
+                                showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
                                 demoDataUrl={
                                   applicationSettings.lot_map_tenant_slug || !import.meta.env.DEV
                                     ? undefined
@@ -548,7 +556,7 @@ export function ApplicationPage() {
                                       <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Lot</span>
                                       <span className="mt-1 block text-2xl font-semibold text-primary">{parcel.lot_number}</span>
                                       <span className="mt-2 block text-sm text-muted-foreground">{parcel.dimensions}</span>
-                                      {applicationSettings.show_lot_prices_publicly ? <span className="mt-3 block font-semibold text-primary">{money(parcel.base_price)}</span> : null}
+                                      {applicationSettings.show_lot_prices_publicly && modules.pricing ? <span className="mt-3 block font-semibold text-primary">{money(parcel.base_price)}</span> : null}
                                       <span className={cn("absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold", selected ? "bg-primary text-white" : "bg-success/10 text-success")}>
                                         {selected ? "Selected" : parcel.status}
                                       </span>
@@ -626,7 +634,7 @@ export function ApplicationPage() {
                         <ReviewSummary
                           values={watchedValues}
                           parcels={parcels}
-                          showPrices={applicationSettings.show_lot_prices_publicly}
+                          showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
                           onEdit={setActiveStep}
                         />
                         <div className="grid gap-4">
@@ -685,7 +693,7 @@ export function ApplicationPage() {
             )}
           </CardContent>
         </Card>
-      </section>
+      </section> : null}
     </main>
   );
 }
@@ -747,8 +755,8 @@ function PublicInquiryPanel({
     }
 
     setSubmitting(true);
-    const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-      body: buildInquiryPayload({
+    try {
+      const data = await submitPublicFunction<{ emailSent?: boolean }>("submit-public-inquiry", buildInquiryPayload({
         name,
         email,
         phone,
@@ -758,27 +766,20 @@ function PublicInquiryPanel({
         pageUrl: window.location.href,
         tenant: tenantSlug,
         clientReferenceId,
-      }),
-    });
-    setSubmitting(false);
-
-    if (functionError || data?.error) {
-      setError(
-        functionError
-          ? await resolveInquirySubmitError(functionError)
-          : String(data?.error ?? "We could not submit your request. Please try again."),
-      );
-      return;
+      }));
+      setSubmitted(true);
+      setEmailSent(Boolean(data?.emailSent));
+      setName("");
+      setEmail("");
+      setPhone("");
+      setInterests([]);
+      setSpecificLotRef("");
+      setMessage("");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "We could not submit your request. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitted(true);
-    setEmailSent(Boolean(data?.emailSent));
-    setName("");
-    setEmail("");
-    setPhone("");
-    setInterests([]);
-    setSpecificLotRef("");
-    setMessage("");
   }
 
   if (submitted) {

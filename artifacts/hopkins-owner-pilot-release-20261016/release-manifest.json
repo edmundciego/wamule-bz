@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T06:15:48.656Z",
+  "generated_at": "2026-10-16T07:02:37.437Z",
   "staging_source_ref": "kvocwmrcuhiaezlcgzjf",
   "source_snapshot_version": 2,
   "source_snapshot_fingerprint": "13c4eb7731bd0ee9fe5e988b5b904a848c2791dc5255c78e9b9a2cbf75a32e06",
@@ -104,8 +104,8 @@
     },
     {
       "path": "function-deploy-manifest.json",
-      "bytes": 2582,
-      "sha256": "3610a45998addfadd64b24fae091a0c83f9760a82e21042a90b3060c4a95908d"
+      "bytes": 2764,
+      "sha256": "ed38c161f0de7f6326ee862dff79c673d0a3f1f0978a4dc6314da6d6c87f5fa3"
     },
     {
       "path": "hopkins-775-outline-snapshot.json",
@@ -119,8 +119,8 @@
     },
     {
       "path": "migration-manifest.json",
-      "bytes": 6817,
-      "sha256": "c0039300fb602e0e81c495e0544b57b70ec6099665a7e52b6179261b6439ef9a"
+      "bytes": 7123,
+      "sha256": "b74c2187b1cd7bc2994d1b447886b69fcf0a5d022676696ca7faf85c92c26338"
     },
     {
       "path": "production-baseline.json",
@@ -129,8 +129,8 @@
     },
     {
       "path": "production-extensions.json",
-      "bytes": 1262,
-      "sha256": "38520ae1c18f691c368413c6f718907c719fc7ba5d5fd41b195a3a092f01f67c"
+      "bytes": 2779,
+      "sha256": "f210b2aeed4e210b85b9dba878ac276105c675626abdb7eda6a072b1390f6def"
     },
     {
       "path": "production-target.json",
@@ -139,8 +139,8 @@
     },
     {
       "path": "release-runbook.md",
-      "bytes": 21559,
-      "sha256": "028340cbdbe3237a45491371fbfce8ddec72bec16eeed22a878b5d8b79f74aae"
+      "bytes": 26437,
+      "sha256": "e9077fd398c07d0cb6b4eeec9b47cd47551fcccaa3a466de055d2139ce133909"
     },
     {
       "path": "source/hopkins-approved-correction-manifest.json",
@@ -178,14 +178,19 @@
       "sha256": "050e588d4dc0b38bddbb81896df884c44757d698c2a6cc16b1aa1d2ee8b51525"
     },
     {
+      "path": "staging-regression.json",
+      "bytes": 5362,
+      "sha256": "5e2756a108a98940e67fb37731718d3cf5d08df750a6641a57149d4d0901da63"
+    },
+    {
       "path": "storage-backup-manifest.json",
       "bytes": 1926,
       "sha256": "85f36a4af0c817cc52252fe9375ecc71a28491158492b8283fa36e0cc2ffc5d9"
     },
     {
       "path": "supabase.production.toml",
-      "bytes": 481,
-      "sha256": "22a0fa21ab04f9bc8c1402a330934e7a18c4d20532103ef4debe29dc76b01509"
+      "bytes": 540,
+      "sha256": "3df8fb6df6b52cb32bed44cfe73e0549a82e93c1ee754d0a3dc884bf0433b424"
     }
   ]
 }

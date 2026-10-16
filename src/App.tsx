@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { WorkspaceScopeBoundary } from "./components/auth/WorkspaceScopeBoundary";
 import { featureFlags } from "./lib/featureFlags";
 import { isHopkinsPublicHost } from "./lib/publicHosts";
+import { PublicExperienceRoute } from "./pages/public/PublicExperienceRoute";
 
 const AdminLayout = lazy(() =>
   import("./components/layout/AdminLayout").then((module) => ({ default: module.AdminLayout })),
@@ -68,7 +69,7 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => 
 
 export default function App() {
   const hostHomepage = isHopkinsPublicHost(window.location.hostname);
-  const publicHomepage = hostHomepage ? <HopkinsPublicPage /> : <ApplicationPage />;
+  const publicHomepage = <PublicExperienceRoute defaultTemplate={hostHomepage ? "hopkins-project" : "wamule-classic"} />;
   return (
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>

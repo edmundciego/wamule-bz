@@ -287,6 +287,38 @@
   }
 }
 
+/* Public site templates change presentation tokens only. Each route continues
+   to render its own tenant-scoped content and form requirements. */
+main[data-site-template="hopkins-project"] {
+  --background: 48 100% 99%;
+  --foreground: 30 15% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 30 15% 14%;
+  --muted: 48 26% 95%;
+  --muted-foreground: 147 11% 39%;
+  --primary: 153 47% 18%;
+  --primary-hover: 153 43% 25%;
+  --primary-soft: 125 24% 93%;
+  --secondary: 24 52% 56%;
+  --secondary-hover: 24 43% 43%;
+  --secondary-soft: 31 45% 91%;
+  --border: 153 24% 83%;
+  --input: 153 24% 83%;
+  --ring: 153 47% 18%;
+}
+
+main[data-site-template="wamule-classic"] header {
+  border-bottom-color: var(--color-border);
+  background-color: var(--color-surface);
+}
+
+main[data-site-template="wamule-classic"] h1,
+main[data-site-template="wamule-classic"] h2,
+main[data-site-template="wamule-classic"] h3 {
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+}
+
 @media (max-width: 900px) {
   .correction-review-grid {
     grid-template-columns: minmax(0, 1fr);

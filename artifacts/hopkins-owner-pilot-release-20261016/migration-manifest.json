@@ -2,7 +2,7 @@
   "production_project_ref": "mtjlvzrtihslcftxnlso",
   "baseline_ledger_version": "20260715055626",
   "repository_alias_version": "20260715050000",
-  "candidate_migration_count": 22,
+  "candidate_migration_count": 23,
   "ordered_after_alias_reconciliation": [
     {
       "order": 1,
@@ -179,6 +179,14 @@
       "name": "hopkins_project_application_workflow",
       "bytes": 21267,
       "sha256": "205ac6a7c5aed2b8ec5b419e6b443a776c76453977433d1307f07360abb13b81"
+    },
+    {
+      "order": 23,
+      "path": "supabase/migrations/20261016065252_modular_public_site_experience.sql",
+      "version": "20261016065252",
+      "name": "modular_public_site_experience",
+      "bytes": 5939,
+      "sha256": "c504229ad89cd2bb2631e4d501b7641bb732be731ca939fe41b62753694ba3f1"
     }
   ]
 }

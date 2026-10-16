@@ -1,0 +1,154 @@
+{
+  "captured_at": "2026-10-16 06:57:45 UTC",
+  "staging_project_ref": "kvocwmrcuhiaezlcgzjf",
+  "scope": "read-only data fingerprints plus authorized schema/function regression",
+  "production_changes_performed": false,
+  "before": {
+    "latest_migration": "20261016054341",
+    "wamule_parcels": {
+      "count": 743,
+      "distinct_ids": 743,
+      "md5": "3ae34a7f62bcdfdce4204a1853ba63a9"
+    },
+    "wamule_masterplan_versions": {
+      "count": 4,
+      "distinct_ids": 4,
+      "md5": "a125e5fe7cb5cc7f6f43f6fc28bde692"
+    },
+    "wamule_project_settings": {
+      "count": 0,
+      "md5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "storage_metadata": {
+      "object_count": 6,
+      "metadata_bytes": 6341794,
+      "md5": "83b75908bdcf3f700fd605d34b0c6d0a"
+    },
+    "hopkins_active_snapshots": 1,
+    "hopkins_active_published_outlines": 775
+  },
+  "after": {
+    "latest_migration": "20261016065252",
+    "latest_migration_name": "modular_public_site_experience",
+    "wamule_organization": {
+      "count": 1,
+      "md5": "f73eb931ec31c7401df6d3a312296d25"
+    },
+    "wamule_parcels": {
+      "count": 743,
+      "distinct_ids": 743,
+      "md5": "3ae34a7f62bcdfdce4204a1853ba63a9"
+    },
+    "wamule_masterplan_versions": {
+      "count": 4,
+      "distinct_ids": 4,
+      "md5": "a125e5fe7cb5cc7f6f43f6fc28bde692"
+    },
+    "wamule_project_settings": {
+      "count": 0,
+      "md5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "storage_metadata": {
+      "object_count": 6,
+      "metadata_bytes": 6341794,
+      "md5": "83b75908bdcf3f700fd605d34b0c6d0a"
+    },
+    "hopkins_active_snapshots": 1,
+    "hopkins_active_snapshot_outline_count": 775,
+    "hopkins_active_published_features": {
+      "count": 775,
+      "distinct_identity_ids": 775,
+      "md5": "ca4c06e20bc701e3ed7792044db7e01f"
+    }
+  },
+  "staging_snapshot_inventory": {
+    "total_feature_rows": 1550,
+    "active_snapshot_count": 1,
+    "active_snapshot_rows": 775,
+    "inactive_snapshot_rows": 775,
+    "distinct_identity_ids_per_snapshot": 775,
+    "interpretation": "Two retained versioned snapshots; only one is active and publicly served. This is not 1,550 active public outlines."
+  },
+  "staging_schema_change": {
+    "migration_file": "supabase/migrations/20261016065252_modular_public_site_experience.sql",
+    "remote_version": "20261016065252",
+    "rpc_functions": [
+      "get_project_site_experience(uuid,uuid)",
+      "save_project_site_experience(uuid,uuid,text,jsonb)"
+    ],
+    "data_rows_modified": false
+  },
+  "staging_edge_function": {
+    "name": "get-public-site-experience",
+    "status": "ACTIVE",
+    "version": 1,
+    "verify_jwt": false,
+    "sha256": "e641f26f3394e613191351e062a75abe401ee7a7f7c679510bfd2c68130b227c"
+  },
+  "anonymous_configuration_gets": [
+    {
+      "scope": {
+        "tenant": "wamule",
+        "project": "wamule",
+        "phase": "default"
+      },
+      "http_status": 200,
+      "template": "wamule-classic",
+      "modules": {
+        "map": true,
+        "inquiry": true,
+        "application": true,
+        "pricing": true
+      }
+    },
+    {
+      "scope": {
+        "tenant": "hopkins-grove",
+        "project": "hopkins-grove",
+        "phase": "initial"
+      },
+      "http_status": 200,
+      "template": "hopkins-project",
+      "modules": {
+        "map": true,
+        "inquiry": true,
+        "application": true,
+        "pricing": true
+      }
+    }
+  ],
+  "migration_history_note": "An earlier connector-applied inventory_selection_provenance_guard is recorded in staging at remote version 20261016001216 while its repository file is 20261015210000_inventory_selection_provenance_guard.sql. Do not rewrite this applied history; release production uses its ordered repository versions after an independent ledger check.",
+  "production_read_only_crypto_check": {
+    "vault_secret_rows": 0,
+    "pgcrypto_version": "1.3",
+    "supabase_vault_version": "0.3.1",
+    "pgsodium_installed": false,
+    "business_sql_crypto_function_matches": 0
+  },
+  "postgresql_tooling": {
+    "prior_staging_artifact": "/Users/edmundciego/Documents/Streetside/Wamule-staging-recovery/2026-10-15/staging-postgres-20261015T060209Z.restore-validation.json",
+    "prior_pg_dump": "17.3",
+    "prior_restore_server": "17.11 (Postgres.app)",
+    "current_shell": "only embedded pgserver binaries 16.2 discovered; PG17 binaries unavailable in this execution context",
+    "prior_binary_paths_recorded": false,
+    "production_backup_or_restore_performed": false
+  },
+  "supplied_prior_preservation_evidence": "The other chat reported all 89 fingerprint groups and Storage metadata matched; this is recorded as supplied evidence, not recomputed in this turn.",
+  "frontend_deployed_to_staging": false,
+  "local_verification": {
+    "production_build": {
+      "command": "npm run build",
+      "result": "passed",
+      "note": "Existing large entry-chunk warning remains."
+    },
+    "unit_regression": {
+      "command": "npm test",
+      "total": 298,
+      "passed": 295,
+      "failed": 0,
+      "skipped": 3
+    },
+    "skipped_tests": "Three opt-in live staging checks were not enabled because they can create inquiry/submission records; no synthetic staging applicant or inquiry was submitted in this pass.",
+    "package_integrity": "Release package checksum verifier passed after regeneration."
+  }
+}

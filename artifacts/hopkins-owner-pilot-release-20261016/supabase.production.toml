@@ -16,3 +16,6 @@ verify_jwt = false
 
 [functions.submit-hopkins-project-application]
 verify_jwt = false
+
+[functions.get-public-site-experience]
+verify_jwt = false

@@ -17,6 +17,9 @@ const PUBLIC_PARCEL_FIELDS = new Set([
   "tier_color_hex",
   "is_corner",
   "effective_price_cents",
+  "sales_selectable",
+  "inquiry_eligible",
+  "is_map_detection",
 ]);
 
 test("security hardening migration pins search_path on every SECURITY DEFINER function", async () => {
@@ -112,14 +115,15 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
   const fn = await read("supabase/functions/get-public-lots/index.ts");
 
   // Tight select bounds: public-safe parcel columns plus the tier/version/
-  // project inputs needed server-side for price math, version and project
+  // project/provenance inputs needed server-side for price math, eligibility,
+  // version and project
   // scoping (all stripped from the payload below). The internal row id is not
   // needed and is never selected.
-  assert.match(fn, /\.select\("lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id"\)/);
+  assert.match(fn, /\.select\("lot_number, status, base_price, dimensions, map_polygon, tier_key, is_corner, price_override_cents, masterplan_version_id, project_id, geometry_source, needs_review"\)/);
   assert.doesNotMatch(fn, /\.select\("id, lot_number/);
 
   // Sensitive columns must never be requested...
-  for (const forbidden of ["zoning", "authorized_by", "internal_notes", "created_by", "auth_user_id", "gemini_api_key", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
+  for (const forbidden of ["zoning", "authorized_by", "internal_notes", "created_by", "auth_user_id", "gemini_api_key", "tenant_id", "confidence"]) {
     assert.ok(
       !fn.match(new RegExp(`\\.select\\("[^"]*\\b${forbidden}\\b`, "i")),
       `get-public-lots must not select sensitive column: ${forbidden}`,
@@ -141,10 +145,10 @@ test("get-public-lots rejects unauthorized field selects and allowlists the publ
   assert.deepEqual(
     new Set(allowlisted),
     PUBLIC_PARCEL_FIELDS,
-    "Public parcel allowlist must contain exactly the eleven public-safe fields.",
+    "Public parcel allowlist must contain exactly the fourteen public-safe fields.",
   );
 
-  // Server-side price/version/project inputs must not leak into the payload.
+  // Server-side price/version/project/provenance inputs must not leak into the payload.
   for (const hidden of ["price_override_cents", "masterplan_version_id", "project_id", "tenant_id", "confidence", "needs_review", "geometry_source"]) {
     assert.ok(!allowlisted.includes(hidden), `Public payload must not contain ${hidden}.`);
   }

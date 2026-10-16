@@ -32,7 +32,7 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   // Pick mode toggles Available lots; selection never opens the inquiry
   // modal (it opens solely from the card's Inquire button).
   assert.match(map, /pickMode/);
-  assert.match(map, /if \(pickMode && parcel\.status === "Available" && parcel\.public_ref\) onToggleLot\(parcel\)/);
+  assert.match(map, /if \(onToggleLot && parcel\.sales_selectable === true && parcel\.status === "Available" && parcel\.public_ref\) onToggleLot\(parcel\)/);
   assert.doesNotMatch(map, /setTimeout\(\(\) => setInquiryLot/);
   // Reserved lots offer a waitlist action; Sold lots offer no inquiry action.
   // (Button copy comes from the card theme config, not literals.)
@@ -74,7 +74,7 @@ test("application settings expose the homepage map tenant slug", async () => {
     read("src/pages/ApplicationPage.tsx"),
   ]);
   assert.match(settings, /lot_map_tenant_slug: string/);
-  assert.match(settings, /lot_map_tenant_slug: ""/);
+  assert.match(page, /lot_map_tenant_slug: ""/);
   assert.match(settings, /Homepage lot map tenant slug/);
   assert.match(settings, /placeholder="hopkins-grove"/);
   // Map renders when a slug is configured, or as a local preview in dev.

@@ -42,7 +42,7 @@ function main() {
   if (reviewed !== 80 || ambiguous !== 2) throw new Error(`Expected 80 source-number reads and two ambiguous outlines; found ${reviewed}/${ambiguous}.`);
 
   const migrationManifest = JSON.parse(readFileSync(resolve(packageDir, "migration-manifest.json"), "utf8"));
-  if (migrationManifest.candidate_migration_count !== 22 || migrationManifest.ordered_after_alias_reconciliation.length !== 22) throw new Error("The migration package must include 22 ordered candidate migrations.");
+  if (migrationManifest.candidate_migration_count !== 23 || migrationManifest.ordered_after_alias_reconciliation.length !== 23) throw new Error("The migration package must include 23 ordered candidate migrations.");
   for (const migration of migrationManifest.ordered_after_alias_reconciliation) {
     const bytes = readFileSync(resolve(process.cwd(), migration.path));
     if (bytes.length !== migration.bytes || sha256(bytes) !== migration.sha256) throw new Error(`Migration file failed checksum validation: ${migration.path}.`);

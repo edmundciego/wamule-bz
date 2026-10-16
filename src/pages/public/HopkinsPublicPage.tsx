@@ -8,11 +8,14 @@ import { Field, Input, Select, Textarea } from "../../components/ui/Field";
 import { ErrorState, LoadingState } from "../../components/ui/State";
 import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
-import { resolveInquirySubmitError } from "../../lib/functions";
 import { isHopkinsPublicHost } from "../../lib/publicHosts";
-import { hasSupabaseConfig, supabase } from "../../lib/supabase";
+import { hasSupabaseConfig } from "../../lib/supabase";
+import { submitPublicFunction } from "../../lib/publicSubmission";
+import { defaultPublicExperience, type PublicSiteModuleId, type PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
+import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
 
 const HOPKINS_SCOPE = { tenant: "hopkins-grove", project: "hopkins-grove", phase: "initial" } as const;
+const HOPKINS_SITE_SCOPE = { tenantSlug: "hopkins-grove", projectSlug: "hopkins-grove", phaseSlug: "initial" } as const;
 const MAP_URL = "/embed/hopkins-grove/hopkins-grove?phase=initial";
 
 type PublicProjectPage = {
@@ -72,8 +75,18 @@ async function loadPublicProjectPage(): Promise<PublicProjectPage> {
   return body;
 }
 
-export function HopkinsPublicPage() {
+export function HopkinsPublicPage({
+  templateId: selectedTemplate,
+  enabledModules: selectedModules,
+}: {
+  templateId?: PublicSiteTemplateId;
+  enabledModules?: Record<PublicSiteModuleId, boolean>;
+} = {}) {
   const location = useLocation();
+  const { data: siteExperience } = usePublicSiteExperience(HOPKINS_SITE_SCOPE);
+  const experience = siteExperience ?? defaultPublicExperience(HOPKINS_SITE_SCOPE);
+  const templateId = selectedTemplate ?? experience.templateId;
+  const modules = selectedModules ?? experience.enabledModules;
   const { data: page, isLoading, isError, error } = useQuery({
     queryKey: ["public-project-page", HOPKINS_SCOPE.tenant, HOPKINS_SCOPE.project, HOPKINS_SCOPE.phase],
     queryFn: loadPublicProjectPage,
@@ -148,8 +161,7 @@ export function HopkinsPublicPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-        body: buildInquiryPayload({
+      await submitPublicFunction("submit-public-inquiry", buildInquiryPayload({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
@@ -160,10 +172,7 @@ export function HopkinsPublicPage() {
           project: HOPKINS_SCOPE.project,
           phase: HOPKINS_SCOPE.phase,
           clientReferenceId: requestId,
-        }),
-      });
-      if (functionError) throw new Error(await resolveInquirySubmitError(functionError));
-      if (data?.error) throw new Error(String(data.error));
+        }));
       setSubmitted(true);
     } catch (submitFailure) {
       setSubmitError(submitFailure instanceof Error ? submitFailure.message : "Your request could not be sent. Please try again.");
@@ -176,7 +185,7 @@ export function HopkinsPublicPage() {
   if (isError || !page) return <main className="mx-auto grid min-h-screen max-w-3xl content-center gap-4 bg-[#fffdf8] px-4 py-12"><h1 className="font-display text-3xl font-semibold text-[#173f2d]">Hopkins Grove information is temporarily unavailable</h1><ErrorState message={error instanceof Error ? error.message : "Please contact Ceiba Realty & Development directly."} /><a className="text-sm font-semibold text-[#173f2d] underline" href="mailto:properties@ceibabelize.com">Contact the project team</a></main>;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#fffdf8] text-[#2d2317]">
+    <main data-site-template={templateId} className="min-h-screen overflow-x-hidden bg-[#fffdf8] text-[#2d2317]">
       <header className="sticky top-0 z-30 border-b border-[#173f2d]/10 bg-[#fffdf8]/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="#home" className="min-w-0 leading-tight" aria-label="Hopkins Grove by Ceiba Realty and Development">
@@ -184,9 +193,9 @@ export function HopkinsPublicPage() {
             <span className="block truncate font-display text-xl font-semibold text-[#173f2d] sm:text-2xl">{page.project.name}</span>
           </a>
           <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-3 text-sm font-semibold">
-            <a href="#map" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Explore map</a>
-            <Link to="/hopkins/application" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link>
-            <a href="#interest" className="inline-flex min-h-10 items-center rounded-full bg-[#173f2d] px-4 text-white hover:bg-[#245a40]">Get in touch</a>
+            {modules.map ? <a href="#map" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Explore map</a> : null}
+            {modules.application ? <Link to="/hopkins/application" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link> : null}
+            {modules.inquiry ? <a href="#interest" className="inline-flex min-h-10 items-center rounded-full bg-[#173f2d] px-4 text-white hover:bg-[#245a40]">Get in touch</a> : null}
           </nav>
         </div>
       </header>
@@ -199,9 +208,9 @@ export function HopkinsPublicPage() {
             <h1 className="mt-6 max-w-3xl break-words font-display text-4xl font-semibold leading-[1.04] tracking-tight text-[#173f2d] sm:text-6xl">A place to put down roots.</h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-[#52635a] sm:text-lg">{page.company.description}</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a className="inline-flex min-h-12 items-center gap-2 rounded-full bg-[#173f2d] px-6 font-semibold text-white shadow-sm hover:bg-[#245a40]" href="#map">Explore the plan <ArrowDown className="h-4 w-4" /></a>
-              <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#interest">Register your interest <ArrowUpRight className="h-4 w-4" /></a>
-              <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#application">Start a project application <ArrowUpRight className="h-4 w-4" /></a>
+              {modules.map ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full bg-[#173f2d] px-6 font-semibold text-white shadow-sm hover:bg-[#245a40]" href="#map">Explore the plan <ArrowDown className="h-4 w-4" /></a> : null}
+              {modules.inquiry ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#interest">Register your interest <ArrowUpRight className="h-4 w-4" /></a> : null}
+              {modules.application ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#application">Start a project application <ArrowUpRight className="h-4 w-4" /></a> : null}
             </div>
             <p className="mt-5 max-w-2xl text-xs leading-5 text-[#68736c]">Map outlines are project references. They do not indicate verified saleable inventory, current availability, or an allocated lot.</p>
           </div>
@@ -220,7 +229,7 @@ export function HopkinsPublicPage() {
         </div>
       </section>
 
-      <section id="map" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-12 sm:px-6 sm:py-16">
+      {modules.map ? <section id="map" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8a5a35]">Published project map</p>
@@ -234,7 +243,7 @@ export function HopkinsPublicPage() {
             tenantSlug={HOPKINS_SCOPE.tenant}
             projectSlug={HOPKINS_SCOPE.project}
             phaseSlug={HOPKINS_SCOPE.phase}
-            showPrices
+            showPrices={modules.pricing}
             enableInquiry
             initialView="tier"
             selectedMapFeatureRefs={selectedMapFeatureRefs}
@@ -245,9 +254,9 @@ export function HopkinsPublicPage() {
           />
         </div>
         <p className="mt-3 text-xs leading-5 text-[#68736c]">Generated map references, printed plan labels, source-tier matches, and saleable inventory are distinct records. A displayed source match is not an availability statement.</p>
-      </section>
+      </section> : null}
 
-      <section id="interest" className="scroll-mt-24 bg-[#edf1e9] px-4 py-12 sm:px-6 sm:py-16">
+      {modules.inquiry ? <section id="interest" className="scroll-mt-24 bg-[#edf1e9] px-4 py-12 sm:px-6 sm:py-16">
         <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr]">
           <div className="max-w-xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8a5a35]">Project information</p>
@@ -292,9 +301,9 @@ export function HopkinsPublicPage() {
             )}
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      <HopkinsProjectApplication
+      {modules.application ? <HopkinsProjectApplication
         page={page}
         selectedMapFeatureRefs={selectedMapFeatureRefs}
         mapFeatureLabels={mapFeatureLabels}
@@ -303,7 +312,7 @@ export function HopkinsPublicPage() {
           setSelectedMapFeatureRefs((current) => current.filter((item) => item !== ref));
           setMapPreferenceError(null);
         }}
-      />
+      /> : null}
 
       <footer className="border-t border-[#173f2d]/10 bg-[#fffdf8] px-4 py-7 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs leading-5 text-[#68736c] sm:flex-row sm:items-center sm:justify-between">
@@ -349,8 +358,7 @@ function HopkinsProjectApplication({
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const { data, error: functionError } = await supabase.functions.invoke("submit-hopkins-project-application", {
-        body: buildHopkinsProjectApplicationPayload({
+      const data = await submitPublicFunction<{ ok?: boolean; message?: string; application_id?: number }>("submit-hopkins-project-application", buildHopkinsProjectApplicationPayload({
           submission_reference: submissionReference,
           applicant_full_name: name,
           applicant_address: address,
@@ -364,10 +372,7 @@ function HopkinsProjectApplication({
           notes,
           legal_notice_acknowledged: acknowledged,
           applicant_acknowledgement_signature: signature,
-        }),
-      });
-      if (functionError) throw new Error(await resolveInquirySubmitError(functionError));
-      if (data?.error) throw new Error(String(data.error));
+        }));
       if (data?.ok !== true) throw new Error("Your project application could not be confirmed. Please retry.");
       setReceipt({ message: String(data.message || page.applicationSettings.confirmationMessage), id: Number(data.application_id) || undefined });
     } catch (failure) {

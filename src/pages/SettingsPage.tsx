@@ -9,6 +9,7 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
 import { WordPressEmbedSnippet } from "../components/admin/settings/WordPressEmbedSnippet";
+import { PublicExperienceTemplateSettings } from "../components/admin/settings/PublicExperienceTemplateSettings";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import { createAuditEvent } from "../lib/audit";
@@ -477,6 +478,7 @@ export function SettingsPage() {
 
         {activeSection === "Company Profile" ? (
           <div className="grid gap-6">
+            <PublicExperienceTemplateSettings workspace={workspace} canManage={canManageConfig} />
             <Card className="v2-workflow-panel">
               <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
               <CardContent className="grid gap-4">
