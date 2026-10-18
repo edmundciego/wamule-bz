@@ -39,7 +39,14 @@ import {
   mapViewportBounds,
   type MapPanPadding,
 } from "../../lib/mapGeometry";
-import { demoMapPlotLabel, demoPlotLabel, fitStandardMapLabelFontSize } from "../../lib/hopkinsDemoLabels";
+import {
+  demoMapPlotLabel,
+  demoPlotLabel,
+  fitStandardMapLabelFontSize,
+  layoutHopkinsSourceMapLabels,
+  publicMapReferenceLabel,
+} from "../../lib/hopkinsDemoLabels";
+import { isLocalOnlySubmission } from "../../lib/publicSubmissionMode";
 
 export interface PublicLotParcel {
   /** Generated in the browser only for SVG interaction; never a database key. */
@@ -87,6 +94,7 @@ interface MapPayload {
   tenant: { name: string; slug: string };
   project: { slug: string; name: string } | null;
   masterplan_image_url: string | null;
+  masterplan_version_id?: string | null;
   /** Mobile-capped rendition; null until published (clients use full image). */
   masterplan_preview_url: string | null;
   branding: { company_name: string; logo_url: string; short_description: string };
@@ -133,6 +141,12 @@ interface PublicLotMapProps {
   onSelectLot?: (parcel: PublicLotParcel) => void;
   onClearSelection?: () => void;
   onParcelsLoaded?: (parcels: PublicLotParcel[]) => void;
+  /** Initial view can fit the complete source raster or all valid outlines. */
+  initialFit?: "image" | "outlines";
+  /** Place detail content beneath the map for full-width public presentations. */
+  detailsPlacement?: "side" | "below";
+  /** Keep public interactions in this browser without calling submission endpoints. */
+  localDemoOnly?: boolean;
   /**
    * Local preview mode (never used in production): loads lots.json +
    * tiers.json from a static base path and the sibling
@@ -183,7 +197,7 @@ const STATUS_MARKER_SHAPE: Record<PublicLotStatus, LotMarkerShape> = {
 const LOCAL_PREVIEW_GEOMETRY_COLOR = "#596f98";
 
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 4;
+const MAX_ZOOM = 8;
 
 /** Transparent pointer padding (px, non-scaling) so small lots stay tappable. */
 const HIT_STROKE_PX = 14;
@@ -221,48 +235,48 @@ function sourcePrice(price: number): string {
 }
 
 function hostedDemoReference(parcel: PublicLotParcel): string {
-  return parcel.demo_label || "Map reference";
+  return publicMapReferenceLabel(parcel.demo_label);
 }
 
 function hopkinsPrintedNumberSummary(parcel: PublicLotParcel): string {
   const status = parcel.source_printed_lot_number_status;
   const number = parcel.source_printed_lot_number_candidate;
-  if (status === "source-image-cross-checked" && number) return `source-image match ${number}`;
+  if (status === "source-image-cross-checked" && number) return `printed plan number ${number}`;
   if (status === "source-image-ambiguous-multiple-lots") {
     const numbers = parcel.source_printed_lot_number_candidates_ambiguous ?? [];
     return numbers.length ? `outline spans printed lots ${numbers.join(", ")}; no single number assigned` : "outline spans multiple printed lots; no single number assigned";
   }
-  if (status === "ocr-match-pending-human-review" && number) return `OCR candidate ${number}, source check pending`;
-  if (status === "duplicate-ocr-token-pending-human-review") return "OCR token conflict; no number assigned";
-  if (status === "split-child-pending-human-review") return "split outline; printed number not matched";
-  return "no unique printed-number match";
+  if (status === "ocr-match-pending-human-review" && number) return `possible printed number ${number}, not confirmed against the plan`;
+  if (status === "duplicate-ocr-token-pending-human-review") return "printed number not shown because it is not unique";
+  if (status === "split-child-pending-human-review") return "no printed number matched to this outline";
+  return "no clear printed-number match";
 }
 
 function hopkinsPrintedNumberDetail(parcel: PublicLotParcel): { label: string; value: string } {
   const status = parcel.source_printed_lot_number_status;
   const number = parcel.source_printed_lot_number_candidate;
   if (status === "source-image-cross-checked" && number) {
-    return { label: "Printed number on plan", value: `${number} · visually matched to source image` };
+    return { label: "Printed number", value: `${number} · matched to the plan` };
   }
   if (status === "source-image-ambiguous-multiple-lots") {
     const numbers = parcel.source_printed_lot_number_candidates_ambiguous ?? [];
     return {
-      label: "Ambiguous source outline",
+      label: "Printed plan numbers",
       value: numbers.length
         ? `Contains multiple printed lots (${numbers.join(", ")}); no single number assigned`
         : "Contains multiple printed lots; no single number assigned",
     };
   }
   if (status === "ocr-match-pending-human-review" && number) {
-    return { label: "Printed-number OCR candidate", value: `${number}? · source check pending` };
+    return { label: "Possible printed plan number", value: `${number}? · not confirmed against the plan` };
   }
   if (status === "duplicate-ocr-token-pending-human-review") {
-    return { label: "Printed-number OCR status", value: "Conflicts with another outline; no number assigned" };
+    return { label: "Printed number", value: "Not shown because it is not unique" };
   }
   if (status === "split-child-pending-human-review") {
-    return { label: "Printed-number OCR status", value: "Split outline; no unique number matched" };
+    return { label: "Printed number", value: "No printed number matched to this outline" };
   }
-  return { label: "Printed-number OCR status", value: "No unique source-number match" };
+  return { label: "Printed number", value: "No clear printed-number match" };
 }
 
 function HopkinsPricingLegend() {
@@ -274,9 +288,9 @@ function HopkinsPricingLegend() {
           <span aria-hidden="true" className="text-muted-foreground">⌄</span>
         </span>
       </summary>
-      <div className="border-t border-border px-3 pb-3 pt-2" aria-label="Prices from the original Hopkins plan">
+      <div className="border-t border-border px-3 pb-3 pt-2" aria-label="Plot categories and prices from the original Hopkins plan">
         {(["Residential", "Commercial"] as const).map((group) => (
-          <section key={group} className="mt-2 first:mt-0" aria-label={`${group} source tiers`}>
+          <section key={group} className="mt-2 first:mt-0" aria-label={`${group} plot categories`}>
             <h3 className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{group}</h3>
             <ul className="mt-1 space-y-1.5">
               {HOPKINS_TIER_ORDER.filter((key) => hopkinsTierSource.tiers[key].group === group).map((key) => {
@@ -288,7 +302,7 @@ function HopkinsPricingLegend() {
                       <span className="block font-semibold text-foreground">{hopkinsTierLabel(tier)}</span>
                       <span className="text-muted-foreground">
                         {tier.price_basis}
-                        {"source_label" in tier ? <span className="sr-only">, {key} source color</span> : null}
+                        {"source_label" in tier ? <span className="sr-only">, {key} plot category color</span> : null}
                       </span>
                     </span>
                     <span className="whitespace-nowrap text-right font-semibold tabular-nums text-foreground">{sourcePrice(tier.price)}</span>
@@ -387,12 +401,12 @@ function polygonMarkerPoints(shape: Exclude<LotMarkerShape, "circle">, cx: numbe
 }
 
 function parcelHeading(parcel: PublicLotParcel, localDemo = false): string {
-  if (parcel.is_map_detection) return `Map detection ${parcel.lot_number}`;
+  if (parcel.is_map_detection) return `Map outline ${parcel.lot_number}`;
   return localDemo ? demoPlotLabel(parcel) : parcel.local_preview ? `Preview child ${parcel.local_preview.childNumber}` : `Lot ${parcel.lot_number}`;
 }
 
 function parcelSearchLabel(parcel: PublicLotParcel, localDemo = false): string {
-  if (parcel.is_map_detection) return `Map detection ${parcel.lot_number}`;
+  if (parcel.is_map_detection) return `Map outline ${parcel.lot_number}`;
   return localDemo ? demoPlotLabel(parcel) : parcel.local_preview ? `Preview child ${parcel.local_preview.childNumber}` : `Lot ${parcel.lot_number}`;
 }
 
@@ -412,6 +426,9 @@ export function PublicLotMap({
   onSelectLot,
   onClearSelection,
   onParcelsLoaded,
+  initialFit = "image",
+  detailsPlacement = "side",
+  localDemoOnly = isLocalOnlySubmission,
   demoDataUrl,
   demoCorrectionManifestUrl,
   correctionMapLayer,
@@ -1125,6 +1142,7 @@ export function PublicLotMap({
   // Pan stays in full-space units so zooming keeps the current centre
   // instead of jumping back to the top-left corner.
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const initialFitKeyRef = useRef<string | null>(null);
   // Extra pan range granted while a lot is selected, so a card/sheet
   // covering the lot can be escaped even at 1x (unpadded range is zero).
   const [cardPad, setCardPad] = useState<PanPads>(NO_PADS);
@@ -1135,6 +1153,7 @@ export function PublicLotMap({
   const [narrow, setNarrow] = useState<boolean>(() =>
     typeof window === "undefined" ? false : window.innerWidth < 640,
   );
+  const [mapViewportSize, setMapViewportSize] = useState({ width: 800, height: 600 });
   const svgRef = useRef<SVGSVGElement | null>(null);
   // Gesture model: NO setPointerCapture anywhere (capture retargets the
   // follow-up click to the capturing element, which broke selection).
@@ -1181,10 +1200,49 @@ export function PublicLotMap({
     return clampPanTo(x, y, z, viewBoxH, cardPad);
   }
 
-  const viewBox = useMemo(
-    () => mapViewBoxString(mapViewportBounds(pan, zoom, 100, viewBoxH, cardPad)),
+  const mapViewport = useMemo(
+    () => mapViewportBounds(pan, zoom, 100, viewBoxH, cardPad),
     [zoom, viewBoxH, pan, cardPad],
   );
+  const viewBox = useMemo(() => mapViewBoxString(mapViewport), [mapViewport]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      setMapViewportSize((current) => current.width === rect.width && current.height === rect.height
+        ? current
+        : { width: rect.width, height: rect.height });
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(svg);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [loading, error, basePayload, expanded, pseudoFullscreen]);
+
+  const mapLabels = useMemo(() => {
+    if (!isHopkinsHostedMap || correctionMapLayer || reviewPending || !mapParcels.length) return [];
+    const screenPixelsPerMapUnit = Math.min(
+      mapViewportSize.width / (100 / zoom),
+      mapViewportSize.height / (viewBoxH / zoom),
+    );
+    return layoutHopkinsSourceMapLabels(mapParcels, {
+      yScale,
+      screenPixelsPerMapUnit,
+      selectedLocalKey: focusLotKey,
+      hoveredLocalKey,
+      zoom,
+      minimumZoom: 1.12,
+      screenFontSize: 13,
+      viewBox: mapViewport,
+    });
+  }, [isHopkinsHostedMap, correctionMapLayer, reviewPending, mapParcels, mapViewportSize, zoom, viewBoxH, yScale, mapViewport, focusLotKey, hoveredLocalKey]);
 
   function zoomBy(delta: number) {
     zoomTo(zoom + delta);
@@ -1224,6 +1282,39 @@ export function PublicLotMap({
     setZoom(next);
     setPan(clampPan(b.x + b.w / 2 - 100 / next / 2, b.y + b.h / 2 - viewBoxH / next / 2, next));
   }
+
+  // Hopkins starts with the entire approved outline set in view. This is a
+  // view transform only: source geometry, coordinates, and the reset-to-image
+  // behavior remain untouched. Search and filter changes never trigger it.
+  useEffect(() => {
+    if (initialFit !== "outlines" || !isHopkinsHostedMap || !payload || !imageAspect) return;
+    const identity = [tenantSlug, projectSlug ?? "", phaseSlug ?? "", payload.masterplan_version_id ?? payload.masterplan_image_url ?? ""].join(":");
+    if (initialFitKeyRef.current === identity) return;
+    const bounds = payload.parcels
+      .map((parcel) => Array.isArray(parcel.map_polygon) && parcel.map_polygon.length >= 3
+        ? mapPolygonBounds(parcel.map_polygon, yScale)
+        : null)
+      .filter((value): value is NonNullable<typeof value> => Boolean(value));
+    if (!bounds.length) return;
+    const left = Math.min(...bounds.map((boundsItem) => boundsItem.x));
+    const top = Math.min(...bounds.map((boundsItem) => boundsItem.y));
+    const right = Math.max(...bounds.map((boundsItem) => boundsItem.x + boundsItem.width));
+    const bottom = Math.max(...bounds.map((boundsItem) => boundsItem.y + boundsItem.height));
+    const width = Math.max(right - left, 0.01);
+    const height = Math.max(bottom - top, 0.01);
+    const fit = Math.min(100 / (width * 1.08), viewBoxH / (height * 1.08));
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit));
+    const nextPan = clampPanTo(
+      left + width / 2 - 100 / nextZoom / 2,
+      top + height / 2 - viewBoxH / nextZoom / 2,
+      nextZoom,
+      viewBoxH,
+      NO_PADS,
+    );
+    initialFitKeyRef.current = identity;
+    setZoom(nextZoom);
+    setPan(nextPan);
+  }, [initialFit, isHopkinsHostedMap, payload, imageAspect, tenantSlug, projectSlug, phaseSlug, yScale, viewBoxH]);
 
   function lotKeyAtPoint(clientX: number, clientY: number): number | null {
     // All hit polygons under the point (hit padding overlaps neighbours):
@@ -1623,7 +1714,10 @@ export function PublicLotMap({
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden bg-background motion-reduce:[&_button]:transition-none motion-reduce:[&_polygon]:transition-none",
+        cn(
+          "flex min-h-0 flex-col bg-background motion-reduce:[&_button]:transition-none motion-reduce:[&_polygon]:transition-none",
+          detailsPlacement === "below" && !expanded ? "h-auto overflow-visible" : "h-full overflow-hidden",
+        ),
         tenantScope,
         expanded && "h-[100dvh] w-screen",
         pseudoFullscreen && "fixed inset-0 z-[100]",
@@ -1634,6 +1728,7 @@ export function PublicLotMap({
           fontFamily: theme.tokens.fontFamily,
           "--lotmap-accent": theme.tokens.accent,
           "--lotmap-muted": theme.tokens.muted,
+          ...(detailsPlacement === "below" && !expanded ? { height: "auto" } : undefined),
           ...(pseudoFullscreen
             ? {
                 paddingTop: "env(safe-area-inset-top)",
@@ -1697,9 +1792,9 @@ export function PublicLotMap({
               ? "Search detection reference"
               : localPreviewMode
               ? "Search demo plot or source reference"
-              : hostedDemoMap ? isHopkinsHostedMap ? "Search source number or map reference" : "Search demo plot"
+              : hostedDemoMap ? isHopkinsHostedMap ? "Search printed plan number or map reference" : "Search demo plot"
               : reviewPending ? "Search plan label or pending child" : "Search lot, tier, status"}
-            aria-label={correctionMapLayer ? "Search detected polygons by reference" : localPreviewMode ? "Search demo plots" : isHopkinsHostedMap ? "Search source number candidates or generated map references" : hostedDemoMap ? "Search demo plots" : "Search lots"}
+            aria-label={correctionMapLayer ? "Search detected polygons by reference" : localPreviewMode ? "Search demo plots" : isHopkinsHostedMap ? "Search printed plan numbers or map references" : hostedDemoMap ? "Search demo plots" : "Search lots"}
             aria-controls={searchResultsId}
             aria-describedby={`${searchResultsId}-instructions`}
             aria-expanded={normalizedQuery.length > 0}
@@ -1710,7 +1805,7 @@ export function PublicLotMap({
               ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a detected polygon to select it."
               : localPreviewMode
               ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a demo plot to select it."
-              : hostedDemoMap ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter to select a generated map reference. Source-checked printed numbers, provisional OCR candidates, and ambiguous outlines are labeled separately."
+              : hostedDemoMap ? "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter to select a map reference. Printed plan numbers are shown when matched clearly; possible numbers are marked as unconfirmed."
               : "When results appear, press Arrow Down to move into them. Use Arrow Up or Escape to return to search; press Enter on a lot to open its details."}
           </span>
           {normalizedQuery ? (
@@ -1718,15 +1813,15 @@ export function PublicLotMap({
               ref={searchResultsRef}
               id={searchResultsId}
               role="region"
-              aria-label={correctionMapLayer ? "Detection search results" : localPreviewMode || hostedDemoMap ? "Demo plot search results" : "Lot search results"}
-              className="absolute left-0 right-auto top-full z-50 mt-1 max-h-64 w-72 max-w-[calc(100vw-1.5rem)] overflow-auto rounded-md border border-border bg-card p-2 shadow-lg"
+              aria-label={correctionMapLayer ? "Detection search results" : isHopkinsHostedMap ? "Map search results" : localPreviewMode || hostedDemoMap ? "Demo plot search results" : "Lot search results"}
+              className="absolute left-auto right-0 top-full z-50 mt-1 max-h-64 w-[min(18rem,calc(100vw-2rem))] max-w-full overflow-auto rounded-md border border-border bg-card p-2 shadow-lg"
             >
               <p className="px-1 pb-1 text-xs text-muted-foreground" role="status" aria-live="polite">
                 {visibleParcels.length === 0
-                  ? correctionMapLayer ? "No matching detected polygons." : "No matching lots."
+                  ? correctionMapLayer ? "No matching detected polygons." : isHopkinsHostedMap ? "No matching map outlines." : "No matching lots."
                     : visibleParcels.length > SEARCH_RESULT_LIMIT
-                    ? `Showing ${SEARCH_RESULT_LIMIT} of ${visibleParcels.length} matching ${correctionMapLayer ? "detected polygons" : localPreviewMode || hostedDemoMap ? "demo plots" : "lots"}; refine your search.`
-                    : `${visibleParcels.length} matching ${correctionMapLayer ? (visibleParcels.length === 1 ? "detected polygon" : "detected polygons") : localPreviewMode || hostedDemoMap ? (visibleParcels.length === 1 ? "demo plot" : "demo plots") : (visibleParcels.length === 1 ? "lot" : "lots")}.`}
+                    ? `Showing ${SEARCH_RESULT_LIMIT} of ${visibleParcels.length} matching ${correctionMapLayer ? "detected polygons" : isHopkinsHostedMap ? "map outlines" : localPreviewMode || hostedDemoMap ? "demo plots" : "lots"}; refine your search.`
+                    : `${visibleParcels.length} matching ${correctionMapLayer ? (visibleParcels.length === 1 ? "detected polygon" : "detected polygons") : isHopkinsHostedMap ? (visibleParcels.length === 1 ? "map outline" : "map outlines") : localPreviewMode || hostedDemoMap ? (visibleParcels.length === 1 ? "demo plot" : "demo plots") : (visibleParcels.length === 1 ? "lot" : "lots")}.`}
               </p>
               {searchResults.length > 0 ? (
                 <ul className="grid gap-1">
@@ -1738,9 +1833,9 @@ export function PublicLotMap({
                           ? `Select detected polygon ${parcel.lot_number}`
                           : localPreviewMode
                             ? `Select ${demoPlotLabel(parcel)}`
-                            : hostedDemoMap ? `Select generated map reference ${hostedDemoReference(parcel)}, ${hopkinsPrintedNumberSummary(parcel)}`
+                            : hostedDemoMap ? `Show details for map reference ${hostedDemoReference(parcel)}, ${hopkinsPrintedNumberSummary(parcel)}`
                             : parcel.is_map_detection
-                              ? `Show details for map detection ${parcel.lot_number}, not selectable for sale`
+                              ? `Show details for map outline ${parcel.lot_number}; not offered for sale`
                               : `Show details for Lot ${parcel.lot_number}, ${reviewPending ? "source review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
                         onKeyDown={(event) => {
                           if (event.key === "ArrowUp") {
@@ -1789,7 +1884,7 @@ export function PublicLotMap({
                             : reviewPending
                             ? localPreviewMode ? "Original outline" : "Review pending"
                             : parcel.is_map_detection
-                              ? "Map detection · review/display data"
+                              ? "Map outline · review data"
                               : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"} · ${parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}
                         </span>
                       </button>
@@ -1842,11 +1937,11 @@ export function PublicLotMap({
           data-testid="map-detection-disclosure"
           data-map-detection-count={mapDetectionCount}
           role="note"
-          aria-label="Map detections are review data, not saleable inventory"
+          aria-label="Map outlines are review data, not saleable inventory"
           className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground"
         >
           <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-[#718078]" aria-hidden="true" />
-          <span className="font-semibold text-foreground">{mapDetectionCount} raster map detections · review/display only.</span>
+          <span className="font-semibold text-foreground">{mapDetectionCount} map outlines · review/display only.</span>
           <span>These outlines are separate from parcel inventory and are not buyer-selection options.</span>
         </div>
       ) : null}
@@ -1892,7 +1987,7 @@ export function PublicLotMap({
           {isHopkinsHostedMap ? (
             <>
               <span className="inline-block h-3 w-3 rounded-sm border border-black/15 bg-[#f4e27a]" aria-hidden="true" />
-              <span>Source price colors</span>
+              <span>Plot category colors</span>
               <span aria-hidden="true">·</span>
               <span className="inline-block h-4 w-6 rounded-sm border-2 border-white bg-transparent shadow-[0_0_0_1px_#17221d]" aria-hidden="true" />
               <span>Selected outline</span>
@@ -1977,20 +2072,27 @@ export function PublicLotMap({
           ? "Use the arrow keys to move between nearby detected polygons. Press Enter or Space to select the polygon; press Escape to return to detection search. Search uses detection references, not official lot numbers."
           : localPreviewMode
           ? "Use the arrow keys to move between nearby demo plots. Press Enter or Space to select a plot; press Escape to return to demo plot search."
-          : "Use the arrow keys to move between nearby lots. Press Enter or Space to open lot details; press Escape to return to lot search. Search can find any lot by identifier, tier, or status."}
+          : "Use the arrow keys to move between map outlines. Press Enter or Space to view details; press Escape to return to search. Search accepts printed plan numbers and map references. Neither identifies a saleable parcel."}
       </span>
 
         <div className={cn(
           "relative flex min-h-0 flex-1 bg-muted",
-          previewLayout && "grid min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(6rem,30dvh)] md:grid-cols-[minmax(0,1fr)_minmax(16rem,19rem)] md:grid-rows-1 md:gap-4 md:bg-background md:p-4",
+          previewLayout && (detailsPlacement === "below"
+            ? "grid min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(20rem,1fr)_minmax(7rem,34dvh)] gap-2 bg-background p-2 sm:gap-3 sm:p-3"
+            : "grid min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(6rem,30dvh)] md:grid-cols-[minmax(0,1fr)_minmax(16rem,19rem)] md:grid-rows-1 md:gap-4 md:bg-background md:p-4"),
         )}>
         <div
           data-testid={previewLayout ? "candidate-map-viewport" : "buyer-map-viewport"}
           className={cn(
             "relative min-h-0 flex-1 bg-muted",
-            previewLayout && "h-full min-w-0 w-full overflow-hidden md:rounded-xl md:border md:border-border",
+            previewLayout && (detailsPlacement === "below"
+              ? "min-h-0 min-w-0 w-full overflow-hidden md:rounded-xl md:border md:border-border"
+              : "h-full min-w-0 w-full overflow-hidden md:rounded-xl md:border md:border-border"),
           )}
-          style={previewLayout ? ({ "--demo-map-aspect": imageAspect ?? 1.1875 } as React.CSSProperties) : undefined}
+          style={previewLayout ? ({
+            "--demo-map-aspect": imageAspect ?? 1.1875,
+            ...(detailsPlacement === "below" ? { aspectRatio: imageAspect ?? 1.1875 } : {}),
+          } as React.CSSProperties) : undefined}
         >
         {loading ? (
           <div className="absolute inset-0 animate-pulse p-4 motion-reduce:animate-none" role="status" aria-live="polite">
@@ -2056,7 +2158,7 @@ export function PublicLotMap({
                 ? correctionMapLayer.splitTrace.drawingEnabled
                   ? "Polygon trace mode. Tap to add a boundary point; drag to pan the source drawing."
                   : "Polygon drawing paused. Choose Start Next Polygon before tracing another child; drag to pan the source drawing."
-                : "Lot map. Drag to pan; use the controls or pinch to zoom."}</title>
+                : "Map outline plan. Drag to pan; use the controls or pinch to zoom."}</title>
               {masterplanUrl ? (
                 <MapRasterLayer
                   src={masterplanUrl}
@@ -2079,7 +2181,7 @@ export function PublicLotMap({
                   fill="#ffffff"
                 />
               ) : null}
-              {/* Source tier outlines sit above the full-color plan; selection
+              {/* Plot category outlines sit above the full-color plan; selection
                   adds a neutral double outline and never replaces a tier fill. */}
               {visibleParcels.map((parcel) => {
                 const polygon = polygonFor(parcel);
@@ -2119,7 +2221,7 @@ export function PublicLotMap({
               <g
                 id={mapListboxId}
                 role="listbox"
-                aria-label={correctionMapLayer ? "Detected polygons on the map" : localPreviewMode ? "Hopkins Grove demo plots" : isHopkinsHostedMap ? "Hopkins Grove source tier outlines" : "Lots on the map"}
+                aria-label={correctionMapLayer ? "Detected polygons on the map" : localPreviewMode ? "Hopkins Grove demo plots" : isHopkinsHostedMap ? "Hopkins Grove map outlines" : "Lots on the map"}
                 aria-describedby={mapInstructionsId}
                 aria-activedescendant={mapCursorOptionId}
                 aria-multiselectable={pickMode || undefined}
@@ -2151,11 +2253,11 @@ export function PublicLotMap({
                         role="option"
                         aria-label={localPreviewMode
                           ? `Select ${demoPlotLabel(parcel)}`
-                          : hostedDemoMap ? `Select generated map reference ${hostedDemoReference(parcel)}${parcel.tier_label ? `, ${parcel.tier_label}` : ""}, ${hopkinsPrintedNumberSummary(parcel)}`
+                          : hostedDemoMap ? `Select map reference ${hostedDemoReference(parcel)}${parcel.tier_label ? `, plot category ${parcel.tier_label}` : ""}, ${hopkinsPrintedNumberSummary(parcel)}`
                           : correctionMapLayer
                             ? `Detected polygon ${parcel.lot_number}, ${reviewStyle(parcel).label}`
                             : parcel.is_map_detection
-                              ? `Map detection ${parcel.lot_number}, not selectable for sale`
+                              ? `Map outline ${parcel.lot_number}; not offered for sale`
                               : `Lot ${parcel.lot_number}, ${reviewPending ? "review pending" : `${parcel.tier_label ?? parcel.tier_key ?? "Unclassified"}, ${parcel.status}${unapprovedWamulePreview ? ", sample data" : ""}`}`}
                         aria-selected={selectedMapPreference || (pickMode ? highlighted.includes(parcel.local_key) : internalSelectedKey === parcel.local_key)}
                         data-lot-key={parcel.local_key}
@@ -2173,7 +2275,7 @@ export function PublicLotMap({
                       <title>{localPreviewMode
                         ? demoPlotLabel(parcel)
                         : hostedDemoMap
-                          ? `${hostedDemoReference(parcel)} · demo map reference${parcel.tier_label ? ` · ${parcel.tier_label}` : ""} · ${hopkinsPrintedNumberSummary(parcel)}${selectedMapPreference ? " · selected for project application interest" : picked ? " · selected" : ""}`
+                          ? `${hostedDemoReference(parcel)} · map reference${parcel.tier_label ? ` · ${parcel.tier_label}` : ""} · ${hopkinsPrintedNumberSummary(parcel)}${selectedMapPreference ? " · selected for project application interest" : picked ? " · selected" : ""}`
                         : correctionMapLayer
                           ? `Detected polygon ${parcel.lot_number} — ${reviewStyle(parcel).label}${internalSelectedKey === parcel.local_key ? " — selected" : ""}`
                           : `Lot ${parcel.lot_number} — ${reviewPending ? "review pending" : `${parcel.tier_label ?? parcel.status}${unapprovedWamulePreview ? " · sample" : ""}`}${picked ? " — selected" : ""}`}</title>
@@ -2316,66 +2418,69 @@ export function PublicLotMap({
                   />
                 </g>
               ) : null}
-              {visibleParcels.map((parcel) => {
-                    if (correctionMapLayer) return null;
-                    // Keep one crisp vector label for the selected lot (or,
-                    // with no selection, the hovered lot). The source plat
-                    // already prints the rest, so avoid duplicating every
-                    // label. The transparent hit layer stays active for all lots. The
-                    // fs*zoom readability gate below still hides lots that
-                    // would render unreadably small.
-                    const isFocused = parcel.local_key === (focusLotKey ?? hoveredLocalKey);
-                    const showNearbyDemoLabels = localPreviewMode && zoom >= 2.2;
-                    if (isHopkinsHostedMap && !isFocused) return null;
-                    if (!isFocused && !showNearbyDemoLabels) return null;
-                    const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
-                    if (polygon.length < 3) return null;
-                    const xs = polygon.map((p) => p.x);
-                    const ys = polygon.map((p) => p.y * yScale);
-                    const lotW = Math.max(...xs) - Math.min(...xs);
-                    const lotH = Math.max(...ys) - Math.min(...ys);
-                    // Keep every visible map label at one screen size. Lots
-                    // that cannot fit the complete reference wait until a
-                    // closer zoom rather than shrinking to inconsistent text.
-                    const label = isHopkinsHostedMap
-                      ? parcel.source_printed_lot_number_status === "source-image-cross-checked" && parcel.source_printed_lot_number_candidate
-                        ? parcel.source_printed_lot_number_candidate
-                        : parcel.source_printed_lot_number_status === "ocr-match-pending-human-review" && parcel.source_printed_lot_number_candidate
-                          ? `${parcel.source_printed_lot_number_candidate}?`
-                          : null
-                      : localPreviewMode ? demoMapPlotLabel(parcel) : parcel.local_preview ? "Pending" : parcel.lot_number;
-                    if (!label) return null;
-                    // Derive the current scale from React state and the SVG's
-                    // measured box. getScreenCTM() still reflects the previous
-                    // viewBox during render immediately after a zoom update.
-                    const svgWidth = svgRef.current?.clientWidth || 800;
-                    const svgHeight = svgRef.current?.clientHeight || 600;
-                    const pxPerUnit = Math.min(
-                      svgWidth / (100 / zoom),
-                      svgHeight / (viewBoxH / zoom),
-                    );
-                    const fs = fitStandardMapLabelFontSize({ width: lotW, height: lotH }, label, pxPerUnit);
-                    if (!fs) return null;
-                    return (
-                      <text
-                        key={`label-${parcel.local_key}`}
-                        data-map-label="true"
-                        x={(Math.max(...xs) + Math.min(...xs)) / 2}
-                        y={(Math.max(...ys) + Math.min(...ys)) / 2}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize={fs}
-                        fontWeight={700}
-                        fill="#1f2937"
-                        stroke="#ffffff"
-                        strokeWidth={fs * 0.18}
-                        paintOrder="stroke"
-                        pointerEvents="none"
-                      >
-                        {label}
-                      </text>
-                    );
-                  })}
+              {isHopkinsHostedMap ? (
+                <g aria-hidden="true" data-testid="hopkins-map-labels" pointerEvents="none">
+                  {mapLabels.map((label) => (
+                    <text
+                      key={`label-${label.localKey}`}
+                      data-map-label="true"
+                      data-map-label-key={label.localKey}
+                      x={label.x}
+                      y={label.y}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={label.fontSize}
+                      fontWeight={700}
+                      fill="#173c2d"
+                      stroke="#ffffff"
+                      strokeWidth={label.fontSize * 0.2}
+                      strokeLinejoin="round"
+                      paintOrder="stroke"
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      {label.text}
+                    </text>
+                  ))}
+                </g>
+              ) : visibleParcels.map((parcel) => {
+                if (correctionMapLayer) return null;
+                const isFocused = parcel.local_key === (focusLotKey ?? hoveredLocalKey);
+                const showNearbyDemoLabels = localPreviewMode && zoom >= 2.2;
+                if (!isFocused && !showNearbyDemoLabels) return null;
+                const polygon = Array.isArray(parcel.map_polygon) ? parcel.map_polygon : [];
+                if (polygon.length < 3) return null;
+                const xs = polygon.map((point) => point.x);
+                const ys = polygon.map((point) => point.y * yScale);
+                const lotW = Math.max(...xs) - Math.min(...xs);
+                const lotH = Math.max(...ys) - Math.min(...ys);
+                const label = localPreviewMode ? demoMapPlotLabel(parcel) : parcel.local_preview ? "Pending" : parcel.lot_number;
+                if (!label) return null;
+                const pxPerUnit = Math.min(
+                  mapViewportSize.width / (100 / zoom),
+                  mapViewportSize.height / (viewBoxH / zoom),
+                );
+                const fs = fitStandardMapLabelFontSize({ width: lotW, height: lotH }, label, pxPerUnit);
+                if (!fs) return null;
+                return (
+                  <text
+                    key={`label-${parcel.local_key}`}
+                    data-map-label="true"
+                    x={(Math.max(...xs) + Math.min(...xs)) / 2}
+                    y={(Math.max(...ys) + Math.min(...ys)) / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={fs}
+                    fontWeight={700}
+                    fill="#1f2937"
+                    stroke="#ffffff"
+                    strokeWidth={fs * 0.18}
+                    paintOrder="stroke"
+                    pointerEvents="none"
+                  >
+                    {label}
+                  </text>
+                );
+              })}
               {correctionMapLayer?.geometryEdit ? (
                 <g aria-label="Editable polygon boundary vertices">
                   {(geometryDraft ?? correctionMapLayer.geometryEdit.polygon).map((point, index) => (
@@ -2498,7 +2603,7 @@ export function PublicLotMap({
                   <strong className="text-primary">{parcelHeading(focusLot, localPreviewMode)}</strong>
                   <span className="flex items-center gap-1">
                     <span className="rounded-full border border-border bg-muted px-3 py-1 text-sm font-semibold text-foreground">
-                      {focusLot.is_map_detection ? "Map detection" : focusLot.status}
+                      {focusLot.is_map_detection ? "Map outline" : focusLot.status}
                     </span>
                     {!pickMode ? (
                       <button
@@ -2521,7 +2626,7 @@ export function PublicLotMap({
                   </p>
                 ) : null}
                 {showPrices && cardConfig.showPrice && focusLot.is_map_detection !== true && focusLot.sales_selectable === true ? <p className="mt-1 font-semibold text-primary">Recorded price: {money(focusLot.price)}</p> : null}
-                {focusLot.is_map_detection === true ? <p className="mt-1 text-muted-foreground">Map detection · review/display data only; not selectable for sale.</p> : null}
+                {focusLot.is_map_detection === true ? <p className="mt-1 text-muted-foreground">This outline is map review data and is not offered for sale.</p> : null}
                 <button
                   type="button"
                   aria-label={applyCardText(cardConfig.zoomText, focusLot.lot_number)}
@@ -2563,7 +2668,15 @@ export function PublicLotMap({
         ) : null}
         </div>
         {previewLayout && !loading && !error ? (
-          <aside className="flex max-h-[30dvh] min-h-0 min-w-0 flex-col gap-2 overflow-y-auto border-t border-border bg-card px-3 py-2 md:max-h-none md:gap-3 md:rounded-xl md:border md:px-4 md:py-4" aria-label={isHopkinsHostedMap ? "Map details and source price guide" : "Lot details"}>
+          <aside
+            className={cn(
+              "flex min-h-0 min-w-0 flex-col overflow-y-auto border-t border-border bg-card px-3 py-2",
+              detailsPlacement === "below"
+                ? "max-h-[34dvh] gap-1.5 rounded-lg border px-3 py-2 sm:gap-2 sm:px-4"
+                : "max-h-[30dvh] gap-2 md:max-h-none md:gap-3 md:rounded-xl md:border md:px-4 md:py-4",
+            )}
+            aria-label={isHopkinsHostedMap ? "Map details and plot price guide" : "Lot details"}
+          >
             {isHopkinsHostedMap ? <HopkinsPricingLegend /> : null}
             {focusLot ? (localPreviewMode ? (
               <section
@@ -2603,7 +2716,7 @@ export function PublicLotMap({
                 data-testid="hosted-demo-detail" className="focus-ring flex flex-col gap-2 outline-none md:gap-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-muted-foreground">Generated map reference</p>
+                    <p className="text-xs font-semibold text-muted-foreground">Map reference</p>
                     <h2 className="mt-0.5 break-words text-lg font-semibold leading-tight text-primary">{hostedDemoReference(focusLot)}</h2>
                   </div>
                   <button type="button" aria-label={`Close details for ${hostedDemoReference(focusLot)}`} onClick={clearSelection}
@@ -2618,11 +2731,11 @@ export function PublicLotMap({
                       </dd>
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-muted-foreground">Source tier</dt>
+                      <dt className="text-muted-foreground">Plot category</dt>
                       <dd className="mt-0.5 break-words font-semibold text-foreground">
                         {focusLot.source_tier_status === "source-tier-ambiguous-multiple-colors"
-                          ? "Ambiguous source color"
-                          : focusLot.tier_label ?? "No color match"}
+                          ? "Multiple plan colors"
+                          : focusLot.tier_label ?? "No plan color match"}
                       </dd>
                     </div>
                     <div className="col-span-2 min-w-0 border-t border-border pt-1.5">
@@ -2631,8 +2744,8 @@ export function PublicLotMap({
                         {hopkinsTier(focusLot.tier_key)
                           ? `${sourcePrice(hopkinsTier(focusLot.tier_key)!.price)} · ${hopkinsTier(focusLot.tier_key)!.price_basis}`
                           : focusLot.source_tier_status === "source-tier-ambiguous-multiple-colors"
-                            ? "Outline does not map to one source fill; no price assigned"
-                            : "Not matched to a source tier"}
+                            ? "This outline does not match one plan color; no price is shown"
+                            : "No matching plot category"}
                       </dd>
                     </div>
                   </dl>
@@ -2641,7 +2754,7 @@ export function PublicLotMap({
                 )}
                 {isHopkinsHostedMap ? (
                   <p className="text-xs leading-4 text-muted-foreground">
-                    Printed plan numbers are shown only where the source outline can be matched clearly. Generated map references remain separate, and neither implies sale eligibility.
+                    Printed plan numbers are shown only when the outline can be matched clearly. Map references are separate from printed numbers and do not indicate parcel allocation or availability.
                   </p>
                 ) : null}
                 <button type="button" aria-label={`Zoom to ${hostedDemoReference(focusLot)}`} disabled={!Array.isArray(focusLot.map_polygon) || focusLot.map_polygon.length < 3}
@@ -2696,10 +2809,10 @@ export function PublicLotMap({
                 <p className="max-w-prose text-sm leading-5 text-muted-foreground">
                   {focusLot.local_preview
                     ? focusLot.local_preview.approvalBasis === "owner-authorized-demo-use"
-                      ? `Proposal-derived child geometry replaces parent detection ${focusLot.local_preview.parentDetectionId} in this local demo. Printed identity remains pending; no OCR suggestion is displayed or treated as verified.`
-                      : `Child geometry from parent detection ${focusLot.local_preview.parentDetectionId}. The printed number remains pending human review.`
+                      ? `This local preview shows a proposed child outline from a parent map outline. Any printed plan number remains unconfirmed.`
+                      : `Child outline from a parent map outline. The printed number remains unconfirmed.`
                     : localPreviewMode
-                    ? "Candidate boundary from the source drawing. Printed lot number, register match, and sales classification remain unapproved."
+                    ? "Preview boundary from the plan. Printed plan number, parcel inventory match, and sale status have not been confirmed."
                     : "Traced from the sales plat · register match pending."}
                 </p>
                 {focusLot.local_preview?.geometryExceptions?.length ? (
@@ -2834,7 +2947,7 @@ export function PublicLotMap({
               <section className="flex h-full flex-col justify-center gap-3" aria-label="No plot selected">
                 <p className="text-sm font-semibold text-muted-foreground">Explore the development</p>
                 <h2 className="text-xl font-semibold leading-tight text-primary">Choose an outlined plot</h2>
-                <p className="max-w-prose text-sm leading-5 text-muted-foreground">Select a source outline or search its printed-number candidate or generated map reference. Pan and zoom to read the original plan labels.</p>
+                <p className="max-w-prose text-sm leading-5 text-muted-foreground">Select an outline or search by printed plan number or map reference. Pan and zoom to read the original plan labels.</p>
                 <div className="mt-1 border-y border-border py-4">
                   <p className="text-2xl font-semibold tabular-nums text-primary">{totalMappedParcels}</p>
                   <p className="mt-1 text-xs font-medium text-muted-foreground">Approved source outlines</p>
@@ -2901,6 +3014,7 @@ export function PublicLotMap({
           mapFeatureRef={inquiryLot.map_feature_ref}
           lotNumber={inquiryLot.lot_number}
           waitlist={inquiryWaitlist}
+          localDemoOnly={localDemoOnly}
           onClose={() => {
             setInquiryLot(null);
             setInquiryWaitlist(false);

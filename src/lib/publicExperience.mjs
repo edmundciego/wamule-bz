@@ -16,6 +16,7 @@ export const PUBLIC_SITE_MODULES = [
 export function defaultPublicExperience(_scope) {
   return {
     templateId: "wamule-classic",
+    uiRestrictedAccess: false,
     enabledModules: {
       map: true,
       inquiry: true,
@@ -36,6 +37,9 @@ export function normalizePublicExperience(scope, value) {
     // Tenant, project, phase, branding, and application rules remain scoped
     // independently by their own configuration and route.
     templateId: defaults.templateId,
+    // This is an explicitly UI-only preview gate. It must not be presented
+    // as access control until every public data/submission endpoint enforces it.
+    uiRestrictedAccess: raw.uiRestrictedAccess === true,
     enabledModules: Object.fromEntries(PUBLIC_SITE_MODULES.map(({ id }) => [
       id,
       typeof moduleInput[id] === "boolean" ? moduleInput[id] : defaults.enabledModules[id],

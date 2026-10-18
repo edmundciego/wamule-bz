@@ -66,6 +66,7 @@ export function PublicExperienceTemplateSettings({
       p_project_id: projectId,
       p_template_id: current.templateId,
       p_enabled_modules: current.enabledModules,
+      p_ui_restricted_access_enabled: current.uiRestrictedAccess,
     });
     setSaving(false);
     if (error) {
@@ -85,6 +86,11 @@ export function PublicExperienceTemplateSettings({
       ...value,
       enabledModules: { ...value.enabledModules, [id]: !value.enabledModules[id] },
     } : value);
+  }
+
+  function toggleUiRestrictedAccess() {
+    setSavedMessage(null);
+    setDraft((value) => value ? { ...value, uiRestrictedAccess: !value.uiRestrictedAccess } : value);
   }
 
   if (!workspace || !canManage) return null;
@@ -132,6 +138,14 @@ export function PublicExperienceTemplateSettings({
                 </label>
               ))}
             </fieldset>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
+              <input type="checkbox" checked={current.uiRestrictedAccess} onChange={toggleUiRestrictedAccess} disabled={!canManage || configQuery.isLoading || saving} className="mt-0.5 h-4 w-4 accent-primary" />
+              <span className="grid gap-1">
+                <span className="font-semibold text-foreground">UI-only restricted preview · incomplete</span>
+                <span className="text-xs leading-5 text-muted-foreground">This tenant/project flag can hide the public page in the interface. It does not protect map, company, or submission endpoints; server-side enforcement is not implemented.</span>
+              </span>
+            </label>
 
             {savedMessage ? <p role="status" className="text-sm font-medium text-success">{savedMessage}</p> : null}
             <div className="flex flex-wrap items-center gap-3">

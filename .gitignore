@@ -7,7 +7,7 @@
 .herenow/
 
 # Dependencies and generated output
-node_modules/
+node_modules
 dist/
 graphify-out/
 out/

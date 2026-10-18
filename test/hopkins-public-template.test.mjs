@@ -16,6 +16,10 @@ test("Hopkins always renders the shared Wamule homepage composition", async () =
 
   assert.doesNotMatch(hopkins, /templateId|hopkins-project/);
   assert.match(hopkins, /<HopkinsWamuleClassicPage/);
+  assert.match(hopkins, /value="Hopkins Village, Belize"/);
+  assert.match(hopkins, /showOrnament=\{false\}/);
+  assert.match(hopkins, /WamuleClassicInfoTile compact/);
+  assert.match(hopkins, /page\.company\.location/);
   for (const component of ["WamuleClassicHeader", "WamuleClassicHero", "WamuleClassicInfoTile", "WamuleClassicNotice", "WamuleClassicPanel"]) {
     assert.match(hopkins, new RegExp("<" + component));
     assert.match(wamule, new RegExp(component));
@@ -45,8 +49,18 @@ test("Hopkins homepage and application flow each contain the scoped interactive 
   assert.match(applicationWizard, /onToggleMapFeature=\{onToggleMapFeature\}/);
   assert.match(applicationWizard, /preferred_map_feature_refs: selectedMapFeatureRefs/);
   assert.match(applicationWizard, /Selected map references/);
+  assert.match(applicationWizard, /detailsPlacement="below"/);
+  assert.match(applicationWizard, /data-testid="map-step-application-summary"/);
+  assert.match(applicationWizard, /readPublicWizardStep/);
+  assert.match(applicationWizard, /stepIsComplete\(step\.id\)/);
+  const publicMap = await read("../src/components/public/PublicLotMap.tsx");
+  assert.match(publicMap, /initialFit !== "outlines" \|\| !isHopkinsHostedMap \|\| !payload/);
+  assert.match(publicMap, /payload\.parcels[\s\S]*?mapPolygonBounds/);
+  assert.match(publicMap, /grid-rows-\[minmax\(20rem,1fr\)_minmax\(7rem,34dvh\)\]/);
+  assert.match(publicMap, /right-0 top-full[\s\S]*?w-\[min\(18rem,calc\(100vw-2rem\)\)\]/);
   assert.match(applicationWizard, /onRemoveMapFeature\(ref\)/);
   assert.doesNotMatch(applicationWizard, /preferred_parcel_ids:\s*selectedMapFeatureRefs/);
+  assert.match(await read("../src/pages/public/HopkinsPublicPage.tsx"), /publicMapReferenceLabel\(feature\.demo_label\)/);
 });
 
 test("template defaults do not change tenant, project, phase, or modules", () => {

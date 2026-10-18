@@ -5,6 +5,7 @@ import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry
 import { Button } from "../ui/Button";
 import { Field, Input, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
+import { isLocalOnlySubmission } from "../../lib/publicSubmissionMode";
 
 interface PublicInquiryModalProps {
   tenantSlug: string;
@@ -16,6 +17,7 @@ interface PublicInquiryModalProps {
   lotNumber: string;
   /** Reserved lots open in waitlist mode: no availability promise anywhere. */
   waitlist?: boolean;
+  localDemoOnly?: boolean;
   onClose: () => void;
 }
 
@@ -31,7 +33,7 @@ function fallbackUuid(): string {
   });
 }
 
-export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, localDemoOnly = isLocalOnlySubmission, onClose }: PublicInquiryModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -112,6 +114,10 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
     }
     setSubmitting(true);
     try {
+      if (localDemoOnly) {
+        setSent(true);
+        return;
+      }
       const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
         body: buildInquiryPayload({
           name: name.trim(),
@@ -155,7 +161,9 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
               {waitlist ? "You're on the Waitlist!" : "Inquiry Sent!"}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
-              {mapFeatureRef
+              {localDemoOnly
+                ? "This local preview stayed in this browser. No inquiry was saved or sent."
+                : mapFeatureRef
                 ? `The development team will follow up about your question on mapped outline ${lotNumber}. This map feature is not a saleable inventory listing.`
                 : waitlist
                 ? `We'll contact you if Lot ${lotNumber} becomes available. Joining the waitlist does not reserve the lot.`

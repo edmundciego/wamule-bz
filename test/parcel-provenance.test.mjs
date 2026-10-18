@@ -52,7 +52,7 @@ test("sales selectors and public payload use provenance-derived eligibility", as
   assert.match(dashboard, /isExistingInventoryRecord/);
   assert.match(lots, /isRasterDetection/);
   assert.match(publicMap, /parcel\.is_map_detection === true\)\.length/);
-  assert.match(publicMap, /raster map detections · review\/display only/);
+  assert.match(publicMap, /map outlines · review\/display only/);
   assert.match(publicMap, /not buyer-selection options/);
-  assert.match(publicMap, /not selectable for sale/);
+  assert.match(publicMap, /not offered for sale/);
 });

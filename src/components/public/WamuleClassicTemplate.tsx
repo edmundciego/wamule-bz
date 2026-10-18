@@ -54,6 +54,7 @@ export function WamuleClassicHero({
   facts,
   actions,
   sideContent,
+  showOrnament = true,
 }: {
   badge: ReactNode;
   title: string;
@@ -61,6 +62,7 @@ export function WamuleClassicHero({
   facts: ReactNode;
   actions?: ReactNode;
   sideContent: ReactNode;
+  showOrnament?: boolean;
 }) {
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
@@ -68,7 +70,7 @@ export function WamuleClassicHero({
         {badge}
         <h1 className="mt-5 max-w-3xl break-words font-display text-4xl font-semibold tracking-normal text-primary sm:text-5xl">{title}</h1>
         <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">{description}</p>
-        <div aria-hidden="true" className="wave-rule mt-6 h-3 w-56" />
+        {showOrnament ? <div aria-hidden="true" className="wave-rule mt-6 h-3 w-56" /> : null}
         <div className="mt-7 grid gap-3 sm:grid-cols-3">{facts}</div>
         {actions ? <div className="mt-7 flex flex-wrap gap-3">{actions}</div> : null}
       </div>
@@ -77,12 +79,25 @@ export function WamuleClassicHero({
   );
 }
 
-export function WamuleClassicInfoTile({ label, value }: { label: string; value: string }) {
+export function WamuleClassicInfoTile({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-[var(--shadow-card)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">{label}</p>
-      <p className="mt-1 font-display text-xl font-semibold text-primary">{value}</p>
+    <div className={compact ? "min-w-0 rounded-lg border bg-card px-3 py-2.5 shadow-[var(--shadow-card)]" : "rounded-lg border bg-card p-4 shadow-[var(--shadow-card)]"}>
+      <p className={compact ? "text-[10px] font-semibold uppercase tracking-[0.14em] text-secondary" : "text-xs font-semibold uppercase tracking-[0.18em] text-secondary"}>{label}</p>
+      <p className={compact ? "mt-0.5 break-words font-display text-base font-semibold leading-5 text-primary sm:text-lg" : "mt-1 font-display text-xl font-semibold text-primary"}>{value}</p>
     </div>
+  );
+}
+
+export function WamuleClassicBuildStamp({ scope }: { scope: { tenantSlug: string; projectSlug: string; phaseSlug: string } }) {
+  const params = new URLSearchParams({ tenant: scope.tenantSlug, project: scope.projectSlug, phase: scope.phaseSlug });
+  const commit = __BUILD_INFO__.commit || "unavailable";
+  const revisionState = __BUILD_INFO__.hasUncommittedChanges === null
+    ? "change state unavailable"
+    : __BUILD_INFO__.hasUncommittedChanges ? "local changes included" : "clean revision";
+  return (
+    <p className="text-[11px] leading-4 text-muted-foreground">
+      Build {commit.slice(0, 8)} · {revisionState} · {__BUILD_INFO__.environment} · <a href={`/version?${params.toString()}`} className="font-semibold text-primary underline underline-offset-2">Version details</a>
+    </p>
   );
 }
 

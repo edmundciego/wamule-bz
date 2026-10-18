@@ -57,7 +57,7 @@ Deno.serve(async (request) => {
     typeof inputModules[key] === "boolean" ? inputModules[key] : defaults[key],
   ]));
 
-  return json({ scope, siteExperience: { templateId, enabledModules } }, 200);
+  return json({ scope, siteExperience: { templateId, enabledModules, uiRestrictedAccess: settings.uiRestrictedAccess === true } }, 200);
 });
 
 function slug(value: string | null): string | null {

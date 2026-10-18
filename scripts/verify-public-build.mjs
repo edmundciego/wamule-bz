@@ -16,6 +16,7 @@ const FORBIDDEN_BUNDLE_MARKERS = [
   ["development fixture loader", /loadDemo/],
   ["synthetic E2E fixture marker", /synthetic-e2e/i],
   ["development-only demo query", /demo=1/i],
+  ["obsolete pipeline wording in public text", /Generated map reference|Source tier|Source price colors|Search source number candidates or generated map references|Printed-number OCR (?:candidate|status)|OCR candidate \d|raster map detections · review\/display only/i],
 ];
 
 function hasPdfHeader(path) {
@@ -81,7 +82,7 @@ function collectFiles(root, directory, files, errors) {
   }
 }
 
-export function verifyPublicBuild(directory = "dist") {
+export function verifyPublicBuild(directory = "dist", { staging = false } = {}) {
   const root = resolve(directory);
   const errors = [];
   let rootStat;
@@ -106,6 +107,21 @@ export function verifyPublicBuild(directory = "dist") {
     }
   }
 
+  if (staging) {
+    const headersFile = files.find((file) => file.relativePath === "_headers");
+    if (!headersFile) {
+      errors.push("staging _headers file is missing");
+    } else {
+      const headers = readFileSync(headersFile.path, "utf8");
+      if (!/^\/\*\s*\n[\s\S]*?X-Robots-Tag:\s*noindex,\s*nofollow/im.test(headers)) {
+        errors.push("staging _headers must apply X-Robots-Tag: noindex, nofollow at the site root");
+      }
+      if (!/Referrer-Policy:\s*strict-origin-when-cross-origin/i.test(headers)) {
+        errors.push("staging _headers must set a restrictive referrer policy");
+      }
+    }
+  }
+
   let textBytesScanned = 0;
   for (const file of files) {
     if (!TEXT_EXTENSIONS.has(extname(file.path).toLowerCase())) continue;
@@ -125,14 +141,25 @@ export function verifyPublicBuild(directory = "dist") {
 }
 
 function parseArgs(argv) {
-  if (argv.length === 0) return "dist";
-  if (argv.length === 2 && argv[0] === "--dir" && argv[1].trim()) return argv[1];
-  throw new Error("Usage: node scripts/verify-public-build.mjs [--dir <build-directory>]");
+  let directory = "dist";
+  let staging = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--staging") {
+      staging = true;
+    } else if (argv[index] === "--dir" && argv[index + 1]?.trim()) {
+      directory = argv[index + 1];
+      index += 1;
+    } else {
+      throw new Error("Usage: node scripts/verify-public-build.mjs [--staging] [--dir <build-directory>]");
+    }
+  }
+  return { directory, staging };
 }
 
 function main() {
   try {
-    const result = verifyPublicBuild(parseArgs(process.argv.slice(2)));
+    const options = parseArgs(process.argv.slice(2));
+    const result = verifyPublicBuild(options.directory, { staging: options.staging });
     if (result.errors.length > 0) {
       for (const error of result.errors) console.error(`[public-build:verify] FAIL: ${error}`);
       console.error(`[public-build:verify] scanned ${result.filesScanned} files in ${result.directory}`);

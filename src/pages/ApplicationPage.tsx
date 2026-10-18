@@ -11,9 +11,10 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
-import { WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../components/public/WamuleClassicTemplate";
+import { WamuleClassicBuildStamp, WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../components/public/WamuleClassicTemplate";
 import { applicationSchema } from "../lib/schemas";
 import { submitPublicFunction } from "../lib/publicSubmission";
+import { isLocalOnlySubmission } from "../lib/publicSubmissionMode";
 import { defaultPublicExperience, type PublicSiteModuleId, type PublicSiteTemplateId } from "../lib/publicExperience.mjs";
 import { usePublicSiteExperience } from "../lib/publicSiteExperience";
 import { buildInquiryPayload, type InquiryInterest } from "../../supabase/functions/_shared/inquiry-contract";
@@ -243,6 +244,11 @@ export function ApplicationPage({
       setSubmitError("This application page is not configured. Please contact the development team.");
       return;
     }
+    if (isLocalOnlySubmission) {
+      setSubmitted(true);
+      form.reset({ preferred_lot_refs: [], sustainability_terms_verified: true, legal_notice_acknowledged: false });
+      return;
+    }
     try {
       await submitPublicFunction("submit-public-application", buildPublicApplicationPayload({ tenant: applicationTenantSlug, ...values }));
     } catch (failure) {
@@ -395,7 +401,7 @@ export function ApplicationPage({
             {!hasSupabaseConfig ? <ErrorState message="Supabase environment variables are missing." /> : null}
             {submitted ? (
               <div className="crm-success-panel m-5 p-4 text-sm">
-                {applicationSettings.default_confirmation_message}
+                {isLocalOnlySubmission ? "Local preview complete. No application was saved or sent." : applicationSettings.default_confirmation_message}
               </div>
             ) : !applicationSettings.applications_open ? (
               <div className="crm-warning-panel m-5 p-4 text-sm">
@@ -639,6 +645,9 @@ export function ApplicationPage({
           </CardContent>
         </Card>
       </section> : null}
+      <footer className="mx-auto max-w-6xl border-t border-border px-4 py-5">
+        <WamuleClassicBuildStamp scope={PUBLIC_WAMULE_SCOPE} />
+      </footer>
     </main>
   );
 }
@@ -658,6 +667,7 @@ export function PublicInquiryPanel({
   confirmationNote,
   footerNote,
   mapHref = "#lots",
+  localDemoOnly = isLocalOnlySubmission,
 }: {
   companyName: string;
   tenantSlug: string;
@@ -673,6 +683,7 @@ export function PublicInquiryPanel({
   confirmationNote?: string;
   footerNote?: string;
   mapHref?: string;
+  localDemoOnly?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -707,6 +718,17 @@ export function PublicInquiryPanel({
     }
     if (specificLotSelected && !specificLotRef) {
       setError("Choose the specific lot you would like information about.");
+      return;
+    }
+    if (localDemoOnly) {
+      setSubmitted(true);
+      setEmailSent(false);
+      setName("");
+      setEmail("");
+      setPhone("");
+      setInterests([]);
+      setSpecificLotRef("");
+      setMessage("");
       return;
     }
     if (!hasSupabaseConfig) {
@@ -755,10 +777,10 @@ export function PublicInquiryPanel({
         <div className="grid gap-5 p-5 md:grid-cols-[0.9fr_1.1fr] md:items-center lg:p-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Project information</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-primary">Thanks — we received your request.</h2>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-primary">{localDemoOnly ? "Local preview complete." : "Thanks — we received your request."}</h2>
           </div>
           <div className="rounded-xl border border-success/20 bg-success/10 p-4 text-sm leading-6 text-foreground">
-            <p>Our team will review your questions and follow up using the contact information you provided.</p>
+            <p>{localDemoOnly ? "This request stayed in your browser. No inquiry was saved or sent." : "Our team will review your questions and follow up using the contact information you provided."}</p>
             <p className="mt-2 text-muted-foreground">
               {emailSent
                 ? "A confirmation email was sent. Your request does not reserve a lot or guarantee approval."

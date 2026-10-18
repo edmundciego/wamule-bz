@@ -1,4 +1,5 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, normalize, resolve } from "node:path";
 import { createSyntheticReviewManifest } from "./e2e/fixtures/map-review-synthetic/create-manifest.mjs";
 import { defineConfig, type Plugin } from "vite";
@@ -159,4 +160,21 @@ function correctionWorkspacePlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), e2eFixturePlugin(), correctionWorkspacePlugin()],
+  define: {
+    __BUILD_INFO__: JSON.stringify(createBuildInfo()),
+  },
 });
+
+function createBuildInfo() {
+  let commit = "unavailable";
+  let hasUncommittedChanges: boolean | null = null;
+  try {
+    commit = execFileSync("git", ["rev-parse", "--short=12", "HEAD"], { encoding: "utf8" }).trim();
+    hasUncommittedChanges = Boolean(execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], { encoding: "utf8" }).trim());
+  } catch {
+    // Source archives without Git metadata can still be built; the UI reports it as unavailable.
+  }
+  const rawEnvironment = process.env.VITE_BUILD_ENV ?? process.env.NETLIFY_CONTEXT ?? (process.env.NODE_ENV === "production" ? "production" : "development");
+  const environment = /^[a-z0-9_-]{1,40}$/i.test(rawEnvironment) ? rawEnvironment : "unavailable";
+  return { commit, hasUncommittedChanges, buildTime: new Date().toISOString(), environment };
+}

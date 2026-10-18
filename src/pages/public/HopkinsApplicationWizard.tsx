@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, MapPin, Send } from "lucide-react";
 import { ChoiceCard, FormStep, SummaryLine } from "../ApplicationPage";
 import { PublicLotMap, type PublicLotParcel } from "../../components/public/PublicLotMap";
@@ -7,11 +7,14 @@ import { Card, CardContent } from "../../components/ui/Card";
 import { Field, Input, Textarea } from "../../components/ui/Field";
 import { ErrorState } from "../../components/ui/State";
 import { submitPublicFunction } from "../../lib/publicSubmission";
+import { isLocalOnlySubmission } from "../../lib/publicSubmissionMode";
+import { readPublicWizardStep, writePublicWizardStep } from "../../lib/publicDraftState.mjs";
 import { cn } from "../../lib/utils";
 import type { PublicSiteModuleId } from "../../lib/publicExperience.mjs";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 
 const HOPKINS_SCOPE = { tenant: "hopkins-grove", project: "hopkins-grove", phase: "initial" } as const;
+const HOPKINS_DRAFT_SCOPE = { tenantSlug: HOPKINS_SCOPE.tenant, projectSlug: HOPKINS_SCOPE.project, phaseSlug: HOPKINS_SCOPE.phase } as const;
 const SUPPORTED_PROJECT_USES = ["Residential", "Commercial", "Agriculture", "Investment", "Rental Property", "Other"] as const;
 
 const applicationSteps = [
@@ -57,6 +60,7 @@ type HopkinsApplicationWizardProps = {
   onToggleMapFeature: (parcel: PublicLotParcel) => void;
   onParcelsLoaded: (features: PublicLotParcel[]) => void;
   onRemoveMapFeature: (ref: string) => void;
+  localDemoOnly?: boolean;
 };
 
 function createSubmissionReference(): string {
@@ -95,14 +99,22 @@ export function HopkinsApplicationWizard({
   onToggleMapFeature,
   onParcelsLoaded,
   onRemoveMapFeature,
+  localDemoOnly = isLocalOnlySubmission,
 }: HopkinsApplicationWizardProps) {
   const [draft, setDraft] = useState<ApplicantDraft>(emptyDraft);
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeStep, setActiveStep] = useState(() => typeof window === "undefined" ? 0 : readPublicWizardStep(window.localStorage, HOPKINS_DRAFT_SCOPE, applicationSteps.length));
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [mapDataLoaded, setMapDataLoaded] = useState(false);
+  const [mapLoadError, setMapLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ApplicantErrorKey, string>>>({});
   const [submissionReference, setSubmissionReference] = useState(createSubmissionReference);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ message: string; id?: number } | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    writePublicWizardStep(window.localStorage, HOPKINS_DRAFT_SCOPE, activeStep, applicationSteps.length);
+  }, [activeStep]);
   const configuredUses = applicationSettings.intendedUses.filter((use) => SUPPORTED_PROJECT_USES.includes(use as typeof SUPPORTED_PROJECT_USES[number]));
   const intendedUses = configuredUses.length ? configuredUses : [...SUPPORTED_PROJECT_USES];
   const configuredMapLimit = Number(applicationSettings.maxMapPreferences);
@@ -114,6 +126,11 @@ export function HopkinsApplicationWizard({
     setDraft((current) => ({ ...current, [field]: value }));
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
     setSubmitError(null);
+    const fieldStep = ["name", "address", "nationality", "occupation", "phone", "email"].includes(field)
+      ? 0
+      : ["intendedUse", "otherUse"].includes(field) ? 1
+        : field === "notes" ? 3 : 4;
+    setCompletedSteps((current) => current.filter((step) => step !== fieldStep));
   }
 
   function validateStep(step: number): Partial<Record<ApplicantErrorKey, string>> {
@@ -141,7 +158,26 @@ export function HopkinsApplicationWizard({
     const errors = validateStep(activeStep);
     setFieldErrors((current) => ({ ...current, ...errors }));
     if (Object.keys(errors).length > 0) return;
+    if (activeStep === 2 && modules.map && !mapDataLoaded) {
+      setMapLoadError("The project map has not loaded yet. Keep this step open and try again.");
+      return;
+    }
+    setCompletedSteps((current) => current.includes(activeStep) ? current : [...current, activeStep]);
     setActiveStep((step) => Math.min(step + 1, applicationSteps.length - 1));
+  }
+
+  function stepIsComplete(step: number): boolean {
+    if (step === 4) return Boolean(receipt);
+    if (!completedSteps.includes(step)) return false;
+    if ((step === 0 || step === 1) && Object.keys(validateStep(step)).length > 0) return false;
+    if (step === 2 && modules.map && !mapDataLoaded) return false;
+    return true;
+  }
+
+  function handleMapParcelsLoaded(features: PublicLotParcel[]) {
+    setMapDataLoaded(true);
+    setMapLoadError(null);
+    onParcelsLoaded(features);
   }
 
   async function submitApplication(event: FormEvent<HTMLFormElement>) {
@@ -163,6 +199,11 @@ export function HopkinsApplicationWizard({
 
     setSubmitting(true);
     try {
+      if (localDemoOnly) {
+        setReceipt({ message: "Local preview complete. No application was saved or sent." });
+        setCompletedSteps((current) => current.includes(4) ? current : [...current, 4]);
+        return;
+      }
       const data = await submitPublicFunction<{ ok?: boolean; message?: string; application_id?: number }>("submit-hopkins-project-application", buildHopkinsProjectApplicationPayload({
         submission_reference: submissionReference,
         applicant_full_name: draft.name,
@@ -191,6 +232,8 @@ export function HopkinsApplicationWizard({
     setDraft(emptyDraft());
     setActiveStep(0);
     setFieldErrors({});
+    setCompletedSteps([]);
+    setMapDataLoaded(false);
     setSubmissionReference(createSubmissionReference());
     setReceipt(null);
     setSubmitError(null);
@@ -226,7 +269,7 @@ export function HopkinsApplicationWizard({
       <div className="mb-5 overflow-x-auto rounded-xl border border-primary/15 bg-primary-soft/35 p-2 shadow-sm shadow-primary/5">
         <div className="flex min-w-max gap-2">
           {applicationSteps.map((step) => {
-            const complete = activeStep > step.id;
+            const complete = stepIsComplete(step.id);
             const active = activeStep === step.id;
             return (
               <button
@@ -263,8 +306,8 @@ export function HopkinsApplicationWizard({
           ) : (
             <form onSubmit={(event) => void submitApplication(event)}>
               {submitError ? <div className="p-5 pb-0"><ErrorState message={submitError} /></div> : null}
-              <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="min-w-0 p-5 lg:p-7">
+              <div className={cn("grid gap-0", activeStep === 2 ? "grid-cols-1" : "lg:grid-cols-[minmax(0,1fr)_320px]")}>
+                <div className="min-w-0 p-4 sm:p-5 lg:p-7">
                   {activeStep === 0 ? (
                     <FormStep title="About You" goal={applicationSteps[0].goal}>
                       <div className="grid gap-4 md:grid-cols-2">
@@ -302,7 +345,7 @@ export function HopkinsApplicationWizard({
                       {modules.map ? (
                         <div className="grid gap-3">
                           <div className="grid gap-2">
-                            <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
+                            <div className="min-w-0 overflow-visible rounded-xl border border-border">
                               <PublicLotMap
                                 tenantSlug={HOPKINS_SCOPE.tenant}
                                 projectSlug={HOPKINS_SCOPE.project}
@@ -310,9 +353,12 @@ export function HopkinsApplicationWizard({
                                 showPrices={modules.pricing}
                                 enableInquiry
                                 initialView="tier"
+                                initialFit="outlines"
+                                detailsPlacement="below"
+                                localDemoOnly={localDemoOnly}
                                 selectedMapFeatureRefs={selectedMapFeatureRefs}
                                 onToggleMapFeature={onToggleMapFeature}
-                                onParcelsLoaded={onParcelsLoaded}
+                                onParcelsLoaded={handleMapParcelsLoaded}
                               />
                             </div>
                             <p className="text-xs text-muted-foreground">Choose up to {maxMapPreferences} optional references. Outlines are map references, not saleable parcel IDs; selecting one does not reserve or allocate a lot.</p>
@@ -330,7 +376,7 @@ export function HopkinsApplicationWizard({
                                 ))}
                               </ul>
                             ) : <p className="text-sm text-muted-foreground">No map outlines selected.</p>}
-                            {mapPreferenceError ? <p role="alert" className="text-sm text-danger">{mapPreferenceError}</p> : null}
+                            {mapPreferenceError || mapLoadError ? <p role="alert" className="text-sm text-danger">{mapPreferenceError || mapLoadError}</p> : null}
                           </fieldset>
                         </div>
                       ) : <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">Map preferences are not enabled for this project. You may continue with general project interest.</p>}
@@ -380,18 +426,32 @@ export function HopkinsApplicationWizard({
                   ) : null}
                 </div>
 
-                <aside className="hidden border-primary/10 bg-primary/95 p-5 text-white lg:block lg:border-l lg:p-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/65">Application Summary</p>
-                  <div className="mt-5 grid gap-2 text-sm">
+                {activeStep === 2 ? null : (
+                  <aside className="hidden border-primary/10 bg-primary/95 p-5 text-white lg:block lg:border-l lg:p-6">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/65">Application Summary</p>
+                    <div className="mt-5 grid gap-2 text-sm">
+                      <SummaryLine label="Project" value={projectName} />
+                      <SummaryLine label="Step" value={`${activeStep + 1} of ${applicationSteps.length}`} />
+                      {summaryRows.map((row) => <SummaryLine key={row.label} {...row} />)}
+                    </div>
+                    <div className="mt-6 rounded-lg border border-white/15 bg-white/[0.06] p-4 text-sm leading-6 text-white/80">
+                      This application is for staff review. It does not reserve or assign a map outline or parcel.
+                    </div>
+                  </aside>
+                )}
+              </div>
+
+              {activeStep === 2 ? (
+                <details className="border-t border-border bg-muted/25 px-4 py-3 sm:px-5 lg:px-7" data-testid="map-step-application-summary">
+                  <summary className="focus-ring min-h-11 cursor-pointer py-2 text-sm font-semibold text-primary">Application summary</summary>
+                  <div className="grid gap-2 pb-2 text-sm sm:grid-cols-2">
                     <SummaryLine label="Project" value={projectName} />
                     <SummaryLine label="Step" value={`${activeStep + 1} of ${applicationSteps.length}`} />
                     {summaryRows.map((row) => <SummaryLine key={row.label} {...row} />)}
+                    <p className="sm:col-span-2 rounded-md border border-border bg-card p-3 text-xs leading-5 text-muted-foreground">Map references are optional preferences. This application does not reserve or assign an outline or parcel.</p>
                   </div>
-                  <div className="mt-6 rounded-lg border border-white/15 bg-white/[0.06] p-4 text-sm leading-6 text-white/80">
-                    This application is for staff review. It does not reserve or assign a map outline or parcel.
-                  </div>
-                </aside>
-              </div>
+                </details>
+              ) : null}
 
               <div className="flex flex-col-reverse gap-3 border-t border-border bg-muted/40 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <Button type="button" variant="outline" disabled={activeStep === 0 || submitting} onClick={() => setActiveStep((step) => Math.max(step - 1, 0))}>

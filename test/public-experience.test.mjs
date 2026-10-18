@@ -8,10 +8,12 @@ const hopkins = { tenantSlug: "hopkins-grove", projectSlug: "hopkins-grove", pha
 test("public template defaults are independent of tenant and project scope", () => {
   assert.deepEqual(defaultPublicExperience(wamule), {
     templateId: "wamule-classic",
+    uiRestrictedAccess: false,
     enabledModules: { map: true, inquiry: true, application: true, pricing: true },
   });
   assert.deepEqual(defaultPublicExperience(hopkins), {
     templateId: "wamule-classic",
+    uiRestrictedAccess: false,
     enabledModules: { map: true, inquiry: true, application: true, pricing: true },
   });
 });
@@ -24,6 +26,7 @@ test("invalid template values fall back globally and never alter application set
   });
   assert.deepEqual(config, {
     templateId: "wamule-classic",
+    uiRestrictedAccess: false,
     enabledModules: { map: false, inquiry: true, application: true, pricing: true },
   });
   assert.equal("applicationSettings" in config, false);

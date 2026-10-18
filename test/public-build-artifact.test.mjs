@@ -83,3 +83,20 @@ test("public build verifier refuses symlinks that could hide outside files", (t)
   const report = verifyPublicBuild(root);
   assert.ok(report.errors.some((error) => error.includes("symlink is not allowed")));
 });
+
+
+test("staging public build requires noindex response headers", (t) => {
+  const root = makeBuild(t);
+  assert.ok(verifyPublicBuild(root, { staging: true }).errors.some((error) => error.includes("_headers file is missing")));
+  writeFileSync(join(root, "_headers"), "/*\n  X-Robots-Tag: noindex, nofollow\n  Referrer-Policy: strict-origin-when-cross-origin\n  X-Content-Type-Options: nosniff\n");
+  assert.deepEqual(verifyPublicBuild(root, { staging: true }).errors, []);
+});
+
+test("public build rejects obsolete pipeline labels in the public route bundle", (t) => {
+  const root = makeBuild(t);
+  const publicRoute = join(root, "assets", "HopkinsPublicPage-a1B2c3.js");
+  for (const label of ["Generated map reference", "Source tier", "Source price colors", "Printed-number OCR candidate"]) {
+    writeFileSync(publicRoute, `const label = ${JSON.stringify(label)};`);
+    assert.ok(verifyPublicBuild(root).errors.some((error) => error.includes("obsolete pipeline wording")), `accepted public label: ${label}`);
+  }
+});

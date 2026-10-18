@@ -11,9 +11,6 @@ const AdminLayout = lazy(() =>
 const ProtectedRoute = lazy(() =>
   import("./components/layout/ProtectedRoute").then((module) => ({ default: module.ProtectedRoute })),
 );
-const ApplicationPage = lazy(() =>
-  import("./pages/ApplicationPage").then((module) => ({ default: module.ApplicationPage })),
-);
 const ApplicationsPage = lazy(() =>
   import("./pages/ApplicationsPage").then((module) => ({ default: module.ApplicationsPage })),
 );
@@ -60,6 +57,9 @@ const EmbeddableMapPage = lazy(() =>
 const HopkinsPublicPage = lazy(() =>
   import("./pages/public/HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })),
 );
+const PublicVersionPage = lazy(() =>
+  import("./pages/public/PublicVersionPage").then((module) => ({ default: module.PublicVersionPage })),
+);
 const LotsPage = lazy(() => import("./pages/LotsPage").then((module) => ({ default: module.LotsPage })));
 const LeadsPage = lazy(() => import("./pages/LeadsPage").then((module) => ({ default: module.LeadsPage })));
 const LogoutPage = lazy(() => import("./pages/LogoutPage").then((module) => ({ default: module.LogoutPage })));
@@ -74,7 +74,8 @@ export default function App() {
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>
         <Route path="/" element={publicHomepage} />
-        <Route path="/apply" element={hostHomepage ? <HopkinsPublicPage /> : <ApplicationPage />} />
+        <Route path="/version" element={<PublicVersionPage />} />
+        <Route path="/apply" element={hostHomepage ? <HopkinsPublicPage /> : <PublicExperienceRoute scopeName="wamule" />} />
         <Route path="/hopkins" element={<HopkinsPublicPage />} />
         <Route path="/hopkins/apply" element={<HopkinsPublicPage />} />
         <Route path="/hopkins/application" element={<HopkinsPublicPage />} />

@@ -132,12 +132,13 @@ test("demo map response keeps map features scoped and omits parcel sales fields"
   assert.match(demoBranch, /output\.source_tier_status/);
 });
 
-test("Hopkins source labels stay distinct from generated map references and retain ambiguity", async () => {
+test("Hopkins source labels stay distinct from map references and retain ambiguity", async () => {
   const map = await read("src/components/public/PublicLotMap.tsx");
   assert.match(map, /source-image-cross-checked/);
   assert.match(map, /source-image-ambiguous-multiple-lots/);
-  assert.match(map, /Printed-number OCR candidate/);
-  assert.match(map, /Generated map reference/);
+  assert.match(map, /Possible printed plan number/);
+  assert.match(map, /Map reference/);
+  assert.doesNotMatch(map, /Printed-number OCR candidate|Generated map reference/);
   assert.match(map, /source_printed_lot_number_candidates_ambiguous/);
   assert.match(map, /source-tier-ambiguous-multiple-colors/);
   // The recreated legend uses the source fill palette, not the older PoC chips.

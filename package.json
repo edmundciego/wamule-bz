@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:staging": "node scripts/build-staging.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test",
@@ -27,6 +28,7 @@
     "tenant:verify": "node scripts/verify-tenant-build.mjs",
     "probe:production-map": "node scripts/probe-production-map.mjs",
     "verify:public-build": "node scripts/verify-public-build.mjs",
+    "verify:public-build:staging": "node scripts/verify-public-build.mjs --staging",
     "tenant:publish": "node scripts/tenant-publish.mjs",
     "map:publish": "node scripts/publish-lots.mjs",
     "map:audit": "node scripts/audit-plot-counts.mjs",
