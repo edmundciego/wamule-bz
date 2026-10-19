@@ -23,7 +23,7 @@ test("Hopkins always renders the shared Wamule homepage composition", async () =
   assert.match(hopkins, /filter\(\(tier\) => tier\.group === "Residential"\)/);
   assert.doesNotMatch(hopkins, /WamuleClassicInfoTile compact|showOrnament=\{false\}/);
   assert.match(hopkins, /title="Plot Categories & Prices"/);
-  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"\s*\/>/);
+  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"(?: onCatalogLoaded=\{setPublishedCatalog\})?\s*\/>/);
   assert.match(hopkins, /id="hopkins-map-preferences-title"/);
   assert.match(hopkins, /Map references are preferences only\. They are not saleable parcel inventory, do not confirm availability/);
   assert.match(hopkins, /aria-label=\{"Remove map preference " \+ label\}/);
@@ -101,7 +101,7 @@ test("Hopkins homepage and map share every source-backed plot category", async (
   assert.match(categories, /corner_premium/);
   assert.match(categories, /financing_source_note/);
   assert.match(categories, /Plan label: \{tier\.source_label\}/);
-  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"\s*\/>/);
+  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"(?: onCatalogLoaded=\{setPublishedCatalog\})?\s*\/>/);
   assert.match(map, /<HopkinsPlotCategories\s*\/>/);
   assert.match(applicationWizard, /<PublicLotMap/);
   assert.match(map, /tier_color_hex: tier\?\.fill/);

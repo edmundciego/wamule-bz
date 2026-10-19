@@ -1,0 +1,1 @@
+export function readMapWorkspaceRows(fetchPage: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; count: number | null; error: { message: string; code?: string } | null }>): Promise<{data: unknown[] | null; error: {code: string; message: string} | null}>;

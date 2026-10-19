@@ -8,6 +8,7 @@
 
 # Dependencies and generated output
 node_modules
+.venv-map-studio/
 dist/
 graphify-out/
 out/

@@ -16,6 +16,8 @@ import { defaultPublicExperience, type PublicSiteModuleId } from "../../lib/publ
 import { publicMapReferenceLabel } from "../../lib/hopkinsDemoLabels";
 import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
 import { readPublicMapPreferences, retainKnownMapPreferences, writePublicMapPreferences } from "../../lib/publicDraftState.mjs";
+import type { PackageCategory } from "../../lib/mapPackage.mjs";
+import { packageStartingPrice } from "../../lib/publishedMapPackage";
 
 const HOPKINS_SCOPE = { tenant: "hopkins-grove", project: "hopkins-grove", phase: "initial" } as const;
 const HOPKINS_SITE_SCOPE = { tenantSlug: "hopkins-grove", projectSlug: "hopkins-grove", phaseSlug: "initial" } as const;
@@ -217,6 +219,8 @@ function HopkinsWamuleClassicPage({
   localDemoOnly: boolean;
   hasSupabaseConfig: boolean;
 }) {
+  const [publishedCatalog, setPublishedCatalog] = useState<PackageCategory[] | null>(null);
+  const startingPrice = publishedCatalog ? packageStartingPrice(publishedCatalog) : hopkinsStartingPriceLabel;
   const selectedMapPreferences = selectedMapFeatureRefs.map((ref) => ({
     ref,
     label: mapFeatureLabels.find((item) => item.ref === ref)?.label ?? "Map reference",
@@ -246,7 +250,7 @@ function HopkinsWamuleClassicPage({
         title={page.project.name + " Project Application"}
         description={page.company.description}
         facts={<>
-          <WamuleClassicInfoTile label="Starting price" value={hopkinsStartingPriceLabel} />
+          <WamuleClassicInfoTile label="Starting price" value={startingPrice} />
           <WamuleClassicInfoTile label="Lot sizes" value={hopkinsHomesiteSizeLabel} />
           <WamuleClassicInfoTile label="Project phase" value={page.phase.name} />
         </>}
@@ -255,10 +259,10 @@ function HopkinsWamuleClassicPage({
         </a> : null}
         sideContent={<WamuleClassicPanel
           title="Plot Categories & Prices"
-          description="Hopkins categories and prices shown on the source plan."
-          trailing={<Badge tone="slate">Source plan</Badge>}
+          description={publishedCatalog ? "Current project categories and pricing." : "Hopkins categories and prices shown on the source plan."}
+          trailing={<Badge tone="slate">{publishedCatalog ? "Project catalogue" : "Source plan"}</Badge>}
         >
-          <HopkinsPlotCategories variant="cards" />
+          <HopkinsPlotCategories variant="cards" onCatalogLoaded={setPublishedCatalog} />
           <section className="mt-4 border-t border-border pt-4" aria-labelledby="hopkins-map-preferences-title">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>

@@ -61,6 +61,7 @@ const PublicVersionPage = lazy(() =>
   import("./pages/public/PublicVersionPage").then((module) => ({ default: module.PublicVersionPage })),
 );
 const LotsPage = lazy(() => import("./pages/LotsPage").then((module) => ({ default: module.LotsPage })));
+const MapsPage = lazy(() => import("./pages/MapsPage").then((module) => ({ default: module.MapsPage })));
 const LeadsPage = lazy(() => import("./pages/LeadsPage").then((module) => ({ default: module.LeadsPage })));
 const LogoutPage = lazy(() => import("./pages/LogoutPage").then((module) => ({ default: module.LogoutPage })));
 const PaymentsPage = lazy(() => import("./pages/PaymentsPage").then((module) => ({ default: module.PaymentsPage })));
@@ -121,6 +122,7 @@ export default function App() {
             <Route path="/information-centre" element={<InformationCenterPage />} />
           ) : null}
           <Route path="/lots" element={<LotsPage />} />
+          <Route path="/maps" element={<MapsPage />} />
           <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/customers/:id" element={<CustomerDetailPage />} />

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { allowlistTheme } from "../../../src/lib/theme.ts";
 import { safeTenantThemeCssUrl } from "./public-theme.mjs";
+import { publicMapPackage } from "./map-package-public.mjs";
 import { assignPublicLotReferences } from "../_shared/public-lot-reference.ts";
 import { isAvailableForSalesSelection, isEligibleForPublicInquiry, isRasterDetection } from "../_shared/parcel-provenance.mjs";
 import {
@@ -155,6 +156,7 @@ Deno.serve(async (request) => {
   // Absent = alias to the tenant's default project (see resolveProject).
   const projectParam = (url.searchParams.get("project") ?? "").trim().toLowerCase() || null;
   const phaseParam = (url.searchParams.get("phase") ?? "").trim().toLowerCase() || null;
+  const catalogOnly = url.searchParams.get("catalog_only") === "true";
   if (phaseParam && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(phaseParam)) {
     return json({ error: "Invalid phase slug." }, 400);
   }
@@ -194,6 +196,39 @@ Deno.serve(async (request) => {
 
   const branding = buildBranding(organization, project, activeVersion, publicSettings);
   const theme = buildTheme(publicSettings, organization.id, project);
+
+  // Additive compatibility: deployments without the Studio migration keep
+  // their existing map path. A published package takes precedence only in
+  // its exact tenant/project/phase, through an allowlisted projection.
+  if (project?.id && phase?.id) {
+    const packaged = await supabase.rpc("get_published_project_map_package", {
+      p_tenant_id: organization.id, p_project_id: project.id, p_phase_id: phase.id,
+    });
+    if (packaged.error && !["PGRST202", "42883"].includes(packaged.error.code)) {
+      console.error("get-public-lots package lookup failed", packaged.error.code);
+      return json({ error: "Could not load the published project map." }, 503);
+    }
+    if (packaged.data) {
+      try {
+        const display = publicMapPackage(packaged.data);
+        if (catalogOnly) return json({ map_package_catalog: display?.categories ?? [] });
+        let imageUrl: string | null = null;
+        if (packaged.data.background_path) {
+          const signed = await supabase.storage.from("project-map-packages").createSignedUrl(packaged.data.background_path, 3600);
+          if (signed.error) throw new Error("Could not load the published display image.");
+          imageUrl = signed.data.signedUrl;
+        }
+        return json({ tenant: { name: organization.name, slug: organization.slug },
+          project: { slug: project.slug, name: project.name }, phase: { slug: phase.slug, name: phase.name },
+          map_experience_mode: project.mapExperienceMode, masterplan_version_id: null,
+          masterplan_image_url: imageUrl, masterplan_preview_url: null,
+          branding: { ...branding.public, masterplan_image_url: imageUrl }, theme, parcels: [], map_package: display });
+      } catch {
+        return json({ error: "Could not load the published project map." }, 503);
+      }
+    }
+  }
+  if (catalogOnly) return json({ map_package_catalog: null });
 
   if (project?.mapExperienceMode === "demo") {
     if (!project.id || !phase?.id) return json({ error: "The demo map has no active project phase." }, 503);

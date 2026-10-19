@@ -50,6 +50,7 @@ export function EmbeddableMapPage() {
         onSelectLot={(parcel) => {
           const params = Object.fromEntries(searchParams.entries());
           params.lot = localPreviewEnabled ? demoPlotLabel(parcel) : parcel.demo_label ?? parcel.lot_number;
+          if (parcel.is_studio_feature && parcel.map_feature_ref) params.lot = parcel.map_feature_ref;
           setSearchParams(params, { replace: true });
         }}
       />

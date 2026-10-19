@@ -1,4 +1,7 @@
 import { HOPKINS_TIER_ORDER, hopkinsTierSource, sourcePrice, type HopkinsTier } from "../../lib/hopkinsPlotCategoryData";
+import type { PackageCategory } from "../../lib/mapPackage.mjs";
+import { usePublishedMapCatalog } from "../../lib/usePublishedMapCatalog";
+import { PublishedCategoryGuide } from "./PublishedCategoryGuide";
 
 function CategoryCard({ tier }: { tier: HopkinsTier }) {
   return (
@@ -35,7 +38,10 @@ function SourcePricingNotes({ compact = false }: { compact?: boolean }) {
 }
 
 /** Shared category catalogue for the Hopkins homepage, application map and map price guide. */
-export function HopkinsPlotCategories({ variant = "legend" }: { variant?: "cards" | "legend" }) {
+export function HopkinsPlotCategories({ variant = "legend", onCatalogLoaded }: { variant?: "cards" | "legend"; onCatalogLoaded?: (value: PackageCategory[] | null) => void }) {
+  const { categories: publishedCatalog, error: catalogError } = usePublishedMapCatalog({tenant:"hopkins-grove",project:"hopkins-grove",phase:"initial"},onCatalogLoaded);
+  if (catalogError) return <p className="text-sm text-muted-foreground" role="status">Category prices are temporarily unavailable. Please contact the project team.</p>;
+  if (publishedCatalog) return <PublishedCategoryGuide categories={publishedCatalog} cards={variant==="cards"} />;
   const categories = HOPKINS_TIER_ORDER.map((key) => hopkinsTierSource.tiers[key]);
 
   if (variant === "cards") {

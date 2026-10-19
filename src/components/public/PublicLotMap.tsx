@@ -48,6 +48,8 @@ import {
   publicMapReferenceLabel,
 } from "../../lib/hopkinsDemoLabels";
 import { isLocalOnlySubmission } from "../../lib/publicSubmissionMode";
+import { PublishedPackageMap } from "./PublishedPackageMap";
+import { publishedFeatureParcel, type PublishedMapPackage } from "../../lib/publishedMapPackage";
 
 export interface PublicLotParcel {
   /** Generated in the browser only for SVG interaction; never a database key. */
@@ -57,6 +59,7 @@ export interface PublicLotParcel {
   /** Stable geometry identity exposed only for an explicitly scoped demo map. */
   map_feature_ref?: string;
   is_demo_feature?: boolean;
+  is_studio_feature?: boolean;
   /** Coarse, server-derived classification; raw provenance stays private. */
   is_map_detection?: boolean;
   /** Server-derived gate for new public lot selections. */
@@ -92,6 +95,7 @@ export interface PublicLotParcel {
 type PublicLotStatus = ParcelStatus | "Review pending" | "Demo";
 
 interface MapPayload {
+  map_package?: PublishedMapPackage;
   tenant: { name: string; slug: string };
   project: { slug: string; name: string } | null;
   masterplan_image_url: string | null;
@@ -644,7 +648,9 @@ export function PublicLotMap({
         const responsePayload = body as MapPayload;
         const hopkinsSourcePayload = responsePayload.tenant.slug === "hopkins-grove"
           && responsePayload.project?.slug === "hopkins-grove";
-        const parcels: PublicLotParcel[] = responsePayload.map_experience_mode === "demo"
+        const parcels: PublicLotParcel[] = responsePayload.map_package
+          ? responsePayload.map_package.features.map(publishedFeatureParcel)
+          : responsePayload.map_experience_mode === "demo"
           ? (responsePayload.features ?? []).map((feature, index) => {
             const sourceTierKey = hopkinsSourcePayload && typeof feature.source_tier_key === "string"
               ? feature.source_tier_key
@@ -1649,6 +1655,15 @@ export function PublicLotMap({
     setHoveredLocalKey(null);
     setInternalSelectedKey(null);
     onClearSelection?.();
+  }
+
+  if (!loading && !error && basePayload?.map_package && !correctionMapLayer) {
+    return <PublishedPackageMap key={basePayload.map_package.package_id}
+      map={basePayload.map_package} backgroundUrl={basePayload.masterplan_image_url}
+      tenantSlug={tenantSlug} projectSlug={projectSlug} phaseSlug={phaseSlug}
+      initialLotNumber={initialLotNumber} onSelectLot={onSelectLot} onClearSelection={onClearSelection}
+      onToggleMapFeature={onToggleMapFeature} selectedMapFeatureRefs={selectedMapFeatureRefs}
+      showPrices={showPrices} enableInquiry={enableInquiry} localDemoOnly={localDemoOnly} />;
   }
 
   return (

@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "studio": "vite --config apps/map-studio/vite.config.ts",
+    "studio:build": "tsc -p apps/map-studio/tsconfig.json && vite build --config apps/map-studio/vite.config.ts",
+    "studio:extract": "python3 scripts/map-studio/extract.py",
+    "studio:test": "python3 -m unittest discover -s test/map-studio -p 'test_*.py'",
+    "studio:verify-db": "node scripts/map-studio/db-rehearsal.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:staging": "node scripts/build-staging.mjs",
@@ -50,6 +55,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
     "@eslint/js": "^9.24.0",
     "@playwright/test": "^1.64.0",
     "@types/node": "^22.14.0",
