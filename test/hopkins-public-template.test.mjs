@@ -22,13 +22,16 @@ test("Hopkins always renders the shared Wamule homepage composition", async () =
   assert.match(hopkins, /hopkinsTierSource\.source_pricing\.currency_symbol/);
   assert.match(hopkins, /filter\(\(tier\) => tier\.group === "Residential"\)/);
   assert.doesNotMatch(hopkins, /WamuleClassicInfoTile compact|showOrnament=\{false\}/);
-  assert.match(hopkins, /title="Available Lot Preferences"/);
+  assert.match(hopkins, /title="Plot Categories & Prices"/);
+  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"\s*\/>/);
+  assert.match(hopkins, /id="hopkins-map-preferences-title"/);
   assert.match(hopkins, /Map references are preferences only\. They are not saleable parcel inventory, do not confirm availability/);
   assert.match(hopkins, /aria-label=\{"Remove map preference " \+ label\}/);
   assert.doesNotMatch(hopkins, /public_availability_display|show_available_lot_count_publicly|65 x 101|75 x 101/);
   const sectionOrder = [
     hopkins.indexOf("<WamuleClassicHero"),
-    hopkins.indexOf('title="Available Lot Preferences"'),
+    hopkins.indexOf('title="Plot Categories & Prices"'),
+    hopkins.indexOf('id="hopkins-map-preferences-title"'),
     hopkins.indexOf("<PublicInquiryPanel"),
     hopkins.indexOf("<WamuleClassicNotice"),
     hopkins.indexOf('<section id="lots"'),
@@ -74,6 +77,39 @@ test("Hopkins homepage price and lot-size facts use Hopkins source information",
   assert.match(hopkins, /hopkinsStartingPriceLabel/);
   assert.match(hopkins, /hopkinsHomesiteSizeLabel = "Quarter-acre homesites"/);
   assert.doesNotMatch(hopkins, /payment option|monthly payment|65 x 101|75 x 101/);
+});
+
+test("Hopkins homepage and map share every source-backed plot category", async () => {
+  const [hopkins, categories, categoryData, map, applicationWizard, tierSource] = await Promise.all([
+    read("../src/pages/public/HopkinsPublicPage.tsx"),
+    read("../src/components/public/HopkinsPlotCategories.tsx"),
+    read("../src/lib/hopkinsPlotCategoryData.ts"),
+    read("../src/components/public/PublicLotMap.tsx"),
+    read("../src/pages/public/HopkinsApplicationWizard.tsx"),
+    read("../map-input/hopkins.tiers.json"),
+  ]);
+  const source = JSON.parse(tierSource);
+  const tierEntries = Object.entries(source.tiers);
+
+  assert.equal(tierEntries.length, 7);
+  assert.match(categories, /HOPKINS_TIER_ORDER\.map\(\(key\) => hopkinsTierSource\.tiers\[key\]\)/);
+  assert.match(categories, /backgroundColor: tier\.fill/);
+  assert.match(categories, /sourcePrice\(tier\.price\)/);
+  assert.match(categories, /tier\.price_basis/);
+  assert.match(categories, /Plot Categories &amp; Prices/);
+  assert.match(categories, /currency_note/);
+  assert.match(categories, /corner_premium/);
+  assert.match(categories, /financing_source_note/);
+  assert.match(categories, /Plan label: \{tier\.source_label\}/);
+  assert.match(hopkins, /<HopkinsPlotCategories variant="cards"\s*\/>/);
+  assert.match(map, /<HopkinsPlotCategories\s*\/>/);
+  assert.match(applicationWizard, /<PublicLotMap/);
+  assert.match(map, /tier_color_hex: tier\?\.fill/);
+
+  for (const [key, tier] of tierEntries) {
+    assert.match(categoryData, new RegExp(`"${key}"`), `category order should include ${key}`);
+    assert.ok(tier.label && tier.fill && tier.price_basis && Number.isFinite(tier.price), `${key} should have source name, map color, price, and size basis`);
+  }
 });
 
 test("Hopkins homepage and application flow each contain the scoped interactive map", async () => {

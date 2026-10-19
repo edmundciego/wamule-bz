@@ -10,7 +10,8 @@ import {
 import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 import { MapPolygon, MapRasterLayer } from "../map/MapPolygon";
-import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
+import { HopkinsPlotCategories } from "./HopkinsPlotCategories";
+import { hopkinsTier, hopkinsTierLabel, sourcePrice } from "../../lib/hopkinsPlotCategoryData";
 import type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 export type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 import {
@@ -218,22 +219,6 @@ const HOPKINS_PRINTED_PRICE_CARD = {
   heightFraction: 0.405,
 } as const;
 
-type HopkinsTierKey = keyof typeof hopkinsTierSource.tiers;
-const HOPKINS_TIER_ORDER: HopkinsTierKey[] = ["standard", "premium", "boulevard", "creek", "orange", "purple", "red"];
-
-function hopkinsTier(key: string | null | undefined) {
-  if (!key || !Object.prototype.hasOwnProperty.call(hopkinsTierSource.tiers, key)) return null;
-  return hopkinsTierSource.tiers[key as HopkinsTierKey];
-}
-
-function hopkinsTierLabel(tier: (typeof hopkinsTierSource.tiers)[HopkinsTierKey]): string {
-  return "source_label" in tier && typeof tier.source_label === "string" ? tier.source_label : tier.label;
-}
-
-function sourcePrice(price: number): string {
-  return `${hopkinsTierSource.source_pricing.currency_symbol}${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(price)}`;
-}
-
 function hostedDemoReference(parcel: PublicLotParcel): string {
   return publicMapReferenceLabel(parcel.demo_label);
 }
@@ -277,50 +262,6 @@ function hopkinsPrintedNumberDetail(parcel: PublicLotParcel): { label: string; v
     return { label: "Printed number", value: "No printed number matched to this outline" };
   }
   return { label: "Printed number", value: "No clear printed-number match" };
-}
-
-function HopkinsPricingLegend() {
-  return (
-    <details className="rounded-lg border border-border bg-background" data-testid="hopkins-pricing-legend">
-      <summary className="focus-ring min-h-11 cursor-pointer list-none px-3 py-2 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
-        <span className="flex items-center justify-between gap-3">
-          <span>Hopkins price guide</span>
-          <span aria-hidden="true" className="text-muted-foreground">⌄</span>
-        </span>
-      </summary>
-      <div className="border-t border-border px-3 pb-3 pt-2" aria-label="Plot categories and prices from the original Hopkins plan">
-        {(["Residential", "Commercial"] as const).map((group) => (
-          <section key={group} className="mt-2 first:mt-0" aria-label={`${group} plot categories`}>
-            <h3 className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{group}</h3>
-            <ul className="mt-1 space-y-1.5">
-              {HOPKINS_TIER_ORDER.filter((key) => hopkinsTierSource.tiers[key].group === group).map((key) => {
-                const tier = hopkinsTierSource.tiers[key];
-                return (
-                  <li key={key} className="grid grid-cols-[0.75rem_minmax(0,1fr)_auto] items-start gap-1.5 text-xs leading-4 sm:gap-2">
-                    <span className="mt-0.5 h-3 w-3 rounded-sm border border-black/20" style={{ backgroundColor: tier.fill }} aria-hidden="true" />
-                    <span className="min-w-0">
-                      <span className="block font-semibold text-foreground">{hopkinsTierLabel(tier)}</span>
-                      <span className="text-muted-foreground">
-                        {tier.price_basis}
-                        {"source_label" in tier ? <span className="sr-only">, {key} plot category color</span> : null}
-                      </span>
-                    </span>
-                    <span className="whitespace-nowrap text-right font-semibold tabular-nums text-foreground">{sourcePrice(tier.price)}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
-        <p className="mt-3 border-t border-border pt-2 text-xs leading-4 text-muted-foreground">
-          Corner triangle: +{sourcePrice(hopkinsTierSource.source_pricing.corner_premium)}. The plan uses “$” without naming a currency code; the highway-front acreage basis is not stated.
-        </p>
-        <p className="mt-2 text-xs leading-4 text-muted-foreground">
-          Source plan note: “{hopkinsTierSource.source_pricing.financing_source_note}.” Terms and current availability are not verified.
-        </p>
-      </div>
-    </details>
-  );
 }
 
 type FullscreenHostElement = HTMLElement & {
@@ -2677,7 +2618,7 @@ export function PublicLotMap({
             )}
             aria-label={isHopkinsHostedMap ? "Map details and plot price guide" : "Lot details"}
           >
-            {isHopkinsHostedMap ? <HopkinsPricingLegend /> : null}
+            {isHopkinsHostedMap ? <HopkinsPlotCategories /> : null}
             {focusLot ? (localPreviewMode ? (
               <section
                 ref={detailsPanelRef}

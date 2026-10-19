@@ -133,7 +133,10 @@ test("demo map response keeps map features scoped and omits parcel sales fields"
 });
 
 test("Hopkins source labels stay distinct from map references and retain ambiguity", async () => {
-  const map = await read("src/components/public/PublicLotMap.tsx");
+  const [map, categoryCards] = await Promise.all([
+    read("src/components/public/PublicLotMap.tsx"),
+    read("src/components/public/HopkinsPlotCategories.tsx"),
+  ]);
   assert.match(map, /source-image-cross-checked/);
   assert.match(map, /source-image-ambiguous-multiple-lots/);
   assert.match(map, /Possible printed plan number/);
@@ -142,8 +145,8 @@ test("Hopkins source labels stay distinct from map references and retain ambigui
   assert.match(map, /source_printed_lot_number_candidates_ambiguous/);
   assert.match(map, /source-tier-ambiguous-multiple-colors/);
   // The recreated legend uses the source fill palette, not the older PoC chips.
-  assert.match(map, /backgroundColor: tier\.fill/);
-  assert.doesNotMatch(map, /backgroundColor: tier\.legend/);
+  assert.match(categoryCards, /backgroundColor: tier\.fill/);
+  assert.doesNotMatch(categoryCards, /backgroundColor: tier\.legend/);
   // Keep the image's source colors intact and show selection with outlines.
   assert.match(map, /fillOpacity=\{isHopkinsHostedMap \? 0 :/);
   assert.match(map, /data-testid="selected-source-tier-outline"/);

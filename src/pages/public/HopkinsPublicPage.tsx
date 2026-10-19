@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import { PublicInquiryPanel } from "../ApplicationPage";
 import { HopkinsApplicationWizard } from "./HopkinsApplicationWizard";
 import { PublicLotMap, type PublicLotParcel } from "../../components/public/PublicLotMap";
+import { HopkinsPlotCategories } from "../../components/public/HopkinsPlotCategories";
 import { Badge } from "../../components/ui/Badge";
 import { ErrorState, LoadingState } from "../../components/ui/State";
 import { WamuleClassicBuildStamp, WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../../components/public/WamuleClassicTemplate";
@@ -253,10 +254,19 @@ function HopkinsWamuleClassicPage({
           Start application <ArrowRight className="h-4 w-4" />
         </a> : null}
         sideContent={<WamuleClassicPanel
-          title="Available Lot Preferences"
-          description="Choose optional map references in the project map below."
-          trailing={<Badge tone="slate">Map preferences</Badge>}
+          title="Plot Categories & Prices"
+          description="Hopkins categories and prices shown on the source plan."
+          trailing={<Badge tone="slate">Source plan</Badge>}
         >
+          <HopkinsPlotCategories variant="cards" />
+          <section className="mt-4 border-t border-border pt-4" aria-labelledby="hopkins-map-preferences-title">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 id="hopkins-map-preferences-title" className="font-display text-base font-semibold text-primary">Available Lot Preferences</h3>
+                <p className="text-xs leading-5 text-muted-foreground">Optional map references from the project map below.</p>
+              </div>
+              <Badge tone="slate">Map preferences</Badge>
+            </div>
           {selectedMapPreferences.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {selectedMapPreferences.map(({ ref, label }) => (
@@ -285,6 +295,7 @@ function HopkinsWamuleClassicPage({
           <p className="mt-4 text-xs leading-5 text-muted-foreground">
             Map references are preferences only. They are not saleable parcel inventory, do not confirm availability, and do not reserve or allocate land.
           </p>
+          </section>
         </WamuleClassicPanel>}
       />
 
