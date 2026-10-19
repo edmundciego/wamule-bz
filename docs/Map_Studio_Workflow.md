@@ -154,23 +154,47 @@ recovery evidence, or verification of a new Wamule drawing. It needs no Docker.
 
 ## Local checkpoint — 19 October 2026
 
+This checkpoint was verified on `codex/map-studio-workflow` from a synthetic
+three-plot DXF fixture. It is not evidence about a new Wamule or Hopkins drawing.
+
+- Node 24.19.0 dependencies installed from the lockfile; Python 3.12's dedicated
+  `.venv-map-studio` has the pinned extraction requirements.
 - Extraction fixtures: **6/6 passed**, covering DXF, unknown units, ambiguous
   numbers, vector PDF, raster input and the DWG export requirement.
+- Portable package tests: **11/11 passed**. Vite configuration regression test:
+  **1/1 passed**.
 - PostgreSQL/WASM lifecycle rehearsal: **13/13 passed**, including scoped plot
-  inquiries and retry deduplication in a sales project. Its generated CAD drawing
-  is a test fixture, not Wamule or Hopkins evidence.
-- Full Node suite: **318 passed, 5 failed, 4 skipped**. The five failures are
-  pre-existing native PostgreSQL harness tests that cannot load `pgserver` in
-  this execution environment. They were not removed or silently skipped.
+  inquiries and retry deduplication. It uses a local synthetic CAD drawing and
+  simulated tenant sessions, not hosted Supabase Auth or Storage.
+- Full Node suite: **324 passed, 0 failed, 4 skipped**. Skips require staging
+  secrets/database tools or private Hopkins review assets that are not in this
+  checkout.
 - Typecheck, standalone Studio build, application build, public-build guard,
-  brand check and changed-file lint passed. Repository-wide lint retains the
-  existing `no-explicit-any` error in `_shared/workspace-auth.ts:6`.
-- The local extraction HTTP adapter returned a valid three-outline DXF package;
-  its cross-origin request check returned 403.
+  brand check and changed-file lint passed. Repository-wide lint still reports
+  the unrelated `no-explicit-any` in `supabase/functions/_shared/workspace-auth.ts:6`.
+- A headless browser exercised the local extraction endpoint and Studio at
+  `http://127.0.0.1:5340`, with the main app on `http://127.0.0.1:5180`. The DXF
+  produced printed labels 101–103 using the PLOTS layer and metre units. Search,
+  selection, zoom/reset, plot/category metadata, CSV export/import, package
+  export/reopen, and revision identity were checked. Editing and restoring a
+  boundary retained the original polygon and recorded 150 m² area.
+- At 390px and 320px, Studio had no horizontal overflow. Browser console errors
+  were clear after adding an empty data favicon. Native-size screenshots are in
+  `/private/tmp/wamule-map-studio-visual-evidence/` for this session.
+- The Admin page could not connect to a local or authenticated Supabase backend:
+  the isolated checkout has no protected `VITE_SUPABASE_URL` or
+  `VITE_SUPABASE_ANON_KEY` configuration. The database rehearsal verifies the
+  SQL lifecycle and RLS predicates, but the Admin comparison/editor/version/embed
+  journey still needs a later authenticated staging browser session.
 
-No browser walkthrough or real owner CAD file has been validated in this pass.
+Running both Vite apps together initially exposed a React hook failure because
+their prebundled React dependencies shared an optimizer cache. Map Studio now
+uses its own ignored cache directory and deduplicates React/React DOM; a runtime
+configuration regression test protects this setup.
+
 No hosted migration, function deployment, frontend deployment, tenant import,
-DNS change or outbound message was performed. Existing hosted maps and records
-remain outside this local implementation's write scope. Before staging release,
-review the additive migration and exercise import, editing, publication and the
-embed in a browser against the intended staging backend.
+DNS change or outbound message was performed. The later staging rollout must
+apply the reviewed `20261019194346_map_studio_packages_and_project_plot_content.sql`
+migration, deploy the updated `get-public-lots` Edge Function and frontend, then
+exercise scoped Admin import/edit/review/publish and the tenant embed. Existing
+hosted maps and records remain outside this local implementation's write scope.

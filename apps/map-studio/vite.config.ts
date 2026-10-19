@@ -98,6 +98,11 @@ export default defineConfig({
   root,
   envDir: false,
   envPrefix: "STUDIO_PUBLIC_",
+  // This app shares React components with the main Vite app but runs with a
+  // different root/config. Keep the optimizer cache separate when both local
+  // apps are running so their React prebundles cannot race or diverge.
+  cacheDir: resolve(repo, "node_modules/.vite-map-studio"),
+  resolve: { dedupe: ["react", "react-dom"] },
   plugins: [react(), localExtractor()],
   server: {
     host: "127.0.0.1",
