@@ -16,10 +16,31 @@ test("Hopkins always renders the shared Wamule homepage composition", async () =
 
   assert.doesNotMatch(hopkins, /templateId|hopkins-project/);
   assert.match(hopkins, /<HopkinsWamuleClassicPage/);
-  assert.match(hopkins, /value="Hopkins Village, Belize"/);
-  assert.match(hopkins, /showOrnament=\{false\}/);
-  assert.match(hopkins, /WamuleClassicInfoTile compact/);
+  assert.match(hopkins, /<WamuleClassicInfoTile label="Starting price"/);
+  assert.match(hopkins, /<WamuleClassicInfoTile label="Lot sizes"/);
+  assert.match(hopkins, /<WamuleClassicInfoTile label="Project phase" value=\{page\.phase\.name\}/);
+  assert.match(hopkins, /hopkinsTierSource\.source_pricing\.currency_symbol/);
+  assert.match(hopkins, /filter\(\(tier\) => tier\.group === "Residential"\)/);
+  assert.doesNotMatch(hopkins, /WamuleClassicInfoTile compact|showOrnament=\{false\}/);
+  assert.match(hopkins, /title="Available Lot Preferences"/);
+  assert.match(hopkins, /Map references are preferences only\. They are not saleable parcel inventory, do not confirm availability/);
+  assert.match(hopkins, /aria-label=\{"Remove map preference " \+ label\}/);
+  assert.doesNotMatch(hopkins, /public_availability_display|show_available_lot_count_publicly|65 x 101|75 x 101/);
+  const sectionOrder = [
+    hopkins.indexOf("<WamuleClassicHero"),
+    hopkins.indexOf('title="Available Lot Preferences"'),
+    hopkins.indexOf("<PublicInquiryPanel"),
+    hopkins.indexOf("<WamuleClassicNotice"),
+    hopkins.indexOf('<section id="lots"'),
+    hopkins.indexOf("<HopkinsApplicationWizard"),
+  ];
+  assert.ok(sectionOrder.every((position) => position >= 0), "all shared homepage sections should render");
+  assert.ok(sectionOrder.every((position, index) => index === 0 || position > sectionOrder[index - 1]), "homepage order must be hero/preferences, information request, notice, project map, and application");
+  assert.match(hopkins, /introPrompt="Not ready to apply yet\?"/);
+  assert.match(hopkins, /introDescription=\{\"Have questions about \" \+ page\.project\.name/);
   assert.match(hopkins, /page\.company\.location/);
+  assert.match(sharedTemplate, /const compactBrandOnMobile = brandLabel\.length > 10/);
+  assert.match(sharedTemplate, /compactBrandOnMobile \? "text-sm sm:text-xl" : "text-xl"/);
   for (const component of ["WamuleClassicHeader", "WamuleClassicHero", "WamuleClassicInfoTile", "WamuleClassicNotice", "WamuleClassicPanel"]) {
     assert.match(hopkins, new RegExp("<" + component));
     assert.match(wamule, new RegExp(component));
@@ -36,6 +57,23 @@ test("Hopkins always renders the shared Wamule homepage composition", async () =
   assert.match(applicationWizard, /<FormStep title="Review & Acknowledge"/);
   assert.match(applicationWizard, /Submit application/);
   assert.doesNotMatch(applicationWizard, /Submit project application|payment_option|submit-public-application/);
+});
+
+test("Hopkins homepage price and lot-size facts use Hopkins source information", async () => {
+  const [hopkins, tierSource] = await Promise.all([
+    read("../src/pages/public/HopkinsPublicPage.tsx"),
+    read("../map-input/hopkins.tiers.json"),
+  ]);
+  const tiers = JSON.parse(tierSource);
+  const residentialStartingPrice = Math.min(
+    ...Object.values(tiers.tiers)
+      .filter((tier) => tier.group === "Residential")
+      .map((tier) => tier.price),
+  );
+  assert.equal(residentialStartingPrice, 25000);
+  assert.match(hopkins, /hopkinsStartingPriceLabel/);
+  assert.match(hopkins, /hopkinsHomesiteSizeLabel = "Quarter-acre homesites"/);
+  assert.doesNotMatch(hopkins, /payment option|monthly payment|65 x 101|75 x 101/);
 });
 
 test("Hopkins homepage and application flow each contain the scoped interactive map", async () => {

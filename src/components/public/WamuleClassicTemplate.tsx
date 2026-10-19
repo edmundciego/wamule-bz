@@ -22,14 +22,16 @@ export function WamuleClassicHeader({
   showApply?: boolean;
   mapLabel?: string;
 }) {
+  const brandLabel = companyName.replace(/\s+Development$/i, "");
+  const compactBrandOnMobile = brandLabel.length > 10;
   return (
     <header className="border-b border-primary/10 bg-card/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-        <a href={homeHref} className="flex min-w-0 items-center gap-3" aria-label={companyName}>
+        <a href={homeHref} className="flex min-w-0 items-center gap-2 sm:gap-3" aria-label={companyName}>
           <img src={logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-md border border-secondary/30 bg-background object-cover shadow-sm" />
           <span className="min-w-0">
-            <span className="block truncate font-display text-xl font-semibold leading-tight text-primary">{companyName.replace(/\s+Development$/i, "")}</span>
-            <span className="block text-xs font-semibold uppercase tracking-[0.26em] text-secondary">Development</span>
+            <span className={`block truncate font-display font-semibold leading-tight text-primary ${compactBrandOnMobile ? "text-sm sm:text-xl" : "text-xl"}`}>{brandLabel}</span>
+            <span className={`block text-xs font-semibold uppercase text-secondary ${compactBrandOnMobile ? "tracking-[0.2em] sm:tracking-[0.26em]" : "tracking-[0.26em]"}`}>Development</span>
           </span>
         </a>
         <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-3 text-sm">

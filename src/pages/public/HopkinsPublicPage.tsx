@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUpRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { PublicInquiryPanel } from "../ApplicationPage";
@@ -8,6 +8,7 @@ import { PublicLotMap, type PublicLotParcel } from "../../components/public/Publ
 import { Badge } from "../../components/ui/Badge";
 import { ErrorState, LoadingState } from "../../components/ui/State";
 import { WamuleClassicBuildStamp, WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../../components/public/WamuleClassicTemplate";
+import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
 import { isHopkinsPublicHost } from "../../lib/publicHosts";
 import { hasSupabaseConfig } from "../../lib/supabase";
 import { defaultPublicExperience, type PublicSiteModuleId } from "../../lib/publicExperience.mjs";
@@ -19,6 +20,15 @@ const HOPKINS_SCOPE = { tenant: "hopkins-grove", project: "hopkins-grove", phase
 const HOPKINS_SITE_SCOPE = { tenantSlug: "hopkins-grove", projectSlug: "hopkins-grove", phaseSlug: "initial" } as const;
 const MAP_URL = "/embed/hopkins-grove/hopkins-grove?phase=initial";
 const localDemoOnly = import.meta.env.DEV || import.meta.env.VITE_PUBLIC_DEMO_MODE === "true";
+const hopkinsResidentialStartingPrice = Math.min(
+  ...Object.values(hopkinsTierSource.tiers)
+    .filter((tier) => tier.group === "Residential")
+    .map((tier) => tier.price),
+);
+const hopkinsStartingPriceLabel = hopkinsTierSource.source_pricing.currency_symbol
+  + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(hopkinsResidentialStartingPrice)
+  + " / ¼ acre";
+const hopkinsHomesiteSizeLabel = "Quarter-acre homesites";
 
 type PublicProjectPage = {
   tenant: { name: string; slug: string };
@@ -206,7 +216,10 @@ function HopkinsWamuleClassicPage({
   localDemoOnly: boolean;
   hasSupabaseConfig: boolean;
 }) {
-  const outlineCount = mapFeatureLabels.length;
+  const selectedMapPreferences = selectedMapFeatureRefs.map((ref) => ({
+    ref,
+    label: mapFeatureLabels.find((item) => item.ref === ref)?.label ?? "Map reference",
+  }));
   return (
     <main data-site-template="wamule-classic" data-public-tenant="hopkins-grove" className="min-h-screen bg-background">
       <WamuleClassicHeader
@@ -228,35 +241,77 @@ function HopkinsWamuleClassicPage({
       </div>
 
       <WamuleClassicHero
-        badge={<Badge tone="green">Hopkins Grove · public project</Badge>}
-        title={page.project.name}
+        badge={<Badge tone={page.applicationSettings.applicationsOpen ? "green" : "amber"}>{page.phase.name} applications {page.applicationSettings.applicationsOpen ? "open" : "closed"}</Badge>}
+        title={page.project.name + " Project Application"}
         description={page.company.description}
         facts={<>
-          <WamuleClassicInfoTile compact label="Location" value="Hopkins Village, Belize" />
-          <WamuleClassicInfoTile compact label="Project phase" value={page.phase.name} />
-          <WamuleClassicInfoTile compact label="Map outlines" value={outlineCount ? outlineCount + " outlines" : "Loading map"} />
+          <WamuleClassicInfoTile label="Starting price" value={hopkinsStartingPriceLabel} />
+          <WamuleClassicInfoTile label="Lot sizes" value={hopkinsHomesiteSizeLabel} />
+          <WamuleClassicInfoTile label="Project phase" value={page.phase.name} />
         </>}
-        actions={<>
-          {modules.map ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#lots">
-            Explore the project map <ArrowDown className="h-4 w-4" />
-          </a> : null}
-          {modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md border border-primary/20 bg-card px-5 text-sm font-semibold text-primary transition hover:bg-primary-soft" href="#application">
-            Start an application <ArrowUpRight className="h-4 w-4" />
-          </a> : null}
-        </>}
+        actions={modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">
+          Start application <ArrowRight className="h-4 w-4" />
+        </a> : null}
         sideContent={<WamuleClassicPanel
-          title="Project overview"
-          description="Published information for Hopkins Grove"
+          title="Available Lot Preferences"
+          description="Choose optional map references in the project map below."
+          trailing={<Badge tone="slate">Map preferences</Badge>}
         >
-          <div className="grid gap-3 text-sm leading-6 text-foreground">
-            <p>{page.company.location}</p>
-            <p>Explore source-referenced outlines on the project map and ask Ceiba Realty &amp; Development for current information.</p>
-            <p className="rounded-md border border-primary/10 bg-primary-soft/35 p-3 text-xs leading-5 text-muted-foreground">
-              Map outlines are project references. Hopkins currently has no parcel inventory, and a map selection does not assign or reserve a lot.
-            </p>
-          </div>
+          {selectedMapPreferences.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {selectedMapPreferences.map(({ ref, label }) => (
+                <div key={ref} className="min-w-0 rounded-lg border border-primary/15 bg-primary-soft/45 p-3 text-sm">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <strong className="min-w-0 break-words text-primary">{label}</strong>
+                    <span className="shrink-0 rounded-full border border-primary/15 bg-card px-2 py-1 text-xs font-semibold text-primary">Preference</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">Map reference only · not confirmed availability</p>
+                  <button
+                    type="button"
+                    className="focus-ring mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-semibold text-secondary underline underline-offset-2"
+                    aria-label={"Remove map preference " + label}
+                    onClick={() => onRemoveMapFeature(ref)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed bg-muted p-5 text-sm leading-6 text-muted-foreground">
+              No map references selected yet. Choose an outline in the project map below to add an optional preference here.
+            </div>
+          )}
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            Map references are preferences only. They are not saleable parcel inventory, do not confirm availability, and do not reserve or allocate land.
+          </p>
         </WamuleClassicPanel>}
-        showOrnament={false}
+      />
+
+      {modules.inquiry ? <section id="interest" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-6">
+        <PublicInquiryPanel
+          companyName={page.company.name}
+          tenantSlug={HOPKINS_SCOPE.tenant}
+          projectSlug={HOPKINS_SCOPE.project}
+          phaseSlug={HOPKINS_SCOPE.phase}
+          parcels={[]}
+          showPrices={false}
+          hasSupabaseConfig={hasSupabaseConfig}
+          localDemoOnly={localDemoOnly}
+          interestOptions={["General project interest", "Map outline question", "Site visit", "Buying process"]}
+          introPrompt="Not ready to apply yet?"
+          introDescription={"Have questions about " + page.project.name + ", the project map, or visiting the site? Tell Ceiba Realty & Development what you would like to know."}
+          introNotice="This inquiry is for information only. It does not allocate a map outline, create parcel inventory, or reserve a lot."
+          confirmationNote="Your request was saved for Hopkins. It does not assign a map outline or create parcel inventory."
+          footerNote="Map references are not parcel inventory; this inquiry does not allocate or reserve land."
+          mapHref="#lots"
+        />
+      </section> : null}
+
+      <WamuleClassicNotice
+        notice={page.company.publicNotice}
+        companyName={page.company.name}
+        location={page.company.location}
       />
 
       {modules.map ? <section id="lots" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-8">
@@ -286,33 +341,6 @@ function HopkinsWamuleClassicPage({
           />
         </div>
         <p className="mt-3 text-xs leading-5 text-muted-foreground">Source pricing is informational. Selection records an optional map-outline preference only.</p>
-      </section> : null}
-
-      <WamuleClassicNotice
-        title="Hopkins project notice"
-        notice={page.company.publicNotice}
-        companyName={page.company.name}
-        location={page.company.location}
-      />
-
-      {modules.inquiry ? <section id="interest" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-6">
-        <PublicInquiryPanel
-          companyName={page.company.name}
-          tenantSlug={HOPKINS_SCOPE.tenant}
-          projectSlug={HOPKINS_SCOPE.project}
-          phaseSlug={HOPKINS_SCOPE.phase}
-          parcels={[]}
-          showPrices={false}
-          hasSupabaseConfig={hasSupabaseConfig}
-          localDemoOnly={localDemoOnly}
-          interestOptions={["General project interest", "Map outline question", "Site visit", "Buying process"]}
-          introPrompt="Planning a project?"
-          introDescription={"Ask Ceiba Realty & Development about " + page.project.name + ", the application process, a site visit, or information shown on the public map."}
-          introNotice="This inquiry is for information only. It does not allocate a map outline, create parcel inventory, or reserve a lot."
-          confirmationNote="Your request was saved for Hopkins. It does not assign a map outline or create parcel inventory."
-          footerNote="Map outlines are references only; an inquiry does not allocate or reserve one."
-          mapHref="#lots"
-        />
       </section> : null}
 
       {modules.application ? <HopkinsApplicationWizard
