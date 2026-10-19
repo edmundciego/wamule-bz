@@ -98,7 +98,7 @@ test("the Hopkins full application and the existing Wamule purchase application 
     readFile(new URL("../src/pages/ApplicationsPage.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(hopkinsPage, /<HopkinsApplicationWizard/);
-  assert.match(hopkinsPage, /Planning a project\?/);
+  assert.match(hopkinsPage, /Not ready to apply yet\?/);
   assert.match(hopkinsWizard, /submit-hopkins-project-application/);
   assert.match(hopkinsWizard, /preferred_map_feature_refs: selectedMapFeatureRefs/);
   assert.match(hopkinsWizard, /no plot is offered or assigned/);
