@@ -267,34 +267,34 @@ function HopkinsWamuleClassicPage({
               </div>
               <Badge tone="slate">Map preferences</Badge>
             </div>
-          {selectedMapPreferences.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {selectedMapPreferences.map(({ ref, label }) => (
-                <div key={ref} className="min-w-0 rounded-lg border border-primary/15 bg-primary-soft/45 p-3 text-sm">
-                  <div className="flex min-w-0 items-start justify-between gap-3">
-                    <strong className="min-w-0 break-words text-primary">{label}</strong>
-                    <span className="shrink-0 rounded-full border border-primary/15 bg-card px-2 py-1 text-xs font-semibold text-primary">Preference</span>
+            {selectedMapPreferences.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {selectedMapPreferences.map(({ ref, label }) => (
+                  <div key={ref} className="min-w-0 rounded-lg border border-primary/15 bg-primary-soft/45 p-3 text-sm">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <strong className="min-w-0 break-words text-primary">{label}</strong>
+                      <span className="shrink-0 rounded-full border border-primary/15 bg-card px-2 py-1 text-xs font-semibold text-primary">Preference</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">Map reference only · not confirmed availability</p>
+                    <button
+                      type="button"
+                      className="focus-ring mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-semibold text-secondary underline underline-offset-2"
+                      aria-label={"Remove map preference " + label}
+                      onClick={() => onRemoveMapFeature(ref)}
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">Map reference only · not confirmed availability</p>
-                  <button
-                    type="button"
-                    className="focus-ring mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-semibold text-secondary underline underline-offset-2"
-                    aria-label={"Remove map preference " + label}
-                    onClick={() => onRemoveMapFeature(ref)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed bg-muted p-5 text-sm leading-6 text-muted-foreground">
-              No map references selected yet. Choose an outline in the project map below to add an optional preference here.
-            </div>
-          )}
-          <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            Map references are preferences only. They are not saleable parcel inventory, do not confirm availability, and do not reserve or allocate land.
-          </p>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed bg-muted p-5 text-sm leading-6 text-muted-foreground">
+                No map references selected yet. Choose an outline in the project map below to add an optional preference here.
+              </div>
+            )}
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">
+              Map references are preferences only. They are not saleable parcel inventory, do not confirm availability, and do not reserve or allocate land.
+            </p>
           </section>
         </WamuleClassicPanel>}
       />

@@ -40,7 +40,7 @@ export function HopkinsPlotCategories({ variant = "legend" }: { variant?: "cards
 
   if (variant === "cards") {
     return (
-      <div data-testid="hopkins-plot-category-cards" aria-label="Plot categories and source prices">
+      <section data-testid="hopkins-plot-category-cards" aria-label="Plot categories and source prices">
         <ul className="grid min-w-0 gap-2 sm:grid-cols-2">
           {categories.map((tier) => <CategoryCard key={tier.label} tier={tier} />)}
         </ul>
@@ -48,7 +48,7 @@ export function HopkinsPlotCategories({ variant = "legend" }: { variant?: "cards
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           Category and price references follow the source plan. They do not confirm outline availability or allocate a parcel.
         </p>
-      </div>
+      </section>
     );
   }
 
