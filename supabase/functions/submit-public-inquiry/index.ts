@@ -5,6 +5,7 @@ import {
   type InquiryPayload,
 } from "../_shared/inquiry-contract.ts";
 import { parsePublicLotReference } from "../_shared/public-lot-reference.ts";
+import { shouldSuppressPublicInquiryEmail } from "../_shared/public-inquiry-email-policy.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -102,7 +103,10 @@ Deno.serve(async (request) => {
   if (rpcResult?.conflict) return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
   if (!rpcResult?.ok || !rpcResult.lead_id) return json({ error: "We could not save your inquiry. Please try again." }, 503);
 
-  const suppressEmail = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const suppressEmail = shouldSuppressPublicInquiryEmail(
+    scope.mapExperienceMode,
+    Deno.env.get("SUPPRESS_OUTBOUND_EMAILS"),
+  );
   let emailResult: { ok: boolean; error?: string } = { ok: false, error: "not-sent" };
   if (!rpcResult.deduplicated && !suppressEmail) {
     const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);

@@ -4,6 +4,7 @@ import {
   validateMapPackage,
   validateMapPolygon,
   mergePlotCsv,
+  exportPlotCsv,
   buildMapEmbed,
   mapPackagePreview,
   verifyMapPackageAsset,
@@ -128,6 +129,20 @@ test("CSV joins by stable key, supports quoted values and fails without partial 
     () => mergePlotCsv(pkg, "plot_key,price\ncad/A,200\ncad/A,300"),
     /repeats/,
   );
+});
+test("CSV export preserves plot-level price details on spreadsheet round trips", () => {
+  const pkg = validateMapPackage(fixture());
+  pkg.plots[0].price_cents = 250050;
+  pkg.plots[0].currency = "BZD";
+  pkg.plots[0].price_basis = "Per plot";
+  pkg.plots[0].dimensions = '10, 16 m';
+  const csv = exportPlotCsv(pkg);
+  assert.match(csv, /2500\.5/);
+  const restored = mergePlotCsv(pkg, csv).plots[0];
+  assert.equal(restored.price_cents, 250050);
+  assert.equal(restored.currency, "BZD");
+  assert.equal(restored.price_basis, "Per plot");
+  assert.equal(restored.dimensions, '10, 16 m');
 });
 test("embed includes exact tenant/project/phase and accepts an independent canonical host", () => {
   const embed = buildMapEmbed("https://maps.example.test/admin", {

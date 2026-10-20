@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { isLocalOnlySubmissionForScope } from "../src/lib/publicSubmissionScope.mjs";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -22,7 +23,7 @@ test("Hopkins public map labels use plain language while preserving printed-numb
   assert.match(page, /Independent demonstration\. Not affiliated with or endorsed by Ceiba\. Demo submissions are not sent to Ceiba\./);
 });
 
-test("public submission calls are bypassed by local and explicit staging-preview mode", async () => {
+test("public submissions stay local except for the exact staging QA scope", async () => {
   const [mode, modal, page, wizard, app] = await Promise.all([
     read("../src/lib/publicSubmissionMode.ts"),
     read("../src/components/public/PublicInquiryModal.tsx"),
@@ -30,7 +31,13 @@ test("public submission calls are bypassed by local and explicit staging-preview
     read("../src/pages/public/HopkinsApplicationWizard.tsx"),
     read("../src/pages/ApplicationPage.tsx"),
   ]);
-  assert.match(mode, /import\.meta\.env\.DEV \|\| import\.meta\.env\.VITE_PUBLIC_DEMO_MODE === "true"/);
+  assert.match(mode, /isLocalOnlySubmissionForScope\(\{/);
+  assert.match(mode, /stagingSubmissionScopes: \[\]/);
+  assert.match(mode, /stagingSubmissionScopes,/);
+  const allowlist = ["map-studio-workflow-test/map-studio-import-qa"];
+  assert.equal(isLocalOnlySubmissionForScope({ isDev: true, demoMode: "false", tenantSlug: "map-studio-workflow-test", projectSlug: "map-studio-import-qa", stagingSubmissionScopes: allowlist }), true);
+  assert.equal(isLocalOnlySubmissionForScope({ isDev: false, demoMode: "true", tenantSlug: "MAP-STUDIO-WORKFLOW-TEST", projectSlug: "MAP-STUDIO-IMPORT-QA", stagingSubmissionScopes: allowlist }), false);
+  assert.equal(isLocalOnlySubmissionForScope({ isDev: false, demoMode: "true", tenantSlug: "map-studio-workflow-test", projectSlug: "other-project", stagingSubmissionScopes: allowlist }), true);
   assert.ok(modal.indexOf("if (localDemoOnly)") < modal.indexOf('supabase.functions.invoke("submit-public-inquiry"'));
   assert.ok(wizard.indexOf("if (localDemoOnly)") < wizard.indexOf("await submitPublicFunction"));
   assert.ok(app.indexOf("if (isLocalOnlySubmission)") < app.indexOf("await submitPublicFunction"));

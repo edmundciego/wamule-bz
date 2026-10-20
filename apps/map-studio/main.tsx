@@ -5,6 +5,7 @@ import {
   validateMapPackage,
   verifyMapPackageAsset,
   mergePlotCsv,
+  exportPlotCsv,
   MAP_PACKAGE_MAX_BYTES,
   type MapPackage,
   type PackageCategory,
@@ -743,28 +744,7 @@ export function Studio() {
               <button
                 className="secondary"
                 onClick={() =>
-                  download(
-                    "plot-register.csv",
-                    "plot_key,plot_number,area_value,area_unit,category_key,price,currency,price_basis,dimensions\n" +
-                      map.plots
-                        .map((p) =>
-                          [
-                            p.key,
-                            p.number ?? "",
-                            p.area_value ?? "",
-                            p.area_unit ?? "",
-                            p.category_key ?? "",
-                            "",
-                            "",
-                            "",
-                            p.dimensions ?? "",
-                          ]
-                            .map((v) => `"${String(v).replaceAll('"', '""')}"`)
-                            .join(","),
-                        )
-                        .join("\n"),
-                    "text/csv",
-                  )
+                  download("plot-register.csv", exportPlotCsv(map), "text/csv")
                 }
               >
                 Download plot spreadsheet

@@ -79,5 +79,6 @@ export function buildMapEmbed(
   scope: { tenantSlug: string; projectSlug: string; phaseSlug: string },
   options?: { height?: number },
 ): { url: string; html: string };
+export function exportPlotCsv(pkg: MapPackage): string;
 export function parseCsv(input: string): Record<string, string>[];
 export function mergePlotCsv(pkg: MapPackage, input: string): MapPackage;

@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_PUBLIC_DEMO_MODE?: string;
+  readonly VITE_PUBLIC_STAGING_SUBMISSION_SCOPES?: string;
 }
 
 interface PublicBuildInfo {

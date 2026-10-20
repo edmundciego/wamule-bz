@@ -348,6 +348,36 @@ export function buildMapEmbed(baseUrl, scope, options = {}) {
   };
 }
 
+export function exportPlotCsv(pkg) {
+  const headers = [
+    "plot_key",
+    "plot_number",
+    "area_value",
+    "area_unit",
+    "category_key",
+    "price",
+    "currency",
+    "price_basis",
+    "dimensions",
+  ];
+  const rows = pkg.plots.map((plot) =>
+    [
+      plot.key,
+      plot.number ?? "",
+      plot.area_value ?? "",
+      plot.area_unit ?? "",
+      plot.category_key ?? "",
+      plot.price_cents === null ? "" : plot.price_cents / 100,
+      plot.currency ?? "",
+      plot.price_basis ?? "",
+      plot.dimensions ?? "",
+    ]
+      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+      .join(","),
+  );
+  return [headers.join(","), ...rows].join("\n");
+}
+
 export function parseCsv(input) {
   const rows = [];
   let row = [],

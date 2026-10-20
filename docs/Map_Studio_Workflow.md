@@ -115,18 +115,26 @@ SVG assets. Hopkins's existing homepage category cards also read the active pack
 catalogue once one is published. Until then they use the current source guide.
 The existing Hopkins snapshot is not automatically converted or republished.
 
-## Deployment boundary
+## Hosted deployment boundary
 
-The implementation is local on `codex/map-studio-workflow`. Enabling the hosted
-Admin workflow requires the additive `map_studio_packages_and_project_plot_content`
-migration, the updated `get-public-lots` function and the frontend from this branch.
-Those deployment actions have not been performed by this implementation pass.
+The Map Studio Admin workflow is deployed to the existing `wamule-staging` site
+and staging Supabase project. The additive
+`map_studio_packages_and_project_plot_content` migration is present in the
+staging ledger; `get-public-lots` and `submit-public-inquiry` serve the package
+workflow. Production has not been changed.
 
 The migration adds project map packages and plot content to the existing feature
 identity/snapshot model. Display images use a private Storage bucket. Only the
 public API signs images belonging to the active published package. Browser users
 cannot directly mutate snapshots or overwrite/delete their images. Admin actions
 verify tenant, project and phase and preserve existing inventory and leads.
+
+Staging builds keep `VITE_PUBLIC_DEMO_MODE=true`. The optional
+`VITE_PUBLIC_STAGING_SUBMISSION_SCOPES` setting allows server-backed form tests
+for exact `tenant-slug/project-slug` pairs. All other demo submissions stay in
+the browser. The only configured QA pair is
+`map-studio-workflow-test/map-studio-import-qa`; its project remains in `demo`
+mode, and the hosted inquiry function suppresses email for that mode.
 
 The embed generator uses `VITE_PUBLIC_EMBED_BASE_URL` when configured, otherwise
 the current frontend origin. It always includes project and phase. A tenant can
@@ -192,9 +200,98 @@ their prebundled React dependencies shared an optimizer cache. Map Studio now
 uses its own ignored cache directory and deduplicates React/React DOM; a runtime
 configuration regression test protects this setup.
 
-No hosted migration, function deployment, frontend deployment, tenant import,
-DNS change or outbound message was performed. The later staging rollout must
-apply the reviewed `20261019194346_map_studio_packages_and_project_plot_content.sql`
-migration, deploy the updated `get-public-lots` Edge Function and frontend, then
-exercise scoped Admin import/edit/review/publish and the tenant embed. Existing
-hosted maps and records remain outside this local implementation's write scope.
+## Current workstation recheck — 19 October 2026 (local only)
+
+This recheck ran on `codex/map-studio-workflow` after the patch commit. It used
+only a generated three-plot DXF; it did not connect to staging or change hosted
+maps, records, functions, migrations, or deployments.
+
+- Node dependencies already present in this checkout passed `npm ls --depth=0`.
+  The shell default is Node 18.18.2, so checks used the available bundled Node
+  24.19.0 runtime. Python 3.12's ignored `.venv-map-studio` imports `ezdxf`.
+- Studio extraction tests: **6/6**. Map-package tests: **12/12**. The local
+  PostgreSQL/WASM map lifecycle rehearsal: **13/13**, with no hosted writes.
+- A browser upload extracted the `PLOTS` layer, metre units and labels 101–103.
+  Search, outline selection, zoom/reset, vertex edit/restore, plot and category
+  edits, CSV export/import, package export/reopen and a new geometry revision
+  worked. The revision retained its dataset ID and all three CAD source keys.
+  Restoring a changed boundary left the recorded area at 150 m².
+- At 1440px, 390px and 320px, the Studio page had no horizontal overflow. The
+  browser reported no console errors. Native-size captures are in
+  `/private/tmp/wamule-map-studio-local-evidence/` (`studio-source-1440.png`,
+  `studio-source-390.png`, `studio-source-320.png`, plus edited-data captures).
+- Typecheck, standalone Studio build, application build, public-build scan,
+  brand check and changed-source lint passed. The public-build scan checked 81
+  files and found no development map fixtures or private source artifacts.
+  Repository-wide lint still fails only on the unrelated
+  `no-explicit-any` at `supabase/functions/_shared/workspace-auth.ts:6`.
+- The full Node suite reported **332 tests: 323 passed, 5 failed, 4 skipped**.
+  Each failure requires the unavailable Python `pgserver` module for a separate
+  native-PostgreSQL harness; the Map Studio PGlite lifecycle test passed. The
+  five blocked tests are slice 1.6, slice 1.7, migration bootstrap, and the
+  project-scoped map migration checks. No tests were removed or skipped to get
+  a passing result. A stale public-submission assertion was updated to verify
+  the exact scoped demo allowlist behavior.
+- The local `/maps` route displays that `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` are missing. This checkout has no local Admin backend
+  configuration. The browser Admin import/editor/version/embed journey could
+  not be run locally; the SQL workflow was checked through the local WASM
+  harness instead. Docker was not used.
+
+The staging Admin pilot recorded below predates this recheck. No staging changes
+were made during this local-only pass.
+
+## Staging Admin pilot — 19 October 2026
+
+The hosted Admin milestone was exercised against the existing staging project
+using a synthetic three-plot DXF. The test workspace is explicitly labeled
+`[TEST] Map Studio Workflow` → `[TEST] Map Studio Admin Import QA` → `Default`.
+Its project mode is `demo` and it contains no parcel inventory.
+
+- Staging applied migration ledger version `20261019225217`,
+  `map_studio_packages_and_project_plot_content`.
+- Staging Edge Functions are active at `get-public-lots` v19 and
+  `submit-public-inquiry` v16; both retain `verify_jwt=false` for their public
+  routes. The inquiry function suppresses all email for demo projects.
+- The Map Studio package has dataset ID
+  `f9864f56-03c7-47ea-b478-d020dcfcf921`. Revision 1 imported as a draft. Studio
+  then reopened it, extracted revision 2 from a revised DXF, and retained the
+  same three source keys (`cad/31`, `cad/33`, `cad/35`). Admin reported **3 stable
+  matches, 0 new references**, and imported the revised geometry as snapshot 2.
+- Admin changed the first outline to `QA-101-ADMIN`, **177.5 m²**, category
+  `QA Premium`, **USD 1,375 per plot**. After the geometry reimport, those Admin
+  values remained attached to the same feature identity. The QA project has 3
+  identities and 3 published outlines; version 2 is active and version 1 remains
+  in history.
+- The published embed is
+  `https://wamule-staging.netlify.app/embed/map-studio-workflow-test/map-studio-import-qa?phase=default`.
+  It loaded all 3 outlines, search and selection, plot details, category pricing,
+  and the revised geometry. Reload retained a selected feature through the URL.
+- A synthetic inquiry submitted through the hosted map created one lead scoped
+  to the QA tenant/project/phase. It stored the map-feature reference, left the
+  parcel reference null, and recorded `email_suppressed=true` and
+  `email_sent=false`. No message was sent. The public page was opened in a new
+  in-app-browser tab; that browser uses the user's existing browser session.
+- Staging currently reports Wamule's 20 manual Default plots, 719 raster
+  detections (179 `needs_review=false`, 540 `needs_review=true`), and 4 manual
+  Legacy Review rows. Wamule still has 0 leads. Hopkins retains the same active
+  snapshot ID from the prechange baseline, with 775 active and visible outlines,
+  0 parcel inventory records, and its original 9 leads. Storage still has 6
+  existing objects across `business-assets` and `project-map-public` (6,341,794
+  bytes); the new `project-map-packages` bucket has no stored image objects.
+- Netlify deploy `6ad6b30dacb516ad8ab8b2bb` is ready on the existing
+  `wamule-staging` site. The site is Git-connected to the `staging` branch, so a
+  later branch push can replace this manual publish. No push was made.
+- Focused tests passed **24/24**, the local PostgreSQL/WASM lifecycle rehearsal
+  passed **13/13**, typecheck and changed-file lint passed, and the staging
+  public-build scan passed (**82 files**, no development fixtures or private
+  source artifacts).
+
+The off-repository prechange fingerprints and Storage copy are retained. A new
+full PostgreSQL archive was not available: the same-day dump attempt produced a
+zero-byte file. The newest full archive with completed native PostgreSQL restore
+validation is dated 15 October 2026; it is older than this staging migration.
+The current migration, test-project rows and inquiry therefore have hosted
+verification but not a fresh full-database restore rehearsal. No production
+migration, production deployment, DNS change, Git push or outbound message was
+performed.

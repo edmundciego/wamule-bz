@@ -9,6 +9,7 @@ import {
   sameInquiryAs,
   validateInquiryPayload,
 } from "../supabase/functions/_shared/inquiry-contract.ts";
+import { shouldSuppressPublicInquiryEmail } from "../supabase/functions/_shared/public-inquiry-email-policy.mjs";
 
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -108,12 +109,19 @@ test("public inquiry server binds phase scope, keeps demo features out of sale i
   assert.match(source, /input\.specificLotRef && scope\.mapExperienceMode === "demo"/);
   assert.match(source, /p_map_feature_id: input\.specificMapFeatureRef/);
   assert.match(source, /if \(!rpcResult\.deduplicated && !suppressEmail\)/);
-  assert.match(source, /SUPPRESS_OUTBOUND_EMAILS/);
+  assert.match(source, /shouldSuppressPublicInquiryEmail\(/);
   assert.match(rpc, /p\.map_experience_mode='demo'/);
   assert.match(rpc, /p\.map_experience_mode='sales'/);
   assert.match(modal, /Ask About Mapped Outline/);
   assert.match(modal, /not a saleable inventory listing/);
   assert.match(modal, /I have a question about mapped outline/);
+});
+
+test("demo project inquiries always suppress outbound email", () => {
+  assert.equal(shouldSuppressPublicInquiryEmail("demo", undefined), true);
+  assert.equal(shouldSuppressPublicInquiryEmail("demo", "false"), true);
+  assert.equal(shouldSuppressPublicInquiryEmail("sales", "true"), true);
+  assert.equal(shouldSuppressPublicInquiryEmail("sales", undefined), false);
 });
 
 test("lot-authoritative tenant decision covers every case", () => {

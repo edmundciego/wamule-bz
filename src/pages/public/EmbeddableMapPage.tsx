@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { PublicLotMap, type PublicLotColourView, type PublicLotFilter } from "../../components/public/PublicLotMap";
 import { demoPlotLabel } from "../../lib/hopkinsDemoLabels";
+import { isLocalOnlySubmissionForProject } from "../../lib/publicSubmissionMode";
 
 export function EmbeddableMapPage() {
   const { tenant_slug = "", project_slug } = useParams<{ tenant_slug: string; project_slug?: string }>();
@@ -36,6 +37,7 @@ export function EmbeddableMapPage() {
         phaseSlug={publicPhaseSlug}
         showPrices={!localPreviewEnabled}
         enableInquiry={!localPreviewEnabled}
+        localDemoOnly={isLocalOnlySubmissionForProject(tenant_slug, project_slug)}
         initialFilter={initialFilter}
         initialView={initialView}
         initialLotNumber={initialLot}
