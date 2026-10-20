@@ -295,3 +295,72 @@ The current migration, test-project rows and inquiry therefore have hosted
 verification but not a fresh full-database restore rehearsal. No production
 migration, production deployment, DNS change, Git push or outbound message was
 performed.
+
+## Authenticated Admin import walkthrough — 19 October 2026
+
+The Map Studio Admin workflow was then exercised against the existing staging
+backend from the isolated `codex/map-studio-workflow` checkout at
+`23163e086e95ed6381f14483747758f024240fd7`. Its ignored, mode-0600
+`.env.local` contained only the protected staging `VITE_SUPABASE_URL` and
+browser-safe anon key; the URL and anon JWT both resolved to project
+`kvocwmrcuhiaezlcgzjf`. No database password or service-role key was put in the
+frontend configuration. The authenticated browser used the existing Super
+Admin session. The migration ledger already included
+`20261019225217 map_studio_packages_and_project_plot_content`; deployed
+`get-public-lots` v19 and `submit-public-inquiry` v16 were verified read-only.
+Nothing was replayed or redeployed.
+
+All writes were confined to the existing `[TEST] Map Studio Workflow` tenant,
+`[TEST] Map Studio Admin Import QA` project, and `Default` phase. A synthetic
+package revision 3 was imported, edited and published. A second synthetic
+geometry revision reused the same dataset and three source keys. Admin
+comparison reported **3 stable matches and 0 new references**. Deliberate
+package-category conflicts were shown in the preview; the existing project
+category catalogue remained authoritative. The first feature's Admin content
+survived the geometry reimport and page reload:
+
+- Map reference `QA-101-REV3`; 181.25 m²; dimensions `10 x 18.125 m`.
+- Category `QA Standard Admin`; USD 1,392 per plot.
+- Inventory link remained **Map reference only**; no parcel was created.
+
+Revision 4 was published in the QA project. The database now has four retained
+snapshots, three stable identities, three content records, four package rows,
+and zero parcels. Snapshot 4
+(`9659aa0e-e3ae-491e-b254-b3cd29f665dc`) is active and contains 3/3 public
+outlines; versions 1–3 remain in history. The local Admin page showed revision
+4 as Published and the edited fields after reload. The public embed was opened
+on the existing hosted staging site and reloaded with the selected feature
+restored:
+
+`https://wamule-staging.netlify.app/embed/map-studio-workflow-test/map-studio-import-qa?phase=default&lot=ecc446ee-afd5-411f-9320-70559f4a5dac`
+
+The anonymous hosted page displayed **3 mapped outlines**, the selected
+`QA-101-REV3` detail, its edited area/dimensions/price, and the project category
+guide. Browser screenshots of the local Admin editor and hosted embed were
+captured during the walkthrough.
+
+One synthetic inquiry was submitted from this public embed and the identical
+request was retried. The first response was HTTP 200 with one lead and one
+follow-up created; the retry was HTTP 200 and deduplicated without creating a
+second lead. Both responses reported email suppressed and not sent. A read-only
+query found exactly one new scoped lead (`source=public_inquiry`) associated
+with map feature `ecc446ee-afd5-411f-9320-70559f4a5dac`, no parcel ID, and one
+follow-up. The test project has two leads/two follow-ups including its earlier
+synthetic baseline row. No outbound message was sent.
+
+Post-walkthrough read-only counts remain: Wamule Default has 20 manual plots
+and 719 `raster-auto` records (179 `needs_review=false`, 540 true); its Legacy
+Review phase has 4 manual rows and Wamule has 0 leads. Hopkins has 0 parcel
+inventory rows, 9 leads, and 775 outlines on active snapshot
+`4d6d24f2-c31c-4854-b097-3b32e5c09d19`. The Admin imports and inquiry targeted
+only the named QA tenant/project/phase; no Wamule or Hopkins write was issued.
+
+Checks on the isolated local checkout passed: typecheck, focused lint, 12/12
+portable-package tests, 6/6 extraction tests, 13/13 local PostgreSQL/WASM
+lifecycle checks, the standalone Map Studio build, and the staging frontend
+build. The staging public-build scan passed for 82 files with no development
+fixtures or private source artifacts. The application build retains a
+non-blocking large-chunk warning for its 541.76 kB main JavaScript bundle.
+This walkthrough verified a local Admin frontend connected to staging plus the
+already-hosted staging embed. It did not push the branch or deploy a frontend;
+the hosted site continues to serve its existing frontend deployment.
