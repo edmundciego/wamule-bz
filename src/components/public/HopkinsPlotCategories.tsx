@@ -3,7 +3,7 @@ import type { PackageCategory } from "../../lib/mapPackage.mjs";
 import { usePublishedMapCatalog } from "../../lib/usePublishedMapCatalog";
 import { PublishedCategoryGuide } from "./PublishedCategoryGuide";
 
-function CategoryCard({ tier }: { tier: HopkinsTier }) {
+function CategoryCard({ tier, showPrices }: { tier: HopkinsTier; showPrices: boolean }) {
   return (
     <li className="min-w-0 rounded-lg border border-primary/15 bg-primary-soft/45 p-3 text-sm">
       <div className="flex min-w-0 items-start gap-2.5">
@@ -15,9 +15,9 @@ function CategoryCard({ tier }: { tier: HopkinsTier }) {
         <div className="min-w-0">
           <h3 className="break-words font-semibold leading-5 text-primary">{tier.label}</h3>
           {"source_label" in tier ? <p className="mt-0.5 text-xs leading-4 text-muted-foreground">Plan label: {tier.source_label}</p> : null}
-          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
+          {showPrices ? <p className="mt-1 break-words text-sm font-semibold tabular-nums text-foreground">
             {sourcePrice(tier.price)} <span className="font-normal text-muted-foreground">· {tier.price_basis}</span>
-          </p>
+          </p> : null}
         </div>
       </div>
     </li>
@@ -38,19 +38,19 @@ function SourcePricingNotes({ compact = false }: { compact?: boolean }) {
 }
 
 /** Shared category catalogue for the Hopkins homepage, application map and map price guide. */
-export function HopkinsPlotCategories({ variant = "legend", onCatalogLoaded }: { variant?: "cards" | "legend"; onCatalogLoaded?: (value: PackageCategory[] | null) => void }) {
+export function HopkinsPlotCategories({ variant = "legend", showPrices = true, onCatalogLoaded }: { variant?: "cards" | "legend"; showPrices?: boolean; onCatalogLoaded?: (value: PackageCategory[] | null) => void }) {
   const { categories: publishedCatalog, error: catalogError } = usePublishedMapCatalog({tenant:"hopkins-grove",project:"hopkins-grove",phase:"initial"},onCatalogLoaded);
   if (catalogError) return <p className="text-sm text-muted-foreground" role="status">Category prices are temporarily unavailable. Please contact the project team.</p>;
-  if (publishedCatalog) return <PublishedCategoryGuide categories={publishedCatalog} cards={variant==="cards"} />;
+  if (publishedCatalog) return <PublishedCategoryGuide categories={publishedCatalog} cards={variant==="cards"} showPrices={showPrices} />;
   const categories = HOPKINS_TIER_ORDER.map((key) => hopkinsTierSource.tiers[key]);
 
   if (variant === "cards") {
     return (
-      <section data-testid="hopkins-plot-category-cards" aria-label="Plot categories and source prices">
+      <section data-testid="hopkins-plot-category-cards" aria-label={showPrices ? "Plot categories and source prices" : "Plot categories"}>
         <ul className="grid min-w-0 gap-2 sm:grid-cols-2">
-          {categories.map((tier) => <CategoryCard key={tier.label} tier={tier} />)}
+          {categories.map((tier) => <CategoryCard key={tier.label} tier={tier} showPrices={showPrices} />)}
         </ul>
-        <SourcePricingNotes />
+        {showPrices ? <SourcePricingNotes /> : null}
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           Category and price references follow the source plan. They do not confirm outline availability or allocate a parcel.
         </p>
@@ -62,7 +62,7 @@ export function HopkinsPlotCategories({ variant = "legend", onCatalogLoaded }: {
     <details className="rounded-lg border border-border bg-background" data-testid="hopkins-pricing-legend">
       <summary className="focus-ring min-h-11 cursor-pointer list-none px-3 py-2 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
         <span className="flex items-center justify-between gap-3">
-          <span>Plot Categories &amp; Prices</span>
+          <span>{showPrices ? "Plot Categories & Prices" : "Plot Categories"}</span>
           <span aria-hidden="true" className="text-muted-foreground">⌄</span>
         </span>
       </summary>
@@ -77,15 +77,15 @@ export function HopkinsPlotCategories({ variant = "legend", onCatalogLoaded }: {
                   <span className="min-w-0">
                     <span className="block font-semibold text-foreground">{tier.label}</span>
                     {"source_label" in tier ? <span className="block text-muted-foreground">Plan label: {tier.source_label}</span> : null}
-                    <span className="text-muted-foreground">{tier.price_basis}</span>
+                    {showPrices ? <span className="text-muted-foreground">{tier.price_basis}</span> : null}
                   </span>
-                  <span className="whitespace-nowrap text-right font-semibold tabular-nums text-foreground">{sourcePrice(tier.price)}</span>
+                  {showPrices ? <span className="whitespace-nowrap text-right font-semibold tabular-nums text-foreground">{sourcePrice(tier.price)}</span> : null}
                 </li>
               ))}
             </ul>
           </section>
         ))}
-        <SourcePricingNotes compact />
+        {showPrices ? <SourcePricingNotes compact /> : null}
       </div>
     </details>
   );

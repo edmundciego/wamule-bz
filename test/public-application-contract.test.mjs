@@ -67,7 +67,8 @@ test("application validation rejects raw ids, unknown fields, stale references, 
 test("application browser uses public map and server submission, never the legacy id view or direct insert", async () => {
   const page = await read("src/pages/ApplicationPage.tsx");
   assert.match(page, /submitPublicFunction\("submit-public-application"/);
-  assert.match(page, /get-public-lots\?tenant=/);
+  assert.match(page, /get-public-lots\?\$\{new URLSearchParams/);
+  assert.match(page, /tenant: applicationTenantSlug, project: PUBLIC_WAMULE_SCOPE.projectSlug, phase: PUBLIC_WAMULE_SCOPE.phaseSlug/);
   assert.doesNotMatch(page, /public_parcel_options/);
   assert.doesNotMatch(page, /\.from\("applications"\)\.insert/);
   assert.doesNotMatch(page, /preferred_parcel_ids/);

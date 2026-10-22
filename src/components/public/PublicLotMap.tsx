@@ -2633,7 +2633,7 @@ export function PublicLotMap({
             )}
             aria-label={isHopkinsHostedMap ? "Map details and plot price guide" : "Lot details"}
           >
-            {isHopkinsHostedMap ? <HopkinsPlotCategories /> : null}
+            {isHopkinsHostedMap ? <HopkinsPlotCategories showPrices={showPrices} /> : null}
             {focusLot ? (localPreviewMode ? (
               <section
                 ref={detailsPanelRef}
@@ -2906,7 +2906,7 @@ export function PublicLotMap({
                 <p className="max-w-prose text-sm leading-5 text-muted-foreground">Select an outline or search by printed plan number or map reference. Pan and zoom to read the original plan labels.</p>
                 <div className="mt-1 border-y border-border py-4">
                   <p className="text-2xl font-semibold tabular-nums text-primary">{totalMappedParcels}</p>
-                  <p className="mt-1 text-xs font-medium text-muted-foreground">Approved source outlines</p>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">Mapped outlines</p>
                 </div>
               </section>
             ) : reviewPending ? (

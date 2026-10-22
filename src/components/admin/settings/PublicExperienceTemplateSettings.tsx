@@ -8,6 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import {
   defaultPublicExperience,
   normalizePublicExperience,
+  PUBLIC_SITE_TEMPLATES,
   PUBLIC_SITE_MODULES,
   type PublicExperienceConfig,
 } from "../../../lib/publicExperience.mjs";
@@ -102,7 +103,7 @@ export function PublicExperienceTemplateSettings({
       </CardHeader>
       <CardContent className="grid gap-5">
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          <strong>{workspace.projectName}</strong> uses the shared Wamule Classic layout. Branding, project content, application requirements, permissions, and tenant ownership remain configured separately.
+          <strong>{workspace.projectName}</strong> uses a shared homepage layout. Branding, project content, application requirements, permissions, and tenant ownership remain configured separately.
         </p>
         {configQuery.isLoading ? <LoadingState label="Loading project site settings" /> : null}
         {configQuery.isError ? <ErrorState message={configQuery.error instanceof Error ? configQuery.error.message : "Project site settings could not be loaded."} /> : null}
@@ -114,17 +115,24 @@ export function PublicExperienceTemplateSettings({
               <div>
                 <p className="flex items-center gap-2 text-sm font-semibold"><Eye aria-hidden="true" className="h-4 w-4" />Shared template: Wamule Classic</p>
                 <p className="mt-1 text-sm text-muted-foreground">{workspace.projectName} · {workspace.phaseName}</p>
-                <p className="mt-3 text-sm leading-5 text-muted-foreground">Each project fills the same page and application structure with its own company profile, notices, project content, and workflow settings.</p>
+                <p className="mt-3 text-sm leading-5 text-muted-foreground">Each project fills the same homepage frame with its own profile, cards, notices and map. Application steps follow the project's workflow settings.</p>
               </div>
               <div aria-label="Wamule Classic shared template preview" className="grid content-center gap-2 rounded-lg border border-primary/15 bg-background p-3">
                 <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-secondary">Shared public page</span>
                 <span className="font-semibold text-primary">{workspace.projectName}</span>
                 <span className="grid grid-cols-3 gap-1" aria-hidden="true"><span className="h-5 rounded-sm bg-primary/10" /><span className="h-5 rounded-sm bg-secondary/15" /><span className="h-5 rounded-sm bg-muted" /></span>
-                <span className="text-xs leading-4 text-muted-foreground">Shared hero, panels, map, and application wizard.</span>
+                <span className="text-xs leading-4 text-muted-foreground">Shared header, project cards, notices, and map.</span>
               </div>
             </div>
 
-            <fieldset className="grid gap-3 sm:grid-cols-2" disabled={!canManage || configQuery.isLoading || saving}>
+            <label className="grid gap-2 text-sm font-semibold">Homepage layout
+              <select className="min-h-11 rounded-md border border-border bg-card px-3 font-normal" value={current.templateId} disabled={configQuery.isLoading || configQuery.isError || saving} onChange={event => setDraft(value => value ? { ...value, templateId: normalizePublicExperience(scope!, { templateId: event.target.value }).templateId } : value)}>
+                {PUBLIC_SITE_TEMPLATES.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+              </select>
+              <span className="text-xs font-normal text-muted-foreground">Wamule Classic is currently the available shared layout.</span>
+            </label>
+
+            <fieldset className="grid gap-3 sm:grid-cols-2" disabled={!canManage || configQuery.isLoading || configQuery.isError || saving}>
               <legend className="text-sm font-semibold">Enabled public modules</legend>
               {PUBLIC_SITE_MODULES.map((module) => (
                 <label key={module.id} className="flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm">

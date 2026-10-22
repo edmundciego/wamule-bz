@@ -54,9 +54,6 @@ const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ def
 const EmbeddableMapPage = lazy(() =>
   import("./pages/public/EmbeddableMapPage").then((module) => ({ default: module.EmbeddableMapPage })),
 );
-const HopkinsPublicPage = lazy(() =>
-  import("./pages/public/HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })),
-);
 const PublicVersionPage = lazy(() =>
   import("./pages/public/PublicVersionPage").then((module) => ({ default: module.PublicVersionPage })),
 );
@@ -76,10 +73,10 @@ export default function App() {
       <Routes>
         <Route path="/" element={publicHomepage} />
         <Route path="/version" element={<PublicVersionPage />} />
-        <Route path="/apply" element={hostHomepage ? <HopkinsPublicPage /> : <PublicExperienceRoute scopeName="wamule" />} />
-        <Route path="/hopkins" element={<HopkinsPublicPage />} />
-        <Route path="/hopkins/apply" element={<HopkinsPublicPage />} />
-        <Route path="/hopkins/application" element={<HopkinsPublicPage />} />
+        <Route path="/apply" element={publicHomepage} />
+        <Route path="/hopkins" element={<PublicExperienceRoute scopeName="hopkins" />} />
+        <Route path="/hopkins/apply" element={<PublicExperienceRoute scopeName="hopkins" />} />
+        <Route path="/hopkins/application" element={<PublicExperienceRoute scopeName="hopkins" />} />
         <Route path="/embed/:tenant_slug" element={<EmbeddableMapPage />} />
         <Route path="/embed/:tenant_slug/:project_slug" element={<EmbeddableMapPage />} />
         <Route path="/login" element={<LoginPage />} />

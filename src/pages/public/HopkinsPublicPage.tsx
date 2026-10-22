@@ -8,11 +8,11 @@ import { PublicLotMap, type PublicLotParcel } from "../../components/public/Publ
 import { HopkinsPlotCategories } from "../../components/public/HopkinsPlotCategories";
 import { Badge } from "../../components/ui/Badge";
 import { ErrorState, LoadingState } from "../../components/ui/State";
-import { WamuleClassicBuildStamp, WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../../components/public/WamuleClassicTemplate";
+import { PublicHomepage } from "../../components/public/PublicHomepage";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
 import { isHopkinsPublicHost } from "../../lib/publicHosts";
 import { hasSupabaseConfig } from "../../lib/supabase";
-import { defaultPublicExperience, type PublicSiteModuleId } from "../../lib/publicExperience.mjs";
+import { defaultPublicExperience, type PublicSiteModuleId, type PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
 import { publicMapReferenceLabel } from "../../lib/hopkinsDemoLabels";
 import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
 import { readPublicMapPreferences, retainKnownMapPreferences, writePublicMapPreferences } from "../../lib/publicDraftState.mjs";
@@ -79,13 +79,16 @@ async function loadPublicProjectPage(): Promise<PublicProjectPage> {
 }
 
 export function HopkinsPublicPage({
+  templateId: selectedTemplate,
   enabledModules: selectedModules,
 }: {
+  templateId?: PublicSiteTemplateId;
   enabledModules?: Record<PublicSiteModuleId, boolean>;
 } = {}) {
   const location = useLocation();
   const { data: siteExperience } = usePublicSiteExperience(HOPKINS_SITE_SCOPE);
   const experience = siteExperience ?? defaultPublicExperience(HOPKINS_SITE_SCOPE);
+  const templateId = selectedTemplate ?? experience.templateId;
   const modules = selectedModules ?? experience.enabledModules;
   const { data: page, isLoading, isError, error } = useQuery({
     queryKey: ["public-project-page", HOPKINS_SCOPE.tenant, HOPKINS_SCOPE.project, HOPKINS_SCOPE.phase],
@@ -137,7 +140,7 @@ export function HopkinsPublicPage({
       return;
     }
     if (location.pathname !== "/hopkins/apply" && !(isHopkinsPublicHost(window.location.hostname) && location.pathname === "/apply")) return;
-    window.requestAnimationFrame(() => document.getElementById("interest")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    window.requestAnimationFrame(() => document.getElementById("request-info")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, [location.pathname, page, modules.map]);
 
   function toggleMapFeature(parcel: PublicLotParcel) {
@@ -179,7 +182,8 @@ export function HopkinsPublicPage({
 
   if (isError || !page) return <main className="mx-auto grid min-h-screen max-w-3xl content-center gap-4 bg-[#fffdf8] px-4 py-12"><h1 className="font-display text-3xl font-semibold text-[#173f2d]">Hopkins Grove information is temporarily unavailable</h1><ErrorState message={error instanceof Error ? error.message : "Please contact Ceiba Realty & Development directly."} /><a className="text-sm font-semibold text-[#173f2d] underline" href="mailto:properties@ceibabelize.com">Contact the project team</a></main>;
 
-  return <HopkinsWamuleClassicPage
+  return <HopkinsHomepageContent
+    templateId={templateId}
     page={page}
     modules={modules}
     selectedMapFeatureRefs={selectedMapFeatureRefs}
@@ -196,7 +200,8 @@ export function HopkinsPublicPage({
   />;
 }
 
-function HopkinsWamuleClassicPage({
+function HopkinsHomepageContent({
+  templateId,
   page,
   modules,
   selectedMapFeatureRefs,
@@ -208,6 +213,7 @@ function HopkinsWamuleClassicPage({
   localDemoOnly,
   hasSupabaseConfig,
 }: {
+  templateId: PublicSiteTemplateId;
   page: PublicProjectPage;
   modules: Record<PublicSiteModuleId, boolean>;
   selectedMapFeatureRefs: string[];
@@ -226,43 +232,31 @@ function HopkinsWamuleClassicPage({
     label: mapFeatureLabels.find((item) => item.ref === ref)?.label ?? "Map reference",
   }));
   return (
-    <main data-site-template="wamule-classic" data-public-tenant="hopkins-grove" className="min-h-screen bg-background">
-      <WamuleClassicHeader
-        companyName={page.company.name}
-        logoUrl="/favicon/hopkins-grove.svg"
-        homeHref={isHopkinsPublicHost(window.location.hostname) ? "/" : "/hopkins"}
-        mapHref="#lots"
-        applyHref="#application"
-        applyLabel="Apply"
-        showApply={modules.application}
-        mapLabel="Project map"
-      />
-
-      <div className="mx-auto max-w-6xl px-4 pt-3">
-        <p className="rounded-md border border-primary/10 bg-primary-soft/35 px-3 py-2 text-xs leading-5 text-primary" role="note" data-testid="independent-demo-banner">
-          Independent demonstration. Not affiliated with or endorsed by Ceiba. Demo submissions are not sent to Ceiba.
-          {localDemoOnly ? <span className="block font-medium">In this local preview, form entries stay in memory and are not sent to a hosted service.</span> : null}
-        </p>
-      </div>
-
-      <WamuleClassicHero
-        badge={<Badge tone={page.applicationSettings.applicationsOpen ? "green" : "amber"}>{page.phase.name} applications {page.applicationSettings.applicationsOpen ? "open" : "closed"}</Badge>}
-        title={page.project.name + " Project Application"}
-        description={page.company.description}
-        facts={<>
-          <WamuleClassicInfoTile label="Starting price" value={startingPrice} />
-          <WamuleClassicInfoTile label="Lot sizes" value={hopkinsHomesiteSizeLabel} />
-          <WamuleClassicInfoTile label="Project phase" value={page.phase.name} />
-        </>}
-        actions={modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">
-          Start application <ArrowRight className="h-4 w-4" />
-        </a> : null}
-        sideContent={<WamuleClassicPanel
-          title="Plot Categories & Prices"
-          description={publishedCatalog ? "Current project categories and pricing." : "Hopkins categories and prices shown on the source plan."}
-          trailing={<Badge tone="slate">{publishedCatalog ? "Project catalogue" : "Source plan"}</Badge>}
-        >
-          <HopkinsPlotCategories variant="cards" onCatalogLoaded={setPublishedCatalog} />
+    <PublicHomepage
+      templateId={templateId}
+      scope={HOPKINS_SITE_SCOPE}
+      modules={modules}
+      header={{ companyName: page.company.name, logoUrl: "/favicon/hopkins-grove.svg", homeHref: isHopkinsPublicHost(window.location.hostname) ? "/" : "/hopkins", mapLabel: "Project map" }}
+      banner={<p className="rounded-lg border border-warning/35 bg-warning/10 px-4 py-3 text-sm leading-6 text-foreground" role="note" data-testid="independent-demo-banner">
+        Independent demonstration. Not affiliated with or endorsed by Ceiba. Demo submissions are not sent to Ceiba.
+        {localDemoOnly ? <span className="block font-medium">In this local preview, form entries stay in memory and are not sent to a hosted service.</span> : null}
+      </p>}
+      hero={{
+        badge: <Badge tone={page.applicationSettings.applicationsOpen ? "green" : "amber"}>{page.phase.name} applications {page.applicationSettings.applicationsOpen ? "open" : "closed"}</Badge>,
+        title: page.project.name + " Project Application",
+        description: page.company.description,
+        facts: [
+          { label: "Starting price", value: modules.pricing ? startingPrice : "Contact office" },
+          { label: "Lot sizes", value: hopkinsHomesiteSizeLabel },
+          { label: "Project phase", value: page.phase.name },
+        ],
+        actions: modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">Start application <ArrowRight className="h-4 w-4" /></a> : null,
+        preferences: {
+          title: modules.pricing ? "Plot Categories & Prices" : "Plot Categories",
+          description: publishedCatalog ? "Current project categories and pricing." : "Hopkins categories and prices shown on the source plan.",
+          trailing: <Badge tone="slate">{publishedCatalog ? "Project catalogue" : "Source plan"}</Badge>,
+          content: <>
+          <HopkinsPlotCategories variant="cards" showPrices={modules.pricing} onCatalogLoaded={setPublishedCatalog} />
           <section className="mt-4 border-t border-border pt-4" aria-labelledby="hopkins-map-preferences-title">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
@@ -300,11 +294,10 @@ function HopkinsWamuleClassicPage({
               Map references are preferences only. They are not saleable parcel inventory, do not confirm availability, and do not reserve or allocate land.
             </p>
           </section>
-        </WamuleClassicPanel>}
-      />
-
-      {modules.inquiry ? <section id="interest" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-6">
-        <PublicInquiryPanel
+          </>,
+        },
+      }}
+      inquiry={<PublicInquiryPanel
           companyName={page.company.name}
           tenantSlug={HOPKINS_SCOPE.tenant}
           projectSlug={HOPKINS_SCOPE.project}
@@ -320,16 +313,9 @@ function HopkinsWamuleClassicPage({
           confirmationNote="Your request was saved for Hopkins. It does not assign a map outline or create parcel inventory."
           footerNote="Map references are not parcel inventory; this inquiry does not allocate or reserve land."
           mapHref="#lots"
-        />
-      </section> : null}
-
-      <WamuleClassicNotice
-        notice={page.company.publicNotice}
-        companyName={page.company.name}
-        location={page.company.location}
-      />
-
-      {modules.map ? <section id="lots" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-8">
+        />}
+      notice={{ notice: page.company.publicNotice, companyName: page.company.name, location: page.company.location }}
+      map={<>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="font-display text-2xl font-semibold text-primary">Hopkins Grove project map</h2>
@@ -345,7 +331,7 @@ function HopkinsWamuleClassicPage({
             projectSlug={HOPKINS_SCOPE.project}
             phaseSlug={HOPKINS_SCOPE.phase}
             showPrices={modules.pricing}
-            enableInquiry
+            enableInquiry={modules.inquiry}
             initialView="tier"
             initialFit="outlines"
             detailsPlacement="below"
@@ -356,9 +342,9 @@ function HopkinsWamuleClassicPage({
           />
         </div>
         <p className="mt-3 text-xs leading-5 text-muted-foreground">Source pricing is informational. Selection records an optional map-outline preference only.</p>
-      </section> : null}
 
-      {modules.application ? <HopkinsApplicationWizard
+      </>}
+      application={<HopkinsApplicationWizard
         projectName={page.project.name}
         applicationSettings={page.applicationSettings}
         modules={modules}
@@ -369,15 +355,8 @@ function HopkinsWamuleClassicPage({
         onRemoveMapFeature={onRemoveMapFeature}
         onParcelsLoaded={onParcelsLoaded}
         localDemoOnly={localDemoOnly}
-      /> : null}
-
-      <footer className="mx-auto flex max-w-6xl flex-col gap-1 border-t border-border px-4 py-5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <p><span className="font-semibold text-primary">{page.project.name}</span> · {page.company.name}</p>
-        <div className="flex flex-col gap-1 text-left sm:items-end sm:text-right">
-          <p>Public project preview · <Link to={MAP_URL} className="font-semibold text-primary underline underline-offset-2">Standalone map</Link></p>
-          <WamuleClassicBuildStamp scope={HOPKINS_SITE_SCOPE} />
-        </div>
-      </footer>
-    </main>
+      />}
+      footer={<div className="grid gap-1"><p><span className="font-semibold text-primary">{page.project.name}</span> · {page.company.name}</p><p>Public project preview · <Link to={MAP_URL} className="font-semibold text-primary underline underline-offset-2">Standalone map</Link></p></div>}
+    />
   );
 }

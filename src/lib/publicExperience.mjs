@@ -13,6 +13,10 @@ export const PUBLIC_SITE_MODULES = [
   { id: "pricing", name: "Public prices", description: "Allow the template to show prices when project settings also permit it." },
 ];
 
+export function resolvePublicSiteTemplateId(value) {
+  return PUBLIC_SITE_TEMPLATES.find(template => template.id === value)?.id ?? "wamule-classic";
+}
+
 export function defaultPublicExperience(_scope) {
   return {
     templateId: "wamule-classic",
@@ -33,10 +37,9 @@ export function normalizePublicExperience(scope, value) {
     ? raw.enabledModules
     : {};
   return {
-    // Presentation is deliberately fixed to the first shared template.
-    // Tenant, project, phase, branding, and application rules remain scoped
-    // independently by their own configuration and route.
-    templateId: defaults.templateId,
+    // Only registered layouts can render. Template selection never changes
+    // tenant scope, branding or application requirements.
+    templateId: resolvePublicSiteTemplateId(raw.templateId),
     // This is an explicitly UI-only preview gate. It must not be presented
     // as access control until every public data/submission endpoint enforces it.
     uiRestrictedAccess: raw.uiRestrictedAccess === true,

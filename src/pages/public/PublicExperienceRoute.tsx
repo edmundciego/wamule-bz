@@ -1,6 +1,7 @@
 import { lazy } from "react";
 import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
-import { defaultPublicExperience } from "../../lib/publicExperience.mjs";
+import { hasSupabaseConfig } from "../../lib/supabase";
+import { ErrorState, LoadingState } from "../../components/ui/State";
 
 const ApplicationPage = lazy(() => import("../ApplicationPage").then((module) => ({ default: module.ApplicationPage })));
 const HopkinsPublicPage = lazy(() => import("./HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })));
@@ -13,8 +14,11 @@ const scopes = {
 export function PublicExperienceRoute({ scopeName }: { scopeName: keyof typeof scopes }) {
   const isHopkinsRoute = scopeName === "hopkins";
   const scope = scopes[scopeName];
-  const { data } = usePublicSiteExperience(scope);
-  const experience = data ?? defaultPublicExperience(scope);
+  const { data, isLoading, isError } = usePublicSiteExperience(scope);
+  if (!hasSupabaseConfig) return <main className="mx-auto min-h-screen max-w-3xl bg-background px-4 py-20"><ErrorState message="Project homepage settings are not configured. Please try again later." /></main>;
+  if (isLoading) return <main className="min-h-screen bg-background px-4 py-20"><LoadingState label="Loading project homepage" /></main>;
+  if (isError || !data) return <main className="mx-auto min-h-screen max-w-3xl bg-background px-4 py-20"><ErrorState message="Project homepage settings are temporarily unavailable. Please try again." /></main>;
+  const experience = data;
 
   // Route/host resolution fixes tenant, project, and phase. The shared
   // presentation template never changes scope or application requirements.
@@ -33,6 +37,6 @@ export function PublicExperienceRoute({ scopeName }: { scopeName: keyof typeof s
   }
 
   return isHopkinsRoute
-    ? <HopkinsPublicPage enabledModules={experience.enabledModules} />
+    ? <HopkinsPublicPage templateId={experience.templateId} enabledModules={experience.enabledModules} />
     : <ApplicationPage templateId={experience.templateId} enabledModules={experience.enabledModules} />;
 }

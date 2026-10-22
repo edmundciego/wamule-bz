@@ -11,7 +11,7 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
-import { WamuleClassicBuildStamp, WamuleClassicHeader, WamuleClassicHero, WamuleClassicInfoTile, WamuleClassicNotice, WamuleClassicPanel } from "../components/public/WamuleClassicTemplate";
+import { PublicHomepage } from "../components/public/PublicHomepage";
 import { applicationSchema } from "../lib/schemas";
 import { submitPublicFunction } from "../lib/publicSubmission";
 import { isLocalOnlySubmission } from "../lib/publicSubmissionMode";
@@ -22,7 +22,7 @@ import { buildPublicApplicationPayload } from "../../supabase/functions/_shared/
 import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
-import type { BusinessSetting, InstallmentPlan, PaymentMethod } from "../types/database";
+import { DEFAULT_TENANT_ID, type BusinessSetting, type InstallmentPlan, type PaymentMethod } from "../types/database";
 
 type ApplicationValues = z.infer<typeof applicationSchema>;
 type PublicParcelOption = {
@@ -125,12 +125,13 @@ export function ApplicationPage({
     isLoading: publicSettingsLoading,
     isError: publicSettingsError,
   } = useQuery({
-    queryKey: ["public-business-settings"],
+    queryKey: ["public-business-settings", PUBLIC_WAMULE_SCOPE.tenantSlug, DEFAULT_TENANT_ID],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("business_settings")
         .select("*")
-        .in("key", ["company_profile", "public_application", "lot_phase"]);
+        .in("key", ["company_profile", "public_application", "lot_phase"])
+        .eq("tenant_id", DEFAULT_TENANT_ID);
       if (error) throw error;
       return data as BusinessSetting[];
     },
@@ -147,13 +148,13 @@ export function ApplicationPage({
   const configuredTenantSlug = applicationSettings.lot_map_tenant_slug;
   const applicationTenantSlug = typeof configuredTenantSlug === "string" ? configuredTenantSlug.trim().toLowerCase() : "";
   const { data: parcels = [], isLoading, isError: parcelsError, error: parcelLoadError } = useQuery({
-    queryKey: ["public-application-lots", applicationTenantSlug],
+    queryKey: ["public-application-lots", applicationTenantSlug, PUBLIC_WAMULE_SCOPE.projectSlug, PUBLIC_WAMULE_SCOPE.phaseSlug],
     queryFn: async () => {
       const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
       if (!baseUrl || !anonKey) throw new Error("The public lot service is not configured.");
       const response = await fetch(
-        `${baseUrl}/functions/v1/get-public-lots?tenant=${encodeURIComponent(applicationTenantSlug)}`,
+        `${baseUrl}/functions/v1/get-public-lots?${new URLSearchParams({ tenant: applicationTenantSlug, project: PUBLIC_WAMULE_SCOPE.projectSlug, phase: PUBLIC_WAMULE_SCOPE.phaseSlug })}`,
         { headers: { apikey: anonKey } },
       );
       const body = await response.json().catch(() => ({})) as {
@@ -176,11 +177,12 @@ export function ApplicationPage({
     enabled: hasSupabaseConfig && Boolean(applicationTenantSlug),
   });
   const { data: installmentPlans } = useQuery({
-    queryKey: ["public-installment-plans"],
+    queryKey: ["public-installment-plans", PUBLIC_WAMULE_SCOPE.tenantSlug, DEFAULT_TENANT_ID],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("installment_plans")
         .select("*")
+        .eq("tenant_id", DEFAULT_TENANT_ID)
         .eq("is_active", true)
         .order("sort_order", { ascending: true });
       if (error) throw error;
@@ -189,11 +191,12 @@ export function ApplicationPage({
     enabled: hasSupabaseConfig,
   });
   const { data: paymentMethods } = useQuery({
-    queryKey: ["public-payment-methods"],
+    queryKey: ["public-payment-methods", PUBLIC_WAMULE_SCOPE.tenantSlug, DEFAULT_TENANT_ID],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payment_methods")
         .select("*")
+        .eq("tenant_id", DEFAULT_TENANT_ID)
         .eq("is_active", true)
         .eq("is_public", true)
         .order("sort_order", { ascending: true });
@@ -288,32 +291,26 @@ export function ApplicationPage({
   }
 
   return (
-    <main data-site-template={templateId} data-site-map={modules.map} className="min-h-screen bg-background">
-      <WamuleClassicHeader
-        companyName={company.company_name}
-        logoUrl={company.logo_url || "/favicon/android-chrome-192x192.png"}
-        applyHref="#application"
-        showApply={modules.application}
-      />
-
-      <WamuleClassicHero
-        badge={<Badge tone={applicationSettings.applications_open ? "green" : "amber"}>{lotPhase.phase_name} applications {applicationSettings.applications_open ? "open" : "closed"}</Badge>}
-        title={`${company.company_name} Land Application`}
-        description={company.short_description || `Apply to be considered for property within ${company.company_name}.`}
-        facts={<>
-          <WamuleClassicInfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly && modules.pricing ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office"} />
-          <WamuleClassicInfoTile label="Lot sizes" value={lotPhase.default_lot_size} />
-          <WamuleClassicInfoTile label={lotPhase.phase_name} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
-        </>}
-        actions={modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">
-          Start application <ArrowRight className="h-4 w-4" />
-        </a> : null}
-        sideContent={<WamuleClassicPanel
-          id="lots"
-          title="Available Lot Preferences"
-          description="Select preferred lots in the application below."
-          trailing={lotPhase.public_availability_display && applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null}
-        >
+    <PublicHomepage
+      templateId={templateId}
+      scope={PUBLIC_WAMULE_SCOPE}
+      modules={modules}
+      header={{ companyName: company.company_name, logoUrl: company.logo_url || "/favicon/android-chrome-192x192.png" }}
+      hero={{
+        badge: <Badge tone={applicationSettings.applications_open ? "green" : "amber"}>{lotPhase.phase_name} applications {applicationSettings.applications_open ? "open" : "closed"}</Badge>,
+        title: `${company.company_name} Land Application`,
+        description: company.short_description || `Apply to be considered for property within ${company.company_name}.`,
+        facts: [
+          { label: "Starting price", value: applicationSettings.show_lot_prices_publicly && modules.pricing ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office" },
+          { label: "Lot sizes", value: lotPhase.default_lot_size },
+          { label: lotPhase.phase_name, value: applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review" },
+        ],
+        actions: modules.application ? <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">Start application <ArrowRight className="h-4 w-4" /></a> : null,
+        preferences: {
+          title: "Available Lot Preferences",
+          description: "Select preferred lots in the application below.",
+          trailing: lotPhase.public_availability_display && applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null,
+          content: <>
           {!lotPhase.public_availability_display ? (
             <div className="rounded-md border border-dashed bg-muted p-5 text-sm text-muted-foreground">
               Lot availability is confirmed by {company.company_name} staff during application review.
@@ -337,26 +334,26 @@ export function ApplicationPage({
           <p className="mt-4 text-xs text-muted-foreground">
             View the complete available lot list when choosing your preferred lot. Preference selections do not reserve land.
           </p>
-        </WamuleClassicPanel>}
-      />
-
-      {modules.inquiry ? <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
-        <PublicInquiryPanel
-          companyName={company.company_name}
-          tenantSlug={applicationTenantSlug}
-          parcels={parcels}
-          showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
-          hasSupabaseConfig={hasSupabaseConfig}
-        />
-      </section> : null}
-
-      <WamuleClassicNotice
-        notice={applicationSettings.public_notice_text}
+          </>,
+        },
+      }}
+      inquiry={<PublicInquiryPanel
         companyName={company.company_name}
-        location={company.location_address}
-      />
-
-      {modules.application ? <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
+        tenantSlug={applicationTenantSlug}
+        projectSlug={PUBLIC_WAMULE_SCOPE.projectSlug}
+        phaseSlug={PUBLIC_WAMULE_SCOPE.phaseSlug}
+        parcels={parcels}
+        showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
+        hasSupabaseConfig={hasSupabaseConfig}
+      />}
+      notice={{ notice: applicationSettings.public_notice_text, companyName: company.company_name, location: company.location_address }}
+      map={applicationTenantSlug ? <>
+        <div className="mb-4"><h2 className="font-display text-2xl font-semibold text-primary">{company.company_name} project map</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Explore the plan and add an available lot to your application preferences.</p></div>
+        <div className="h-[560px] min-w-0 overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)] lg:h-[640px]">
+          <PublicLotMap tenantSlug={applicationTenantSlug} projectSlug={PUBLIC_WAMULE_SCOPE.projectSlug} phaseSlug={PUBLIC_WAMULE_SCOPE.phaseSlug} selectedLocalKeys={selectedLocalKeys} onToggleLot={toggleMapLot} showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing} localDemoOnly={isLocalOnlySubmission} />
+        </div>
+      </> : null}
+      application={<section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
         <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Application</p>
@@ -472,6 +469,8 @@ export function ApplicationPage({
                             <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
                               <PublicLotMap
                                 tenantSlug={applicationTenantSlug || "demo"}
+                                projectSlug={PUBLIC_WAMULE_SCOPE.projectSlug}
+                                phaseSlug={PUBLIC_WAMULE_SCOPE.phaseSlug}
                                 selectedLocalKeys={selectedLocalKeys}
                                 onToggleLot={toggleMapLot}
                                 showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
@@ -644,11 +643,8 @@ export function ApplicationPage({
             )}
           </CardContent>
         </Card>
-      </section> : null}
-      <footer className="mx-auto max-w-6xl border-t border-border px-4 py-5">
-        <WamuleClassicBuildStamp scope={PUBLIC_WAMULE_SCOPE} />
-      </footer>
-    </main>
+      </section>}
+    />
   );
 }
 

@@ -351,7 +351,7 @@ export function HopkinsApplicationWizard({
                                 projectSlug={HOPKINS_SCOPE.project}
                                 phaseSlug={HOPKINS_SCOPE.phase}
                                 showPrices={modules.pricing}
-                                enableInquiry
+                                enableInquiry={modules.inquiry}
                                 initialView="tier"
                                 initialFit="outlines"
                                 detailsPlacement="below"
