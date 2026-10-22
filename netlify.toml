@@ -1,3 +1,10 @@
 [build]
   command = "node scripts/build-netlify.mjs"
   publish = "dist"
+
+# The staging deployment is the Netlify production context for the `staging`
+# branch. These two public/configuration values are intentionally present in
+# checked-in release documentation, so exclude only their keys from Netlify's
+# value scan while keeping scanning enabled for every other environment key.
+[context.production.environment]
+  SECRETS_SCAN_OMIT_KEYS = "EMAIL_FROM_NAME,VITE_SUPABASE_URL"
