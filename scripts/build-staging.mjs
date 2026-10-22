@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { createStagingBuildEnv } from "./staging-build-config.mjs";
 
 const root = process.cwd();
+const env = createStagingBuildEnv(process.env);
 const result = spawnSync("npm", ["run", "build"], {
   cwd: root,
   stdio: "inherit",
-  env: { ...process.env, VITE_BUILD_ENV: "staging-preview", VITE_PUBLIC_DEMO_MODE: "true" },
+  env,
 });
 
 if (result.error) throw result.error;
@@ -19,4 +21,15 @@ if (!existsSync(headersSource) || !existsSync(publishDirectory)) {
 }
 mkdirSync(publishDirectory, { recursive: true });
 copyFileSync(headersSource, join(publishDirectory, "_headers"));
-console.log("[staging-build] Added staging-only noindex response headers and local-demo submission guard.");
+
+const guard = spawnSync("npm", ["run", "verify:public-build:staging"], {
+  cwd: root,
+  stdio: "inherit",
+  env,
+});
+if (guard.error) throw guard.error;
+if (guard.status !== 0) process.exit(guard.status ?? 1);
+
+console.log(
+  `[staging-build] Project ${env.VITE_SUPABASE_URL}; demo mode on; connected submissions limited to ${env.VITE_PUBLIC_STAGING_SUBMISSION_SCOPES}.`,
+);

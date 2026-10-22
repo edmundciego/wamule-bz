@@ -141,6 +141,35 @@ the current frontend origin. It always includes project and phase. A tenant can
 paste the iframe into WordPress, Webflow or another website; separate tenant
 hosting is not needed for an embed. A local URL is only useful on that computer.
 
+## Reproducible staging release — 22 October 2026
+
+The existing `wamule-staging` site auto-publishes its `staging` branch. Its
+rollback target before this release is Netlify deploy
+`6ad9a38d0df48aef9854c6d0` (the verified manual build of
+`4dd5792260e02742acd127d77fc3823b552a1889`). The tracked `netlify.toml` calls
+`scripts/build-netlify.mjs`; only the `staging` source branch dispatches to the
+guarded `npm run build:staging`, while other branches keep the ordinary build.
+The staging build pins the public Supabase URL to project
+`kvocwmrcuhiaezlcgzjf`, requires the existing browser-safe anon key, enables
+demo mode, sets the `staging-preview` build stamp and allows connected
+map-reference inquiries only for
+`map-studio-workflow-test/map-studio-import-qa`. It copies the staging
+noindex/referrer headers and runs the public-build guard before deploy.
+
+This narrow allowlist is needed because the connected Admin inquiry test uses
+the isolated QA embed; all tenant homepages and every other public project stay
+local-only. The test project's `map_experience_mode` is `demo`, so the deployed
+inquiry function keeps outbound email suppressed server-side. The project map
+contains no parcel inventory; its inquiry stores a map-feature reference only.
+
+The 22 October pre-release check found that the existing manual frontend build
+did not include the QA submission scope: its inquiry button correctly reported
+that the form was not saved or sent. No lead was created by that click. The
+tracked staging build now includes the exact QA scope so the connected test can
+be repeated after automatic publishing. The earlier 19 October connected
+inquiry/retry evidence remains documented above; it does not substitute for
+checking the corrected automatic build.
+
 ## Verification commands and limits
 
 ```sh
