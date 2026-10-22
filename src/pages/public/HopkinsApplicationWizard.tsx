@@ -200,7 +200,7 @@ export function HopkinsApplicationWizard({
     setSubmitting(true);
     try {
       if (localDemoOnly) {
-        setReceipt({ message: "Local preview complete. No application was saved or sent." });
+        setReceipt({ message: "Demo application complete. It was not saved or sent." });
         setCompletedSteps((current) => current.includes(4) ? current : [...current, 4]);
         return;
       }

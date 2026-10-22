@@ -31,6 +31,7 @@ export type PublicHomepageProps = {
     title: string;
     description: string;
     facts: Array<{ label: string; value: string }>;
+    sideAlignment?: "center" | "start";
     actions?: ReactNode;
     preferences: {
       title: string;
@@ -82,6 +83,7 @@ function WamuleClassicHomepage({
         facts={hero.facts.map((fact) => (
           <WamuleClassicInfoTile key={fact.label} {...fact} />
         ))}
+        sideAlignment={hero.sideAlignment}
         actions={hero.actions}
         sideContent={
           <WamuleClassicPanel

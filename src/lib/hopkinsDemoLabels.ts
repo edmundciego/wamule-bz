@@ -43,6 +43,38 @@ export function publicMapReferenceLabel(reference: string | null | undefined): s
   return match ? `Ref ${match[1]}` : reference;
 }
 
+/** Keep the public map reference literal so it's clearly distinct from a printed number. */
+export function hopkinsMapLabelLines(label: string): string[] {
+  return [label];
+}
+
+function mapLabelDimensions(label: string, fontSize: number): { width: number; height: number } {
+  const lines = hopkinsMapLabelLines(label);
+  return {
+    width: Math.max(...lines.map((line) => line.length)) * fontSize * 0.62,
+    height: fontSize * (lines.length === 1 ? 1.2 : 1.9),
+  };
+}
+
+function fitHopkinsMapLabelFontSize(
+  bounds: { width: number; height: number },
+  label: string,
+  screenPixelsPerMapUnit: number,
+  targetScreenPixels: number,
+): number | null {
+  if (
+    !Number.isFinite(bounds.width) || bounds.width <= 0
+    || !Number.isFinite(bounds.height) || bounds.height <= 0
+    || !Number.isFinite(screenPixelsPerMapUnit) || screenPixelsPerMapUnit <= 0
+    || !Number.isFinite(targetScreenPixels) || targetScreenPixels <= 0
+  ) return null;
+  const dimensions = mapLabelDimensions(label, targetScreenPixels);
+  const textWidthInMapUnits = dimensions.width / screenPixelsPerMapUnit;
+  const textHeightInMapUnits = dimensions.height / screenPixelsPerMapUnit;
+  if (bounds.width < textWidthInMapUnits || bounds.height < textHeightInMapUnits) return null;
+  return targetScreenPixels / screenPixelsPerMapUnit;
+}
+
 /** Sparse generated references at broad views, filling in as lots enlarge. */
 export function hopkinsMapReferenceInterval(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom < 2) return Number.POSITIVE_INFINITY;
@@ -158,14 +190,27 @@ export function layoutHopkinsSourceMapLabels(
       width: Math.max(...xs) - Math.min(...xs),
       height: Math.max(...ys) - Math.min(...ys),
     } : null;
-    const fontSize = text && bounds && revealLabel
-      ? fitStandardMapLabelFontSize(bounds, text, scale, targetPx)
-      : null;
-    const anchor = text && fontSize && polygon.length >= 3
-      ? labelAnchor(polygon, text.length * fontSize * 0.62, fontSize * 1.2)
-      : null;
-    const textWidth = text && fontSize ? text.length * fontSize * 0.62 : 0;
-    const textHeight = fontSize ? fontSize * 1.2 : 0;
+    let fontSize: number | null = null;
+    let labelDimensions: { width: number; height: number } | null = null;
+    let anchor: { x: number; y: number } | null = null;
+    const candidateScreenSizes = focused && targetPx > STANDARD_MAP_LABEL_SCREEN_PX
+      ? [targetPx, STANDARD_MAP_LABEL_SCREEN_PX]
+      : [targetPx];
+    if (text && bounds && revealLabel && polygon.length >= 3) {
+      for (const candidateScreenSize of candidateScreenSizes) {
+        const candidateFontSize = fitHopkinsMapLabelFontSize(bounds, text, scale, candidateScreenSize);
+        if (!candidateFontSize) continue;
+        const candidateDimensions = mapLabelDimensions(text, candidateFontSize);
+        const candidateAnchor = labelAnchor(polygon, candidateDimensions.width, candidateDimensions.height);
+        if (!candidateAnchor) continue;
+        fontSize = candidateFontSize;
+        labelDimensions = candidateDimensions;
+        anchor = candidateAnchor;
+        break;
+      }
+    }
+    const textWidth = labelDimensions?.width ?? 0;
+    const textHeight = labelDimensions?.height ?? 0;
     const view = options.viewBox;
     const inView = !view || !anchor || (
       anchor.x - textWidth / 2 >= view.x
@@ -187,8 +232,9 @@ export function layoutHopkinsSourceMapLabels(
   const cellSize = Math.max(targetPx * 1.5, 16);
   const cells = new Map<string, number[]>();
   for (const item of ranked) {
-    const width = item.text.length * item.fontSize * scale * 0.62 + 4;
-    const height = item.fontSize * scale * 1.2 + 4;
+    const dimensions = mapLabelDimensions(item.text, item.fontSize);
+    const width = dimensions.width * scale + 4;
+    const height = dimensions.height * scale + 4;
     const cx = item.anchor.x * scale;
     const cy = item.anchor.y * scale;
     const left = cx - width / 2;

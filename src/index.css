@@ -295,17 +295,17 @@ main[data-public-tenant="hopkins-grove"] {
   --color-secondary: #8a5a35;
   --color-secondary-hover: #704629;
   --color-secondary-soft: #f3e9de;
-  --color-background: #fffdf8;
+  --color-background: #f7f5ef;
   --color-surface: #ffffff;
-  --color-surface-muted: #f5f7f2;
+  --color-surface-muted: #faf8f3;
   --color-text: #2d2317;
   --color-text-muted: #52635a;
-  --color-border: #dce5dc;
-  --background: 48 100% 99%;
+  --color-border: #e5e0d6;
+  --background: 43 33% 95%;
   --foreground: 30 15% 14%;
   --card: 0 0% 100%;
   --card-foreground: 30 15% 14%;
-  --muted: 48 26% 95%;
+  --muted: 42 41% 97%;
   --muted-foreground: 147 11% 39%;
   --primary: 153 47% 18%;
   --primary-hover: 153 43% 25%;
@@ -313,8 +313,8 @@ main[data-public-tenant="hopkins-grove"] {
   --secondary: 24 52% 56%;
   --secondary-hover: 24 43% 43%;
   --secondary-soft: 31 45% 91%;
-  --border: 153 24% 83%;
-  --input: 153 24% 83%;
+  --border: 39 20% 87%;
+  --input: 39 20% 87%;
   --ring: 153 47% 18%;
 }
 

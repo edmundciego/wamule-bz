@@ -773,12 +773,14 @@ export function PublicInquiryPanel({
         <div className="grid gap-5 p-5 md:grid-cols-[0.9fr_1.1fr] md:items-center lg:p-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Project information</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-primary">{localDemoOnly ? "Local preview complete." : "Thanks — we received your request."}</h2>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-primary">{localDemoOnly ? "Demo request complete." : "Thanks — we received your request."}</h2>
           </div>
           <div className="rounded-xl border border-success/20 bg-success/10 p-4 text-sm leading-6 text-foreground">
-            <p>{localDemoOnly ? "This request stayed in your browser. No inquiry was saved or sent." : "Our team will review your questions and follow up using the contact information you provided."}</p>
+            <p>{localDemoOnly ? "This demo request was not saved or sent." : "Our team will review your questions and follow up using the contact information you provided."}</p>
             <p className="mt-2 text-muted-foreground">
-              {emailSent
+              {localDemoOnly
+                ? "No lead was created, and the request did not reserve a lot."
+                : emailSent
                 ? "A confirmation email was sent. Your request does not reserve a lot or guarantee approval."
                 : confirmationNote || "Your request was saved. It does not reserve a lot or guarantee approval."}
             </p>

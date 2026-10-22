@@ -56,6 +56,7 @@ export function WamuleClassicHero({
   facts,
   actions,
   sideContent,
+  sideAlignment = "center",
   showOrnament = true,
 }: {
   badge: ReactNode;
@@ -64,10 +65,12 @@ export function WamuleClassicHero({
   facts: ReactNode;
   actions?: ReactNode;
   sideContent: ReactNode;
+  sideAlignment?: "center" | "start";
   showOrnament?: boolean;
 }) {
+  const sideAlignmentClass = sideAlignment === "start" ? "lg:items-start" : "lg:items-center";
   return (
-    <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
+    <section className={`mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] ${sideAlignmentClass} lg:py-14`}>
       <div className="min-w-0">
         {badge}
         <h1 className="mt-5 max-w-3xl break-words font-display text-4xl font-semibold tracking-normal text-primary sm:text-5xl">{title}</h1>

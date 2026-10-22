@@ -44,6 +44,7 @@ import {
   demoMapPlotLabel,
   demoPlotLabel,
   fitStandardMapLabelFontSize,
+  hopkinsMapLabelLines,
   layoutHopkinsSourceMapLabels,
   publicMapReferenceLabel,
 } from "../../lib/hopkinsDemoLabels";
@@ -425,6 +426,11 @@ export function PublicLotMap({
   );
   const [toast, setToast] = useState<string | null>(null);
   const [geometryDraft, setGeometryDraft] = useState<Array<{ x: number; y: number }> | null>(null);
+  // Phone layout flag: the detail card is a full-width bottom sheet only
+  // below sm; the controls need lifting only there.
+  const [narrow, setNarrow] = useState<boolean>(() =>
+    typeof window === "undefined" ? false : window.innerWidth < 640,
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -816,7 +822,6 @@ export function PublicLotMap({
     && basePayload?.tenant.slug === "hopkins-grove"
     && basePayload.project?.slug === "hopkins-grove",
   );
-
   const correctionReviewTitle = correctionMapLayer?.title;
   const correctionReviewImageUrl = correctionMapLayer?.imageUrl;
   const correctionReviewParcels = correctionMapLayer?.parcels;
@@ -953,7 +958,10 @@ export function PublicLotMap({
     };
   }, [masterplanUrl]);
 
-  const highlighted = selectedLocalKeys ?? (internalSelectedKey !== null ? [internalSelectedKey] : []);
+  const highlighted = useMemo(
+    () => selectedLocalKeys ?? (internalSelectedKey !== null ? [internalSelectedKey] : []),
+    [selectedLocalKeys, internalSelectedKey],
+  );
   // Tenant theme (allowlisted server-side; built-in defaults until the
   // tenant publishes one). Tokens become per-container CSS variables so two
   // embeds never share state; card copy/flags come from the same object.
@@ -974,6 +982,19 @@ export function PublicLotMap({
     ? correctionMapLayer?.title ?? demoDisplayName
     : correctionMapLayer?.title ?? (payload?.branding.company_name || payload?.tenant.name || "Lot availability");
 
+  const focusPhoneDetailsSummary = useCallback(() => {
+    if (!previewLayout || detailsPlacement !== "below" || !narrow) return false;
+    const detailsPanel = detailsPanelRef.current;
+    if (!detailsPanel) return false;
+    detailsPanel.focus({ preventScroll: true });
+    const detailsScroller = detailsPanel.closest("aside");
+    if (detailsScroller) {
+      detailsScroller.scrollTop = 0;
+      detailsScroller.scrollIntoView({ block: "nearest" });
+    }
+    return true;
+  }, [previewLayout, detailsPlacement, narrow]);
+
   // A keyboard search result or map option opens the same detail card as a
   // pointer selection, then focuses that card so its actions are reachable.
   useEffect(() => {
@@ -981,9 +1002,10 @@ export function PublicLotMap({
     const target = detailsFocusTargetRef.current;
     if (target !== null && focusLotKey === target) {
       detailsFocusTargetRef.current = null;
-      (previewLayout ? detailsPanelRef.current : cardRef.current)?.focus();
+      const detailsPanel = previewLayout ? detailsPanelRef.current : cardRef.current;
+      if (!focusPhoneDetailsSummary()) detailsPanel?.focus();
     }
-  }, [detailsFocusRevision, focusLotKey, previewLayout]);
+  }, [detailsFocusRevision, focusLotKey, previewLayout, focusPhoneDetailsSummary]);
 
   // Reveal-on-select with card padding: while a lot is selected, the pan
   // clamp gains room equal to the card's overlap on each edge it touches
@@ -1095,11 +1117,11 @@ export function PublicLotMap({
   const [cardPad, setCardPad] = useState<PanPads>(NO_PADS);
   // Measured card height (px) for lifting the floating controls above it.
   const [cardHpx, setCardHpx] = useState(0);
-  // Phone layout flag: the detail card is a full-width bottom sheet only
-  // below sm; the controls need lifting only there.
-  const [narrow, setNarrow] = useState<boolean>(() =>
-    typeof window === "undefined" ? false : window.innerWidth < 640,
-  );
+  // Hopkins' 5700px source image supports native-scale lot inspection on a
+  // phone. At 16x, a 320px map viewport can fit a readable 14px reference
+  // inside a small outline; desktop keeps the existing 8x ceiling to avoid
+  // unnecessary raster upscaling. Other maps keep their original limit.
+  const mapMaxZoom = isHopkinsHostedMap ? (narrow ? 16 : MAX_ZOOM) : MAX_ZOOM;
   const [mapViewportSize, setMapViewportSize] = useState({ width: 800, height: 600 });
   const svgRef = useRef<SVGSVGElement | null>(null);
   // Gesture model: NO setPointerCapture anywhere (capture retargets the
@@ -1186,7 +1208,7 @@ export function PublicLotMap({
       hoveredLocalKey,
       zoom,
       minimumZoom: 1.12,
-      screenFontSize: 13,
+      screenFontSize: 14,
       viewBox: mapViewport,
     });
   }, [isHopkinsHostedMap, correctionMapLayer, reviewPending, mapParcels, mapViewportSize, zoom, viewBoxH, yScale, mapViewport, focusLotKey, hoveredLocalKey]);
@@ -1197,7 +1219,7 @@ export function PublicLotMap({
 
   /** Zoom keeping the given full-space point fixed under the cursor. */
   function zoomTo(next: number, cx: number = 50, cy: number = viewBoxH / 2) {
-    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    const clamped = Math.min(mapMaxZoom, Math.max(MIN_ZOOM, next));
     if (clamped === zoom) return;
     setZoom(clamped);
     setPan(mapPanAfterZoom(pan, zoom, clamped, { x: cx, y: cy }, 100, viewBoxH, cardPad));
@@ -1217,17 +1239,25 @@ export function PublicLotMap({
   }
 
   /** Explicit zoom control (detail-card button): fit the lot's bounds with
-   *  padding, capped at MAX_ZOOM so tiny lots don't over-zoom. Replaces the
+   *  padding, capped at the map's zoom limit so tiny lots don't over-zoom. Replaces the
    *  old double-click-to-zoom, which raced the inquiry modal and had no
    *  touch/keyboard path. */
   function zoomToParcel(parcel: PublicLotParcel) {
     const b = boundsOf(parcel);
     if (!b) return;
+    // Keep the selected Hopkins outline in context: a search result filters
+    // the rendered outline set, so clear that temporary search when the map
+    // zooms to it. The focused outline remains selected and its nearby labels
+    // can render alongside it.
+    if (isHopkinsHostedMap && query.trim()) setQuery("");
     const pad = 1.6;
     const fit = Math.min(100 / (b.w * pad), viewBoxH / (b.h * pad));
-    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit));
+    const next = Math.min(mapMaxZoom, Math.max(MIN_ZOOM, fit));
     setZoom(next);
     setPan(clampPan(b.x + b.w / 2 - 100 / next / 2, b.y + b.h / 2 - viewBoxH / next / 2, next));
+    // Clicking this action can scroll the bounded phone panel down to the
+    // button. Return it to the reference/category/price summary after zooming.
+    focusPhoneDetailsSummary();
   }
 
   // Hopkins starts with the entire approved outline set in view. This is a
@@ -1250,7 +1280,14 @@ export function PublicLotMap({
     const width = Math.max(right - left, 0.01);
     const height = Math.max(bottom - top, 0.01);
     const fit = Math.min(100 / (width * 1.08), viewBoxH / (height * 1.08));
-    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit));
+    // If a visitor has started zooming, panning, or selecting while the
+    // raster's intrinsic dimensions were loading, keep their map state. The
+    // initial fit must never jump over that interaction when the image loads.
+    if (zoom !== MIN_ZOOM || pan.x !== 0 || pan.y !== 0 || highlighted.length > 0) {
+      initialFitKeyRef.current = identity;
+      return;
+    }
+    const nextZoom = Math.min(mapMaxZoom, Math.max(MIN_ZOOM, fit));
     const nextPan = clampPanTo(
       left + width / 2 - 100 / nextZoom / 2,
       top + height / 2 - viewBoxH / nextZoom / 2,
@@ -1261,7 +1298,7 @@ export function PublicLotMap({
     initialFitKeyRef.current = identity;
     setZoom(nextZoom);
     setPan(nextPan);
-  }, [initialFit, isHopkinsHostedMap, payload, imageAspect, tenantSlug, projectSlug, phaseSlug, yScale, viewBoxH]);
+  }, [initialFit, isHopkinsHostedMap, payload, imageAspect, tenantSlug, projectSlug, phaseSlug, yScale, viewBoxH, mapMaxZoom, zoom, pan, highlighted]);
 
   function lotKeyAtPoint(clientX: number, clientY: number): number | null {
     // All hit polygons under the point (hit padding overlaps neighbours):
@@ -1454,7 +1491,7 @@ export function PublicLotMap({
       if (pinch.startDist > 0 && dist > 0) {
         g.moved = true;
         const next = (pinch.startZoom * dist) / pinch.startDist;
-        const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+        const clamped = Math.min(mapMaxZoom, Math.max(MIN_ZOOM, next));
         setZoom(clamped);
         setPan(mapPanAfterZoom(panRef.current, z, clamped, pinch.center, 100, vbH, cardPadRef.current));
       }
@@ -2389,12 +2426,12 @@ export function PublicLotMap({
                       fontWeight={700}
                       fill="#173c2d"
                       stroke="#ffffff"
-                      strokeWidth={label.fontSize * 0.2}
+                      strokeWidth={2}
                       strokeLinejoin="round"
                       paintOrder="stroke"
                       vectorEffect="non-scaling-stroke"
                     >
-                      {label.text}
+                      {hopkinsMapLabelLines(label.text).join(" ")}
                     </text>
                   ))}
                 </g>
@@ -2483,10 +2520,10 @@ export function PublicLotMap({
               <button
                 ref={toggleRef}
                 type="button"
-                aria-label={expanded ? "Exit fullscreen" : "Enter fullscreen"}
+                aria-label={expanded ? "Collapse map" : "Expand map"}
                 aria-pressed={expanded}
                 onClick={() => (expanded ? exitFullscreen() : enterFullscreen())}
-                className="focus-ring grid h-11 w-11 place-items-center rounded-md border border-border bg-card/95 shadow"
+                className="focus-ring flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-border bg-card/95 px-2 text-sm font-semibold shadow"
               >
                 {expanded ? (
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
@@ -2497,11 +2534,12 @@ export function PublicLotMap({
                     <path d="M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9" />
                   </svg>
                 )}
+                <span className="sm:hidden">{expanded ? "Close" : "Expand"}</span>
               </button>
               <button
                 type="button"
                 aria-label="Zoom in"
-                disabled={zoom >= MAX_ZOOM}
+                disabled={zoom >= mapMaxZoom}
                 onClick={() => zoomBy(0.5)}
                 className="focus-ring h-11 w-11 rounded-md border border-border bg-card/95 text-sm font-bold shadow"
               >
@@ -2679,7 +2717,7 @@ export function PublicLotMap({
                     className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground">✕</button>
                 </div>
                 {isHopkinsHostedMap ? (
-                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-y border-border py-2 text-xs md:gap-y-2">
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-y border-border py-2 text-sm">
                     <div className="min-w-0">
                       <dt className="text-muted-foreground">{hopkinsPrintedNumberDetail(focusLot).label}</dt>
                       <dd data-testid="source-print-candidate" className="mt-0.5 break-words font-semibold text-foreground">
@@ -2709,7 +2747,7 @@ export function PublicLotMap({
                   <p className="text-sm leading-5 text-muted-foreground">Map outline shown for demonstration. Official lot identity, price, area, and sale availability are not provided by this demo map.</p>
                 )}
                 {isHopkinsHostedMap ? (
-                  <p className="text-xs leading-4 text-muted-foreground">
+                  <p className="text-sm leading-5 text-muted-foreground">
                     Printed plan numbers are shown only when the outline can be matched clearly. Map references are separate from printed numbers and do not indicate parcel allocation or availability.
                   </p>
                 ) : null}

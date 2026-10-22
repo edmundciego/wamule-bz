@@ -20,7 +20,8 @@ test("Hopkins public map labels use plain language while preserving printed-numb
   }
   assert.match(map, /Map references are separate from printed numbers and do not indicate parcel allocation or availability/);
   assert.match(map, /aria-label=\{correctionMapLayer \? "Detected polygons on the map" : localPreviewMode \? "Hopkins Grove demo plots" : isHopkinsHostedMap \? "Hopkins Grove map outlines"/);
-  assert.match(page, /Independent demonstration\. Not affiliated with or endorsed by Ceiba\. Demo submissions are not sent to Ceiba\./);
+  assert.match(page, /Independent hosted demo; not affiliated with or endorsed by Ceiba\. Form entries are not saved or sent\./);
+  assert.doesNotMatch(page, /In this local preview/);
 });
 
 test("public submissions stay local except for the exact staging QA scope", async () => {
@@ -42,6 +43,9 @@ test("public submissions stay local except for the exact staging QA scope", asyn
   assert.ok(wizard.indexOf("if (localDemoOnly)") < wizard.indexOf("await submitPublicFunction"));
   assert.ok(app.indexOf("if (isLocalOnlySubmission)") < app.indexOf("await submitPublicFunction"));
   assert.match(page, /localDemoOnly=\{localDemoOnly\}/);
+  assert.match(modal, /This demo inquiry was not saved or sent\./);
+  assert.match(app, /This demo request was not saved or sent\./);
+  assert.match(wizard, /Demo application complete\. It was not saved or sent\./);
 });
 
 test("the restriction control is explicitly identified as an incomplete UI-only gate", async () => {

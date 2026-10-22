@@ -231,6 +231,9 @@ function HopkinsHomepageContent({
     ref,
     label: mapFeatureLabels.find((item) => item.ref === ref)?.label ?? "Map reference",
   }));
+  const demoBannerCopy = import.meta.env.DEV
+    ? "Independent local preview; not affiliated with or endorsed by Ceiba. Form entries are not saved or sent."
+    : "Independent hosted demo; not affiliated with or endorsed by Ceiba. Form entries are not saved or sent.";
   return (
     <PublicHomepage
       templateId={templateId}
@@ -238,10 +241,10 @@ function HopkinsHomepageContent({
       modules={modules}
       header={{ companyName: page.company.name, logoUrl: "/favicon/hopkins-grove.svg", homeHref: isHopkinsPublicHost(window.location.hostname) ? "/" : "/hopkins", mapLabel: "Project map" }}
       banner={<p className="rounded-lg border border-warning/35 bg-warning/10 px-4 py-3 text-sm leading-6 text-foreground" role="note" data-testid="independent-demo-banner">
-        Independent demonstration. Not affiliated with or endorsed by Ceiba. Demo submissions are not sent to Ceiba.
-        {localDemoOnly ? <span className="block font-medium">In this local preview, form entries stay in memory and are not sent to a hosted service.</span> : null}
+        {demoBannerCopy}
       </p>}
       hero={{
+        sideAlignment: "start",
         badge: <Badge tone={page.applicationSettings.applicationsOpen ? "green" : "amber"}>{page.phase.name} applications {page.applicationSettings.applicationsOpen ? "open" : "closed"}</Badge>,
         title: page.project.name + " Project Application",
         description: page.company.description,

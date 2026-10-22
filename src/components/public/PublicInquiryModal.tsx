@@ -158,11 +158,11 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
         {sent ? (
           <div className="grid gap-3 text-center">
             <h2 id={titleId} className="font-display text-xl font-semibold text-primary">
-              {waitlist ? "You're on the Waitlist!" : "Inquiry Sent!"}
+              {localDemoOnly ? "Demo inquiry complete" : waitlist ? "You're on the Waitlist!" : "Inquiry Sent!"}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
               {localDemoOnly
-                ? "This local preview stayed in this browser. No inquiry was saved or sent."
+                ? "This demo inquiry was not saved or sent."
                 : mapFeatureRef
                 ? `The development team will follow up about your question on mapped outline ${lotNumber}. This map feature is not a saleable inventory listing.`
                 : waitlist

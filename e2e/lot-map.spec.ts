@@ -655,7 +655,7 @@ test("Zoom to lot button works with touch", async ({ page }, testInfo) => {
 });
 
 test("Zoom to lot works in fullscreen", async ({ page }) => {
-  await page.getByRole("button", { name: "Enter fullscreen" }).click();
+  await page.getByRole("button", { name: "Expand map" }).click();
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
@@ -736,29 +736,29 @@ test("zoom buttons keep working after pan", async ({ page }) => {
 });
 
 test("fullscreen lot click selects", async ({ page }) => {
-  await page.getByRole("button", { name: "Enter fullscreen" }).click();
+  await page.getByRole("button", { name: "Expand map" }).click();
   const pt = await hitCenter(page, 5);
   await page.mouse.click(pt.x, pt.y);
   await expect(selectedLotCard(page)).toBeVisible();
   await page.getByRole("button", { name: "✕ Close" }).click();
-  await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Expand map" })).toBeVisible();
   await expect(selectedLotCard(page)).toBeVisible();
 });
 
 test("mobile fullscreen exit control stays clear of the selected lot card", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.use.hasTouch, "mobile layout needs a touch viewport");
-  await page.getByRole("button", { name: "Enter fullscreen" }).tap();
+  await page.getByRole("button", { name: "Expand map" }).tap();
   const point = await hitCenter(page, 5);
   await page.touchscreen.tap(point.x, point.y);
   await expect(selectedLotCard(page)).toBeVisible();
 
-  const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen" });
+  const exitFullscreen = page.getByRole("button", { name: "Collapse map" });
   await expect(exitFullscreen).toBeVisible();
   await expect
     .poll(
       () =>
         page.evaluate(() => {
-          const control = document.querySelector('button[aria-label="Exit fullscreen"]');
+          const control = document.querySelector('button[aria-label="Collapse map"]');
           const card = document.querySelector('[role="region"][aria-label^="Details for Lot"]');
           if (!control || !card) return false;
           const a = control.getBoundingClientRect();
@@ -770,7 +770,7 @@ test("mobile fullscreen exit control stays clear of the selected lot card", asyn
     .toBe(true);
 
   await exitFullscreen.tap();
-  await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Expand map" })).toBeVisible();
   await expect(selectedLotCard(page)).toBeVisible();
 });
 

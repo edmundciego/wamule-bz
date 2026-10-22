@@ -27,6 +27,7 @@ test("both tenant adapters render the shared homepage frame and preserve distinc
   assert.doesNotMatch(route, /defaultPublicExperience\(scope\)/);
   assert.doesNotMatch(app, /element=\{<HopkinsPublicPage/);
   assert.match(hopkins, /Map references are preferences only/);
+  assert.match(hopkins, /sideAlignment: "start"/);
   assert.doesNotMatch(hopkins, /65 x 101|75 x 101/);
   assert.match(wamule, /label: "Payment Preference"/);
   assert.match(wizard, /<FormStep title="About You"/);

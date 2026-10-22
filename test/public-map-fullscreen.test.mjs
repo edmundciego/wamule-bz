@@ -30,7 +30,8 @@ test("fullscreen toggle enters natively and state follows browser-owned exits", 
   const map = await read("src/components/public/PublicLotMap.tsx");
 
   // Toggle button with changing label + pressed state, next to zoom controls.
-  assert.match(map, /aria-label=\{expanded \? "Exit fullscreen" : "Enter fullscreen"\}/);
+  assert.match(map, /aria-label=\{expanded \? "Collapse map" : "Expand map"\}/);
+  assert.match(map, /expanded \? "Close" : "Expand"/);
   assert.match(map, /aria-pressed=\{expanded\}/);
   assert.match(map, /expanded \? exitFullscreen\(\) : enterFullscreen\(\)/);
 
@@ -91,6 +92,13 @@ test("selection, search, filters, zoom, and view mode survive toggling", async (
   for (const hook of ["useState<PublicLotFilter>", "useState<PublicLotColourView>", 'useState("")', "useState<string[]>([])", "useState(MIN_ZOOM)"]) {
     assert.ok(map.includes(hook), `Expected content state hook ${hook}.`);
   }
+});
+
+test("phone map selection opens its bounded details panel at the summary", async () => {
+  const map = await read("src/components/public/PublicLotMap.tsx");
+  assert.match(map, /detailsPanel\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(map, /detailsScroller\.scrollTop = 0/);
+  assert.match(map, /detailsScroller\.scrollIntoView\(\{ block: "nearest" \}\)/);
 });
 
 test("add-to-preferences works inside fullscreen with confirmation", async () => {

@@ -19,6 +19,89 @@ test("labels that do not fit wait for zoom instead of becoming tiny", () => {
   assert.equal(labels.fitStandardMapLabelFontSize({ width: 12, height: 8 }, "D-048-01", 6), 13 / 6);
 });
 
+test("phone-scale Hopkins references keep Ref and its number together at readable size", () => {
+  const screenPixelsPerMapUnit = 27.2;
+  const fontSize = labels.layoutHopkinsSourceMapLabels([{
+    local_key: 1,
+    demo_label: "Plot 392",
+    map_polygon: [
+      { x: 10, y: 10 }, { x: 12.5, y: 10 },
+      { x: 12.5, y: 11.15 }, { x: 10, y: 11.15 },
+    ],
+  }], {
+    yScale: 1,
+    screenPixelsPerMapUnit,
+    selectedLocalKey: 1,
+    zoom: 8,
+    screenFontSize: 14,
+    viewBox: { x: 0, y: 0, width: 100, height: 100 },
+  });
+  assert.deepEqual(labels.hopkinsMapLabelLines("Ref 392"), ["Ref 392"]);
+  assert.equal(labels.hopkinsMapLabelLines("119").join(" "), "119", "confirmed printed numbers remain on one line");
+  assert.equal(fontSize.length, 1, "a selected plot with room for the reference should be labeled");
+  assert.equal(fontSize[0].text, "Ref 392");
+  assert.ok(fontSize[0].fontSize * screenPixelsPerMapUnit >= 13.99, "phone map text stays at a readable 14px target");
+});
+
+test("Zoom to plot can fit a phone reference inside a verified Hopkins outline", () => {
+  const zoom = 16;
+  const viewBoxHeight = 100 / (5700 / 4800);
+  const mapScale = Math.min(270 / (100 / zoom), 227 / (viewBoxHeight / zoom));
+  const labelsAtPhoneZoom = labels.layoutHopkinsSourceMapLabels([{
+    local_key: 392,
+    demo_label: "Plot 392",
+    source_printed_lot_number_status: "no-unique-source-match",
+    map_polygon: [
+      { x: 53.15, y: 59.09 }, { x: 53.3, y: 58.08 },
+      { x: 54.95, y: 58.43 }, { x: 54.75, y: 59.62 },
+      { x: 53.15, y: 59.38 },
+    ],
+  }], {
+    yScale: viewBoxHeight / 100,
+    screenPixelsPerMapUnit: mapScale,
+    selectedLocalKey: 392,
+    zoom,
+    screenFontSize: 14,
+    viewBox: {
+      x: 54.05 - 100 / zoom / 2,
+      y: 49.43 - viewBoxHeight / zoom / 2,
+      width: 100 / zoom,
+      height: viewBoxHeight / zoom,
+    },
+  });
+
+  assert.equal(labelsAtPhoneZoom.length, 1);
+  assert.equal(labelsAtPhoneZoom[0].text, "Ref 392");
+  assert.ok(labelsAtPhoneZoom[0].fontSize * mapScale >= 13.99);
+});
+
+test("selected phone reference remains visible when its narrow outline cannot place the 14px label", () => {
+  const polygon = [
+    { x: 53.15, y: 49.760000000000005 }, { x: 53.3, y: 48.90947368421053 },
+    { x: 54.95, y: 49.20421052631579 }, { x: 54.75, y: 50.206315789473685 },
+    { x: 53.15, y: 50.004210526315795 },
+  ];
+  const layout = (selectedLocalKey) => labels.layoutHopkinsSourceMapLabels([{
+    local_key: 392,
+    demo_label: "Plot 392",
+    source_printed_lot_number_status: "no-unique-source-match",
+    map_polygon: polygon,
+  }], {
+    yScale: 1,
+    screenPixelsPerMapUnit: 37.7,
+    selectedLocalKey,
+    zoom: 16,
+    screenFontSize: 14,
+    viewBox: { x: 50, y: 46, width: 6.25, height: 4.75 },
+  });
+
+  assert.deepEqual(layout(null), [], "nonselected labels keep the normal 14px fit requirement");
+  const selected = layout(392);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].text, "Ref 392");
+  assert.ok(selected[0].fontSize * 37.7 >= 12.99, "selected map reference stays at the standard 13px size on a phone");
+});
+
 test("invalid map label measurements do not render", () => {
   assert.equal(labels.fitStandardMapLabelFontSize({ width: 0, height: 4 }, "D-001", 2), null);
   assert.equal(labels.fitStandardMapLabelFontSize({ width: 4, height: 4 }, "D-001", 0), null);
@@ -91,6 +174,7 @@ test("Hopkins labels reveal as zoom permits, fit inside outlines, and avoid over
 
 test("interactive Hopkins map renders its vector label layer above the source and through map clicks", async () => {
   const sourceComponent = await readFile(new URL("../src/components/public/PublicLotMap.tsx", import.meta.url), "utf8");
+  assert.match(sourceComponent, /const mapMaxZoom = isHopkinsHostedMap \? \(narrow \? 16 : MAX_ZOOM\) : MAX_ZOOM;/, "the high-resolution Hopkins plan can zoom far enough for phone labels");
   assert.match(sourceComponent, /<g aria-hidden="true" data-testid="hopkins-map-labels" pointerEvents="none">/);
   assert.match(sourceComponent, /data-map-label="true"/);
   assert.match(sourceComponent, /layoutHopkinsSourceMapLabels\(mapParcels/);
