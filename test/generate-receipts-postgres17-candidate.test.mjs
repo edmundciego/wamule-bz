@@ -272,7 +272,6 @@ test("actual receipt Edge worker rejects ordinary callers and rechecks state bef
     assert.equal(globalThis.__m36Uploads.length, 1);
   } finally {
     if (previousCrypto === undefined) delete globalThis.crypto;
-    else globalThis.crypto = previousCrypto;
     delete globalThis.Deno;
     delete globalThis.__m36ReceiptHandler;
     delete globalThis.__m36JobRows;
