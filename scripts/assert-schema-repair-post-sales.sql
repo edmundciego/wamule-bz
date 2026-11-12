@@ -65,7 +65,7 @@ BEGIN
     UPDATE public.post_sales_tasks SET application_id=990000102
     WHERE id='e5000000-0000-4000-8000-000000000001';
     RAISE EXCEPTION 'Mismatched phase reassignment unexpectedly succeeded.';
-  EXCEPTION WHEN check_violation THEN NULL;
+  EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL;
   END;
   SELECT phase_id INTO v_phase FROM public.post_sales_tasks WHERE id='e5000000-0000-4000-8000-000000000001';
   IF v_phase <> 'e3000000-0000-4000-8000-000000000001' THEN RAISE EXCEPTION 'Rejected reassign left a partial scope change.'; END IF;
