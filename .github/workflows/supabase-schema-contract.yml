@@ -84,6 +84,16 @@ jobs:
         run: |
           ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
           db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          # Supabase CLI may create its own empty migrations directory during
+          # startup. Remove only that empty directory before restoring the
+          # reviewed files; fail closed if startup added any contents.
+          if [ -d "$REPLAY_DIR/supabase/migrations" ]; then
+            if [ -n "$(find "$REPLAY_DIR/supabase/migrations" -mindepth 1 -print -quit)" ]; then
+              echo "Unexpected migration files appeared while starting the disposable stack; refusing to merge with the reviewed replay inputs." >&2
+              exit 1
+            fi
+            rmdir "$REPLAY_DIR/supabase/migrations"
+          fi
           mv "$REPLAY_DIR/supabase/replay-migrations" "$REPLAY_DIR/supabase/migrations"
           if ! SCHEMA_QUERY_DATABASE_URL="$db_url" python3 scripts/replay-local-supabase-baseline.py --manifest "$REPLAY_DIR/replay-manifest.json" > "$RUNNER_TEMP/replay-run-summary.json" 2> "$RUNNER_TEMP/replay-run-error.log"; then
             echo "Failing command: python3 scripts/replay-local-supabase-baseline.py --manifest \"$REPLAY_DIR/replay-manifest.json\" (local psql against the fresh Supabase database)" >&2
