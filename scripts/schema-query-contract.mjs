@@ -481,6 +481,7 @@ function catalogWithPsql(connectionString, { targetProject = null } = {}) {
 
 export function compareCatalog(contract, catalog) {
   const mismatches = [];
+  const unresolved = [...(contract.unresolved ?? [])];
   for (const query of contract.queries) {
     if (!query.table) continue;
     const tableColumns = catalog.columns.get(query.table);
@@ -491,7 +492,7 @@ export function compareCatalog(contract, catalog) {
     for (const reference of [...query.columns.map((entry) => ({ ...entry, kind: "select" })), ...query.nestedColumns.map((entry) => ({ ...entry, kind: "related_select" })), ...query.filters.map((entry) => ({ ...entry, kind: "filter" })), ...query.writes.map((entry) => ({ ...entry, kind: "write" }))]) {
       const relationColumns = catalog.columns.get(`${query.table.split(".")[0]}.${reference.table}`) ?? (reference.table === query.table.split(".").at(-1) ? tableColumns : null);
       if (!relationColumns) {
-        contract.unresolved.push({ file: query.file, line: query.line, table: query.table, reason: "relationship_table_not_resolved", relation: reference.table });
+        unresolved.push({ file: query.file, line: query.line, table: query.table, reason: "relationship_table_not_resolved", relation: reference.table });
       } else if (!relationColumns.has(reference.column)) {
         mismatches.push({ file: query.file, line: query.line, table: `${query.table.split(".")[0]}.${reference.table}`, column: reference.column, access: reference.kind, reason: "column_missing_from_catalog" });
       }
@@ -527,7 +528,7 @@ export function compareCatalog(contract, catalog) {
       mismatches.push({ file: rpc.file, line: rpc.line, function: rpc.function, supplied_arguments: rpc.arguments, matching_signatures: candidates.map((fn) => fn.identityArguments), reason: "rpc_overload_ambiguous_from_source_arguments" });
     }
   }
-  return { mismatches, rpcSignatures };
+  return { mismatches, rpcSignatures, unresolved };
 }
 
 function main() {
@@ -566,8 +567,8 @@ function main() {
     mismatch_count: mismatches.length,
     rpc_signature_count: compared.rpcSignatures.length,
     rpc_signatures: compared.rpcSignatures,
-    dynamic_or_unresolved_count: dynamic.unresolved.length,
-    dynamic_or_unresolved: dynamic.unresolved,
+    dynamic_or_unresolved_count: compared.unresolved.length,
+    dynamic_or_unresolved: compared.unresolved,
     mismatches,
     rpc_signatures: compared.rpcSignatures,
   };

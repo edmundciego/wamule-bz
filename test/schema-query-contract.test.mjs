@@ -156,6 +156,33 @@ test("dynamic RPC contracts require the reviewed identity signature in the catal
   }
 });
 
+test("catalog comparison reports unresolved relationship tables without throwing", () => {
+  const result = compareCatalog({
+    queries: [{
+      file: "src/example.ts",
+      line: 12,
+      table: "public.applications",
+      columns: [],
+      nestedColumns: [{ table: "missing_relation", column: "id" }],
+      filters: [],
+      writes: [],
+    }],
+    remoteFunctions: [],
+    unresolved: [],
+  }, {
+    columns: new Map([["public.applications", new Set(["id"])]]),
+    functions: [],
+  });
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.unresolved, [{
+    file: "src/example.ts",
+    line: 12,
+    table: "public.applications",
+    reason: "relationship_table_not_resolved",
+    relation: "missing_relation",
+  }]);
+});
+
 test("all source-level dynamic queries and RPC arguments have anchored contracts", () => {
   const sourceFiles = ["src", "supabase/functions"].flatMap((path) => listSources(join(root, path)));
   const scan = scanSources(sourceFiles, root);
