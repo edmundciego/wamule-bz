@@ -41,7 +41,7 @@ VALUES
   (990000101, 'North', 'Applicant', '555-0101', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'land_purchase'),
   (990000102, 'South', 'Applicant', '555-0102', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002', 'land_purchase'),
   (990000103, 'Legacy', 'Applicant', '555-0103', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', NULL, NULL, 'land_purchase'),
-  (990000104, 'Fee', 'Customer', '555-0104', 'Approved', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'land_purchase');
+  (990000104, 'Fee', 'Customer', '555-0104', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'land_purchase');
 SELECT setval(pg_get_serial_sequence('public.applications', 'id'), 990000104, true);
 
 INSERT INTO public.customers(id, application_id, first_name, last_name, phone, tenant_id)
