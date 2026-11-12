@@ -32,7 +32,7 @@
       "anchor": "(supabase as unknown as DynamicSourceClient).from(table).select(select)",
       "reasons": ["dynamic_table_name", "dynamic_select"],
       "tables": [
-        { "name": "public.leads", "select": ["updated_at", "status"], "required": ["updated_at", "status"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.leads", "select": ["updated_at", "pipeline_stage"], "required": ["updated_at", "pipeline_stage"], "filters": ["id", "tenant_id"], "writes": [] },
         { "name": "public.follow_up_tasks", "select": ["updated_at", "status", "due_at", "leads.pipeline_stage"], "required": ["updated_at", "status", "due_at"], "filters": ["id", "tenant_id"], "writes": [], "related": [{ "table": "leads", "columns": ["pipeline_stage"] }] },
         { "name": "public.site_visits", "select": ["updated_at", "status", "scheduled_at"], "required": ["updated_at", "status", "scheduled_at"], "filters": ["id", "tenant_id"], "writes": [] },
         { "name": "public.applications", "select": ["updated_at", "status"], "required": ["updated_at", "status"], "filters": ["id", "tenant_id"], "writes": [] },

@@ -69,6 +69,10 @@ Deno.serve(async (request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const callerSupabase = createClient(supabaseUrl, serviceRoleKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(token);
   if (currentUserError || !currentUserData.user) {
@@ -172,11 +176,11 @@ Deno.serve(async (request) => {
   let generationCompleted = false;
   try {
 
-  const [applicationResult, contractResult, leadResult, reservationResult] = await Promise.all([
+  const [applicationResult, contractResult, leadResult, reservationResult, applicationCustomerResult] = await Promise.all([
     applicationId
       ? supabase
         .from("applications")
-        .select("id,tenant_id,customer_id,project_id,phase_id,applicant_full_name,first_name,last_name,status,intended_use,created_at,updated_at,application_ai_reviews(*)")
+        .select("id,tenant_id,project_id,phase_id,applicant_full_name,first_name,last_name,status,intended_use,created_at,updated_at,application_ai_reviews(*)")
         .eq("id", applicationId)
         .eq("tenant_id", tenantId)
         .eq("project_id", projectId)
@@ -213,18 +217,27 @@ Deno.serve(async (request) => {
         .eq("phase_id", phaseId)
         .maybeSingle()
       : resolvedResult(null),
+    applicationId
+      ? callerSupabase.from("customer_applications")
+        .select("customer_id")
+        .eq("tenant_id", tenantId)
+        .eq("application_id", applicationId)
+        .eq("is_primary", true)
+        .maybeSingle()
+      : resolvedResult(null),
   ]);
 
   // The checklist scope resolver follows its verified parent graph. Require
   // every supplied sales parent to match that same active scope before any AI
   // provider request or summary write. A customer-only company record does
   // not choose an arbitrary contract/phase.
-  const parentError = applicationResult.error ?? contractResult.error ?? leadResult.error ?? reservationResult.error;
+  const parentError = applicationResult.error ?? contractResult.error ?? leadResult.error ?? reservationResult.error ?? applicationCustomerResult.error;
   if (parentError) return json({ error: parentError.message }, 500);
   if ((applicationId && !applicationResult.data) || (contractId && !contractResult.data)
     || (leadId && !leadResult.data) || (reservationId && !reservationResult.data)) {
     return json({ error: "A linked post-sales record is outside the checklist's verified project and phase." }, 403);
   }
+  const effectiveCustomerId = customerId ?? numberOrNull(applicationCustomerResult.data?.customer_id);
 
   const [tasksResult, activitiesResult, customerResult, settingsResult] = await Promise.all([
     loadPostSalesTasks(supabase, checklist),
@@ -235,11 +248,11 @@ Deno.serve(async (request) => {
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(30),
-    customerId
+    effectiveCustomerId
       ? supabase
         .from("customers")
         .select("id,tenant_id,first_name,last_name,phone,email,created_at,updated_at")
-        .eq("id", customerId)
+        .eq("id", effectiveCustomerId)
         .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
@@ -254,8 +267,8 @@ Deno.serve(async (request) => {
   const contextError = tasksResult.error ?? activitiesResult.error ?? customerResult.error ?? settingsResult.error;
   if (contextError) return json({ error: contextError.message }, 500);
 
-  const allocationCustomerId = customerId ?? numberOrNull(contractResult.data?.customer_id)
-    ?? numberOrNull(applicationResult.data?.customer_id) ?? numberOrNull(reservationResult.data?.customer_id);
+  const allocationCustomerId = effectiveCustomerId ?? numberOrNull(contractResult.data?.customer_id)
+    ?? numberOrNull(reservationResult.data?.customer_id);
   const { data: allAllocations, error: allocationsError } = allocationCustomerId
     ? await supabase.from("transaction_allocations")
       .select("id,tenant_id,transaction_id,customer_id,amount,currency,scope_kind,allocation_kind,contract_id,reservation_id,fee_charge_id,project_id,phase_id,allocation_reason")
@@ -345,7 +358,7 @@ Deno.serve(async (request) => {
       tenant_id: tenantId,
       checklist_id: checklistId,
       generation_id: generationId,
-      customer_id: customerId,
+      customer_id: effectiveCustomerId,
       application_id: applicationId,
       contract_id: contractId,
       lead_id: leadId,

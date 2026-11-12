@@ -142,7 +142,6 @@ Deno.serve(async (request) => {
     cultural_preservation_review: "Applicant acknowledged the published application notice, reservation terms, and applicant acknowledgement.",
     sustainability_terms_verified: input.sustainability_terms_verified,
     status: "Pending Review",
-    created_by: null,
   });
 
   if (insertError) {

@@ -173,7 +173,7 @@ Deno.serve(async (request) => {
       .select("id,transaction_id,customer_id,amount,currency,scope_kind,allocation_kind,contract_id,reservation_id,fee_charge_id,project_id,phase_id,allocation_reason")
       .eq("tenant_id", tenantId).eq("customer_id", customerId),
     supabase.from("fee_charges")
-      .select("id,fee_type_id,amount,currency,scope_kind,project_id,phase_id,status,due_at")
+      .select("id,fee_type_id,amount,currency,scope_kind,project_id,phase_id,status,due_date")
       .eq("tenant_id", tenantId).eq("customer_id", customerId),
   ]);
   const financeError = contractFinancialsResult.error ?? allocationsResult.error ?? feeChargesResult.error;
@@ -550,7 +550,7 @@ function summarizeForPrompt(data: AccountData) {
     },
     contracts,
     payment_allocations: allocations,
-    fee_charges: data.feeCharges.map((charge) => pick(charge, ["id", "amount", "currency", "scope_kind", "project_id", "phase_id", "status", "due_at"])),
+    fee_charges: data.feeCharges.map((charge) => pick(charge, ["id", "amount", "currency", "scope_kind", "project_id", "phase_id", "status", "due_date"])),
     payments: data.payments.filter((payment) => allocatedTransactionIds.has(Number(payment.id))).map((payment) => ({
       id: payment.id,
       transaction_type: payment.transaction_type,

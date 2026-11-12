@@ -402,8 +402,8 @@ export function formatBelizeDate(value: string | null | undefined) {
 
 export function isOperationalAttentionCurrent(item: Pick<OperationalAttentionItem, "kind" | "dueAt" | "currentStatus">, source: Record<string, unknown> | null, asOf = new Date()) {
   if (!source) return false;
-  const status = String(source.status ?? "");
-  if (["completed", "cancelled", "Done", "Dismissed", "Paid", "Cancelled", "Declined", "voided", "reversed"].includes(status)) return false;
+  const status = String(source.status ?? source.pipeline_stage ?? "");
+  if (["completed", "cancelled", "closed_won", "lost_inactive", "Done", "Dismissed", "Paid", "Cancelled", "Declined", "voided", "reversed"].includes(status)) return false;
   if (item.kind === "overdue_follow_up" || item.kind === "post_sales_task_overdue" || item.kind === "collection_alert") {
     if (item.kind === "overdue_follow_up") {
       const linkedLead = source.leads as { pipeline_stage?: string | null } | null | undefined;
