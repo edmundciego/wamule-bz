@@ -35,6 +35,10 @@ OVERRIDING SYSTEM VALUE
 VALUES (990000001, 'REPAIR-LOT-990000001', 'Available', 25000, 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001');
 SELECT setval(pg_get_serial_sequence('public.parcels', 'id'), 990000001, true);
 
+-- Model already-existing legacy application rows without creating live
+-- lead/follow-up/email side effects for the seed records. All authorization,
+-- tenant-defaulting, and application scope guards remain enabled.
+ALTER TABLE public.applications DISABLE TRIGGER trg_create_lead_from_application;
 INSERT INTO public.applications(id, first_name, last_name, phone, status, tenant_id, project_id, phase_id, application_kind)
 OVERRIDING SYSTEM VALUE
 VALUES
@@ -42,6 +46,7 @@ VALUES
   (990000102, 'South', 'Applicant', '555-0102', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000002', 'land_purchase'),
   (990000103, 'Legacy', 'Applicant', '555-0103', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', NULL, NULL, 'land_purchase'),
   (990000104, 'Fee', 'Customer', '555-0104', 'Pending Review', 'e1000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'land_purchase');
+ALTER TABLE public.applications ENABLE TRIGGER trg_create_lead_from_application;
 SELECT setval(pg_get_serial_sequence('public.applications', 'id'), 990000104, true);
 
 INSERT INTO public.customers(id, application_id, first_name, last_name, phone, tenant_id)

@@ -35,7 +35,12 @@ function runPsql(args, label) {
   const result = safePsql(args);
   if (result.error) fail(`${label}: ${result.error.message}`);
   if (result.status !== 0) {
-    const detail = (result.stderr ?? "").split(/\r?\n/).filter(Boolean).slice(-14).join("\n");
+    const errorLines = (result.stderr ?? "").split(/\r?\n/).filter(Boolean);
+    const detail = [
+      ...errorLines.slice(0, 4),
+      ...(errorLines.length > 18 ? ["… additional PostgreSQL context omitted …"] : []),
+      ...errorLines.slice(-14),
+    ].join("\n");
     fail(`${label} (exit ${result.status}).\n${detail}`);
   }
   return result.stdout.trim();

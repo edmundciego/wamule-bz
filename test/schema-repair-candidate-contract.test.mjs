@@ -16,6 +16,10 @@ test("post-sales forward migration is the reviewed body and preserves project/ph
   assert.match(migration, /CREATE TRIGGER post_sales_tasks_scope_guard/);
   assert.match(migration, /CREATE POLICY post_sales_scope_select ON public\.post_sales_tasks AS RESTRICTIVE/);
 
+  const fixtures = await file("scripts/schema-repair-fixtures.sql");
+  assert.match(fixtures, /DISABLE TRIGGER trg_create_lead_from_application;[\s\S]*INSERT INTO public\.applications[\s\S]*'Pending Review'[\s\S]*ENABLE TRIGGER trg_create_lead_from_application;/);
+  assert.doesNotMatch(fixtures, /'Approved'/);
+
   const dashboard = await file("src/pages/DashboardPage.tsx");
   const reports = await file("src/pages/ReportsPage.tsx");
   const scopeBlock = (source, marker, endMarker) => {
