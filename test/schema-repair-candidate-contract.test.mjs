@@ -18,6 +18,8 @@ test("post-sales forward migration is the reviewed body and preserves project/ph
 
   const fixtures = await file("scripts/schema-repair-fixtures.sql");
   assert.match(fixtures, /DISABLE TRIGGER trg_create_lead_from_application;[\s\S]*INSERT INTO public\.applications[\s\S]*'Pending Review'[\s\S]*ENABLE TRIGGER trg_create_lead_from_application;/);
+  assert.match(fixtures, /request\.jwt\.claim\.role', 'authenticated'/);
+  assert.match(fixtures, /SELECT public\.approve_application\(990000104, 990000001\)/);
   assert.doesNotMatch(fixtures, /'Approved'/);
 
   const dashboard = await file("src/pages/DashboardPage.tsx");

@@ -4,6 +4,7 @@
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SELECT set_config('request.jwt.claim.sub', 'e4000000-0000-4000-8000-000000000002', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 
 INSERT INTO public.organizations(id, name, slug, is_active) VALUES
   ('e1000000-0000-4000-8000-000000000001', 'Schema Repair Synthetic A', 'schema-repair-a', true),
@@ -49,10 +50,11 @@ VALUES
 ALTER TABLE public.applications ENABLE TRIGGER trg_create_lead_from_application;
 SELECT setval(pg_get_serial_sequence('public.applications', 'id'), 990000104, true);
 
-INSERT INTO public.customers(id, application_id, first_name, last_name, phone, tenant_id)
-OVERRIDING SYSTEM VALUE
-VALUES (990000001, 990000104, 'Fee', 'Customer', '555-0104', 'e1000000-0000-4000-8000-000000000001');
-SELECT setval(pg_get_serial_sequence('public.customers', 'id'), 990000001, true);
+-- The view fixture needs a contract-backed customer. Use the real authorized
+-- approval operation so application/parcel/phase and customer provenance are
+-- valid under M3.3/M7.4; this is synthetic local database state only.
+SELECT setval(pg_get_serial_sequence('public.customers', 'id'), 990000000, true);
+SELECT public.approve_application(990000104, 990000001);
 
 INSERT INTO public.contracts(id, customer_id, parcel_id, final_purchase_price, initial_deposit, term_months, start_date, payment_due_day, is_active, status, tenant_id, project_id, phase_id, application_id, currency)
 OVERRIDING SYSTEM VALUE
