@@ -238,16 +238,17 @@ async function verifyReceiptWorkspace(
     .select("id,is_active").eq("id", transaction.tenant_id).eq("is_active", true).maybeSingle();
   if (tenantError || !tenant) return { ok: false };
   for (const scope of scopes) {
+    if (scope.phaseId !== null && scope.projectId === null) return { ok: false };
     if (!scope.projectId) continue;
-    const { data: project, error: projectError } = await supabase.from("projects")
-      .select("id").eq("id", scope.projectId).eq("tenant_id", transaction.tenant_id).eq("is_active", true).maybeSingle();
-    if (projectError || !project) return { ok: false };
-    if (scope.phaseId !== null) {
-      const { data: phase, error: phaseError } = await supabase.from("development_phases")
-        .select("id").eq("id", scope.phaseId).eq("project_id", scope.projectId)
-        .eq("tenant_id", transaction.tenant_id).eq("is_active", true).maybeSingle();
-      if (phaseError || !phase) return { ok: false };
-    }
+    // projects has no independent is_active state. The shared helper verifies
+    // that the project belongs to this tenant and that the exact tenant/phase
+    // scope remains active, using the same lifecycle rule as RLS and sales RPCs.
+    const { data: activeScope, error: scopeError } = await supabase.rpc("workspace_scope_is_active", {
+      p_tenant_id: transaction.tenant_id,
+      p_project_id: scope.projectId,
+      p_phase_id: scope.phaseId,
+    });
+    if (scopeError || activeScope !== true) return { ok: false };
   }
   return { ok: true };
 }

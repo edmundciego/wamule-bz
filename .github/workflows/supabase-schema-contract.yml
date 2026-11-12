@@ -2,7 +2,7 @@ name: Supabase schema contract
 
 on:
   push:
-    branches: [codex/schema-replay-69-review]
+    branches: [codex/schema-replay-69-review, codex/schema-repair-fbc1ee4-review]
   workflow_dispatch:
     inputs:
       run_staging_catalog:
@@ -43,7 +43,10 @@ jobs:
         run: npm ci
 
       - name: Verify replay inputs and dynamic query contracts
-        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs
+        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs test/schema-repair-candidate-contract.test.mjs test/generate-receipts-postgres17-candidate.test.mjs
+
+      - name: Check candidate patch formatting
+        run: git diff --check
 
       - name: Confirm the reviewed Supabase CLI version
         run: |
@@ -145,7 +148,7 @@ jobs:
           test -n "$image_digest"
           printf 'Supabase CLI: 2.105.0\nPostgreSQL server_version: %s\nDatabase image: %s\nImage digest: %s\nImage content ID: %s\n' "$version" "$image" "$image_digest" "$image_id" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Scan source queries against the exact 69-migration baseline
+      - name: Record confirmed source mismatches against the exact 69-migration baseline
         env:
           REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
           SUPABASE_HOME: ${{ runner.temp }}/supabase-home
@@ -154,37 +157,67 @@ jobs:
         run: |
           db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
           scan_status=0
-          SCHEMA_QUERY_DATABASE_URL="$db_url" node scripts/schema-query-contract.mjs > "$RUNNER_TEMP/schema-contract-replay.json" || scan_status=$?
-          python3 - "$RUNNER_TEMP/schema-contract-replay.json" "$GITHUB_STEP_SUMMARY" <<'PY'
+          SCHEMA_QUERY_DATABASE_URL="$db_url" node scripts/schema-query-contract.mjs > "$RUNNER_TEMP/schema-contract-baseline.json" || scan_status=$?
+          python3 - "$RUNNER_TEMP/schema-contract-baseline.json" "$scan_status" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           report = json.load(open(sys.argv[1], encoding="utf-8"))
+          scan_status = int(sys.argv[2])
           mismatches = report.get("mismatches", [])
           unresolved = report.get("dynamic_or_unresolved", [])
-          summary = {
-              "mode": report.get("mode"),
-              "postgres_database": report.get("postgres_database"),
-              "query_chains": report.get("query_chains"),
-              "contracted_dynamic_query_findings": report.get("contracted_dynamic_query_findings"),
-              "expanded_dynamic_query_table_contracts": report.get("expanded_dynamic_query_table_contracts"),
-              "rpc_calls": report.get("rpc_calls"),
-              "mismatch_count": report.get("mismatch_count"),
-              "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count"),
-              "mismatches": mismatches,
-              "dynamic_or_unresolved": unresolved,
-          }
-          print(json.dumps(summary, indent=2))
-          with open(sys.argv[2], "a", encoding="utf-8") as stream:
-              stream.write("\n#### Replayed-catalog query scan\n\n")
-              stream.write(f"- PostgreSQL database: `{report.get('postgres_database')}`\n")
+          post_sales = [item for item in mismatches if item.get("table") in {"post_sales_tasks", "post_sales_checklists"}]
+          fee_tenant = [item for item in mismatches if item.get("table") == "community_fee_account_status" and item.get("column") == "tenant_id"]
+          project_lifecycle = [item for item in mismatches if item.get("table") == "projects" and item.get("column") == "is_active"]
+          assert report.get("mode") == "local-replayed-schema", report.get("mode")
+          assert scan_status == 1, f"Expected scanner mismatch exit 1, got {scan_status}"
+          assert report.get("mismatch_count") == 9, report.get("mismatch_count")
+          assert len(post_sales) == 8, post_sales
+          assert len(fee_tenant) == 1, fee_tenant
+          assert len(project_lifecycle) == 0, project_lifecycle
+          assert report.get("dynamic_or_unresolved_count") == 0, unresolved
+          print(json.dumps({"mode": report.get("mode"), "query_chains": report.get("query_chains"), "mismatch_count": report.get("mismatch_count"), "post_sales_findings": len(post_sales), "community_fee_tenant_findings": len(fee_tenant), "receipt_project_lifecycle_findings": len(project_lifecycle), "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count")}, indent=2))
+          with open(sys.argv[3], "a", encoding="utf-8") as stream:
+              stream.write("\n#### Baseline schema/query scan (before repair overlays)\n\n")
+              stream.write("- Expected baseline: 9 confirmed mismatches (8 post-sales scope columns and 1 missing community-fee view tenant column). The receipt handler has already been corrected in source to use the existing tenant/project/phase lifecycle helper, so the previous nonexistent-project-column mismatch is absent.\n")
               stream.write(f"- Query chains: {report.get('query_chains')}; mismatches: {report.get('mismatch_count')}; unresolved dynamic checks: {report.get('dynamic_or_unresolved_count')}\n")
               for item in mismatches:
                   location = f"{item.get('file')}:{item.get('line')}"
                   detail = ", ".join(str(item[key]) for key in ("table", "column", "access", "reason", "function") if item.get(key) is not None)
                   stream.write(f"- `{location}`: {detail}\n")
-              for item in unresolved:
-                  stream.write(f"- Unresolved `{item.get('file')}:{item.get('line')}`: {item.get('reason')}\n")
           PY
-          exit "$scan_status"
+
+      - name: Apply repair overlays and execute PostgreSQL 17 behavior assertions
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/verify-schema-repair-postgres.mjs | tee "$RUNNER_TEMP/schema-repair-results.json"
+          printf '\n#### Candidate repair behavior checks\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' '- Local PostgreSQL 17 only; the 69-entry numbered baseline was not modified.' '- The post-sales migration was first rejected against two synthetic conflicting rows, with transaction rollback verified; after removing only those fixtures, unambiguous backfill and scoped access tests passed.' '- The separately reviewed M1.5 overlay was applied before the community-fee view repair and its security-invoker/grant constraints were rechecked.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan source queries against the repaired local catalog
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" node scripts/schema-query-contract.mjs > "$RUNNER_TEMP/schema-contract-repaired.json"
+          python3 - "$RUNNER_TEMP/schema-contract-repaired.json" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report.get("mode") == "local-replayed-schema", report.get("mode")
+          assert report.get("mismatch_count") == 0, report.get("mismatches")
+          assert report.get("dynamic_or_unresolved_count") == 0, report.get("dynamic_or_unresolved")
+          print(json.dumps({"mode": report.get("mode"), "query_chains": report.get("query_chains"), "mismatch_count": report.get("mismatch_count"), "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count"), "rpc_signature_count": report.get("rpc_signature_count")}, indent=2))
+          with open(sys.argv[2], "a", encoding="utf-8") as stream:
+              stream.write("\n#### Repaired-catalog query scan\n\n")
+              stream.write(f"- Query chains: {report.get('query_chains')}; mismatches: {report.get('mismatch_count')}; unresolved dynamic checks: {report.get('dynamic_or_unresolved_count')}; RPC signatures: {report.get('rpc_signature_count')}\n")
+          PY
 
       - name: Retain replay evidence
         if: always()
@@ -195,7 +228,9 @@ jobs:
             ${{ runner.temp }}/wamule-reconciled-replay/replay-manifest.json
             ${{ runner.temp }}/wamule-reconciled-replay/applied-migrations.json
             ${{ runner.temp }}/replay-run-summary.json
-            ${{ runner.temp }}/schema-contract-replay.json
+            ${{ runner.temp }}/schema-contract-baseline.json
+            ${{ runner.temp }}/schema-contract-repaired.json
+            ${{ runner.temp }}/wamule-reconciled-replay/schema-repair-results.json
           if-no-files-found: warn
 
       - name: Stop the isolated Supabase stack

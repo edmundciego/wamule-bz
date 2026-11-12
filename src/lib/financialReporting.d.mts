@@ -1,0 +1,33 @@
+export type FinanceScope = "phase" | "project" | "company";
+export type FinanceWorkspace = { tenantId: string; projectId: string; phaseId: string };
+export type AllocationLike = {
+  id?: number | string;
+  tenant_id?: string;
+  transaction_id?: number | string | null;
+  amount?: number | string | null;
+  allocation_amount?: number | string | null;
+  currency?: string | null;
+  scope_kind?: "phase" | "project" | "company" | "unallocated";
+  project_id?: string | null;
+  phase_id?: string | null;
+  contract_id?: number | null;
+  fee_charge_id?: number | null;
+  allocation_kind?: "applied" | "unallocated" | "reversal";
+};
+export type AllocationCurrencySummary = {
+  currency: string | null;
+  phase: number;
+  project: number;
+  company: number;
+  unallocated: number;
+  total: number;
+  unknownCurrency: boolean;
+};
+export function canReadFinance(role: string | null | undefined): boolean;
+export function canAggregateCompanyFinance(role: string | null | undefined): boolean;
+export function effectiveFinanceScope(role: string | null | undefined, requestedScope: FinanceScope): FinanceScope;
+export function filterAllocationRows<T extends AllocationLike>(rows: T[], scope: FinanceScope, workspace: FinanceWorkspace): T[];
+export function summarizeAllocationRows(rows: AllocationLike[]): { currencies: AllocationCurrencySummary[]; receiptCount: number; allocationCount: number };
+export function summarizeFeeCharges(charges: Array<{ id: number; amount: number | string; currency: string | null; status: string }>, allocations: AllocationLike[]): Array<{ currency: string | null; assessed: number; collected: number; outstanding: number; unknownCurrency: boolean }>;
+export function summarizeAmountsByCurrency(rows: Array<Record<string, unknown> & { currency?: string | null }>, amountKey: string): Array<{ currency: string | null; amount: number; unknownCurrency: boolean }>;
+export function formatCurrencyAmount(amount: number | string | null | undefined, currency: string | null | undefined): string;

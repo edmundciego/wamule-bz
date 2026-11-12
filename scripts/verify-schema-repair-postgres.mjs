@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+/** Apply candidate SQL overlays and exercise their behavior on the disposable replay database only. */
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve, relative } from "node:path";
+import { spawnSync } from "node:child_process";
+
+const ROOT = resolve(new URL("..", import.meta.url).pathname);
+const databaseUrl = process.env.SCHEMA_QUERY_DATABASE_URL ?? "";
+const replayDir = resolve(process.env.REPLAY_DIR ?? "");
+const POST_SALES_VERSION = "20261112033403";
+const VIEW_VERSION = "20261112033404";
+const POST_SALES_SHA256 = "18e060bd642cad681e5aef988aa06149d90e5627cb0ffe6b90828f8dd4ab12f5";
+const VIEW_SHA256 = "e814ea50e238d58e94144cee4b4926f42a8dc49fd849873d66c48b64fe7a5672";
+const M1_5_SHA256 = "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631";
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function digest(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function safePsql(args) {
+  return spawnSync("psql", [databaseUrl, "-X", "-q", "-v", "ON_ERROR_STOP=1", ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+    env: { ...process.env, PGPASSWORD: undefined },
+  });
+}
+
+function runPsql(args, label) {
+  const result = safePsql(args);
+  if (result.error) fail(`${label}: ${result.error.message}`);
+  if (result.status !== 0) {
+    const detail = (result.stderr ?? "").split(/\r?\n/).filter(Boolean).slice(-14).join("\n");
+    fail(`${label} (exit ${result.status}).\n${detail}`);
+  }
+  return result.stdout.trim();
+}
+
+function scalar(query) {
+  return runPsql(["-t", "-A", "-c", query], "Read local replay assertion").trim();
+}
+
+async function apply(path, label) {
+  runPsql(["-f", path], label);
+  return { path: relative(ROOT, path), sha256: digest(await readFile(path)) };
+}
+
+async function main() {
+  if (!databaseUrl || !process.env.REPLAY_DIR) fail("SCHEMA_QUERY_DATABASE_URL and REPLAY_DIR are required for the local replay repair test.");
+  const parsed = new URL(databaseUrl);
+  if (!["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)) fail("Refusing a non-local PostgreSQL target; hosted databases are out of scope.");
+  const applied = JSON.parse(await readFile(resolve(replayDir, "applied-migrations.json"), "utf8"));
+  if (applied.applied_migration_count !== 69 || applied.ordered_manifest_match !== true
+      || applied.applied_migrations?.length !== 69) {
+    fail("Repair overlays require the exact successful 69-entry baseline replay.");
+  }
+  const baselineVersions = applied.applied_migrations.map((entry) => String(entry.version));
+  if (baselineVersions.includes(POST_SALES_VERSION) || baselineVersions.includes(VIEW_VERSION)
+      || POST_SALES_VERSION <= baselineVersions.at(-1) || VIEW_VERSION <= POST_SALES_VERSION) {
+    fail("Repair migration versions must remain separate and strictly after the captured 69-entry ledger.");
+  }
+
+  const postSalesPath = resolve(ROOT, "supabase/migrations/20261112033403_post_sales_project_phase_scope.sql");
+  const viewPath = resolve(ROOT, "supabase/migrations/20261112033404_community_fee_view_tenant_scope.sql");
+  const m15Path = resolve(replayDir, "supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql");
+  const hashes = {
+    postSales: digest(await readFile(postSalesPath)),
+    m1_5: digest(await readFile(m15Path)),
+    view: digest(await readFile(viewPath)),
+  };
+  if (hashes.postSales !== POST_SALES_SHA256) fail(`Post-sales migration SHA-256 differs from reviewed body: ${hashes.postSales}`);
+  if (hashes.view !== VIEW_SHA256) fail(`Community-fee view migration SHA-256 differs from reviewed body: ${hashes.view}`);
+  if (hashes.m1_5 !== M1_5_SHA256) fail(`M1.5 overlay SHA-256 differs from the separately reviewed correction: ${hashes.m1_5}`);
+
+  runPsql(["-f", resolve(ROOT, "scripts/schema-repair-fixtures.sql")], "Seed synthetic legacy rows and phase-restricted users");
+
+  // Exercise the migration's own conflict preflight and PostgreSQL transaction
+  // rollback. The only writes after failure are deletion of two explicit
+  // conflict fixtures, not repair or deletion of business rows.
+  const rejected = safePsql(["-f", postSalesPath]);
+  const rejectionText = `${rejected.stdout ?? ""}\n${rejected.stderr ?? ""}`;
+  if (!rejected.status || !rejectionText.includes("Post-sales scope preflight found 2 rows")) {
+    fail("Expected the forward migration to reject the two synthetic conflicting parent rows and roll back.");
+  }
+  const afterRejectedMigration = scalar(`SELECT
+    (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('post_sales_tasks','post_sales_checklists') AND column_name IN ('project_id','phase_id')),
+    (SELECT count(*) FROM public.post_sales_tasks),
+    (SELECT count(*) FROM public.post_sales_checklists);`);
+  if (afterRejectedMigration !== "0|4|4") fail(`Conflict preflight was not atomic; post-failure catalog/count probe returned ${afterRejectedMigration}.`);
+
+  runPsql(["-c", `DELETE FROM public.post_sales_tasks WHERE id='e5000000-0000-4000-8000-000000000004'; DELETE FROM public.post_sales_checklists WHERE id='e7000000-0000-4000-8000-000000000004';`], "Remove only explicit rejected conflict fixtures");
+  const appliedRepairs = [];
+  appliedRepairs.push(await apply(postSalesPath, `Apply separate ${POST_SALES_VERSION} post-sales scope migration`));
+  // Apply the separately reviewed M1.5 view-security correction between the
+  // schema baselines and view repair, then assert the final replacement keeps it.
+  appliedRepairs.push(await apply(m15Path, "Apply separate, hash-pinned M1.5 security-invoker overlay on disposable PostgreSQL"));
+  appliedRepairs.push(await apply(viewPath, `Apply separate ${VIEW_VERSION} community-fee tenant-scope migration`));
+
+  runPsql(["-f", resolve(ROOT, "scripts/assert-schema-repair-post-sales.sql")], "Run post-sales RLS, attribution, and view permission assertions");
+
+  const activeStates = scalar(`DO $checks$ DECLARE v boolean; BEGIN
+    IF NOT public.workspace_scope_is_active('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','e3000000-0000-4000-8000-000000000001') THEN RAISE EXCEPTION 'eligible workspace phase was not active'; END IF;
+    UPDATE public.development_phases SET is_active=false WHERE id='e3000000-0000-4000-8000-000000000001';
+    IF public.workspace_scope_is_active('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','e3000000-0000-4000-8000-000000000001') THEN RAISE EXCEPTION 'inactive phase was accepted'; END IF;
+    UPDATE public.development_phases SET is_active=true WHERE id='e3000000-0000-4000-8000-000000000001';
+    IF public.workspace_scope_is_active('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000099','e3000000-0000-4000-8000-000000000001') THEN RAISE EXCEPTION 'mismatched project/phase was accepted'; END IF;
+    UPDATE public.organizations SET is_active=false WHERE id='e1000000-0000-4000-8000-000000000001';
+    IF public.workspace_scope_is_active('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','e3000000-0000-4000-8000-000000000001') THEN RAISE EXCEPTION 'inactive tenant was accepted'; END IF;
+    UPDATE public.organizations SET is_active=true WHERE id='e1000000-0000-4000-8000-000000000001';
+  END; $checks$; SELECT 'receipt scope lifecycle database checks passed';`);
+  if (!activeStates.includes("receipt scope lifecycle database checks passed")) fail("Receipt lifecycle helper did not return the expected PostgreSQL assertions.");
+
+  const anonDenied = safePsql(["-c", "SET ROLE anon; SELECT count(*) FROM public.community_fee_account_status;"]);
+  const anonError = `${anonDenied.stdout ?? ""}\n${anonDenied.stderr ?? ""}`;
+  if (!anonDenied.status || !anonError.toLowerCase().includes("permission denied")) fail("Anonymous SQL query was not denied by view grants.");
+
+  const baselineStillOrdered = JSON.parse(await readFile(resolve(replayDir, "applied-migrations.json"), "utf8"));
+  if (baselineStillOrdered.applied_migration_count !== 69 || baselineStillOrdered.ordered_manifest_match !== true) {
+    fail("The numbered baseline manifest was changed while applying overlays.");
+  }
+
+  const report = {
+    mode: "disposable-local-supabase-postgresql-17",
+    hosted_target_used: false,
+    staging_target_project: "kvocwmrcuhiaezlcgzjf",
+    baseline: { migration_count: 69, ordered_match: true },
+    expected_conflicting_legacy_preflight: { passed: true, rejected_rows: 2, migration_rollback_probe: afterRejectedMigration },
+    overlays: appliedRepairs,
+    sha256: hashes,
+    checks: {
+      synthetic_same_scope_backfill: "passed",
+      unverified_legacy_scope_retained_null: "passed",
+      conflicting_legacy_parent_preflight_rollback: "passed",
+      direct_insert_update_scope_guard: "passed",
+      optional_customer_only_unscoped_row: "passed",
+      phase_restricted_staff_read_write_both_tables: "passed",
+      rejected_out_of_phase_writes_leave_no_row: "passed",
+      dashboard_reports_scope_filters: "passed by node source contract test",
+      m1_5_view_security_invoker_and_grants_retained: "passed",
+      tenant_admin_view_access_and_tenant_setting_join: "passed",
+      staff_finance_view_denied_per_m3_1: "passed",
+      unrelated_tenant_and_anon_view_denied: "passed",
+      receipt_scope_helper_active_inactive_mismatched_and_tenant_suspension: "passed",
+      receipt_handler_job_and_retry: "covered by separate handler runtime test",
+    },
+    limitations: [
+      "Auth claims and receipt Storage are synthetic/mocked in handler tests; the PostgreSQL database behavior runs against the local Supabase PostgreSQL 17 stack.",
+      "M3.1 denies Staff contract/payment details; the community-fee view therefore remains Tenant Admin/Super Admin data even for an in-phase Staff member.",
+    ],
+  };
+  const out = resolve(replayDir, "schema-repair-results.json");
+  await writeFile(out, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  console.log(JSON.stringify(report, null, 2));
+  console.log(`[schema-repair] verified local disposable overlays; evidence written to ${relative(ROOT, out)}.`);
+}
+
+main().catch((error) => {
+  console.error(`[schema-repair] FAIL: ${error instanceof Error ? error.message : "unknown error"}`);
+  process.exitCode = 1;
+});
