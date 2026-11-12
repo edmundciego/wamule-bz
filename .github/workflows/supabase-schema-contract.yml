@@ -164,15 +164,15 @@ jobs:
           scan_status = int(sys.argv[2])
           mismatches = report.get("mismatches", [])
           unresolved = report.get("dynamic_or_unresolved", [])
-          post_sales = [item for item in mismatches if item.get("table") in {"post_sales_tasks", "post_sales_checklists"}]
-          fee_tenant = [item for item in mismatches if item.get("table") == "community_fee_account_status" and item.get("column") == "tenant_id"]
-          project_lifecycle = [item for item in mismatches if item.get("table") == "projects" and item.get("column") == "is_active"]
+          post_sales = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] in {"post_sales_tasks", "post_sales_checklists"}]
+          fee_tenant = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] == "community_fee_account_status" and item.get("column") == "tenant_id"]
+          project_lifecycle = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] == "projects" and item.get("column") == "is_active"]
           assert report.get("mode") == "local-replayed-schema", report.get("mode")
           assert scan_status == 1, f"Expected scanner mismatch exit 1, got {scan_status}"
           assert report.get("mismatch_count") == 9, report.get("mismatch_count")
-          assert len(post_sales) == 8, post_sales
-          assert len(fee_tenant) == 1, fee_tenant
-          assert len(project_lifecycle) == 0, project_lifecycle
+          assert len(post_sales) == 8, f"Expected eight post-sales findings, got {post_sales}"
+          assert len(fee_tenant) == 1, f"Expected one community-fee tenant finding, got {fee_tenant}"
+          assert len(project_lifecycle) == 0, f"Receipt code still queries a nonexistent project lifecycle field: {project_lifecycle}"
           assert report.get("dynamic_or_unresolved_count") == 0, unresolved
           print(json.dumps({"mode": report.get("mode"), "query_chains": report.get("query_chains"), "mismatch_count": report.get("mismatch_count"), "post_sales_findings": len(post_sales), "community_fee_tenant_findings": len(fee_tenant), "receipt_project_lifecycle_findings": len(project_lifecycle), "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count")}, indent=2))
           with open(sys.argv[3], "a", encoding="utf-8") as stream:
