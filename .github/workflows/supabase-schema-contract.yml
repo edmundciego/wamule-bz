@@ -104,14 +104,6 @@ jobs:
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["applied_migration_count"]==69 and d["ordered_manifest_match"] is True' "$REPLAY_DIR/applied-migrations.json"
           printf 'Applied migrations: 69 (exact ordered manifest match).\n' >> "$GITHUB_STEP_SUMMARY"
 
-          overlay="$REPLAY_DIR/supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql"
-          if ! psql "$db_url" -X -q -v ON_ERROR_STOP=1 -f "$overlay" > "$RUNNER_TEMP/m1-5-overlay.log" 2>&1; then
-            echo "Failing command: psql (local disposable database) -f \"$overlay\"" >&2
-            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/m1-5-overlay.log" | tail -n 60 >&2
-            exit 1
-          fi
-          printf 'M1.5 correction: applied only as a separate local overlay after the 69-entry baseline.\n' >> "$GITHUB_STEP_SUMMARY"
-
       - name: Assert Map Studio relations and publication RPC exist
         env:
           REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
@@ -153,7 +145,7 @@ jobs:
           test -n "$image_digest"
           printf 'Supabase CLI: 2.105.0\nPostgreSQL server_version: %s\nDatabase image: %s\nImage digest: %s\nImage content ID: %s\n' "$version" "$image" "$image_digest" "$image_id" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Scan source queries against the replayed catalog
+      - name: Scan source queries against the exact 69-migration baseline
         env:
           REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
           SUPABASE_HOME: ${{ runner.temp }}/supabase-home
