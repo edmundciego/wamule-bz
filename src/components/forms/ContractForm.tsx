@@ -11,29 +11,12 @@ import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Field, Input, Select } from "../ui/Field";
 import { ErrorState } from "../ui/State";
-import type { InstallmentPlan } from "../../types/database";
+import type { InstallmentPlan, PaymentMethod } from "../../types/database";
 import { UploadFileSummary } from "../uploads/UploadFileSummary";
+import { useWorkspaceScope } from "../auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../../lib/workspaceScope";
 
 type ContractValues = z.infer<typeof contractSchema>;
-
-const standardPurchasePrice = 25000;
-const reservationFee = 2500;
-const fallbackPlans: InstallmentPlan[] = [
-  {
-    id: -1,
-    name: "Installment Plan - 60 months",
-    description: "$2,500 reservation fee, $375.00 monthly",
-    reservation_fee: reservationFee,
-    initial_deposit: reservationFee,
-    final_purchase_price: standardPurchasePrice,
-    term_months: 60,
-    monthly_payment: 375,
-    is_active: true,
-    sort_order: 30,
-    created_at: "",
-    updated_at: "",
-  },
-];
 
 export function ContractForm({
   customerId,
@@ -45,6 +28,9 @@ export function ContractForm({
   onSuccess?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { workspace } = useWorkspaceScope();
+  const tenantId = workspace?.tenantId ?? null;
+  const scopeKey = workspaceScopeKey(workspace);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<PreparedUploadFile | null>(null);
   const [fileStatus, setFileStatus] = useState<string | null>(null);
@@ -53,11 +39,12 @@ export function ContractForm({
     resolver: zodResolver(contractSchema),
     defaultValues: {
       customer_id: customerId ?? 0,
-      final_purchase_price: standardPurchasePrice,
+      final_purchase_price: 0,
       term_months: 60,
       start_date: new Date().toISOString().slice(0, 10),
       payment_due_day: 1,
-      initial_deposit: reservationFee,
+      initial_deposit: 0,
+      currency: "",
     },
   });
   const finalPrice = Number(form.watch("final_purchase_price") || 0);
@@ -65,20 +52,37 @@ export function ContractForm({
   const term = Number(form.watch("term_months") || 1);
   const monthly = term > 0 ? (finalPrice - deposit) / term : 0;
   const { data: configuredPlans } = useQuery({
-    queryKey: ["active-installment-plans-contract"],
+    queryKey: ["active-installment-plans-contract", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("installment_plans")
         .select("*")
         .eq("is_active", true)
+        .eq("tenant_id", tenantId!)
         .order("sort_order", { ascending: true });
       if (queryError) throw queryError;
       return data as InstallmentPlan[];
     },
+    enabled: Boolean(tenantId),
   });
-  const paymentPlans = configuredPlans?.length ? configuredPlans : fallbackPlans;
+  const paymentPlans = configuredPlans ?? [];
   const selectedPlan = paymentPlans.find((plan) => plan.id === paymentPlanId) ?? paymentPlans[0];
-  const isCustomAgreement = /other|custom/i.test(selectedPlan?.name ?? "");
+  const isCustomAgreement = !selectedPlan || /other|custom/i.test(selectedPlan.name);
+  const { data: paymentMethods } = useQuery({
+    queryKey: ["contract-currency-methods", scopeKey],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase
+        .from("payment_methods")
+        .select("currency")
+        .eq("is_active", true)
+        .eq("tenant_id", tenantId!)
+        .order("sort_order", { ascending: true });
+      if (queryError) throw queryError;
+      return data as Pick<PaymentMethod, "currency">[];
+    },
+    enabled: Boolean(tenantId),
+  });
+  const supportedCurrencies = Array.from(new Set((paymentMethods ?? []).map((method) => method.currency.toUpperCase()).filter((currency) => /^[A-Z]{3}$/.test(currency))));
 
   useEffect(() => {
     if (!selectedPlan) return;
@@ -92,44 +96,75 @@ export function ContractForm({
     }
   }, [form, paymentPlanId, selectedPlan]);
 
+  useEffect(() => {
+    const currentCurrency = form.getValues("currency");
+    if (!currentCurrency && supportedCurrencies.length) {
+      form.setValue("currency", supportedCurrencies[0], { shouldValidate: true });
+    }
+  }, [form, supportedCurrencies]);
+
   const { data: customers } = useQuery({
-    queryKey: ["customers-options"],
+    queryKey: ["customers-options", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").order("last_name");
+      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name").eq("tenant_id", tenantId!).order("last_name");
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(tenantId),
   });
   const { data: parcels } = useQuery({
-    queryKey: ["contract-customer-authorization", form.watch("customer_id")],
+    queryKey: ["contract-customer-authorization", scopeKey, form.watch("customer_id")],
     queryFn: async () => {
       const customerIdValue = Number(form.watch("customer_id"));
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .select("application_id, applications(status, parcel_id, parcels(id, lot_number, status))")
-        .eq("id", customerIdValue)
-        .maybeSingle();
-      if (customerError) throw customerError;
-      if (!customer) return null;
       const { data: reservations, error: reservationError } = await supabase
         .from("lot_reservations")
-        .select("id, parcel_id, status, updated_at, parcels(id, lot_number, status)")
+        .select("id, application_id, parcel_id, status, updated_at, parcels(id, lot_number, status)")
         .eq("customer_id", customerIdValue)
+        .eq("tenant_id", tenantId!)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .in("status", ["reserved", "deposit_pending", "deposit_submitted", "deposit_confirmed"])
         .order("updated_at", { ascending: false })
         .limit(1);
       if (reservationError) throw reservationError;
       const reservation = reservations?.[0] ?? null;
       const reservationParcel = Array.isArray(reservation?.parcels) ? reservation.parcels[0] : reservation?.parcels;
-      if (reservation && reservationParcel) return { parcel: reservationParcel, source: "Active Reservation" };
-      const application = (Array.isArray(customer.applications) ? customer.applications[0] : customer.applications) as unknown as { status: string; parcel_id: number | null; parcels?: { id: number; lot_number: string; status: string } | Array<{ id: number; lot_number: string; status: string }> | null } | null;
+      if (reservation && reservationParcel) return {
+        parcel: reservationParcel,
+        source: "Active Reservation",
+        applicationId: reservation.application_id,
+        reservationId: reservation.id,
+      };
+      const { data: customerApplications, error: customerApplicationsError } = await supabase
+        .from("customer_applications")
+        .select("application_id")
+        .eq("tenant_id", tenantId!)
+        .eq("customer_id", customerIdValue)
+        .eq("is_primary", true);
+      if (customerApplicationsError) throw customerApplicationsError;
+      const applicationIds = (customerApplications ?? []).map((link) => link.application_id);
+      if (!applicationIds.length) return null;
+      const { data: applications, error: applicationError } = await supabase
+        .from("applications")
+        .select("id, status, application_kind, parcel_id, project_id, phase_id, parcels(id, lot_number, status)")
+        .in("id", applicationIds)
+        .eq("tenant_id", tenantId!)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
+        .eq("status", "Approved")
+        .eq("application_kind", "land_purchase")
+        .limit(2);
+      if (applicationError) throw applicationError;
+      if (applications?.length !== 1) return null;
+      const application = applications[0];
       const applicationParcel = Array.isArray(application?.parcels) ? application.parcels[0] : application?.parcels;
-      if (application?.status === "Approved" && application.parcel_id && applicationParcel) {
-        return { parcel: applicationParcel, source: "Approved Application" };
+      if (application?.project_id === workspace!.projectId && application.phase_id === workspace!.phaseId
+          && application.parcel_id && applicationParcel) {
+        return { parcel: applicationParcel, source: "Approved Application", applicationId: application.id, reservationId: null };
       }
       return null;
     },
-    enabled: Boolean(form.watch("customer_id")),
+    enabled: Boolean(tenantId && workspace?.projectId && workspace.phaseId && form.watch("customer_id")),
   });
 
   useEffect(() => {
@@ -155,11 +190,31 @@ export function ContractForm({
 
   async function onSubmit(values: ContractValues) {
     setError(null);
+    if (!tenantId) {
+      setError("Choose a workspace before creating a contract.");
+      return;
+    }
+    if (!workspace?.projectId || !workspace.phaseId) {
+      setError("Choose a project and phase before creating a contract.");
+      return;
+    }
+    if (!supportedCurrencies.includes(values.currency)) {
+      setError("Choose a currency supported by an active company payment method before creating the contract.");
+      return;
+    }
+    if (!parcels?.parcel || parcels.parcel.id !== values.parcel_id) {
+      setError("A current reservation or approved application must authorize a lot in this workspace before creating a contract.");
+      return;
+    }
+    if (parcels.applicationId == null && parcels.reservationId == null) {
+      setError("An exact approved application or same-phase reservation is required.");
+      return;
+    }
     let signed_contract_file_path: string | null = null;
     if (file) {
       setFileStatus("Uploading signed contract...");
       const safeName = file.uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${values.customer_id}/${Date.now()}-${safeName}`;
+      const path = `${values.customer_id}/${workspace.projectId}/${workspace.phaseId}/${Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage.from("contracts").upload(path, file.uploadFile);
       if (uploadError) {
         setError(uploadError.message);
@@ -169,20 +224,33 @@ export function ContractForm({
     }
     const { error: insertError } = await supabase.from("contracts").insert({
       ...values,
+      tenant_id: tenantId,
+      project_id: workspace.projectId,
+      phase_id: workspace.phaseId,
+      application_id: parcels.applicationId,
+      reservation_id: parcels.reservationId,
       signed_contract_file_path,
       is_active: true,
-    });
+    }).select("id").single();
     if (insertError) {
-      setError(insertError.message);
+      if (signed_contract_file_path) {
+        const { error: cleanupError } = await supabase.storage.from("contracts").remove([signed_contract_file_path]);
+        setError(cleanupError
+          ? `${insertError.message} The staged signed file could not be removed and needs review.`
+          : insertError.message);
+      } else {
+        setError(insertError.message);
+      }
       return;
     }
     form.reset({
       customer_id: customerId ?? 0,
-      final_purchase_price: standardPurchasePrice,
+      final_purchase_price: 0,
       term_months: 60,
       start_date: new Date().toISOString().slice(0, 10),
       payment_due_day: 1,
-      initial_deposit: reservationFee,
+      initial_deposit: 0,
+      currency: supportedCurrencies[0] ?? "",
     });
     setPaymentPlanId(paymentPlans[0]?.id ?? null);
     setFile(null);
@@ -230,6 +298,7 @@ export function ContractForm({
           </Field>
           <Field label="Payment plan">
             <Select value={paymentPlanId ?? ""} onChange={(event) => handlePaymentPlanChange(Number(event.target.value))}>
+              {paymentPlans.length === 0 ? <option value="">No configured plan — enter reviewed terms below</option> : null}
               {paymentPlans.map((plan) => (
                 <option key={plan.id} value={plan.id}>
                   {plan.name}
@@ -237,8 +306,15 @@ export function ContractForm({
               ))}
             </Select>
           </Field>
+          <Field label="Contract currency" error={form.formState.errors.currency?.message}>
+            <Select {...form.register("currency")} disabled={!supportedCurrencies.length}>
+              <option value="">Select a configured currency</option>
+              {supportedCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+            </Select>
+            {!supportedCurrencies.length ? <p className="mt-1 text-xs text-muted-foreground">Add an active payment method with a currency before creating new contracts.</p> : null}
+          </Field>
           <div className="crm-info-panel p-3 text-sm">
-            <p className="font-medium text-primary">{selectedPlan?.description ?? "Use configured payment terms."}</p>
+            <p className="font-medium text-primary">{selectedPlan?.description ?? "No inherited price or payment terms are assumed for this workspace."}</p>
             {!isCustomAgreement ? (
               <p className="mt-1">
                 This plan uses a {money(Number(selectedPlan?.reservation_fee ?? 0))} reservation fee and a listed monthly payment of {money(Number(selectedPlan?.monthly_payment ?? 0))}.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
@@ -7,11 +7,15 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input, Select } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { exportCsv, reportFileName } from "../lib/csv";
-import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
+import { activeContract as canonicalActiveContract } from "../lib/financial";
+import { canAggregateCompanyFinance, effectiveFinanceScope, formatCurrencyAmount, summarizeAllocationRows, summarizeAmountsByCurrency, summarizeFeeCharges } from "../lib/financialReporting.mjs";
+import { getSessionAndProfile } from "../lib/data";
 import { buildOperationalAttention } from "../lib/operationalAttention";
 import { supabase } from "../lib/supabase";
-import { cn, formatDate, money } from "../lib/utils";
+import { workspaceScopeKey } from "../lib/workspaceScope";
+import { cn, formatDate } from "../lib/utils";
 import type {
   AdminProfile,
   CollectionMethod,
@@ -46,32 +50,49 @@ type ReportTab =
   | "Missing Items";
 type PaymentReportRow = {
   id: number;
+  transaction_id: number;
   customer_id: number;
   contract_id: number | null;
   amount: number;
-  transaction_type: TransactionType;
-  collection_method: CollectionMethod;
-  bank_reference: string | null;
-  manual_receipt_number: string | null;
-  receipt_issued_by: string | null;
-  notes: string | null;
+  currency: string | null;
+  project_id: string | null;
+  phase_id: string | null;
+  scope_kind: "phase" | "project" | "company" | "unallocated";
+  allocation_kind: "applied" | "unallocated" | "reversal";
+  transaction_type: TransactionType | string;
+  collection_method?: CollectionMethod | null;
+  bank_reference?: string | null;
+  manual_receipt_number?: string | null;
+  receipt_issued_by?: string | null;
+  notes?: string | null;
   created_at: string;
-  customers?: { first_name: string; last_name: string } | null;
+  customers?: { first_name: string | null; last_name: string | null } | null;
   contracts?: { parcels?: { lot_number: string | null } | null } | null;
   payment_documents?: Array<{ id: number }> | null;
 };
 type ContractReportRow = {
   id: number;
-  final_purchase_price: number;
-  monthly_payment: number;
-  start_date: string;
-  payment_due_day: number;
-  signed_contract_file_path: string | null;
+  tenant_id: string;
+  project_id: string | null;
+  phase_id: string | null;
+  customer_id: number;
+  parcel_id: number;
+  currency: string | null;
+  final_purchase_price?: number;
+  total_posted_land_paid?: number;
+  remaining_balance?: number;
+  monthly_payment?: number;
+  start_date?: string;
+  payment_due_day?: number;
+  signed_contract_file_path?: string | null;
   is_active: boolean;
   status: string;
-  customers?: { id: number; first_name: string; last_name: string } | null;
+  customers?: { id: number; first_name: string | null; last_name: string | null } | null;
   parcels?: { lot_number: string | null } | null;
-  transactions?: Array<{ amount: number; transaction_type: string; created_at: string; contract_id: number | null; status: string }> | null;
+  customer_first_name?: string;
+  customer_last_name?: string;
+  lot_number?: string | null;
+  created_at?: string;
 };
 type ApplicationReportRow = {
   id: number;
@@ -107,6 +128,7 @@ type CustomerReportRow = {
 type LeadReportRow = Lead & { parcels?: { id: number; lot_number: string | null; status: string | null } | null };
 type SiteVisitReportRow = SiteVisit & { parcels?: { id: number; lot_number: string | null; status: string | null } | null };
 type ReservationReportRow = LotReservation & { parcels?: { id: number; lot_number: string | null; status: string | null } | null };
+const ReportsExportContext = createContext(true);
 
 const tabs: ReportTab[] = ["Payments", "Balances", "Sales", "Follow-ups", "Site Visits", "Reservations", "Applications", "Post-Sales", "Workload", "Demand", "Lots", "Missing Items"];
 const transactionTypes: TransactionType[] = ["Down Payment", "Land Installment", "Garbage Fee", "Road Maintenance"];
@@ -119,6 +141,17 @@ const reservationStatuses: ReservationStatus[] = ["draft", "reserved", "deposit_
 const postSalesStatuses: PostSalesChecklistStatus[] = ["not_started", "in_progress", "blocked", "completed", "cancelled"];
 
 export function ReportsPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const { data: sessionProfile, isLoading: profileLoading } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
+  const role = sessionProfile?.profile?.role ?? null;
+  const [requestedFinanceScope, setRequestedFinanceScope] = useState<"phase" | "project" | "company">("phase");
+  const financeScope = effectiveFinanceScope(role, requestedFinanceScope);
+  const isCompanyAggregate = financeScope === "company";
+  const isProjectAggregate = financeScope === "project";
+  const isReadOnly = role === "Read Only";
+  const canReadFinancialReports = role === "Admin" || role === "Super Admin" || isReadOnly;
+  const canReadContractTerms = role === "Admin" || role === "Super Admin";
+  const scopeKey = `${workspaceScopeKey(workspace)}:${financeScope}:${role ?? "unknown"}`;
   const [activeTab, setActiveTab] = useState<ReportTab>("Payments");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -135,151 +168,289 @@ export function ReportsPage() {
   const [postSalesStatus, setPostSalesStatus] = useState("");
 
   const paymentsQuery = useQuery({
-    queryKey: ["reports-payments"],
+    queryKey: ["reports-payments", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*, customers(first_name, last_name), contracts(parcels(lot_number)), payment_documents(id)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as PaymentReportRow[];
+      if (isReadOnly) {
+        const { data, error } = await supabase.rpc("read_phase_payment_allocations_v1", {
+          p_tenant_id: workspace!.tenantId,
+          p_project_id: workspace!.projectId,
+          p_phase_id: workspace!.phaseId,
+        });
+        if (error) throw error;
+        return ((data ?? []) as Array<{ allocation_id: number; transaction_id: number; customer_id: number; contract_id: number | null; allocation_amount: number; currency: string | null; phase_id: string; allocation_kind: "applied" | "unallocated" | "reversal"; transaction_type: string; receipt_date: string | null; created_at: string }>).map((row) => ({
+          id: row.allocation_id,
+          transaction_id: row.transaction_id,
+          customer_id: row.customer_id,
+          contract_id: row.contract_id,
+          amount: row.allocation_amount,
+          currency: row.currency,
+          project_id: workspace!.projectId,
+          phase_id: row.phase_id,
+          scope_kind: "phase" as const,
+          allocation_kind: row.allocation_kind,
+          transaction_type: row.transaction_type,
+          created_at: row.created_at || row.receipt_date || "",
+        })) as PaymentReportRow[];
+      }
+      let allocationQuery = supabase.from("transaction_allocations").select("*").eq("tenant_id", workspace!.tenantId);
+      if (isProjectAggregate) allocationQuery = allocationQuery.in("scope_kind", ["phase", "project"]).eq("project_id", workspace!.projectId);
+      else if (!isCompanyAggregate) allocationQuery = allocationQuery.eq("scope_kind", "phase").eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+      const { data: allocations, error: allocationError } = await allocationQuery.order("created_at", { ascending: false });
+      if (allocationError) throw allocationError;
+      const rows = allocations ?? [];
+      const transactionIds = [...new Set(rows.map((row) => row.transaction_id))];
+      if (!transactionIds.length) return [];
+      const { data: parents, error: parentError } = await supabase.from("transactions")
+        .select("id,customer_id,transaction_type,collection_method,bank_reference,manual_receipt_number,receipt_issued_by,notes,created_at")
+        .eq("tenant_id", workspace!.tenantId).in("id", transactionIds);
+      if (parentError) throw parentError;
+      const parentById = new Map((parents ?? []).map((row) => [row.id, row]));
+      return rows.map((row) => {
+        const parent = parentById.get(row.transaction_id);
+        return {
+          id: row.id,
+          transaction_id: row.transaction_id,
+          customer_id: row.customer_id,
+          contract_id: row.contract_id,
+          amount: Number(row.amount),
+          currency: row.currency,
+          project_id: row.project_id,
+          phase_id: row.phase_id,
+          scope_kind: row.scope_kind,
+          allocation_kind: row.allocation_kind,
+          transaction_type: parent?.transaction_type ?? "Unallocated legacy receipt",
+          collection_method: parent?.collection_method ?? null,
+          bank_reference: parent?.bank_reference ?? null,
+          manual_receipt_number: parent?.manual_receipt_number ?? null,
+          receipt_issued_by: parent?.receipt_issued_by ?? null,
+          notes: parent?.notes ?? null,
+          created_at: parent?.created_at ?? row.created_at,
+        } satisfies PaymentReportRow;
+      }) as PaymentReportRow[];
     },
+    enabled: Boolean(workspace && canReadFinancialReports),
   });
   const contractsQuery = useQuery({
-    queryKey: ["reports-contracts"],
+    queryKey: ["reports-contracts", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contracts")
-        .select("*, customers(id, first_name, last_name), parcels(lot_number), transactions(amount, transaction_type, created_at)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as ContractReportRow[];
+      if (isReadOnly) {
+        const { data, error } = await supabase.from("contract_scope_metadata").select("*")
+          .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        return (data ?? []).map((row) => ({ ...row, currency: null, created_at: row.created_at })) as unknown as ContractReportRow[];
+      }
+      let query = supabase.from("contracts").select("id,tenant_id,project_id,phase_id,customer_id,parcel_id,currency,final_purchase_price,monthly_payment,start_date,payment_due_day,signed_contract_file_path,is_active,status,created_at,customers(id,first_name,last_name),parcels(lot_number)")
+        .eq("tenant_id", workspace!.tenantId).eq("is_active", true).eq("status", "active");
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data: contracts, error: contractError } = await query.order("created_at", { ascending: false });
+      if (contractError) throw contractError;
+      const rows = contracts ?? [];
+      if (!rows.length) return [];
+      const { data: summaries, error: summaryError } = await supabase.from("contract_financial_summary")
+        .select("contract_id,total_posted_land_paid,remaining_balance,currency")
+        .in("contract_id", rows.map((row) => row.id));
+      if (summaryError) throw summaryError;
+      const summaryByContract = new Map((summaries ?? []).map((row) => [row.contract_id, row]));
+      return rows.map((row) => ({ ...row, ...(summaryByContract.get(row.id) ?? {}) })) as unknown as ContractReportRow[];
     },
+    enabled: Boolean(workspace && canReadFinancialReports),
   });
-  const applicationsQuery = useQuery({
-    queryKey: ["reports-applications"],
+  const feeChargesQuery = useQuery({
+    queryKey: ["reports-fee-charges", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("applications")
-        .select("*")
-        .order("created_at", { ascending: false });
+      let query = supabase.from("fee_charges").select("id,amount,currency,status,scope_kind,project_id,phase_id").eq("tenant_id", workspace!.tenantId);
+      if (isProjectAggregate) query = query.in("scope_kind", ["phase", "project"]).eq("project_id", workspace!.projectId);
+      else if (!isCompanyAggregate) query = query.eq("scope_kind", "phase").eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: Boolean(workspace && canReadFinancialReports),
+  });
+  const reportCustomerIds = [...new Set((contractsQuery.data ?? []).map((contract) => contract.customer_id).filter((id): id is number => Number.isInteger(id)))];
+  const applicationsQuery = useQuery({
+    queryKey: ["reports-applications", scopeKey],
+    queryFn: async () => {
+      let query = supabase.from("applications").select("*").eq("tenant_id", workspace!.tenantId)
+        .eq("application_kind", "land_purchase");
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("created_at", { ascending: false });
       if (error) throw error;
       return data as ApplicationReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const lotsQuery = useQuery({
-    queryKey: ["reports-lots"],
+    queryKey: ["reports-lots", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("parcel_board_view")
         .select("*")
-        .order("lot_number", { ascending: true });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("lot_number", { ascending: true });
       if (error) throw error;
       return data as LotReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const customersQuery = useQuery({
-    queryKey: ["reports-customers"],
+    queryKey: ["reports-customers", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("customers")
-        .select("id, first_name, last_name, contracts(id, is_active)")
-        .order("last_name", { ascending: true });
+      if (!isCompanyAggregate && !reportCustomerIds.length) return [];
+      let query = supabase.from("customers").select("id,first_name,last_name,contracts(id,is_active)").eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) query = query.in("id", reportCustomerIds);
+      const { data, error } = await query.order("last_name", { ascending: true });
       if (error) throw error;
       return data as CustomerReportRow[];
     },
+    enabled: Boolean(workspace && canReadContractTerms && (isCompanyAggregate || contractsQuery.isSuccess) && (isCompanyAggregate || reportCustomerIds.length > 0)),
   });
   const leadsQuery = useQuery({
-    queryKey: ["reports-leads"],
+    queryKey: ["reports-leads", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("leads")
         .select("*, parcels(id, lot_number, status)")
-        .order("updated_at", { ascending: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("updated_at", { ascending: false });
       if (error) throw error;
       return data as LeadReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const followUpsQuery = useQuery({
-    queryKey: ["reports-follow-ups"],
+    queryKey: ["reports-follow-ups", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("follow_up_tasks")
         .select("*")
-        .order("due_at", { ascending: true, nullsFirst: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("due_at", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return data as FollowUpTask[];
     },
+    enabled: Boolean(workspace),
   });
   const siteVisitsQuery = useQuery({
-    queryKey: ["reports-site-visits"],
+    queryKey: ["reports-site-visits", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("site_visits")
         .select("*, parcels(id, lot_number, status)")
-        .order("scheduled_at", { ascending: true });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("scheduled_at", { ascending: true });
       if (error) throw error;
       return data as SiteVisitReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const reservationsQuery = useQuery({
-    queryKey: ["reports-reservations"],
+    queryKey: ["reports-reservations", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status)")
-        .order("updated_at", { ascending: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("updated_at", { ascending: false });
       if (error) throw error;
       return data as ReservationReportRow[];
     },
+    enabled: Boolean(workspace),
   });
   const postSalesChecklistsQuery = useQuery({
-    queryKey: ["reports-post-sales-checklists"],
+    queryKey: ["reports-post-sales-checklists", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("post_sales_checklists")
         .select("*")
-        .order("updated_at", { ascending: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("updated_at", { ascending: false });
       if (error) throw error;
       return data as PostSalesChecklist[];
     },
+    enabled: Boolean(workspace),
   });
   const postSalesTasksQuery = useQuery({
-    queryKey: ["reports-post-sales-tasks"],
+    queryKey: ["reports-post-sales-tasks", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("post_sales_tasks")
         .select("*")
-        .order("due_at", { ascending: true, nullsFirst: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("due_at", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return data as PostSalesTask[];
     },
+    enabled: Boolean(workspace),
   });
   const paymentRequestsQuery = useQuery({
-    queryKey: ["reports-payment-requests"],
+    queryKey: ["reports-payment-requests", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("payment_requests")
         .select("*")
-        .order("due_date", { ascending: true });
+        .eq("tenant_id", workspace!.tenantId);
+      if (!isCompanyAggregate) {
+        query = query.eq("project_id", workspace!.projectId);
+        if (!isProjectAggregate) query = query.eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error } = await query.order("due_date", { ascending: true });
       if (error) throw error;
       return data as PaymentRequest[];
     },
+    enabled: Boolean(workspace && canReadFinancialReports),
   });
   const adminProfilesQuery = useQuery({
-    queryKey: ["reports-admin-profiles"],
+    queryKey: ["reports-admin-profiles", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("admin_profiles")
         .select("user_id, email, full_name, role, created_at, updated_at")
+        .eq("tenant_id", workspace!.tenantId)
         .order("full_name", { ascending: true });
       if (error) throw error;
       return data as AdminProfile[];
     },
+    enabled: Boolean(workspace && canReadContractTerms),
   });
 
-  const isLoading = paymentsQuery.isLoading || contractsQuery.isLoading || applicationsQuery.isLoading || lotsQuery.isLoading || customersQuery.isLoading || leadsQuery.isLoading || followUpsQuery.isLoading || siteVisitsQuery.isLoading || reservationsQuery.isLoading || postSalesChecklistsQuery.isLoading || postSalesTasksQuery.isLoading || paymentRequestsQuery.isLoading || adminProfilesQuery.isLoading;
-  const error = paymentsQuery.error || contractsQuery.error || applicationsQuery.error || lotsQuery.error || customersQuery.error || leadsQuery.error || followUpsQuery.error || siteVisitsQuery.error || reservationsQuery.error || postSalesChecklistsQuery.error || postSalesTasksQuery.error || paymentRequestsQuery.error || adminProfilesQuery.error;
+  const isLoading = workspaceLoading || profileLoading || paymentsQuery.isLoading || contractsQuery.isLoading || feeChargesQuery.isLoading || applicationsQuery.isLoading || lotsQuery.isLoading || customersQuery.isLoading || leadsQuery.isLoading || followUpsQuery.isLoading || siteVisitsQuery.isLoading || reservationsQuery.isLoading || postSalesChecklistsQuery.isLoading || postSalesTasksQuery.isLoading || paymentRequestsQuery.isLoading || adminProfilesQuery.isLoading;
+  const error = paymentsQuery.error || contractsQuery.error || feeChargesQuery.error || applicationsQuery.error || lotsQuery.error || customersQuery.error || leadsQuery.error || followUpsQuery.error || siteVisitsQuery.error || reservationsQuery.error || postSalesChecklistsQuery.error || postSalesTasksQuery.error || paymentRequestsQuery.error || adminProfilesQuery.error;
 
   const customerOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -302,19 +473,14 @@ export function ReportsPage() {
 
   const balanceRows = useMemo(
     () =>
-      contractsQuery.data?.map((contract) => {
-        const totalPaid = totalPostedLandPayments(contract.transactions ?? [], contract.id);
-        const landPayments = (contract.transactions ?? []).filter((transaction) => transaction.status === "posted" && transaction.contract_id === contract.id && ["Down Payment", "Land Installment"].includes(transaction.transaction_type));
-        const lastPayment = [...landPayments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-        return {
-          ...contract,
-          totalPaid,
-          remainingBalance: remainingLandBalance(contract, contract.transactions ?? []) ?? 0,
-          lastPaymentDate: lastPayment?.created_at ?? null,
-          nextDueDate: nextDueDate(contract),
-        };
-      }) ?? [],
-    [contractsQuery.data],
+      canReadContractTerms ? contractsQuery.data?.map((contract) => ({
+        ...contract,
+        totalPaid: Number(contract.total_posted_land_paid ?? 0),
+        remainingBalance: Number(contract.remaining_balance ?? contract.final_purchase_price ?? 0),
+        lastPaymentDate: null,
+        nextDueDate: contract.payment_due_day ? nextDueDate(contract as { payment_due_day: number }) : "",
+      })) ?? [] : [],
+    [canReadContractTerms, contractsQuery.data],
   );
 
   const parcelNameById = useMemo(() => {
@@ -325,9 +491,9 @@ export function ReportsPage() {
 
   const missingItems = useMemo(
     () => ({
-      missingReceipts: paymentsQuery.data?.filter((payment) => !payment.manual_receipt_number) ?? [],
-      missingProofs: paymentsQuery.data?.filter((payment) => payment.collection_method === "Online Transfer" && !payment.payment_documents?.length) ?? [],
-      missingSignedContracts: contractsQuery.data?.filter((contract) => !contract.signed_contract_file_path) ?? [],
+      missingReceipts: canReadContractTerms ? uniqueTransactions(paymentsQuery.data ?? []).filter((payment) => !payment.manual_receipt_number) : [],
+      missingProofs: canReadContractTerms ? uniqueTransactions(paymentsQuery.data ?? []).filter((payment) => payment.collection_method === "Online Transfer") : [],
+      missingSignedContracts: canReadContractTerms ? contractsQuery.data?.filter((contract) => !contract.signed_contract_file_path) ?? [] : [],
       customersWithoutActiveContract: customersQuery.data?.filter((customer) => !canonicalActiveContract(customer.contracts ?? [])) ?? [],
       incompleteApplications: applicationsQuery.data?.filter((application) =>
         !application.phone ||
@@ -338,7 +504,7 @@ export function ReportsPage() {
         !application.legal_notice_acknowledged,
       ) ?? [],
     }),
-    [applicationsQuery.data, contractsQuery.data, customersQuery.data, paymentsQuery.data],
+    [applicationsQuery.data, canReadContractTerms, contractsQuery.data, customersQuery.data, paymentsQuery.data],
   );
   const profileById = useMemo(() => new Map((adminProfilesQuery.data ?? []).map((profile) => [profile.user_id, profile])), [adminProfilesQuery.data]);
   const lotById = useMemo(() => {
@@ -434,21 +600,24 @@ export function ReportsPage() {
   );
 
   return (
+    <ReportsExportContext.Provider value={canReadContractTerms}>
     <section className="v2-page-shell">
       <div className="v2-page-header">
         <p className="v2-page-kicker">Management Review</p>
         <h1 className="v2-page-title">Reports</h1>
-        <p className="v2-page-description">Operational reports and CSV exports for payments, balances, applications, lots, and cleanup items.</p>
+        <p className="v2-page-description">Scoped operational and financial reports for the selected workspace.</p>
       </div>
+      {canAggregateCompanyFinance(role) ? <ReportsScopeControl value={financeScope} onChange={setRequestedFinanceScope} /> : null}
       {isLoading ? <LoadingState label="Loading reports" /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its reports."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       <div className="v2-archive-panel p-4 text-sm text-primary">
-        Reports are read-only summaries for management review. They do not update records or trigger workflow changes.
+        {financeScope === "company" ? `Company aggregate for ${workspace?.tenantName ?? "the verified tenant"}. Each receipt is counted through allocations once; unallocated legacy amounts stay separate and currencies stay separate.` : financeScope === "project" ? `Project aggregate for ${workspace?.projectName ?? "the selected project"}. The total includes its phase and project-scoped allocations, not company-wide or unallocated entries.` : `Exact phase report for ${workspace?.phaseName ?? "the selected phase"}. Other phase and unscoped legacy rows are not assigned to this phase.`}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card/90 p-2 shadow-sm shadow-primary/5">
         <div className="flex min-w-max gap-1">
-          {tabs.map((tab) => (
+          {tabs.filter((tab) => canReadFinancialReports || !["Payments", "Balances"].includes(tab)).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -464,16 +633,20 @@ export function ReportsPage() {
         </div>
       </div>
 
-      {activeTab === "Payments" ? (
+        {activeTab === "Payments" && canReadFinancialReports ? (
         <PaymentsReport
           rows={filteredPayments}
           allRows={paymentsQuery.data ?? []}
           customerOptions={customerOptions}
           filters={{ dateFrom, dateTo, customerId, transactionType, collectionMethod }}
           onFiltersChange={{ setDateFrom, setDateTo, setCustomerId, setTransactionType, setCollectionMethod }}
+          scope={financeScope}
+          isReadOnly={isReadOnly}
+          feeSummary={summarizeFeeCharges(feeChargesQuery.data ?? [], paymentsQuery.data ?? [])}
         />
       ) : null}
-      {activeTab === "Balances" ? <BalancesReport rows={balanceRows} /> : null}
+      {activeTab === "Balances" && isReadOnly ? <ScopedContractMetadataNotice count={contractsQuery.data?.length ?? 0} /> : null}
+      {activeTab === "Balances" && canReadContractTerms ? <BalancesReport rows={balanceRows} /> : null}
       {activeTab === "Sales" ? <SalesPipelineReport rows={filteredLeads} allRows={leadsQuery.data ?? []} followUps={followUpsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} sourceOptions={sourceOptions} staffOptions={staffOptions} profileById={profileById} /> : null}
       {activeTab === "Follow-ups" ? <FollowUpsReport rows={filteredFollowUps} allRows={followUpsQuery.data ?? []} leads={leadsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
       {activeTab === "Site Visits" ? <SiteVisitsReport rows={filteredSiteVisits} allRows={siteVisitsQuery.data ?? []} filters={reportFilters} onFiltersChange={filterSetters} staffOptions={staffOptions} profileById={profileById} /> : null}
@@ -485,63 +658,101 @@ export function ReportsPage() {
       {activeTab === "Lots" ? <LotsReport rows={lotsQuery.data ?? []} /> : null}
       {activeTab === "Missing Items" ? <MissingItemsReport items={missingItems} paymentRequests={paymentRequestsQuery.data ?? []} postSalesChecklists={postSalesChecklistsQuery.data ?? []} /> : null}
     </section>
+    </ReportsExportContext.Provider>
   );
 }
 
-function PaymentsReport({
-  rows,
-  allRows,
-  customerOptions,
-  filters,
-  onFiltersChange,
-}: {
+function ReportsScopeControl({ value, onChange }: { value: "phase" | "project" | "company"; onChange: (value: "phase" | "project" | "company") => void }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/80 p-3" aria-label="Report scope">
+      <div><p className="text-sm font-medium text-foreground">Report scope</p><p className="text-xs text-muted-foreground">Company totals apply only to this verified tenant.</p></div>
+      <div className="flex gap-2">
+        <button type="button" aria-pressed={value === "phase"} className={cn("rounded-lg border px-3 py-2 text-sm", value === "phase" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-foreground")} onClick={() => onChange("phase")}>Selected phase</button>
+        <button type="button" aria-pressed={value === "project"} className={cn("rounded-lg border px-3 py-2 text-sm", value === "project" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-foreground")} onClick={() => onChange("project")}>Project aggregate</button>
+        <button type="button" aria-pressed={value === "company"} className={cn("rounded-lg border px-3 py-2 text-sm", value === "company" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-foreground")} onClick={() => onChange("company")}>Company aggregate</button>
+      </div>
+    </div>
+  );
+}
+
+function ScopedContractMetadataNotice({ count }: { count: number }) {
+  return (
+    <Card className="v2-archive-panel">
+      <CardContent className="p-5 text-sm text-muted-foreground">
+        This Read Only account can view {count} contract metadata record{count === 1 ? "" : "s"} in the selected phase. Contract prices and balances are not included here; its exact-phase payment allocation totals are available in Payments.
+      </CardContent>
+    </Card>
+  );
+}
+
+function uniqueTransactions(rows: PaymentReportRow[]) {
+  const latestAllocation = new Map<number, PaymentReportRow>();
+  rows.forEach((row) => {
+    if (!latestAllocation.has(row.transaction_id)) latestAllocation.set(row.transaction_id, row);
+  });
+  return [...latestAllocation.values()];
+}
+
+function PaymentsReport({ rows, allRows, customerOptions, filters, onFiltersChange, scope, isReadOnly, feeSummary }: {
   rows: PaymentReportRow[];
   allRows: PaymentReportRow[];
   customerOptions: Array<[number, string]>;
-  filters: {
-    dateFrom: string;
-    dateTo: string;
-    customerId: string;
-    transactionType: string;
-    collectionMethod: string;
-  };
-  onFiltersChange: {
-    setDateFrom: (value: string) => void;
-    setDateTo: (value: string) => void;
-    setCustomerId: (value: string) => void;
-    setTransactionType: (value: string) => void;
-    setCollectionMethod: (value: string) => void;
-  };
+  filters: { dateFrom: string; dateTo: string; customerId: string; transactionType: string; collectionMethod: string };
+  onFiltersChange: { setDateFrom: (value: string) => void; setDateTo: (value: string) => void; setCustomerId: (value: string) => void; setTransactionType: (value: string) => void; setCollectionMethod: (value: string) => void };
+  scope: "phase" | "project" | "company";
+  isReadOnly: boolean;
+  feeSummary: ReturnType<typeof summarizeFeeCharges>;
 }) {
-  const total = rows.reduce((sum, row) => sum + Number(row.amount), 0);
+  const summary = summarizeAllocationRows(rows);
+  const amountSummary = summary.currencies.map((row) => {
+    const scopedAmount = scope === "company" ? row.phase + row.project + row.company : scope === "project" ? row.phase + row.project : row.phase;
+    const parts = [`${formatCurrencyAmount(scopedAmount, row.currency)} allocated`];
+    if (scope === "company" && row.unallocated !== 0) parts.push(`${formatCurrencyAmount(row.unallocated, row.currency)} unallocated`);
+    return parts.join("; ");
+  });
+  const feeSummaryText = feeSummary.map((row) => `${formatCurrencyAmount(row.outstanding, row.currency)} open fees`).join(", ");
 
   function exportPayments() {
     exportCsv({
-      filename: reportFileName("payments-report"),
+      filename: reportFileName("payment-allocation-report"),
       rows: rows.map((row) => ({
+        receipt_id: row.transaction_id,
+        allocation_id: row.id,
         payment_date: safeFormatDate(row.created_at),
         customer_name: row.customers ? customerName(row.customers) : "",
-        lot_number: row.contracts?.parcels?.lot_number ?? "",
+        customer_id: row.customer_id,
+        contract_id: row.contract_id ?? "",
+        project_id: row.project_id ?? "",
+        phase_id: row.phase_id ?? "",
+        scope_kind: row.scope_kind,
+        allocation_kind: row.allocation_kind,
         transaction_type: row.transaction_type,
         amount: row.amount,
-        collection_method: row.collection_method,
-        bank_reference: row.bank_reference,
-        manual_receipt_number: row.manual_receipt_number,
-        receipt_issued_by: row.receipt_issued_by,
-        uploaded_document: row.payment_documents?.length ? "Yes" : "No",
-        notes: row.notes,
+        currency: row.currency ?? "unverified",
+        collection_method: row.collection_method ?? "",
+        bank_reference: row.bank_reference ?? "",
+        manual_receipt_number: row.manual_receipt_number ?? "",
+        receipt_issued_by: row.receipt_issued_by ?? "",
+        notes: row.notes ?? "",
       })),
       columns: [
+        { header: "Receipt ID", accessor: (row) => row.receipt_id },
+        { header: "Allocation ID", accessor: (row) => row.allocation_id },
         { header: "Payment Date", accessor: (row) => row.payment_date },
         { header: "Customer Name", accessor: (row) => row.customer_name },
-        { header: "Lot Number", accessor: (row) => row.lot_number },
-        { header: "Transaction Type", accessor: (row) => row.transaction_type },
+        { header: "Customer ID", accessor: (row) => row.customer_id },
+        { header: "Contract ID", accessor: (row) => row.contract_id },
+        { header: "Project ID", accessor: (row) => row.project_id },
+        { header: "Phase ID", accessor: (row) => row.phase_id },
+        { header: "Scope", accessor: (row) => row.scope_kind },
+        { header: "Allocation", accessor: (row) => row.allocation_kind },
+        { header: "Type", accessor: (row) => row.transaction_type },
         { header: "Amount", accessor: (row) => row.amount },
-        { header: "Collection Method", accessor: (row) => row.collection_method },
-        { header: "Bank Reference", accessor: (row) => row.bank_reference },
-        { header: "Manual Receipt Number", accessor: (row) => row.manual_receipt_number },
-        { header: "Receipt Issued By", accessor: (row) => row.receipt_issued_by },
-        { header: "Uploaded Document", accessor: (row) => row.uploaded_document },
+        { header: "Currency", accessor: (row) => row.currency },
+        { header: "Method", accessor: (row) => row.collection_method },
+        { header: "Bank Ref", accessor: (row) => row.bank_reference },
+        { header: "Receipt #", accessor: (row) => row.manual_receipt_number },
+        { header: "Issued By", accessor: (row) => row.receipt_issued_by },
         { header: "Notes", accessor: (row) => row.notes },
       ],
     });
@@ -550,54 +761,42 @@ function PaymentsReport({
   return (
     <div className="grid gap-5">
       <ReportSummary
-        title="Payments Report"
-        description={`${rows.length} of ${allRows.length} payments shown. Total: ${money(total)}.`}
+        title="Payment allocation report"
+        description={`${rows.length} of ${allRows.length} allocation rows across ${summary.receiptCount} unique receipts. ${amountSummary.join(" · ") || "No posted allocations in this scope."}${feeSummaryText ? ` Assessed fees: ${feeSummaryText}.` : ""}`}
         onExport={exportPayments}
       />
       <Card className="v2-filter-bar">
         <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-5">
-          <Field label="Date from">
-            <Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} />
-          </Field>
-          <Field label="Date to">
-            <Input type="date" value={filters.dateTo} onChange={(event) => onFiltersChange.setDateTo(event.target.value)} />
-          </Field>
-          <Field label="Customer">
-            <Select value={filters.customerId} onChange={(event) => onFiltersChange.setCustomerId(event.target.value)}>
-              <option value="">All customers</option>
-              {customerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Transaction type">
-            <Select value={filters.transactionType} onChange={(event) => onFiltersChange.setTransactionType(event.target.value)}>
-              <option value="">All types</option>
-              {transactionTypes.map((type) => <option key={type}>{type}</option>)}
-            </Select>
-          </Field>
-          <Field label="Collection method">
-            <Select value={filters.collectionMethod} onChange={(event) => onFiltersChange.setCollectionMethod(event.target.value)}>
-              <option value="">All methods</option>
-              {collectionMethods.map((method) => <option key={method}>{method}</option>)}
-            </Select>
-          </Field>
+        <CardContent className={`grid gap-4 ${isReadOnly ? "md:grid-cols-2" : "md:grid-cols-5"}`}>
+          <Field label="Date from"><Input type="date" value={filters.dateFrom} onChange={(event) => onFiltersChange.setDateFrom(event.target.value)} /></Field>
+          <Field label="Date to"><Input type="date" value={filters.dateTo} onChange={(event) => onFiltersChange.setDateTo(event.target.value)} /></Field>
+          {!isReadOnly ? <Field label="Customer"><Select value={filters.customerId} onChange={(event) => onFiltersChange.setCustomerId(event.target.value)}><option value="">All customers</option>{customerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</Select></Field> : null}
+          <Field label="Transaction type"><Select value={filters.transactionType} onChange={(event) => onFiltersChange.setTransactionType(event.target.value)}><option value="">All types</option>{transactionTypes.map((type) => <option key={type}>{type}</option>)}</Select></Field>
+          {!isReadOnly ? <Field label="Collection method"><Select value={filters.collectionMethod} onChange={(event) => onFiltersChange.setCollectionMethod(event.target.value)}><option value="">All methods</option>{collectionMethods.map((method) => <option key={method}>{method}</option>)}</Select></Field> : null}
         </CardContent>
       </Card>
       <ReportTable
-        emptyMessage="No payments match these filters."
-        headers={["Date", "Customer", "Lot", "Type", "Amount", "Method", "Bank Ref", "Receipt #", "Issued By", "Docs", "Notes"]}
-        rows={rows.map((row) => [
+        emptyMessage="No payment allocations match these filters."
+        headers={isReadOnly ? ["Date", "Record", "Contract", "Type", "Currency", "Allocated amount", "Entry"] : ["Date", "Customer", "Contract", "Type", "Currency", "Allocated amount", "Scope", "Entry", "Method", "Receipt #"]}
+        rows={rows.map((row) => isReadOnly ? [
           safeFormatDate(row.created_at),
-          row.customers ? customerName(row.customers) : "N/A",
-          row.contracts?.parcels?.lot_number ?? "N/A",
+          "Scoped customer record",
+          row.contract_id ?? "Non-contract obligation",
           row.transaction_type,
-          money(row.amount),
-          row.collection_method,
-          row.bank_reference ?? "N/A",
+          row.currency ?? "Unverified",
+          formatCurrencyAmount(row.amount, row.currency),
+          row.allocation_kind,
+        ] : [
+          safeFormatDate(row.created_at),
+          row.customers ? customerName(row.customers) : `Customer ${row.customer_id}`,
+          row.contract_id ?? "Non-contract obligation",
+          row.transaction_type,
+          row.currency ?? "Unverified",
+          formatCurrencyAmount(row.amount, row.currency),
+          row.scope_kind === "phase" ? `Phase ${row.phase_id}` : row.scope_kind,
+          row.allocation_kind,
+          row.collection_method ?? "N/A",
           row.manual_receipt_number ?? "Missing",
-          row.receipt_issued_by ?? "N/A",
-          row.payment_documents?.length ? <Badge tone="green">Uploaded</Badge> : <Badge tone="amber">Missing</Badge>,
-          row.notes ?? "",
         ])}
       />
     </div>
@@ -605,24 +804,27 @@ function PaymentsReport({
 }
 
 function BalancesReport({ rows }: { rows: Array<ContractReportRow & { totalPaid: number; remainingBalance: number; lastPaymentDate: string | null; nextDueDate: string }> }) {
+  const totalsByCurrency = summarizeAmountsByCurrency(rows, "remainingBalance");
   function exportBalances() {
     exportCsv({
       filename: reportFileName("outstanding-balances-report"),
       rows: rows.map((row) => ({
         customer_name: row.customers ? customerName(row.customers) : "",
         lot_number: row.parcels?.lot_number ?? "",
-        contract_price: row.final_purchase_price,
+        currency: row.currency ?? "unverified",
+        contract_price: row.final_purchase_price ?? "",
         total_paid: row.totalPaid,
         remaining_balance: row.remainingBalance,
-        monthly_payment: row.monthly_payment,
-        start_date: safeFormatDate(row.start_date),
-        due_day: row.payment_due_day,
+        monthly_payment: row.monthly_payment ?? "",
+        start_date: row.start_date ? safeFormatDate(row.start_date) : "",
+        due_day: row.payment_due_day ?? "",
         last_payment_date: row.lastPaymentDate ? safeFormatDate(row.lastPaymentDate) : "",
-        next_due_date: safeFormatDate(row.nextDueDate),
+        next_due_date: row.nextDueDate ? safeFormatDate(row.nextDueDate) : "",
       })),
       columns: [
         { header: "Customer Name", accessor: (row) => row.customer_name },
         { header: "Lot Number", accessor: (row) => row.lot_number },
+        { header: "Currency", accessor: (row) => row.currency },
         { header: "Contract Price", accessor: (row) => row.contract_price },
         { header: "Total Paid", accessor: (row) => row.total_paid },
         { header: "Remaining Balance", accessor: (row) => row.remaining_balance },
@@ -637,19 +839,20 @@ function BalancesReport({ rows }: { rows: Array<ContractReportRow & { totalPaid:
 
   return (
     <div className="grid gap-5">
-      <ReportSummary title="Outstanding Balances Report" description={`${rows.length} contracts included.`} onExport={exportBalances} />
+      <ReportSummary title="Outstanding contract balances" description={`${rows.length} active contracts. ${totalsByCurrency.map((row) => `${formatCurrencyAmount(row.amount, row.currency)} remaining`).join(" · ") || "No active contracts in scope."}`} onExport={exportBalances} />
       <ReportTable
         emptyMessage="No contracts found."
-        headers={["Customer", "Lot", "Contract Price", "Total Paid", "Remaining", "Monthly", "Start", "Due Day", "Last Payment", "Next Due"]}
+        headers={["Customer", "Lot", "Currency", "Contract Price", "Total Paid", "Remaining", "Monthly", "Start", "Due Day", "Last Payment", "Next Due"]}
         rows={rows.map((row) => [
           row.customers ? customerName(row.customers) : "N/A",
           row.parcels?.lot_number ?? "N/A",
-          money(row.final_purchase_price),
-          money(row.totalPaid),
-          money(row.remainingBalance),
-          money(row.monthly_payment),
-          safeFormatDate(row.start_date),
-          String(row.payment_due_day),
+          row.currency ?? "Unverified",
+          formatCurrencyAmount(row.final_purchase_price, row.currency),
+          formatCurrencyAmount(row.totalPaid, row.currency),
+          formatCurrencyAmount(row.remainingBalance, row.currency),
+          formatCurrencyAmount(row.monthly_payment, row.currency),
+          row.start_date ? safeFormatDate(row.start_date) : "N/A",
+          row.payment_due_day == null ? "N/A" : String(row.payment_due_day),
           row.lastPaymentDate ? safeFormatDate(row.lastPaymentDate) : "No payments",
           safeFormatDate(row.nextDueDate),
         ])}
@@ -882,7 +1085,8 @@ function ReservationsReport({
   const expiring = active.filter((row) => expiringIds.has(row.id));
   const expired = active.filter((row) => isBeforeToday(row.expires_at));
   const depositOverdue = active.filter((row) => depositOverdueIds.has(row.id));
-  const expectedTotal = rows.reduce((sum, row) => sum + Number(row.expected_deposit_amount ?? 0), 0);
+  const expectedByCurrency = summarizeAmountsByCurrency(rows, "expected_deposit_amount");
+  const expectedSummary = expectedByCurrency.map((row) => formatCurrencyAmount(row.amount, row.currency)).join(" · ") || "No expected deposits";
 
   function exportReservations() {
     exportCsv({
@@ -903,7 +1107,7 @@ function ReservationsReport({
 
   return (
     <div className="grid gap-5">
-      <ReportSummary title="Reservation & Deposit Readiness Report" description={`${rows.length} of ${allRows.length} reservations shown. Expected deposit total shown as readiness context only: ${money(expectedTotal)}.`} onExport={exportReservations} />
+      <ReportSummary title="Reservation & Deposit Readiness Report" description={`${rows.length} of ${allRows.length} reservations shown. Expected deposits by currency, shown as readiness context only: ${expectedSummary}.`} onExport={exportReservations} />
       <ReservationFilters filters={filters} onFiltersChange={onFiltersChange} staffOptions={staffOptions} />
       <MetricGrid metrics={[
         ["Active reservations", active.length],
@@ -924,7 +1128,7 @@ function ReservationsReport({
           row.parcels?.lot_number ?? "N/A",
           <Badge key={`${row.id}-status`} tone={statusBadgeTone(row.status)}>{labelize(row.status)}</Badge>,
           <Badge key={`${row.id}-deposit`} tone={row.deposit_status === "overdue" ? "red" : row.deposit_status === "confirmed" ? "green" : "amber"}>{labelize(row.deposit_status)}</Badge>,
-          row.expected_deposit_amount ? money(row.expected_deposit_amount) : "Not set",
+          row.expected_deposit_amount ? formatCurrencyAmount(row.expected_deposit_amount, row.currency) : "Not set",
           row.deposit_due_at ? safeFormatDate(row.deposit_due_at) : "Not set",
           row.expires_at ? safeFormatDate(row.expires_at) : "Not set",
           staffName(row.assigned_to, profileById),
@@ -1032,6 +1236,7 @@ function LotsReport({ rows }: { rows: LotReportRow[] }) {
         lot_number: row.lot_number,
         size: row.dimensions,
         price: row.base_price,
+        currency: "unverified",
         status: row.status,
         assigned_customer: row.customer_name,
         active_contract: row.contract_id ? `Contract #${row.contract_id}` : "",
@@ -1040,6 +1245,7 @@ function LotsReport({ rows }: { rows: LotReportRow[] }) {
         { header: "Lot Number", accessor: (row) => row.lot_number },
         { header: "Size", accessor: (row) => row.size },
         { header: "Price", accessor: (row) => row.price },
+        { header: "Currency", accessor: (row) => row.currency },
         { header: "Status", accessor: (row) => row.status },
         { header: "Assigned Customer", accessor: (row) => row.assigned_customer },
         { header: "Active Contract", accessor: (row) => row.active_contract },
@@ -1056,7 +1262,7 @@ function LotsReport({ rows }: { rows: LotReportRow[] }) {
         rows={rows.map((row) => [
           row.lot_number,
           row.dimensions,
-          money(row.base_price),
+          formatCurrencyAmount(row.base_price, null),
           <Badge key={row.id} tone={statusBadgeTone(row.status)}>{row.status}</Badge>,
           row.customer_name ?? "N/A",
           row.contract_id ? `Contract #${row.contract_id}` : "N/A",
@@ -1310,7 +1516,7 @@ function MissingItemsReport({
       </Card>
       <MissingList
         title="Payments missing manual receipt number"
-        rows={items.missingReceipts.map((payment) => `${safeFormatDate(payment.created_at)} - ${payment.customers ? customerName(payment.customers) : "Unknown"} - ${money(payment.amount)}`)}
+        rows={items.missingReceipts.map((payment) => `${safeFormatDate(payment.created_at)} - ${payment.customers ? customerName(payment.customers) : "Unknown"} - ${formatCurrencyAmount(payment.amount, payment.currency)}`)}
       />
       <MissingList
         title="Online payments missing uploaded proof/document"
@@ -1330,7 +1536,7 @@ function MissingItemsReport({
       />
       <MissingList
         title="Overdue payment requests"
-        rows={overduePaymentRequests.map((request) => `Payment request #${request.id} - ${money(request.amount_due)} due ${safeFormatDate(request.due_date)}`)}
+        rows={overduePaymentRequests.map((request) => `Payment request #${request.id} - ${formatCurrencyAmount(request.amount_due, request.currency)} due ${safeFormatDate(request.due_date)}`)}
       />
       <MissingList
         title="Collections handoff ready"
@@ -1548,6 +1754,7 @@ function CountPanel({ title, counts }: { title: string; counts: Record<string, n
 }
 
 function ReportSummary({ title, description, onExport }: { title: string; description: string; onExport: () => void }) {
+  const allowExport = useContext(ReportsExportContext);
   return (
     <Card className="v2-ledger-panel">
       <CardContent className="grid min-w-0 gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -1555,10 +1762,10 @@ function ReportSummary({ title, description, onExport }: { title: string; descri
           <p className="text-2xl font-semibold text-primary">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
-        <Button type="button" className="w-full sm:w-auto" onClick={onExport}>
+        {allowExport ? <Button type="button" className="w-full sm:w-auto" onClick={onExport}>
           <Download className="h-4 w-4" />
           Export CSV
-        </Button>
+        </Button> : null}
       </CardContent>
     </Card>
   );
@@ -1622,8 +1829,8 @@ function MissingList({ title, rows }: { title: string; rows: string[] }) {
   );
 }
 
-function customerName(customer: { first_name: string; last_name: string }) {
-  return `${customer.first_name} ${customer.last_name}`.trim();
+function customerName(customer: { first_name: string | null; last_name: string | null }) {
+  return `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() || "Unknown customer";
 }
 
 function startOfDay(value: string) {

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -48,6 +49,7 @@ type PostSalesContext = {
   payments: Record<string, unknown>[];
   paymentDocuments: Record<string, unknown>[];
   paymentRequests: Record<string, unknown>[];
+  paymentAllocations: Record<string, unknown>[];
 };
 
 Deno.serve(async (request) => {
@@ -73,33 +75,29 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin", "Staff"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate post-sales summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { checklist_id?: string } | null;
+  const body = await request.json().catch(() => null) as { checklist_id?: string; tenant_id?: string; generationId?: string } | null;
+  // Post-sales summaries contain contract/payment data and are Admin/Super
+  // Admin operations under the M3.1 contract.
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const checklistId = String(body?.checklist_id ?? "").trim();
+  const generationId = String(body?.generationId ?? "").trim();
   if (!checklistId) {
     return json({ error: "checklist_id is required." }, 400);
   }
   if (!uuidPattern.test(checklistId)) {
     return json({ error: "checklist_id must be a valid UUID." }, 400);
   }
+  if (!uuidPattern.test(generationId)) {
+    return json({ error: "generationId must be a valid UUID and remain unchanged when retrying this generation." }, 400);
+  }
 
   const { data: checklistData, error: checklistError } = await supabase
     .from("post_sales_checklists")
     .select("*")
     .eq("id", checklistId)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (checklistError) {
@@ -109,49 +107,90 @@ Deno.serve(async (request) => {
     return json({ error: "Post-sales checklist not found." }, 404);
   }
 
+  const { data: resolvedScope, error: scopeError } = await supabase.rpc("active_post_sales_checklist_scope", {
+    p_checklist_id: checklistId,
+    p_expected_tenant_id: tenantId,
+  });
+  if (scopeError) {
+    console.error("Post-sales summary scope could not be verified", safeError(scopeError));
+    return json({ error: "The selected post-sales workspace could not be verified." }, 403);
+  }
+  const verifiedScope = Array.isArray(resolvedScope) ? resolvedScope[0] : resolvedScope;
+  if (!verifiedScope || verifiedScope.tenant_id !== tenantId) {
+    return json({ error: "Post-sales summaries require an active, verified workspace scope." }, 403);
+  }
+
   const checklist = checklistData as Record<string, unknown>;
   const customerId = numberOrNull(checklist.customer_id);
   const applicationId = numberOrNull(checklist.application_id);
   const contractId = numberOrNull(checklist.contract_id);
   const leadId = stringOrNull(checklist.lead_id);
   const reservationId = stringOrNull(checklist.reservation_id);
+  const projectId = stringOrNull(verifiedScope.project_id);
+  const phaseId = stringOrNull(verifiedScope.phase_id);
+  if (!projectId || !phaseId) {
+    return json({ error: "Post-sales AI requires a checklist linked to one verified project and phase." }, 403);
+  }
 
-  const [
-    tasksResult,
-    activitiesResult,
-    customerResult,
-    applicationResult,
-    contractResult,
-    leadResult,
-    reservationResult,
-    settingsResult,
-  ] = await Promise.all([
-    loadPostSalesTasks(supabase, checklist),
-    supabase
-      .from("post_sales_activities")
-      .select("*")
-      .eq("checklist_id", checklistId)
-      .order("created_at", { ascending: false })
-      .limit(30),
-    customerId
-      ? supabase
-        .from("customers")
-        .select("*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*), payment_requests(*)")
-        .eq("id", customerId)
-        .maybeSingle()
-      : resolvedResult(null),
+  const claimArgs = {
+    p_summary_kind: "post_sales",
+    p_tenant_id: tenantId,
+    p_parent_id: checklistId,
+    p_generation_id: generationId,
+    p_actor_id: currentUserData.user.id,
+  };
+  const { data: claimData, error: claimError } = await supabase.rpc("claim_ai_summary_generation_v1", claimArgs);
+  if (claimError) return json({ error: claimError.message }, 500);
+  const claim = (Array.isArray(claimData) ? claimData[0] : claimData) as {
+    status?: string;
+    claim_token?: string | null;
+    summary_id?: string | null;
+  } | null;
+  if (claim?.status === "in_progress") {
+    return json({
+      status: "in_progress",
+      generation_id: generationId,
+      message: "This post-sales summary is already being generated. Retry shortly with the same generationId.",
+    }, 202);
+  }
+  if (claim?.status === "completed") {
+    const completedResult = claim.summary_id
+      ? await supabase.from("post_sales_ai_summaries").select("*")
+        .eq("id", claim.summary_id).eq("tenant_id", tenantId).eq("checklist_id", checklistId).eq("generation_id", generationId).maybeSingle()
+      : { data: null, error: null };
+    if (completedResult.error) return json({ error: completedResult.error.message }, 500);
+    if (!completedResult.data) return json({ error: "The completed post-sales summary generation could not be found." }, 500);
+    return json({
+      summary: completedResult.data,
+      fallback: String(completedResult.data.model ?? "") === "deterministic-fallback",
+      message: "Post-Sales Smart Summary generation recovered from its saved result.",
+    });
+  }
+  if (claim?.status !== "claimed" || !claim.claim_token) {
+    return json({ error: "A valid post-sales summary generation claim could not be established." }, 500);
+  }
+  let generationCompleted = false;
+  try {
+
+  const [applicationResult, contractResult, leadResult, reservationResult] = await Promise.all([
     applicationId
       ? supabase
         .from("applications")
-        .select("*, parcels(id, lot_number, status, dimensions, base_price), application_ai_reviews(*)")
+        .select("id,tenant_id,customer_id,project_id,phase_id,applicant_full_name,first_name,last_name,status,intended_use,created_at,updated_at,application_ai_reviews(*)")
         .eq("id", applicationId)
+        .eq("tenant_id", tenantId)
+        .eq("project_id", projectId)
+        .eq("phase_id", phaseId)
         .maybeSingle()
       : resolvedResult(null),
     contractId
       ? supabase
         .from("contracts")
-        .select("*, parcels(id, lot_number, status, dimensions, base_price), transactions(*, payment_documents(*))")
+        .select("*, parcels(id, lot_number, status, dimensions)")
         .eq("id", contractId)
+        .eq("tenant_id", tenantId)
+        .eq("project_id", projectId)
+        .eq("phase_id", phaseId)
         .maybeSingle()
       : resolvedResult(null),
     leadId
@@ -159,40 +198,103 @@ Deno.serve(async (request) => {
         .from("leads")
         .select("*")
         .eq("id", leadId)
+        .eq("tenant_id", tenantId)
+        .eq("project_id", projectId)
+        .eq("phase_id", phaseId)
         .maybeSingle()
       : resolvedResult(null),
     reservationId
       ? supabase
         .from("lot_reservations")
-        .select("*, parcels(id, lot_number, status, dimensions, base_price)")
+        .select("*, parcels(id, lot_number, status, dimensions)")
         .eq("id", reservationId)
+        .eq("tenant_id", tenantId)
+        .eq("project_id", projectId)
+        .eq("phase_id", phaseId)
+        .maybeSingle()
+      : resolvedResult(null),
+  ]);
+
+  // The checklist scope resolver follows its verified parent graph. Require
+  // every supplied sales parent to match that same active scope before any AI
+  // provider request or summary write. A customer-only company record does
+  // not choose an arbitrary contract/phase.
+  const parentError = applicationResult.error ?? contractResult.error ?? leadResult.error ?? reservationResult.error;
+  if (parentError) return json({ error: parentError.message }, 500);
+  if ((applicationId && !applicationResult.data) || (contractId && !contractResult.data)
+    || (leadId && !leadResult.data) || (reservationId && !reservationResult.data)) {
+    return json({ error: "A linked post-sales record is outside the checklist's verified project and phase." }, 403);
+  }
+
+  const [tasksResult, activitiesResult, customerResult, settingsResult] = await Promise.all([
+    loadPostSalesTasks(supabase, checklist),
+    supabase
+      .from("post_sales_activities")
+      .select("*")
+      .eq("checklist_id", checklistId)
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(30),
+    customerId
+      ? supabase
+        .from("customers")
+        .select("id,tenant_id,first_name,last_name,phone,email,created_at,updated_at")
+        .eq("id", customerId)
+        .eq("tenant_id", tenantId)
         .maybeSingle()
       : resolvedResult(null),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
   ]);
+  const contextError = tasksResult.error ?? activitiesResult.error ?? customerResult.error ?? settingsResult.error;
+  if (contextError) return json({ error: contextError.message }, 500);
 
-  const firstError = tasksResult.error ??
-    activitiesResult.error ??
-    customerResult.error ??
-    applicationResult.error ??
-    contractResult.error ??
-    leadResult.error ??
-    reservationResult.error ??
-    settingsResult.error;
-  if (firstError) {
-    return json({ error: firstError.message }, 500);
-  }
+  const allocationCustomerId = customerId ?? numberOrNull(contractResult.data?.customer_id)
+    ?? numberOrNull(applicationResult.data?.customer_id) ?? numberOrNull(reservationResult.data?.customer_id);
+  const { data: allAllocations, error: allocationsError } = allocationCustomerId
+    ? await supabase.from("transaction_allocations")
+      .select("id,tenant_id,transaction_id,customer_id,amount,currency,scope_kind,allocation_kind,contract_id,reservation_id,fee_charge_id,project_id,phase_id,allocation_reason")
+      .eq("tenant_id", tenantId).eq("customer_id", allocationCustomerId)
+    : { data: [], error: null };
+  if (allocationsError) return json({ error: allocationsError.message }, 500);
+  const paymentAllocations = ((allAllocations ?? []) as Record<string, unknown>[]).filter((allocation) =>
+    (contractId !== null && Number(allocation.contract_id) === contractId)
+    || (reservationId !== null && String(allocation.reservation_id) === reservationId)
+    || (allocation.fee_charge_id !== null && allocation.scope_kind === "phase"
+      && allocation.project_id === projectId && allocation.phase_id === phaseId)
+  );
+  const transactionIds = [...new Set(paymentAllocations.map((allocation) => Number(allocation.transaction_id)).filter(Number.isFinite))];
+  const [paymentsResult, paymentDocumentsResult, paymentRequestsResult] = await Promise.all([
+    transactionIds.length
+      ? supabase.from("transactions")
+        .select("id,tenant_id,customer_id,receipt_number,amount,currency,transaction_type,status,created_at,collection_method,contract_id")
+        .eq("tenant_id", tenantId).eq("customer_id", allocationCustomerId).in("id", transactionIds)
+      : resolvedResult([]),
+    transactionIds.length
+      ? supabase.from("payment_documents")
+        .select("id,tenant_id,customer_id,transaction_id,document_type,file_path,original_file_name,created_at")
+        .eq("tenant_id", tenantId).eq("customer_id", allocationCustomerId).in("transaction_id", transactionIds)
+      : resolvedResult([]),
+    contractId
+      ? supabase.from("payment_requests")
+        .select("id,tenant_id,customer_id,contract_id,fee_charge_id,project_id,phase_id,scope_kind,currency,amount_due,due_date,status,reason")
+        .eq("tenant_id", tenantId).eq("customer_id", allocationCustomerId).eq("contract_id", contractId)
+      : projectId && phaseId && allocationCustomerId
+      ? supabase.from("payment_requests")
+        .select("id,tenant_id,customer_id,contract_id,fee_charge_id,project_id,phase_id,scope_kind,currency,amount_due,due_date,status,reason")
+        .eq("tenant_id", tenantId).eq("customer_id", allocationCustomerId).eq("project_id", projectId).eq("phase_id", phaseId)
+      : resolvedResult([]),
+  ]);
+  const financeError = paymentsResult.error ?? paymentDocumentsResult.error ?? paymentRequestsResult.error;
+  if (financeError) return json({ error: financeError.message }, 500);
 
   const customer = (customerResult.data as Record<string, unknown> | null | undefined) ?? null;
-  const contract = (contractResult.data as Record<string, unknown> | null | undefined) ??
-    relationArray(customer?.contracts).find((item) => Number(item.id) === contractId) ??
-    relationArray(customer?.contracts)[0] ??
-    null;
+  const contract = (contractResult.data as Record<string, unknown> | null | undefined) ?? null;
 
   const context: PostSalesContext = {
     checklist,
@@ -200,14 +302,14 @@ Deno.serve(async (request) => {
     activities: activitiesResult.data ?? [],
     customer,
     application: (applicationResult.data as Record<string, unknown> | null | undefined) ??
-      (customer?.applications as Record<string, unknown> | null | undefined) ??
       null,
     contract,
     lead: (leadResult.data as Record<string, unknown> | null | undefined) ?? null,
     reservation: (reservationResult.data as Record<string, unknown> | null | undefined) ?? null,
-    payments: relationArray(customer?.transactions).length ? relationArray(customer?.transactions) : relationArray(contract?.transactions),
-    paymentDocuments: relationArray(customer?.payment_documents),
-    paymentRequests: relationArray(customer?.payment_requests),
+    payments: paymentsResult.data ?? [],
+    paymentDocuments: paymentDocumentsResult.data ?? [],
+    paymentRequests: paymentRequestsResult.data ?? [],
+    paymentAllocations,
   };
 
   const deterministic = buildDeterministicSummary(context);
@@ -231,19 +333,18 @@ Deno.serve(async (request) => {
       apiKey,
       model,
     });
-    if (geminiSummary) {
-      summary = geminiSummary;
-      usedModel = model;
-      usedProvider = "Gemini";
-    } else {
-      usedProvider = "deterministic";
+    if (!geminiSummary) {
+      return json({ error: "Gemini did not return a valid summary. Retry with the same generationId." }, 502);
     }
+    summary = geminiSummary;
+    usedModel = model;
+    usedProvider = "Gemini";
   }
 
-  const { data: savedSummary, error: saveError } = await supabase
-    .from("post_sales_ai_summaries")
-    .insert({
+  const summaryPayload = {
+      tenant_id: tenantId,
       checklist_id: checklistId,
+      generation_id: generationId,
       customer_id: customerId,
       application_id: applicationId,
       contract_id: contractId,
@@ -261,13 +362,33 @@ Deno.serve(async (request) => {
       provider: usedProvider,
       generated_by: currentUserData.user.id,
       generated_at: new Date().toISOString(),
-    })
-    .select("*")
-    .single();
+  };
+  const savedResult = await supabase.from("post_sales_ai_summaries")
+    .upsert(summaryPayload, { onConflict: "tenant_id,checklist_id,generation_id", ignoreDuplicates: true })
+    .select("*").maybeSingle();
+  let savedSummary = savedResult.data;
+  let saveError = savedResult.error?.message ?? null;
+  if (!saveError && !savedSummary) {
+    const recovered = await supabase.from("post_sales_ai_summaries").select("*")
+      .eq("tenant_id", tenantId).eq("checklist_id", checklistId).eq("generation_id", generationId).maybeSingle();
+    savedSummary = recovered.data;
+    saveError = recovered.error?.message ?? (recovered.data ? null : "The concurrent post-sales summary generation could not be recovered.");
+  }
 
   if (saveError) {
-    return json({ error: saveError.message }, 500);
+    return json({ error: saveError }, 500);
   }
+
+  const { error: completeError } = await supabase.rpc("complete_ai_summary_generation_v1", {
+    p_summary_kind: claimArgs.p_summary_kind,
+    p_tenant_id: claimArgs.p_tenant_id,
+    p_parent_id: claimArgs.p_parent_id,
+    p_generation_id: claimArgs.p_generation_id,
+    p_claim_token: claim.claim_token,
+    p_summary_id: String(savedSummary.id),
+  });
+  if (completeError) return json({ error: completeError.message }, 500);
+  generationCompleted = true;
 
   return json({
     summary: savedSummary,
@@ -276,6 +397,22 @@ Deno.serve(async (request) => {
       ? "Post-Sales Smart Summary generated with deterministic fallback."
       : "Post-Sales Smart Summary generated with Gemini.",
   });
+  } finally {
+    if (!generationCompleted) {
+      try {
+        const { error: releaseError } = await supabase.rpc("release_ai_summary_generation_v1", {
+          p_summary_kind: claimArgs.p_summary_kind,
+          p_tenant_id: claimArgs.p_tenant_id,
+          p_parent_id: claimArgs.p_parent_id,
+          p_generation_id: claimArgs.p_generation_id,
+          p_claim_token: claim.claim_token,
+        });
+        if (releaseError) console.error("Post-sales summary claim release failed", releaseError.message);
+      } catch (releaseError) {
+        console.error("Post-sales summary claim release failed", releaseError);
+      }
+    }
+  }
 });
 
 async function loadPostSalesTasks(supabase: ReturnType<typeof createClient>, checklist: Record<string, unknown>) {
@@ -287,13 +424,16 @@ async function loadPostSalesTasks(supabase: ReturnType<typeof createClient>, che
   const query = supabase
     .from("post_sales_tasks")
     .select("*")
+    .eq("tenant_id", String(checklist.tenant_id ?? ""))
     .order("due_at", { ascending: true, nullsFirst: false });
 
-  if (customerId) return query.eq("customer_id", customerId);
-  if (applicationId) return query.eq("application_id", applicationId);
   if (contractId) return query.eq("contract_id", contractId);
+  if (applicationId) return query.eq("application_id", applicationId);
   if (leadId) return query.eq("lead_id", leadId);
   if (reservationId) return query.eq("reservation_id", reservationId);
+  // A customer can have records in multiple phases. Without a linked sale
+  // parent, do not use a company-wide customer task list for a phase summary.
+  if (customerId) return resolvedResult([]);
   return { data: [], error: null };
 }
 
@@ -477,6 +617,9 @@ function summarizeForPrompt(context: PostSalesContext) {
       payment_count: context.payments.length,
       payment_document_count: context.paymentDocuments.length,
       open_payment_request_count: context.paymentRequests.filter((request) => !["Paid", "Cancelled"].includes(String(request.status))).length,
+      allocations: context.paymentAllocations.map((allocation) => pick(allocation, [
+        "amount", "currency", "scope_kind", "allocation_kind", "contract_id", "reservation_id", "fee_charge_id", "project_id", "phase_id",
+      ])),
     },
   };
 }
@@ -495,6 +638,7 @@ function buildSourceSnapshot(context: PostSalesContext) {
     payment_count: context.payments.length,
     payment_document_count: context.paymentDocuments.length,
     payment_request_count: context.paymentRequests.length,
+    payment_allocation_count: context.paymentAllocations.length,
     generated_from: "post-sales-smart-summary-phase-4d-2",
   };
 }
@@ -536,10 +680,6 @@ function parseDate(value: unknown) {
   if (!value) return null;
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function relationArray(value: unknown) {
-  return Array.isArray(value) ? value as Record<string, unknown>[] : [];
 }
 
 function pick(row: Record<string, unknown>, keys: string[]) {

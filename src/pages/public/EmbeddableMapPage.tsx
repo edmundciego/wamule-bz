@@ -1,53 +1,60 @@
-import { useMemo } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PublicLotMap, type PublicLotColourView, type PublicLotFilter } from "../../components/public/PublicLotMap";
-import { demoPlotLabel } from "../../lib/hopkinsDemoLabels";
+import type { PublicExperienceScope } from "../../lib/publicExperience.mjs";
+import type { PublicPhaseOption } from "../../lib/publicSiteExperience";
 
-export function EmbeddableMapPage() {
-  const { tenant_slug = "", project_slug } = useParams<{ tenant_slug: string; project_slug?: string }>();
+export function EmbeddableMapPage({
+  hostname,
+  scope,
+  phases,
+}: {
+  hostname: string;
+  scope: PublicExperienceScope;
+  phases: PublicPhaseOption[];
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
-
+  const location = useLocation();
+  const navigate = useNavigate();
   const initialFilter: PublicLotFilter = searchParams.get("filter") === "available" ? "available" : "all";
   const initialView: PublicLotColourView = searchParams.get("view") === "tier" ? "tier" : "status";
   const initialLot = searchParams.get("lot") ?? undefined;
-  // Dev-only Hopkins fixture and correction manifest. The normal Hopkins
-  // demo route shares the canonical project/phase preview store; the former
-  // preview=local query remains a backward-compatible alias.
-  const demoMode = searchParams.get("demo");
-  const demoDataUrl = import.meta.env.DEV
-    ? demoMode === "hopkins" ? "/demo-hopkins-map" : demoMode === "1" ? "/demo-map" : undefined
-    : undefined;
-  const isHopkinsDemoRoute = (tenant_slug === "demo" && !project_slug)
-    || (tenant_slug === "hopkins-grove" && (!project_slug || project_slug === "map-review"));
-  const localPreviewEnabled = import.meta.env.DEV && demoMode === "hopkins" && isHopkinsDemoRoute;
-  const requestedPhase = searchParams.get("phase") ?? "default";
-  const localMapPreviewScope = useMemo(() => {
-    if (!localPreviewEnabled) return undefined;
-    const phaseSlug = /^[a-z0-9][a-z0-9-]{0,62}$/.test(requestedPhase) ? requestedPhase : "default";
-    return { tenantSlug: "hopkins-grove", projectSlug: "map-review", phaseSlug };
-  }, [localPreviewEnabled, requestedPhase]);
+  const initialFeatureRef = searchParams.get("feature") ?? undefined;
+  const requestedPhase = searchParams.get("phase") ?? scope.phaseSlug;
+
+  function changePhase(phaseSlug: string) {
+    const params = new URLSearchParams(location.search);
+    params.set("phase", phaseSlug);
+    navigate(`${location.pathname}?${params.toString()}`);
+  }
 
   return (
-    <main className="flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>
+    <main className="relative flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>
+      {phases.length > 1 ? <label className="absolute left-4 top-4 z-50 flex items-center gap-2 rounded-md border bg-card/95 px-3 py-2 text-sm shadow-sm">
+        <span>Phase</span>
+        <select aria-label="Project phase" value={scope.phaseSlug} onChange={(event) => changePhase(event.target.value)} className="bg-transparent font-semibold">
+          {phases.map((phase) => <option key={phase.slug} value={phase.slug}>{phase.name}</option>)}
+        </select>
+      </label> : null}
       <PublicLotMap
-        tenantSlug={tenant_slug}
-        projectSlug={project_slug}
-        showPrices={!localPreviewEnabled}
-        enableInquiry={!localPreviewEnabled}
+        key={`${hostname}/${scope.tenantSlug}/${scope.projectSlug}/${scope.phaseSlug}`}
+        hostname={hostname}
+        tenantSlug={scope.tenantSlug}
+        projectSlug={scope.projectSlug}
+        phaseSlug={requestedPhase}
         initialFilter={initialFilter}
         initialView={initialView}
         initialLotNumber={initialLot}
-        demoDataUrl={demoDataUrl}
-        demoCorrectionManifestUrl={localPreviewEnabled && demoDataUrl ? `${demoDataUrl}/local-corrections.json` : undefined}
-        localMapPreviewScope={localMapPreviewScope}
+        initialFeatureRef={initialFeatureRef}
         onClearSelection={() => {
           const params = Object.fromEntries(searchParams.entries());
           delete params.lot;
+          delete params.feature;
           setSearchParams(params, { replace: true });
         }}
         onSelectLot={(parcel) => {
           const params = Object.fromEntries(searchParams.entries());
-          params.lot = localPreviewEnabled ? demoPlotLabel(parcel) : parcel.lot_number;
+          params.lot = parcel.demo_label ?? parcel.lot_number;
+          if (parcel.map_feature_ref) params.feature = parcel.map_feature_ref;
           setSearchParams(params, { replace: true });
         }}
       />

@@ -1,0 +1,772 @@
+{
+  "baseline": {
+    "branch": "feature/map-first-integration-wip",
+    "changed_path_count_at_generation": 612,
+    "expected_head": "a0c00d7436603bbda237a28d0959e0b7867cd7b4",
+    "head": "a0c00d7436603bbda237a28d0959e0b7867cd7b4",
+    "historical_capture_date": "2026-11-05; refresh before M8.2",
+    "historical_deployed_frontend_commit": "968e74449135006d1962e9f5352339270a7dbf76",
+    "historical_deployed_netlify_deploy": "6ada36ce9b30219f7408387a",
+    "preexisting_worktree_changes_preserved": true,
+    "worktree_is_clean_or_committed": false
+  },
+  "exclusions": [
+    "already-applied staging source migrations and the unapplied presentation-switch migration",
+    "scripts/, test/, e2e/, evidence/ contents and generated dist/ output",
+    "map-input/, artifacts/, storage exports, customer records, synthetic database rows and Auth identities",
+    "production-specific scripts and every production target"
+  ],
+  "generated_at_utc": "2026-11-09T00:48:55+00:00",
+  "hosted_changes_performed": false,
+  "migration_sequence": {
+    "captured_staging_ledger_entries": 55,
+    "exclude_unapplied_20261017090000_public_site_ui_restriction_flag": true,
+    "forward_migration_count": 13,
+    "forward_migrations_after_that_ledger": [
+      "supabase/migrations/20261106000100_enforce_tenant_link_integrity.sql",
+      "supabase/migrations/20261107000100_phase_scoped_application_approvals.sql",
+      "supabase/migrations/20261107000200_atomic_role_membership_changes.sql",
+      "supabase/migrations/20261107000300_verified_audit_attribution.sql",
+      "supabase/migrations/20261107000400_enforce_access_state_boundaries.sql",
+      "supabase/migrations/20261107143932_general_workspace_provisioning.sql",
+      "supabase/migrations/20261107151154_resumable_workspace_user_onboarding.sql",
+      "supabase/migrations/20261107184011_m44_serialize_workspace_member_assignment.sql",
+      "supabase/migrations/20261108042610_m61_public_hostname_registry.sql",
+      "supabase/migrations/20261108110000_super_admin_console_hierarchy.sql",
+      "supabase/migrations/20261108120000_m74_scope_reservations_contracts.sql",
+      "supabase/migrations/20261108130000_m75_payment_allocations_and_fee_charges.sql",
+      "supabase/migrations/20261108140000_m77_job_idempotency_and_ai_scope.sql"
+    ],
+    "no_history_repair_or_reset": true,
+    "preserve_applied_ai_settings_body_and_version_aliases": true,
+    "total_local_replay_inputs": 68
+  },
+  "release_content": {
+    "contains_auth_or_storage_fixtures": false,
+    "contains_business_data_seed": false,
+    "contains_credentials_or_env_files": false,
+    "files": [
+      {
+        "bytes": 1868498,
+        "category": "static-frontend-asset",
+        "path": "masterplan_background.webp",
+        "sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be"
+      },
+      {
+        "bytes": 7027,
+        "category": "netlify-source",
+        "path": "netlify/edge-functions/_shared/host-metadata.mjs",
+        "sha256": "544881814acc55a51169621ba642ccb059cce31d54411123ed92b2afee15838a"
+      },
+      {
+        "bytes": 384,
+        "category": "netlify-source",
+        "path": "netlify/edge-functions/public-host-metadata.js",
+        "sha256": "ba3984f5e10ca5b307a0bc3a648451b3bcf94d0e8a48ddf8c6a97433abe8888d"
+      },
+      {
+        "bytes": 2982,
+        "category": "build-configuration",
+        "path": "package.json",
+        "sha256": "90225059ffb0aa452732f24f801a33ac7c2868bc501436965f68a455e7fc430a"
+      },
+      {
+        "bytes": 462,
+        "category": "static-frontend-asset",
+        "path": "public/favicon/hopkins-grove.svg",
+        "sha256": "6bb4aaca30bda8d23f5ad954b0070c5aecb358dd0c6b0e998e34a3caedd762ec"
+      },
+      {
+        "bytes": 6459,
+        "category": "frontend-source",
+        "path": "src/App.tsx",
+        "sha256": "4f77e83d875fcaaf3f89ed2629e2769a8c7991629ed6e25d0117336d38e60481"
+      },
+      {
+        "bytes": 7244,
+        "category": "frontend-source",
+        "path": "src/components/admin/parcels/BulkIngestPanel.tsx",
+        "sha256": "c15de8cc3f4c471a343702d697d5abcc5e7d7d93e05e5f057d108b59c56d4baf"
+      },
+      {
+        "bytes": 14367,
+        "category": "frontend-source",
+        "path": "src/components/admin/parcels/ParcelDrawer.tsx",
+        "sha256": "3d72379069de470299f8f38ea613eeda4ff16ecea0b787af2c0f27fda4ac93e6"
+      },
+      {
+        "bytes": 10697,
+        "category": "frontend-source",
+        "path": "src/components/admin/settings/MasterplanPreviewModal.tsx",
+        "sha256": "a3e19e70aef205229bbb9c4ff121bbe787b6dd2c40556060c15c734019228773"
+      },
+      {
+        "bytes": 12016,
+        "category": "frontend-source",
+        "path": "src/components/admin/settings/MasterplanUpload.tsx",
+        "sha256": "587564375be2b43ce5e21843e7afc8d12536fea00391a49903bc55f2596c5cf0"
+      },
+      {
+        "bytes": 7046,
+        "category": "frontend-source",
+        "path": "src/components/admin/settings/MasterplanVersionGallery.tsx",
+        "sha256": "415b75b768d2feb133e602685efba46e6345597e011d29680376fa2b627538a3"
+      },
+      {
+        "bytes": 10695,
+        "category": "frontend-source",
+        "path": "src/components/admin/settings/PublicExperienceTemplateSettings.tsx",
+        "sha256": "30b9e0bb45588dd728e82dc2d7bf1eae61ec1694574cb57736d86cd2eb539234"
+      },
+      {
+        "bytes": 6296,
+        "category": "frontend-source",
+        "path": "src/components/admin/settings/WordPressEmbedSnippet.tsx",
+        "sha256": "0307a9c9cd62f217105fa1550060bab236feba3a68b1d1ba06c461ed524340de"
+      },
+      {
+        "bytes": 3433,
+        "category": "frontend-source",
+        "path": "src/components/auth/AuthQueryCacheBoundary.tsx",
+        "sha256": "43c255035b3e73876a50f800bd999ac714a241fc020a43b9d6cb67316db2f578"
+      },
+      {
+        "bytes": 12680,
+        "category": "frontend-source",
+        "path": "src/components/auth/WorkspaceScope.tsx",
+        "sha256": "ca8fd9cc64e5627fb295c11a8467891490f38cdddce260332e14731fd5900b0b"
+      },
+      {
+        "bytes": 800,
+        "category": "frontend-source",
+        "path": "src/components/auth/WorkspaceScopeBoundary.tsx",
+        "sha256": "c0e8c0703f82cd4c46b7412c41eae966d013162bf7cc49a3839b1ff679b3a335"
+      },
+      {
+        "bytes": 971,
+        "category": "frontend-source",
+        "path": "src/components/auth/workspaceScopeContext.ts",
+        "sha256": "d10aa3ba1465f7c5fb1433e54e9b836bc36f9ee5e0470331b7ab7ba1d8f5c43f"
+      },
+      {
+        "bytes": 17444,
+        "category": "frontend-source",
+        "path": "src/components/forms/ContractForm.tsx",
+        "sha256": "4f623710f94b91c31084ddf73ae0fb685c423ed2957a7b9fa641d3c957b1ccc4"
+      },
+      {
+        "bytes": 32321,
+        "category": "frontend-source",
+        "path": "src/components/forms/PaymentForm.tsx",
+        "sha256": "f68453d07265a798545d32905014f16ebdeba39e26f1d511c7f1d3e8a2bcf3d7"
+      },
+      {
+        "bytes": 9819,
+        "category": "frontend-source",
+        "path": "src/components/layout/AdminLayout.tsx",
+        "sha256": "a96eee3dbfcdf10964a143ec87836cf72d1eac5bab6a01068ca9c5cca4922f7f"
+      },
+      {
+        "bytes": 8512,
+        "category": "frontend-source",
+        "path": "src/components/public/PublicInquiryModal.tsx",
+        "sha256": "2e341b37e73b9a6bd93f28f0a391dfe7d6aae15015629a15f220d9ecaff33868"
+      },
+      {
+        "bytes": 154156,
+        "category": "frontend-source",
+        "path": "src/components/public/PublicLotMap.tsx",
+        "sha256": "3179c5c7d7c3e49a63386d7beeb657e94999aea25d634900503d894168953f71"
+      },
+      {
+        "bytes": 9096,
+        "category": "frontend-source",
+        "path": "src/index.css",
+        "sha256": "ad9b486f89adf2b44b24beb6f78e352c682a12bcf8e7b093575bab8be0a036d0"
+      },
+      {
+        "bytes": 1795,
+        "category": "frontend-source",
+        "path": "src/lib/audit.ts",
+        "sha256": "5232abdafa9057f46a49a810aa5362863fcab9c607380a6a10fc299abc963e86"
+      },
+      {
+        "bytes": 1170,
+        "category": "frontend-source",
+        "path": "src/lib/authWorkspaceCache.ts",
+        "sha256": "682db771ff54ab14cb65fe07d84c1ee0a487d58a9d7f21c720c8d5af0259c6f7"
+      },
+      {
+        "bytes": 2173,
+        "category": "frontend-source",
+        "path": "src/lib/brand.ts",
+        "sha256": "0043f896b6a6d376e47c894368ace1b0b9f1e0038eaf080128c1341b3f3c594c"
+      },
+      {
+        "bytes": 742,
+        "category": "frontend-source",
+        "path": "src/lib/correctionWorkspaceScope.d.mts",
+        "sha256": "6fbd28a2e81be843d736f2314942831eaedfa3dc9a519879b1390c92d9dbe703"
+      },
+      {
+        "bytes": 1741,
+        "category": "frontend-source",
+        "path": "src/lib/correctionWorkspaceScope.mjs",
+        "sha256": "1944173abfa8c55e43238f6f06179a1eb126c494ab612e13aedc7a2aa0c064a4"
+      },
+      {
+        "bytes": 4205,
+        "category": "frontend-source",
+        "path": "src/lib/data.ts",
+        "sha256": "529a1f9e12a72f5e8afaf7b5e34c6dc6261022bb0d9ffe7879a0417decad2fd7"
+      },
+      {
+        "bytes": 2008,
+        "category": "frontend-source",
+        "path": "src/lib/financialReporting.d.mts",
+        "sha256": "f5194d045e5cd81c0d0d5bd3abece9adb62de92de014781fda76cebe70551c13"
+      },
+      {
+        "bytes": 4882,
+        "category": "frontend-source",
+        "path": "src/lib/financialReporting.mjs",
+        "sha256": "eaa98eef4702706ed8fa05887d191cdf45042528e2b5c85147365582deb630f4"
+      },
+      {
+        "bytes": 3425,
+        "category": "frontend-source",
+        "path": "src/lib/paymentAllocations.ts",
+        "sha256": "13db9725349b62e3b4266e2c9bcbb3cb026b28e0403f90eb2b92894166f907b4"
+      },
+      {
+        "bytes": 888,
+        "category": "frontend-source",
+        "path": "src/lib/publicExperience.d.mts",
+        "sha256": "3967220bf8ca9b2d0f3e82e1f859a6151a4f4ede330a85d5cd315630b11be774"
+      },
+      {
+        "bytes": 2244,
+        "category": "frontend-source",
+        "path": "src/lib/publicExperience.mjs",
+        "sha256": "a7987d16cc7eed16845b42470e61edd4010ac7170bf804c181ebd299b77a3631"
+      },
+      {
+        "bytes": 804,
+        "category": "frontend-source",
+        "path": "src/lib/publicHostResolver.ts",
+        "sha256": "b3ca13f4b0332d3e976511092a1d514a22512d89311486b139a8e3777bf7edd5"
+      },
+      {
+        "bytes": 542,
+        "category": "frontend-source",
+        "path": "src/lib/publicHosts.ts",
+        "sha256": "343ef4c4be3a34e4da6700c893bfcc94694c3ca839a285a9e45c469cf0d06cb3"
+      },
+      {
+        "bytes": 4102,
+        "category": "frontend-source",
+        "path": "src/lib/publicSiteExperience.ts",
+        "sha256": "367515bb2799cb343ff7b6b536e1b36fffd616af1325bdd64c4ed986f8b6e879"
+      },
+      {
+        "bytes": 628,
+        "category": "frontend-source",
+        "path": "src/lib/publicSubmission.ts",
+        "sha256": "12a589837c96b82781c1fcc924a09cfe668dec23c4b16688b1498ff64e2f6945"
+      },
+      {
+        "bytes": 4360,
+        "category": "frontend-source",
+        "path": "src/lib/reservationSettings.ts",
+        "sha256": "3fc737aa99f2d5a90af583db5dcf77624ea963fecc1052c0a3bdb27d49ea6475"
+      },
+      {
+        "bytes": 5321,
+        "category": "frontend-source",
+        "path": "src/lib/schemas.ts",
+        "sha256": "4b02c05976dd8cf8801e6e558f35fbae091d2d5faba3f651739f07a4f58af500"
+      },
+      {
+        "bytes": 264,
+        "category": "frontend-source",
+        "path": "src/lib/summaryGenerationId.d.mts",
+        "sha256": "dcadc91448da7a28d6fee67a1505633deb8920a9f2ce006d10d9b492055fe5b0"
+      },
+      {
+        "bytes": 2076,
+        "category": "frontend-source",
+        "path": "src/lib/summaryGenerationId.mjs",
+        "sha256": "5738787de1dc80257a5e79108e424b22ef518c644a0eb80eaa02b82128419445"
+      },
+      {
+        "bytes": 3584,
+        "category": "frontend-source",
+        "path": "src/lib/workspaceScope.ts",
+        "sha256": "550ee666943276028be4e0ef5b7fe51e8481f14017e40e9d87834f20764be363"
+      },
+      {
+        "bytes": 670,
+        "category": "frontend-source",
+        "path": "src/main.tsx",
+        "sha256": "ebc42c8688cc7c68b0f3c63a92c5a5c3ef4281f24bb4b665be07271940057b64"
+      },
+      {
+        "bytes": 54808,
+        "category": "frontend-source",
+        "path": "src/pages/ApplicationPage.tsx",
+        "sha256": "0c2fde2a40bef2bd64a24ee86dc0a5ce1db0f39b7de8e1365fdc3d92e1017ef2"
+      },
+      {
+        "bytes": 63788,
+        "category": "frontend-source",
+        "path": "src/pages/ApplicationsPage.tsx",
+        "sha256": "bf7351744353ba16ad45a67e25b6ae087ddc25dae07054136ef29139b8f627a5"
+      },
+      {
+        "bytes": 11291,
+        "category": "frontend-source",
+        "path": "src/pages/AuditTrailPage.tsx",
+        "sha256": "4e0ec257a4d4167b6a4e533088b8772e85a5785769bc19d6a1ccd66f9cd1b37e"
+      },
+      {
+        "bytes": 22079,
+        "category": "frontend-source",
+        "path": "src/pages/CollectionsPage.tsx",
+        "sha256": "63225fe072977bd39382d60fa2d5068e3d08964916d843fd4358d29de97b78cf"
+      },
+      {
+        "bytes": 8455,
+        "category": "frontend-source",
+        "path": "src/pages/ContractsPage.tsx",
+        "sha256": "0973493f0100bd2134bd1252f7bd070cf72713cb2c1f5d3f4bcd5c86c1be2db0"
+      },
+      {
+        "bytes": 162933,
+        "category": "frontend-source",
+        "path": "src/pages/CorrectionWorkspacePage.tsx",
+        "sha256": "f751f5011fb23779185f6a71864ecc23862cb6d9849c583ed4a0bd7b9fc8de02"
+      },
+      {
+        "bytes": 135551,
+        "category": "frontend-source",
+        "path": "src/pages/CustomerDetailPage.tsx",
+        "sha256": "7f669d4e18ad6708a504dbbb8fd89b5f0afffbd43eb427bdf7c832b341ed841d"
+      },
+      {
+        "bytes": 4579,
+        "category": "frontend-source",
+        "path": "src/pages/CustomersPage.tsx",
+        "sha256": "2342b1040fd109fe592bed81b0203c664c0d657eb81833fcf9c133797e5d415d"
+      },
+      {
+        "bytes": 50933,
+        "category": "frontend-source",
+        "path": "src/pages/DailyBriefsPage.tsx",
+        "sha256": "d5db3de13462331cda907eac1a133ba3e5b1458e1aba5023a7f0103069b1171e"
+      },
+      {
+        "bytes": 45208,
+        "category": "frontend-source",
+        "path": "src/pages/DashboardPage.tsx",
+        "sha256": "3963bec2604219fa0ee22d2cdaf167150e9c11824ed87e68298718bae963341c"
+      },
+      {
+        "bytes": 16509,
+        "category": "frontend-source",
+        "path": "src/pages/DocumentPage.tsx",
+        "sha256": "affe0040e072d3d14a0376d67ce61150ec9a47dcba6a4269704fa2dea6da9beb"
+      },
+      {
+        "bytes": 15232,
+        "category": "frontend-source",
+        "path": "src/pages/EmailsPage.tsx",
+        "sha256": "af9d16e387af2b377bb21b5aabd55b902cf5f6c9e3445b8c07ca9a73ffdba94f"
+      },
+      {
+        "bytes": 45482,
+        "category": "frontend-source",
+        "path": "src/pages/InformationCenterPage.tsx",
+        "sha256": "568d22b940132f3d22a6eadb7353e509c61a98b6b68aa98ae50647efa2626053"
+      },
+      {
+        "bytes": 11977,
+        "category": "frontend-source",
+        "path": "src/pages/InformationPackDocumentPage.tsx",
+        "sha256": "73e9f29454db753c3a282820b8e2ec48f73c588a12737309aee7c26e4bcded75"
+      },
+      {
+        "bytes": 118749,
+        "category": "frontend-source",
+        "path": "src/pages/LeadsPage.tsx",
+        "sha256": "39cdbdeee41048f6bdca52711c061088ad62113698d7a720a79993291d31c50c"
+      },
+      {
+        "bytes": 21048,
+        "category": "frontend-source",
+        "path": "src/pages/LotsPage.tsx",
+        "sha256": "a7a891c6400f7b7e8f63536de12203570d1b184741be4cf97da84aa2e982508f"
+      },
+      {
+        "bytes": 22712,
+        "category": "frontend-source",
+        "path": "src/pages/PaymentsPage.tsx",
+        "sha256": "b8c4bbb5ac753c9c0e5274353b376eba8b7e2b1a35426d420f60ee2d510530ac"
+      },
+      {
+        "bytes": 95044,
+        "category": "frontend-source",
+        "path": "src/pages/ReportsPage.tsx",
+        "sha256": "db5d1c557b742f87c2cbfc9a901b84f8f81c76865391707519ada6cc8d02ae75"
+      },
+      {
+        "bytes": 71672,
+        "category": "frontend-source",
+        "path": "src/pages/SettingsPage.tsx",
+        "sha256": "ec6fa33a136aa8378f1c2f4dfe40767bf22201787536856fcf2b2a30ca585bb6"
+      },
+      {
+        "bytes": 26889,
+        "category": "frontend-source",
+        "path": "src/pages/SuperAdminConsolePage.tsx",
+        "sha256": "806eba903d1dcf6063683474eb159d739d7eb2e5cdc51eb7619b5333f393b1f9"
+      },
+      {
+        "bytes": 2626,
+        "category": "frontend-source",
+        "path": "src/pages/public/EmbeddableMapPage.tsx",
+        "sha256": "c9078f73f0c64ab883ff306554b05564cfc94d7f84d96396332b296da5c856a7"
+      },
+      {
+        "bytes": 33127,
+        "category": "frontend-source",
+        "path": "src/pages/public/HopkinsPublicPage.tsx",
+        "sha256": "db36b861cd2b123d9fa27ed4e858ee9b8b5800d77cb298c67cc29a5be0b87688"
+      },
+      {
+        "bytes": 3153,
+        "category": "frontend-source",
+        "path": "src/pages/public/PublicExperienceRoute.tsx",
+        "sha256": "1d1bae2e4e2388d8c01968b2f9aa503d3f4206aa5f3c48b23bf02ceb694122af"
+      },
+      {
+        "bytes": 1259,
+        "category": "frontend-source",
+        "path": "src/pages/public/PublicHostRoute.tsx",
+        "sha256": "75a717a17696efa3a0d9d56541b0750d6e548a2cb6dee72fb4628a28ec87fdef"
+      },
+      {
+        "bytes": 47944,
+        "category": "frontend-source",
+        "path": "src/types/database.ts",
+        "sha256": "c7f10f86550df8c3a6f18853689c6a250113411346c23e25a0133d9ac6f92c4a"
+      },
+      {
+        "bytes": 1493,
+        "category": "supabase-function-configuration",
+        "path": "supabase/config.toml",
+        "sha256": "6d6f279f1b4b95af287ae1397e7e7b148c6501d1af2318c1c9e292e12844f94c"
+      },
+      {
+        "bytes": 782,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/hopkins-project-application-contract.d.mts",
+        "sha256": "afd2cd7c3860feef5fa3d2ce2e634b7675763c51ec57b1b6204a1ec34fbccfca"
+      },
+      {
+        "bytes": 5175,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/hopkins-project-application-contract.mjs",
+        "sha256": "2547d1bf7b8f8842eb94837b869e3ab0d2ec8f906c68633a16ea301b040b8ea2"
+      },
+      {
+        "bytes": 9794,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/inquiry-contract.ts",
+        "sha256": "a95fa6553e4aff9c77d2e1e7e2cf60d0cc72b1f865af00bf7b3f635254cc8681"
+      },
+      {
+        "bytes": 927,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/parcel-provenance.d.mts",
+        "sha256": "f52527158af13e4f53b5ad4294e4abd38ec74e960d71168de26efff4efdf6e14"
+      },
+      {
+        "bytes": 1300,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/parcel-provenance.mjs",
+        "sha256": "359f11682146a0ede67d9ac47273284582a9c9eb346b3ed792804a2f5be0a6cd"
+      },
+      {
+        "bytes": 7672,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-application-contract.ts",
+        "sha256": "4def89c60f92a4de2e80d8d7ea02186c4acda863618992f9de7e555aa4885f66"
+      },
+      {
+        "bytes": 311,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-application-settings.d.mts",
+        "sha256": "ad4b57300e9fa5239cefa6c3ca67ff5a381d7d49e1b448c9943297c7bd5fef95"
+      },
+      {
+        "bytes": 1348,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-application-settings.mjs",
+        "sha256": "8064b19dd3358117c3552bf604d2cd47746248bc46777f1c4233476d00fcc9e9"
+      },
+      {
+        "bytes": 737,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-hostname.d.mts",
+        "sha256": "beb60be5021717b17d0f3d62f615b5cdbaa56021e2fa25268c03b0a0bc5ecf92"
+      },
+      {
+        "bytes": 4426,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-hostname.mjs",
+        "sha256": "d9a842e9586e72678c3d06d3fa9a72ac541302e758c55f7bd95002b3a7b5f6af"
+      },
+      {
+        "bytes": 2966,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/public-lot-reference.ts",
+        "sha256": "0baa24d49911b20b12bc9761d07fa9d9373fa28912dd909457670629d7821af3"
+      },
+      {
+        "bytes": 463,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/receipt-state-guard.mjs",
+        "sha256": "6f7cc570e91d6c71ae0b55f6566df5bd95a28356a68a172dbc741970d99443b1"
+      },
+      {
+        "bytes": 715,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/service-jwt-role.mjs",
+        "sha256": "32b556cef90fb6da079137aaafe51ffb3e7d481615fd912bb235c65a21126de6"
+      },
+      {
+        "bytes": 9454,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/super-admin-console.mjs",
+        "sha256": "1dcbe9cf0e87e92483c77129a869b963ccd19c00d170443a0eeb0dbbda1f4054"
+      },
+      {
+        "bytes": 5082,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/_shared/workspace-auth.ts",
+        "sha256": "acee6b58acb4ef446c9d025b488112fcd9bae406b46b8dd29e447ac115f1353a"
+      },
+      {
+        "bytes": 3652,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/ai-provider-health-check/index.ts",
+        "sha256": "7651985badb151c961894670661412f8be0c51a5af3052eb553cb6fa5aead369"
+      },
+      {
+        "bytes": 17301,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-application-review/index.ts",
+        "sha256": "a59232da5b87183e79c0f0ac3f77f979605f264380bad2ff16c9273b68c5585f"
+      },
+      {
+        "bytes": 36514,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-customer-summary/index.ts",
+        "sha256": "e1bed450d2d5354f3aaf84d495fa906aa63f4827a4d45687a6413af3784a63f9"
+      },
+      {
+        "bytes": 57934,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-daily-brief/index.ts",
+        "sha256": "d55443d0463c2920840eab136f09f364643c30e424a9c0e30b7f830f1cc93ea1"
+      },
+      {
+        "bytes": 26456,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-lead-summary/index.ts",
+        "sha256": "29139fd8da7873f7c3ae0d31f15e3b840335c679536c7ab3bf6fa533b93c636c"
+      },
+      {
+        "bytes": 33145,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-post-sales-summary/index.ts",
+        "sha256": "471a7b2b37372eb58f9878cff6a1c97aa3eec18227300f9ae37eb649c682478a"
+      },
+      {
+        "bytes": 22407,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/generate-receipts/index.ts",
+        "sha256": "3fe117109599007b6ce5dd4acd956ebc7080bbac4b005da9020947d0d1017536"
+      },
+      {
+        "bytes": 28872,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/get-public-lots/index.ts",
+        "sha256": "1990d625b4757154c93a77964f11566884fb42089a46669f898d8f1fc852da96"
+      },
+      {
+        "bytes": 3008,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/get-public-lots/project-scope.mjs",
+        "sha256": "b81fa24c19b523bc16938b673079f78e06bf8319515e897136ac02610b871bcb"
+      },
+      {
+        "bytes": 7960,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/get-public-project-page/index.ts",
+        "sha256": "7ee0b43f4714d3cdee5fbebd9b711d8907fb7e779ae8388752ca770ecf8ce8c2"
+      },
+      {
+        "bytes": 9583,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/get-public-site-experience/index.ts",
+        "sha256": "1e62de7ca2750c57a39f28dbca0c9574a979762bbb0ecbd4a7c5945ef81282b8"
+      },
+      {
+        "bytes": 6018,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/manage-admin-user/index.ts",
+        "sha256": "79fc2636c7c8a6ddf0e304de247488c9061836de9dab9233290966e75b8af991"
+      },
+      {
+        "bytes": 30789,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/receive-inbound-email/index.ts",
+        "sha256": "b819b44f6243611bbd28935d2680d2ab82d23754d413c00c4d650081bf6ec7e1"
+      },
+      {
+        "bytes": 18372,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/send-notification-email/index.ts",
+        "sha256": "1523fb0d6998e52805f2f34ac661c286aa93c81c917086240deaa416a01d4687"
+      },
+      {
+        "bytes": 12285,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/submit-hopkins-project-application/index.ts",
+        "sha256": "17152ef408266bc86f4d1d82fe5c88847005025f4bca288b0bbc0c2b6757a790"
+      },
+      {
+        "bytes": 14127,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/submit-public-application/index.ts",
+        "sha256": "e39ba8413b986370f95bd9981612aadaf52ddb8ba703d9e3a2c236b76e3b68db"
+      },
+      {
+        "bytes": 21992,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/submit-public-inquiry/index.ts",
+        "sha256": "322f1809cd63c1988945500188941aff0eb5cb49fbd9f93951452ca41975dd7d"
+      },
+      {
+        "bytes": 758,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/super-admin-console/index.ts",
+        "sha256": "bb18d1a60c7ecf00087e66008c5f2768607f9b068252a2ddceb7c6358366f3bd"
+      },
+      {
+        "bytes": 3237,
+        "category": "supabase-function-source",
+        "path": "supabase/functions/verify-public-hostname/index.ts",
+        "sha256": "5d1326fa3241686bb0b9695781cf4b2351dcaec8f92c64f1ee3cb468aa95eb21"
+      },
+      {
+        "bytes": 24900,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261106000100_enforce_tenant_link_integrity.sql",
+        "sha256": "417ff48c59b58c9eaa6ebda976c709f73d17127c797a410af06fa072b666db9a"
+      },
+      {
+        "bytes": 17300,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107000100_phase_scoped_application_approvals.sql",
+        "sha256": "e14ba3b5ce8e395b4c1a07fe8ad96a5503131d112948399f8d5e325e012923d1"
+      },
+      {
+        "bytes": 28460,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107000200_atomic_role_membership_changes.sql",
+        "sha256": "a49cc9f13c38f1404474f20cbf996e0829030073bbc22cc9d571479d44ad53d7"
+      },
+      {
+        "bytes": 54765,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107000300_verified_audit_attribution.sql",
+        "sha256": "74d9778500d54ea4b3aff3c48c1920f927ed5a6c488bdd1d01107d1211b4f16e"
+      },
+      {
+        "bytes": 30539,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107000400_enforce_access_state_boundaries.sql",
+        "sha256": "a9885f9f085514489bd78d2f5130f32f664bf3f99a259c6c705ebef810391dc4"
+      },
+      {
+        "bytes": 64170,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107143932_general_workspace_provisioning.sql",
+        "sha256": "affaa0bdfb8a8fa2125639fcbadf5c21d68be7257ab284f6d7672305d11c91a1"
+      },
+      {
+        "bytes": 33769,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107151154_resumable_workspace_user_onboarding.sql",
+        "sha256": "13b1122703eecf55d709771544a5564d1b89a082cbbedcc75a2b8c84f74d416d"
+      },
+      {
+        "bytes": 11069,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261107184011_m44_serialize_workspace_member_assignment.sql",
+        "sha256": "2a1f78d2770a3b066608ab5d395ba5d24cadad5dcc73c12c7040f8b214e764d4"
+      },
+      {
+        "bytes": 20853,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261108042610_m61_public_hostname_registry.sql",
+        "sha256": "91ff63ae9f51f10198a6aa2a897ad6052fb887342d0ff8a308be76addb2ff043"
+      },
+      {
+        "bytes": 15407,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261108110000_super_admin_console_hierarchy.sql",
+        "sha256": "1541c282b26023851e85405dd494012dd73f34c452e744565edb7f324e0e17e7"
+      },
+      {
+        "bytes": 45374,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261108120000_m74_scope_reservations_contracts.sql",
+        "sha256": "de246c2f7468f77e33d8b4b24cfc1c025316d5d54c5bd27a3adc7972b69a7802"
+      },
+      {
+        "bytes": 75770,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261108130000_m75_payment_allocations_and_fee_charges.sql",
+        "sha256": "e6b1c7a05c080bf1adae7a6e214cd543276b8542465823f4ea4007d4a84d1b64"
+      },
+      {
+        "bytes": 24719,
+        "category": "forward-migration",
+        "path": "supabase/migrations/20261108140000_m77_job_idempotency_and_ai_scope.sql",
+        "sha256": "c6ffe09c0cc8af0e6e492fe5db46a4593a215482e3b419aad82d8e338750e462"
+      },
+      {
+        "bytes": 3429,
+        "category": "separate-M1.5-staging-correction",
+        "path": "supabase/staging-migrations/20261105000100_harden_sensitive_view_access.sql",
+        "sha256": "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
+      }
+    ],
+    "frontend_env_values_included": false
+  },
+  "separate_correction": {
+    "path": "supabase/staging-migrations/20261105000100_harden_sensitive_view_access.sql",
+    "sha256": "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631",
+    "status": "M1.5 remains open; do not include in numbered migration push"
+  },
+  "target": {
+    "frontend": "https://wamule-staging.netlify.app",
+    "netlify_site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
+    "production_included": false,
+    "supabase_api_url": "https://kvocwmrcuhiaezlcgzjf.supabase.co",
+    "supabase_project_ref": "kvocwmrcuhiaezlcgzjf"
+  }
+}

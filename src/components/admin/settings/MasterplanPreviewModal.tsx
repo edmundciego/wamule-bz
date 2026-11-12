@@ -16,6 +16,8 @@ export interface PreviewPolygon {
 interface MasterplanPreviewModalProps {
   open: boolean;
   tenantId: string | null;
+  projectId: string | null;
+  phaseId: string | null;
   /** Candidate image to verify. */
   draftImageUrl: string | null;
   draftLabel: string;
@@ -37,6 +39,8 @@ const STATUS_FILL: Record<ParcelStatus, string> = {
 export function MasterplanPreviewModal({
   open,
   tenantId,
+  projectId,
+  phaseId,
   draftImageUrl,
   draftLabel,
   draftVersionId = null,
@@ -55,19 +59,25 @@ export function MasterplanPreviewModal({
   const [draftImageDims, setDraftImageDims] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
-    if (!open || !tenantId) return;
+    if (!open || !tenantId || !projectId || !phaseId) return;
     let cancelled = false;
     async function loadContext() {
-      const [{ data: org }, { data: parcels, error: parcelsError }] = await Promise.all([
-        supabase.from("organizations").select("masterplan_image_url").eq("id", tenantId).maybeSingle(),
-        supabase.from("parcels").select("id, lot_number, status, map_polygon").eq("tenant_id", tenantId).order("lot_number"),
+      const [{ data: activeVersion, error: versionError }, { data: parcels, error: parcelsError }] = await Promise.all([
+        supabase.from("masterplan_versions").select("image_url")
+          .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId).eq("is_active", true).maybeSingle(),
+        supabase.from("parcels").select("id, lot_number, status, map_polygon")
+          .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId).order("lot_number"),
       ]);
       if (cancelled) return;
+      if (versionError) {
+        setError(versionError.message);
+        return;
+      }
       if (parcelsError) {
         setError(parcelsError.message);
         return;
       }
-      setActiveImageUrl((org as { masterplan_image_url: string | null } | null)?.masterplan_image_url ?? null);
+      setActiveImageUrl((activeVersion as { image_url: string | null } | null)?.image_url ?? null);
       setPolygons(
         ((parcels ?? []) as Array<{ id: number; lot_number: string; status: ParcelStatus; map_polygon: unknown }>).map((row) => ({
           id: row.id,
@@ -85,7 +95,7 @@ export function MasterplanPreviewModal({
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId]);
+  }, [open, tenantId, projectId, phaseId]);
 
   // Probe intrinsic dimensions of both maps to detect aspect-ratio drift.
   useEffect(() => {
@@ -119,27 +129,36 @@ export function MasterplanPreviewModal({
   const ratioDrift = calculateAspectDrift(draftImageDims, activeImageDims);
 
   async function handlePublish() {
-    if (!tenantId || !canManage || (!draftVersionId && !draftUpload)) return;
+    if (!tenantId || !projectId || !phaseId || !canManage || (!draftVersionId && !draftUpload)) return;
     setError(null);
     setPublishing(true);
     try {
       if (draftVersionId) {
-        const { error: updateError } = await supabase
+        const { data: activated, error: updateError } = await supabase
           .from("masterplan_versions")
           .update({ is_active: true })
           .eq("id", draftVersionId)
-          .eq("tenant_id", tenantId);
+          .eq("tenant_id", tenantId)
+          .eq("project_id", projectId)
+          .eq("phase_id", phaseId)
+          .select("id")
+          .maybeSingle();
         if (updateError) throw new Error(updateError.message);
+        if (!activated) throw new Error("This map version is no longer available in the selected phase.");
       } else {
-        const { error: insertError } = await supabase.from("masterplan_versions").insert({
+        const { data: inserted, error: insertError } = await supabase.from("masterplan_versions").insert({
           tenant_id: tenantId,
+          project_id: projectId,
+          phase_id: phaseId,
           image_url: draftImageUrl,
           file_name: draftUpload?.fileName ?? "masterplan",
           is_active: true,
-        });
+        }).select("id").single();
         if (insertError) throw new Error(insertError.message);
+        if (!inserted) throw new Error("Map version creation returned no row.");
       }
-      // Activation trigger syncs organizations + business_settings.
+      // The database keeps only one active version within this project/phase;
+      // the default project/default phase also updates legacy company settings.
       if (draftImageUrl) onPublished?.(draftImageUrl);
       onClose();
     } catch (publishError) {

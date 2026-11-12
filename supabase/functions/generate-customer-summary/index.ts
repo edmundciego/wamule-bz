@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../_shared/financial.ts";
+import { authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -9,6 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type AccountStatus = "Good Standing" | "Due Soon" | "Overdue" | "Needs Review" | "Missing Documents" | "No Active Contract";
 
@@ -27,8 +28,11 @@ type AccountData = {
   customer: Record<string, unknown>;
   application: Record<string, unknown> | null;
   contracts: Record<string, unknown>[];
-  activeContract: Record<string, unknown> | null;
+  activeContracts: Record<string, unknown>[];
+  contractFinancials: Record<string, unknown>[];
   payments: Record<string, unknown>[];
+  paymentAllocations: Record<string, unknown>[];
+  feeCharges: Record<string, unknown>[];
   paymentDocuments: Record<string, unknown>[];
   paymentRequests: Record<string, unknown>[];
   paymentMethods: Record<string, unknown>[];
@@ -58,26 +62,65 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  const role = String(currentProfile?.role ?? "");
-  if (!["Super Admin", "Admin", "Staff"].includes(role)) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate customer AI summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { customer_id?: number } | null;
+  const body = await request.json().catch(() => null) as { customer_id?: number; tenant_id?: string; generationId?: string } | null;
+  // Customer summaries include balances, payment history and financial
+  // documents, which M3.1 reserves to Tenant Admin/Super Admin.
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const customerId = Number(body?.customer_id ?? 0);
-  if (!customerId) {
-    return json({ error: "customer_id is required." }, 400);
+  const generationId = String(body?.generationId ?? "").trim();
+  if (!Number.isSafeInteger(customerId) || customerId <= 0) {
+    return json({ error: "customer_id must be a positive integer." }, 400);
   }
+  if (!uuidPattern.test(generationId)) {
+    return json({ error: "generationId must be a valid UUID and remain unchanged when retrying this generation." }, 400);
+  }
+
+  const { data: customerScope, error: customerScopeError } = await supabase.from("customers")
+    .select("id,tenant_id").eq("id", customerId).eq("tenant_id", tenantId).maybeSingle();
+  if (customerScopeError) return json({ error: customerScopeError.message }, 500);
+  if (!customerScope) return json({ error: "Customer not found." }, 404);
+
+  const claimArgs = {
+    p_summary_kind: "customer",
+    p_tenant_id: tenantId,
+    p_parent_id: String(customerId),
+    p_generation_id: generationId,
+    p_actor_id: currentUserData.user.id,
+  };
+  const { data: claimData, error: claimError } = await supabase.rpc("claim_ai_summary_generation_v1", claimArgs);
+  if (claimError) return json({ error: claimError.message }, 500);
+  const claim = (Array.isArray(claimData) ? claimData[0] : claimData) as {
+    status?: string;
+    claim_token?: string | null;
+    summary_id?: string | null;
+  } | null;
+  if (claim?.status === "in_progress") {
+    return json({
+      status: "in_progress",
+      generation_id: generationId,
+      message: "This customer summary is already being generated. Retry shortly with the same generationId.",
+    }, 202);
+  }
+  if (claim?.status === "completed") {
+    const completedResult = claim.summary_id
+      ? await supabase.from("customer_ai_summaries").select("*")
+        .eq("id", claim.summary_id).eq("tenant_id", tenantId).eq("customer_id", customerId).eq("generation_id", generationId).maybeSingle()
+      : { data: null, error: null };
+    if (completedResult.error) return json({ error: completedResult.error.message }, 500);
+    if (!completedResult.data) return json({ error: "The completed customer summary generation could not be found." }, 500);
+    return json({
+      summary: completedResult.data,
+      fallback: String(completedResult.data.model ?? "") === "deterministic-fallback",
+      message: "Customer summary generation recovered from its saved result.",
+    });
+  }
+  if (claim?.status !== "claimed" || !claim.claim_token) {
+    return json({ error: "A valid customer summary generation claim could not be established." }, 500);
+  }
+  let generationCompleted = false;
+  try {
 
   const [customerResult, settingsResult, paymentMethodsResult, feeTypesResult] = await Promise.all([
     supabase
@@ -86,20 +129,24 @@ Deno.serve(async (request) => {
         "*, applications(*, parcels(*)), contracts(*, parcels(*), transactions(*, payment_documents(*))), transactions(*, payment_documents(*)), payment_documents(*, transactions(id, receipt_number, amount, transaction_type, created_at)), payment_requests(*)",
       )
       .eq("id", customerId)
+      .eq("tenant_id", tenantId)
       .maybeSingle(),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("payment_methods")
       .select("id, name, method_type, is_active, is_public")
+      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
     supabase
       .from("fee_types")
       .select("id, name, default_amount, frequency, is_required, is_active")
+      .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
   ]);
 
@@ -112,10 +159,33 @@ Deno.serve(async (request) => {
     return json({ error: "Customer not found." }, 404);
   }
 
+  const customer = customerResult.data as Record<string, unknown>;
+  const contractIds = relationArray(customer.contracts)
+    .filter((contract) => contract.is_active === true && String(contract.status) === "active")
+    .map((contract) => Number(contract.id)).filter(Number.isFinite);
+  const [contractFinancialsResult, allocationsResult, feeChargesResult] = await Promise.all([
+    contractIds.length
+      ? supabase.from("contract_financial_summary")
+        .select("contract_id,customer_id,total_posted_land_paid,remaining_balance,project_id,phase_id,currency,reservation_settled_credit")
+        .in("contract_id", contractIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("transaction_allocations")
+      .select("id,transaction_id,customer_id,amount,currency,scope_kind,allocation_kind,contract_id,reservation_id,fee_charge_id,project_id,phase_id,allocation_reason")
+      .eq("tenant_id", tenantId).eq("customer_id", customerId),
+    supabase.from("fee_charges")
+      .select("id,fee_type_id,amount,currency,scope_kind,project_id,phase_id,status,due_at")
+      .eq("tenant_id", tenantId).eq("customer_id", customerId),
+  ]);
+  const financeError = contractFinancialsResult.error ?? allocationsResult.error ?? feeChargesResult.error;
+  if (financeError) return json({ error: financeError.message }, 500);
+
   const accountData = buildAccountData({
-    customer: customerResult.data as Record<string, unknown>,
+    customer,
     paymentMethods: paymentMethodsResult.data ?? [],
     feeTypes: feeTypesResult.data ?? [],
+    contractFinancials: contractFinancialsResult.data ?? [],
+    paymentAllocations: allocationsResult.data ?? [],
+    feeCharges: feeChargesResult.data ?? [],
   });
   const deterministic = buildDeterministicSummary(accountData);
   const settings = settingsResult.data;
@@ -125,7 +195,7 @@ Deno.serve(async (request) => {
     settings?.is_enabled &&
     settings?.collections_assistant_enabled &&
     settings?.provider === "Gemini" &&
-    apiKey,
+    apiKey && accountData.activeContracts.length <= 1,
   );
 
   let summary = deterministic;
@@ -138,16 +208,19 @@ Deno.serve(async (request) => {
       apiKey,
       model,
     });
-    if (geminiSummary) {
-      summary = geminiSummary;
-      usedModel = model;
+    if (!geminiSummary) {
+      return json({ error: "Gemini did not return a valid customer summary. Retry with the same generationId." }, 502);
     }
+    summary = geminiSummary;
+    usedModel = model;
   }
 
   const { data: savedSummary, error: saveError } = await supabase
     .from("customer_ai_summaries")
     .upsert({
+      tenant_id: tenantId,
       customer_id: customerId,
+      generation_id: generationId,
       summary: summary.summary,
       account_status: summary.account_status,
       balance_summary: summary.balance_summary,
@@ -166,6 +239,17 @@ Deno.serve(async (request) => {
     return json({ error: saveError.message }, 500);
   }
 
+  const { error: completeError } = await supabase.rpc("complete_ai_summary_generation_v1", {
+    p_summary_kind: claimArgs.p_summary_kind,
+    p_tenant_id: claimArgs.p_tenant_id,
+    p_parent_id: claimArgs.p_parent_id,
+    p_generation_id: claimArgs.p_generation_id,
+    p_claim_token: claim.claim_token,
+    p_summary_id: String(savedSummary.id),
+  });
+  if (completeError) return json({ error: completeError.message }, 500);
+  generationCompleted = true;
+
   return json({
     summary: savedSummary,
     fallback: usedModel === "deterministic-fallback",
@@ -173,25 +257,50 @@ Deno.serve(async (request) => {
       ? "Customer summary generated with deterministic fallback."
       : "Customer summary generated with Gemini.",
   });
+  } finally {
+    if (!generationCompleted) {
+      try {
+        const { error: releaseError } = await supabase.rpc("release_ai_summary_generation_v1", {
+          p_summary_kind: claimArgs.p_summary_kind,
+          p_tenant_id: claimArgs.p_tenant_id,
+          p_parent_id: claimArgs.p_parent_id,
+          p_generation_id: claimArgs.p_generation_id,
+          p_claim_token: claim.claim_token,
+        });
+        if (releaseError) console.error("Customer summary claim release failed", releaseError.message);
+      } catch (releaseError) {
+        console.error("Customer summary claim release failed", releaseError);
+      }
+    }
+  }
 });
 
 function buildAccountData({
   customer,
   paymentMethods,
   feeTypes,
+  contractFinancials,
+  paymentAllocations,
+  feeCharges,
 }: {
   customer: Record<string, unknown>;
   paymentMethods: Record<string, unknown>[];
   feeTypes: Record<string, unknown>[];
+  contractFinancials: Record<string, unknown>[];
+  paymentAllocations: Record<string, unknown>[];
+  feeCharges: Record<string, unknown>[];
 }): AccountData {
   const contracts = relationArray(customer.contracts);
-  const activeContract = canonicalActiveContract(contracts);
+  const activeContracts = contracts.filter((contract) => contract.is_active === true && String(contract.status) === "active");
   return {
     customer,
     application: (customer.applications as Record<string, unknown> | null | undefined) ?? null,
     contracts,
-    activeContract,
+    activeContracts,
+    contractFinancials,
     payments: relationArray(customer.transactions),
+    paymentAllocations,
+    feeCharges,
     paymentDocuments: relationArray(customer.payment_documents),
     paymentRequests: relationArray(customer.payment_requests),
     paymentMethods,
@@ -202,34 +311,60 @@ function buildAccountData({
 function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
   const customer = data.customer;
   const name = customerName(customer);
-  const contract = data.activeContract;
-  const totalPaid = contract ? totalPostedLandPayments(data.payments, contract.id) : 0;
-  const finalPrice = Number(contract?.final_purchase_price ?? 0);
-  const remainingBalance = remainingLandBalance(contract, data.payments) ?? 0;
-  const lastPayment = [...data.payments].sort((a, b) => dateTime(b.created_at) - dateTime(a.created_at))[0] ?? null;
-  const missingReceiptPayments = data.payments.filter((payment) => !payment.manual_receipt_number);
-  const missingProofPayments = data.payments.filter((payment) => isTransfer(payment) && !relationArray(payment.payment_documents).length);
+  const postedPayments = data.payments.filter((payment) => String(payment.status).toLowerCase() === "posted");
+  const financialTransactionIds = new Set(data.payments
+    .filter((payment) => ["posted", "voided"].includes(String(payment.status).toLowerCase()))
+    .map((payment) => Number(payment.id)));
+  const contractSummaries = data.activeContracts.map((contract) => {
+    const financial = data.contractFinancials.find((row) => Number(row.contract_id) === Number(contract.id));
+    const contractAllocations = data.paymentAllocations.filter((allocation) =>
+      Number(allocation.contract_id) === Number(contract.id)
+      && ["applied", "reversal"].includes(String(allocation.allocation_kind))
+      && financialTransactionIds.has(Number(allocation.transaction_id))
+      && allocation.currency === contract.currency
+    );
+    const allocatedPaymentCredit = contractAllocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0);
+    const reservationSettledCredit = Number(financial?.reservation_settled_credit ?? 0);
+    const totalPaid = allocatedPaymentCredit + reservationSettledCredit;
+    const remainingBalance = Number(financial?.remaining_balance ?? contract.final_purchase_price ?? 0);
+    const dueDate = dueDateForCurrentCycle(contract, new Date());
+    const dueSoon = dueDate ? daysBetween(startOfDay(new Date()), dueDate) >= 0 && daysBetween(startOfDay(new Date()), dueDate) <= 7 : false;
+    const overdue = Boolean(dueDate && dueDate < startOfDay(new Date()) && remainingBalance > 0
+      && !expectedPaymentSatisfied(contract, totalPaid, dueDate));
+    const recentPayment = contractAllocations.some((allocation) => {
+      const payment = data.payments.find((row) => Number(row.id) === Number(allocation.transaction_id));
+      return payment && String(payment.status).toLowerCase() === "posted"
+        && daysBetween(new Date(String(payment.created_at)), new Date()) <= 45;
+    });
+    return { contract, financial, allocatedPaymentCredit, reservationSettledCredit, totalPaid, remainingBalance, dueDate, dueSoon, overdue, recentPayment };
+  });
+  const lastPayment = [...postedPayments].sort((a, b) => dateTime(b.created_at) - dateTime(a.created_at))[0] ?? null;
+  const missingReceiptPayments = postedPayments.filter((payment) => !payment.manual_receipt_number);
+  const missingProofPayments = postedPayments.filter((payment) => isTransfer(payment) && !relationArray(payment.payment_documents).length);
   const openRequests = data.paymentRequests.filter((request) => ["Draft", "Sent"].includes(String(request.status)));
   const overdueRequests = openRequests.filter((request) => startOfDay(new Date(String(request.due_date))) < startOfDay(new Date()));
-  const dueDate = contract ? dueDateForCurrentCycle(contract, new Date()) : null;
-  const dueSoon = dueDate ? daysBetween(startOfDay(new Date()), dueDate) >= 0 && daysBetween(startOfDay(new Date()), dueDate) <= 7 : false;
-  const overdue = contract && dueDate ? dueDate < startOfDay(new Date()) && remainingBalance > 0 && !expectedPaymentSatisfied(contract, totalPaid, dueDate) : false;
-  const noRecentPayment = contract && remainingBalance > 0 && (!lastPayment || daysBetween(new Date(String(lastPayment.created_at)), new Date()) > 45);
-  const lot = contract?.parcels as Record<string, unknown> | null | undefined;
+  const dueDate = contractSummaries.map((item) => item.dueDate).filter(Boolean)
+    .sort((a, b) => (a?.getTime() ?? Infinity) - (b?.getTime() ?? Infinity))[0] ?? null;
+  const dueSoon = contractSummaries.some((item) => item.dueSoon);
+  const overdue = contractSummaries.some((item) => item.overdue);
+  const noRecentPaymentContracts = contractSummaries.filter((item) => item.remainingBalance > 0 && !item.recentPayment);
+  const openFeeCharges = data.feeCharges.filter((charge) => String(charge.status).toLowerCase() === "open");
 
   const flags: CustomerSummaryOutput["collections_flags"] = [];
   const missingItems: CustomerSummaryOutput["missing_items"] = [];
   const actions: CustomerSummaryOutput["recommended_actions"] = [];
 
-  if (!contract) {
+  if (contractSummaries.length === 0) {
     flags.push(item("No active contract", "No active contract is recorded for this customer."));
     actions.push(item("Review account setup", "Confirm whether a contract should be created or linked before collections follow-up."));
   }
-  if (contract && !contract.signed_contract_file_path) {
-    flags.push(item("Contract missing signed upload", `Contract #${contract.id} has no signed contract upload.`));
-    missingItems.push(item("Signed contract upload", `Upload or attach the signed contract for Contract #${contract.id}.`));
+  for (const { contract } of contractSummaries) {
+    if (!contract.signed_contract_file_path) {
+      flags.push(item("Contract missing signed upload", `Contract #${contract.id} has no signed contract upload.`));
+      missingItems.push(item("Signed contract upload", `Upload or attach the signed contract for Contract #${contract.id}.`));
+    }
   }
-  if (contract && data.payments.length === 0) {
+  if (contractSummaries.length > 0 && contractSummaries.every((row) => row.totalPaid === 0)) {
     flags.push(item("No payments recorded", "No payments are recorded for this account."));
     actions.push(item("Confirm first payment status", "Check whether the initial deposit or first installment has been paid."));
   }
@@ -245,22 +380,34 @@ function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
   }
   if (openRequests.length) flags.push(item("Open payment requests", `${openRequests.length} payment requests are still open.`));
   if (overdueRequests.length) flags.push(item("Overdue payment requests", `${overdueRequests.length} payment requests are past due.`));
-  if (contract && lot?.status && !["Reserved", "Sold"].includes(String(lot.status))) {
-    flags.push(item("Lot status needs review", `Lot ${lot.lot_number ?? "N/A"} is marked ${lot.status}, which may not match an active customer contract.`));
+  for (const { contract } of contractSummaries) {
+    const lot = contract.parcels as Record<string, unknown> | null | undefined;
+    if (lot?.status && !["Reserved", "Sold"].includes(String(lot.status))) {
+      flags.push(item("Lot status needs review", `Contract #${contract.id} Lot ${lot.lot_number ?? "N/A"} is marked ${lot.status}, which may not match an active customer contract.`));
+    }
   }
-  if (noRecentPayment) flags.push(item("No recent payment", "Customer has a remaining land balance and no payment in the last 45 days."));
+  if (noRecentPaymentContracts.length) flags.push(item("No recent payment", `${noRecentPaymentContracts.length} active contract(s) with a balance have no exact-contract allocation in the last 45 days.`));
+  if (openFeeCharges.length) flags.push(item("Open assessed fees", `${openFeeCharges.length} assessed fee charge(s) remain open across their stated currencies and scopes.`));
 
-  if (remainingBalance > 0) actions.push(item("Review balance with customer", `Confirm payment plan status for remaining balance of ${money(remainingBalance)}.`));
+  for (const row of contractSummaries.filter((item) => item.remainingBalance > 0)) {
+    actions.push(item("Review balance with customer", `Confirm payment plan status for Contract #${row.contract.id}: ${formatCurrency(row.remainingBalance, String(row.contract.currency ?? ""))}.`));
+  }
   if (openRequests.length) actions.push(item("Follow up on open payment request", `Review ${openRequests.length} open payment request(s) before contacting the customer.`));
   if (!actions.length) actions.push(item("Monitor account", "No urgent collections action was detected from current records."));
 
-  const accountStatus = chooseStatus({ contract, overdue, overdueRequests, dueSoon, missingItems, flags });
-  const lotText = lot?.lot_number ? `Lot ${lot.lot_number}` : assignedApplicationLot(data.application);
-  const balanceSummary = contract
-    ? `${name} has ${money(totalPaid)} recorded toward a ${money(finalPrice)} land contract, leaving an estimated land balance of ${money(remainingBalance)}.`
+  const accountStatus = chooseStatus({ hasContract: contractSummaries.length > 0, overdue, overdueRequests, dueSoon, missingItems, flags });
+  const lots = contractSummaries.map(({ contract }) => {
+    const lot = contract.parcels as Record<string, unknown> | null | undefined;
+    return lot?.lot_number ? `Lot ${lot.lot_number} (Contract #${contract.id})` : null;
+  }).filter(Boolean);
+  const lotText = lots.length ? lots.join(", ") : assignedApplicationLot(data.application);
+  const balanceSummary = contractSummaries.length
+    ? contractSummaries.map(({ contract, allocatedPaymentCredit, reservationSettledCredit, totalPaid, remainingBalance }) =>
+      `Contract #${contract.id} (${String(contract.currency ?? "currency unverified")}): ${formatCurrency(allocatedPaymentCredit, String(contract.currency ?? ""))} in exact-contract payment allocations plus ${formatCurrency(reservationSettledCredit, String(contract.currency ?? ""))} in reservation-settled credit; total contract credit ${formatCurrency(totalPaid, String(contract.currency ?? ""))} of ${formatCurrency(Number(contract.final_purchase_price ?? 0), String(contract.currency ?? ""))}; remaining ${formatCurrency(remainingBalance, String(contract.currency ?? ""))}.`
+    ).join(" ")
     : `${name} does not have an active contract, so no contract balance can be calculated.`;
   const paymentSummary = lastPayment
-    ? `Last payment was ${money(Number(lastPayment.amount ?? 0))} for ${lastPayment.transaction_type ?? "payment"} on ${formatDate(String(lastPayment.created_at))} by ${lastPayment.collection_method ?? "unknown method"}.`
+    ? `Latest posted receipt was ${formatCurrency(Number(lastPayment.amount ?? 0), String(lastPayment.currency ?? ""))} for ${lastPayment.transaction_type ?? "payment"} on ${formatDate(String(lastPayment.created_at))} by ${lastPayment.collection_method ?? "unknown method"}. Receipt amounts are not added across obligations.`
     : "No payments are recorded for this customer.";
 
   return {
@@ -271,7 +418,7 @@ function buildDeterministicSummary(data: AccountData): CustomerSummaryOutput {
     collections_flags: flags.length ? flags : [item("No urgent collections flags", "No urgent collections issues were detected from current records.")],
     missing_items: missingItems,
     recommended_actions: actions,
-    draft_follow_up_message: buildFollowUpMessage(name, accountStatus, remainingBalance, dueDate, openRequests.length),
+    draft_follow_up_message: buildFollowUpMessage(name, accountStatus, dueDate, openRequests.length),
   };
 }
 
@@ -296,6 +443,7 @@ async function generateGeminiSummary({
     "Avoid saying: Thank you for your prompt attention to this matter.",
     "Use this preferred closing once at the end of the draft message: Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.",
     "If the account is Due Soon or Missing Documents, do not imply that the customer is overdue or in default.",
+    "Never add amounts from different contracts or currencies. Respect each supplied contract, phase, allocation, and currency as a separate account line.",
     "",
     `Deterministic baseline: ${JSON.stringify(deterministic)}`,
     `Customer account data: ${JSON.stringify(data)}`,
@@ -342,9 +490,55 @@ function sanitizeSummary(value: Partial<CustomerSummaryOutput>, fallback: Custom
 }
 
 function summarizeForPrompt(data: AccountData) {
-  const contract = data.activeContract;
-  const totalPaid = contract ? totalPostedLandPayments(data.payments, contract.id) : 0;
-  const remainingBalance = remainingLandBalance(contract, data.payments);
+  const financialTransactionIds = new Set(data.payments
+    .filter((payment) => ["posted", "voided"].includes(String(payment.status).toLowerCase()))
+    .map((payment) => Number(payment.id)));
+  const contracts = data.activeContracts.map((contract) => {
+    const financial = data.contractFinancials.find((row) => Number(row.contract_id) === Number(contract.id));
+    const lot = contract.parcels as Record<string, unknown> | null | undefined;
+    const contractAllocations = data.paymentAllocations.filter((allocation) =>
+      Number(allocation.contract_id) === Number(contract.id)
+      && allocation.currency === contract.currency
+      && ["applied", "reversal"].includes(String(allocation.allocation_kind))
+      && ["posted", "voided"].includes(String(data.payments.find((payment) => Number(payment.id) === Number(allocation.transaction_id))?.status).toLowerCase())
+    );
+    const allocatedPaymentCredit = contractAllocations.reduce((sum, allocation) => sum + Number(allocation.amount ?? 0), 0);
+    const reservationSettledCredit = Number(financial?.reservation_settled_credit ?? 0);
+    return {
+      id: contract.id,
+      project_id: contract.project_id,
+      phase_id: contract.phase_id,
+      lot_number: lot?.lot_number ?? null,
+      currency: contract.currency ?? null,
+      final_purchase_price: contract.final_purchase_price,
+      initial_deposit: contract.initial_deposit,
+      monthly_payment: contract.monthly_payment,
+      term_months: contract.term_months,
+      start_date: contract.start_date,
+      payment_due_day: contract.payment_due_day,
+      signed_contract_uploaded: Boolean(contract.signed_contract_file_path),
+      allocated_payment_credit: allocatedPaymentCredit,
+      total_contract_credit: allocatedPaymentCredit + reservationSettledCredit,
+      remaining_balance: financial?.remaining_balance ?? contract.final_purchase_price,
+      reservation_settled_credit: reservationSettledCredit,
+    };
+  });
+  const allocations = data.paymentAllocations
+    .filter((allocation) => financialTransactionIds.has(Number(allocation.transaction_id))
+      && ["applied", "reversal"].includes(String(allocation.allocation_kind)))
+    .map((allocation) => ({
+      id: allocation.id,
+      transaction_id: allocation.transaction_id,
+      amount: allocation.amount,
+      currency: allocation.currency,
+      scope_kind: allocation.scope_kind,
+      contract_id: allocation.contract_id,
+      reservation_id: allocation.reservation_id,
+      fee_charge_id: allocation.fee_charge_id,
+      project_id: allocation.project_id,
+      phase_id: allocation.phase_id,
+    }));
+  const allocatedTransactionIds = new Set(allocations.map((allocation) => Number(allocation.transaction_id)));
   return {
     customer: {
       id: data.customer.id,
@@ -354,25 +548,14 @@ function summarizeForPrompt(data: AccountData) {
       address_present: Boolean(data.customer.address),
       application_id: data.customer.application_id,
     },
-    lot: contract?.parcels ?? data.application?.parcels ?? null,
-    contract: contract ? {
-      id: contract.id,
-      is_active: contract.is_active,
-      final_purchase_price: contract.final_purchase_price,
-      initial_deposit: contract.initial_deposit,
-      monthly_payment: contract.monthly_payment,
-      term_months: contract.term_months,
-      start_date: contract.start_date,
-      payment_due_day: contract.payment_due_day,
-      signed_contract_uploaded: Boolean(contract.signed_contract_file_path),
-      total_posted_land_paid: totalPaid,
-      remaining_balance: remainingBalance,
-    } : null,
-    payments: data.payments.map((payment) => ({
+    contracts,
+    payment_allocations: allocations,
+    fee_charges: data.feeCharges.map((charge) => pick(charge, ["id", "amount", "currency", "scope_kind", "project_id", "phase_id", "status", "due_at"])),
+    payments: data.payments.filter((payment) => allocatedTransactionIds.has(Number(payment.id))).map((payment) => ({
       id: payment.id,
-      amount: payment.amount,
       transaction_type: payment.transaction_type,
       collection_method: payment.collection_method,
+      currency: payment.currency ?? null,
       bank_reference_present: Boolean(payment.bank_reference),
       manual_receipt_number_present: Boolean(payment.manual_receipt_number),
       uploaded_document_count: relationArray(payment.payment_documents).length,
@@ -381,6 +564,10 @@ function summarizeForPrompt(data: AccountData) {
     payment_requests: data.paymentRequests.map((request) => ({
       id: request.id,
       amount_due: request.amount_due,
+      currency: request.currency ?? null,
+      project_id: request.project_id ?? null,
+      phase_id: request.phase_id ?? null,
+      contract_id: request.contract_id ?? null,
       due_date: request.due_date,
       reason: request.reason,
       status: request.status,
@@ -391,21 +578,21 @@ function summarizeForPrompt(data: AccountData) {
 }
 
 function chooseStatus({
-  contract,
+  hasContract,
   overdue,
   overdueRequests,
   dueSoon,
   missingItems,
   flags,
 }: {
-  contract: Record<string, unknown> | null;
+  hasContract: boolean;
   overdue: boolean;
   overdueRequests: Record<string, unknown>[];
   dueSoon: boolean;
   missingItems: CustomerSummaryOutput["missing_items"];
   flags: CustomerSummaryOutput["collections_flags"];
 }): AccountStatus {
-  if (!contract) return "No Active Contract";
+  if (!hasContract) return "No Active Contract";
   if (overdue || overdueRequests.length) return "Overdue";
   if (missingItems.length) return "Missing Documents";
   if (dueSoon) return "Due Soon";
@@ -413,11 +600,11 @@ function chooseStatus({
   return "Good Standing";
 }
 
-function buildFollowUpMessage(name: string, status: AccountStatus, balance: number, dueDate: Date | null, openRequests: number) {
+function buildFollowUpMessage(name: string, status: AccountStatus, dueDate: Date | null, openRequests: number) {
   const firstName = name.split(" ")[0] || name;
   const closing = "Please contact us when convenient so we can confirm or update the account file. Thank you, and please let us know if you have any questions.";
   if (status === "Overdue") {
-    return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records show a balance of ${money(balance)} and a payment item that may need follow-up. ${closing}`;
+    return `Good morning ${firstName}, this is a quick update from Wamule Development regarding your account. Our records show a payment item that may need follow-up. ${closing}`;
   }
   if (status === "Due Soon") {
     return `Good morning ${firstName}, this is a friendly update from Wamule Development. Our records show your next payment date is coming up${dueDate ? ` around ${formatDate(dueDate.toISOString())}` : ""}. ${closing}`;
@@ -530,8 +717,10 @@ function formatDate(value: string | undefined) {
   return new Intl.DateTimeFormat("en-BZ", { dateStyle: "medium" }).format(new Date(value));
 }
 
-function money(value: number) {
-  return new Intl.NumberFormat("en-BZ", { style: "currency", currency: "BZD" }).format(Number(value ?? 0));
+function formatCurrency(value: number, currency: string) {
+  const code = currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return `${Number(value).toFixed(2)} (currency unverified)`;
+  return new Intl.NumberFormat("en-BZ", { style: "currency", currency: code }).format(Number(value ?? 0));
 }
 
 function json(body: Record<string, unknown>, status = 200) {

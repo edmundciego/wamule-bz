@@ -24,6 +24,9 @@ const MAX_PREFERRED_LOTS = 20;
 
 export interface PublicApplicationPayload {
   tenant?: unknown;
+  project?: unknown;
+  phase?: unknown;
+  hostname?: unknown;
   applicant_full_name?: unknown;
   applicant_address?: unknown;
   nationality?: unknown;
@@ -44,6 +47,9 @@ export interface PublicApplicationPayload {
 
 export interface ValidPublicApplication {
   tenant: string;
+  project: string;
+  phase: string;
+  hostname: string;
   applicant_full_name: string;
   applicant_address: string;
   nationality: string;
@@ -65,8 +71,8 @@ export interface ValidPublicApplication {
 export type PublicApplicationValidation = { error: string } | ValidPublicApplication;
 
 /** Client builder: copies only the approved wire fields, never DB identity or status fields. */
-export function buildPublicApplicationPayload(input: Record<string, unknown> & { tenant: string }): Record<string, unknown> {
-  const output: Record<string, unknown> = { tenant: input.tenant };
+export function buildPublicApplicationPayload(input: Record<string, unknown> & { tenant: string; project: string; phase: string; hostname: string }): Record<string, unknown> {
+  const output: Record<string, unknown> = { tenant: input.tenant, project: input.project, phase: input.phase, hostname: input.hostname };
   for (const field of PUBLIC_APPLICATION_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(input, field)) output[field] = input[field];
   }
@@ -81,11 +87,18 @@ function text(value: unknown, maxLength: number): string | null {
 /** Public wire validation. Database ids, tenant ids, and staff-authored fields are never accepted. */
 export function validatePublicApplicationPayload(body: PublicApplicationPayload): PublicApplicationValidation {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid application." };
-  const allowed = new Set<string>(["tenant", ...PUBLIC_APPLICATION_FIELDS]);
+  const allowed = new Set<string>(["tenant", "project", "phase", "hostname", ...PUBLIC_APPLICATION_FIELDS]);
   if (Object.keys(body).some((key) => !allowed.has(key))) return { error: "Reload the application form and try again." };
 
   const tenant = text(body.tenant, 160)?.toLowerCase() ?? "";
   if (!/^[a-z0-9][a-z0-9-]{0,159}$/.test(tenant)) return { error: "This application page is not configured." };
+  const project = text(body.project, 80)?.toLowerCase() ?? "";
+  const phase = text(body.phase, 80)?.toLowerCase() ?? "";
+  const hostname = text(body.hostname, 253)?.toLowerCase().replace(/\.$/, "") ?? "";
+  if (!/^[a-z0-9][a-z0-9-]{0,78}$/.test(project) || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(phase)
+    || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)) {
+    return { error: "Reload the public project link and try again." };
+  }
 
   const applicant_full_name = text(body.applicant_full_name, 160) ?? "";
   const applicant_address = text(body.applicant_address, 500) ?? "";
@@ -120,9 +133,12 @@ export function validatePublicApplicationPayload(body: PublicApplicationPayload)
     return { error: "Select preferred lots from the current public map." };
   }
   const lotRefs = preferred_lot_refs as string[];
-  const normalizedLotKeys = lotRefs.map((reference) => {
-    const parts = parsePublicLotReference(reference)!;
-    return JSON.stringify([parts.projectSlug, parts.lotNumber]);
+  const partsList = lotRefs.map((reference) => parsePublicLotReference(reference)!);
+  if (partsList.some((parts) => parts.phaseSlug !== null && parts.phaseSlug !== phase)) {
+    return { error: "Select preferred lots from the selected phase." };
+  }
+  const normalizedLotKeys = partsList.map((parts) => {
+    return JSON.stringify([parts.projectSlug, parts.phaseSlug, parts.lotNumber]);
   });
   if (new Set(normalizedLotKeys).size !== normalizedLotKeys.length) return { error: "Remove duplicate preferred lots." };
   if (!alternate_lot_preference) return { error: "Alternative lot option is required." };
@@ -133,6 +149,9 @@ export function validatePublicApplicationPayload(body: PublicApplicationPayload)
 
   return {
     tenant,
+    project,
+    phase,
+    hostname,
     applicant_full_name,
     applicant_address,
     nationality,

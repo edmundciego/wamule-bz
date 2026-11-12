@@ -27,23 +27,28 @@ export const defaultCompanyProfile = {
 
 export type CompanyProfile = typeof defaultCompanyProfile;
 
-export function useCompanyProfile() {
+export function useCompanyProfile(tenantId?: string | null, fallbackCompanyName?: string | null) {
   const query = useQuery({
-    queryKey: ["company-profile"],
+    queryKey: ["company-profile", tenantId ?? "default"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("business_settings")
         .select("value")
+        .eq("tenant_id", tenantId!)
         .eq("key", "company_profile")
         .maybeSingle();
       if (error) throw error;
       return (data?.value ?? null) as Partial<CompanyProfile> | null;
     },
-    enabled: hasSupabaseConfig,
+    enabled: hasSupabaseConfig && Boolean(tenantId),
     staleTime: 5 * 60 * 1000,
   });
 
-  const company = { ...defaultCompanyProfile, ...(query.data ?? {}) };
+  const company = {
+    ...defaultCompanyProfile,
+    ...(fallbackCompanyName?.trim() ? { company_name: fallbackCompanyName.trim(), location_address: "", short_description: "" } : {}),
+    ...(query.data ?? {}),
+  };
   const hasProfile = query.data !== null && query.data !== undefined;
 
   return {

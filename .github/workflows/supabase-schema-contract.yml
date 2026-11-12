@@ -1,0 +1,199 @@
+name: Supabase schema contract
+
+on:
+  push:
+    branches: [codex/schema-replay-69-review]
+  workflow_dispatch:
+    inputs:
+      run_staging_catalog:
+        description: Run the separately authorized read-only staging catalog gate
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  replayed-schema:
+    name: Reconcile and scan local PostgreSQL 17 replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The reconciler reads the pinned deployed source migration from 968e744.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify replay inputs and dynamic query contracts
+        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs
+
+      - name: Confirm the reviewed Supabase CLI version
+        run: |
+          version="$(./node_modules/.bin/supabase --version)"
+          test "$version" = "2.105.0" || { echo "Expected reviewed Supabase CLI 2.105.0; found $version." >&2; exit 1; }
+
+      - name: Prepare the reconciled local migration directory
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+        run: python3 scripts/prepare-local-supabase-replay.py --out "$REPLAY_DIR"
+
+      - name: Start the isolated Supabase stack
+        id: local-stack
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          mkdir -p "$SUPABASE_HOME"
+          if ! ./node_modules/.bin/supabase start --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            echo "Failing command: ./node_modules/.bin/supabase start --workdir \"$REPLAY_DIR\"" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-start.log" | tail -n 40 >&2
+            exit 1
+          fi
+
+      - name: Replay the 69-entry staging baseline and apply the separate M1.5 overlay
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          if ! ./node_modules/.bin/supabase db reset --local --no-seed --workdir "$REPLAY_DIR" --yes > "$RUNNER_TEMP/supabase-reset.log" 2>&1; then
+            echo "Failing command: ./node_modules/.bin/supabase db reset --local --no-seed --workdir \"$REPLAY_DIR\" --yes" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-reset.log" | tail -n 60 >&2
+            exit 1
+          fi
+          overlay="$REPLAY_DIR/supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql"
+          if ! ./node_modules/.bin/supabase db query --local --workdir "$REPLAY_DIR" --file "$overlay" > "$RUNNER_TEMP/m1-5-overlay.log" 2>&1; then
+            echo "Failing command: ./node_modules/.bin/supabase db query --local --workdir \"$REPLAY_DIR\" --file \"$overlay\"" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/m1-5-overlay.log" | tail -n 60 >&2
+            exit 1
+          fi
+
+      - name: Assert Map Studio relations and publication RPC exist
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          result="$(psql "$db_url" -X -q -t -A -F $'\t' -v ON_ERROR_STOP=1 -c "SELECT to_regclass('public.project_map_packages') IS NOT NULL, to_regclass('public.project_plot_content') IS NOT NULL, to_regprocedure('public.publish_project_map_package(uuid,uuid,boolean)') IS NOT NULL;")"
+          expected="$(printf 't\tt\tt')"
+          test "$result" = "$expected" || { echo "Map Studio replay objects are incomplete: $result" >&2; exit 1; }
+          printf 'Map Studio replay objects: project_map_packages, project_plot_content, publish_project_map_package(uuid,uuid,boolean)\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify server version and record the official database image
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          version="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c 'SHOW server_version;')"
+          case "$version" in
+            17.6.1.155*) ;;
+            *) echo "Expected staging PostgreSQL 17.6.1.155; local replay reported $version." >&2; exit 1 ;;
+          esac
+          db_container="$(docker ps --filter 'name=supabase_db_' --format '{{.ID}}' | sed -n '1p')"
+          test -n "$db_container"
+          image="$(docker inspect --format '{{.Config.Image}}' "$db_container")"
+          image_id="$(docker inspect --format '{{.Image}}' "$db_container")"
+          image_digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image_id")"
+          case "$image" in
+            supabase/postgres:17.6.1.155*) ;;
+            *) echo "Expected the official supabase/postgres:17.6.1.155 image; found $image." >&2; exit 1 ;;
+          esac
+          test -n "$image_digest"
+          printf 'Supabase CLI: 2.105.0\nPostgreSQL server_version: %s\nDatabase image: %s\nImage digest: %s\nImage content ID: %s\n' "$version" "$image" "$image_digest" "$image_id" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan source queries against the replayed catalog
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" node scripts/schema-query-contract.mjs > "$RUNNER_TEMP/schema-contract-replay.json"
+
+      - name: Retain replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-replayed-schema-contract
+          path: |
+            ${{ runner.temp }}/wamule-reconciled-replay/replay-manifest.json
+            ${{ runner.temp }}/schema-contract-replay.json
+          if-no-files-found: warn
+
+      - name: Stop the isolated Supabase stack
+        if: always()
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        run: ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup || true
+
+  staging-read-only-catalog:
+    name: Read-only staging catalog contract
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_staging_catalog }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging-readonly-catalog
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Require the dedicated read-only staging catalog credential
+        env:
+          SCHEMA_QUERY_DATABASE_URL: ${{ secrets.STAGING_SCHEMA_READONLY_DATABASE_URL }}
+        shell: bash
+        run: |
+          if [ -z "$SCHEMA_QUERY_DATABASE_URL" ]; then
+            echo "STAGING_SCHEMA_READONLY_DATABASE_URL is not configured in the staging-readonly-catalog GitHub environment; the target-catalog gate is unverified." >&2
+            exit 1
+          fi
+          node scripts/schema-query-contract.mjs --target-project kvocwmrcuhiaezlcgzjf > "$RUNNER_TEMP/schema-contract-staging.json"
+
+      - name: Retain redacted staging catalog evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-staging-read-only-schema-contract
+          path: ${{ runner.temp }}/schema-contract-staging.json
+          if-no-files-found: warn

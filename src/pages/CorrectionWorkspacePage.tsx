@@ -32,6 +32,16 @@ import {
   type Waiver,
 } from "../lib/correction";
 import { getSessionAndProfile } from "../lib/data";
+import { WorkspaceScopeBoundary } from "../components/auth/WorkspaceScopeBoundary";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
+import {
+  correctionWorkspaceBenchmarkReviewStorageKey,
+  correctionWorkspaceDraftStorageKey,
+  correctionWorkspacePhaseStorageKey,
+  correctionWorkspaceScopeKey,
+  loadCorrectionWorkspaceMasterplan,
+} from "../lib/correctionWorkspaceScope.mjs";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
 import { Badge } from "../components/ui/Badge";
@@ -75,7 +85,7 @@ import {
  * eliminated from production bundles. Every other path requires a session
  * plus an admin profile; without one the user lands on /login.
  *
- * Persistence: localStorage drafts keyed per tenant/project until the
+ * Persistence: localStorage drafts keyed per tenant/project/phase until the
  * slice-1.5 migration (correction_drafts + RLS) is applied — the UI says so.
  * Stage gates and publish overlap refusal run through DraftStore, the same
  * enforcement path the server publish endpoint must call.
@@ -87,6 +97,7 @@ type Mode = "numbers" | "tiers" | "gates" | "log" | "labels";
 interface WorkspaceData {
   tenant: string;
   project: string;
+  phase: string;
   lots: ReturnType<typeof adaptLots>;
   tiers: ReturnType<typeof adaptTiers>["tiers"];
   units: ReturnType<typeof adaptUnits>;
@@ -192,7 +203,7 @@ export function CorrectionWorkspacePage() {
       />
     );
   }
-  return <AuthedWorkspace />;
+  return <WorkspaceScopeBoundary><AuthedWorkspace /></WorkspaceScopeBoundary>;
 }
 
 function DemoWorkspace({
@@ -229,6 +240,7 @@ function DemoWorkspace({
         setData({
           tenant: reviewOnly ? (reviewFixture === "synthetic" ? "synthetic-map" : "hopkins-grove") : adapted.tenant,
           project: reviewOnly ? (reviewFixture === "synthetic" ? "portable-review-fixture" : "map-review") : adapted.project,
+          phase: phaseSlug,
           lots: adaptLots(lotsRaw),
           tiers: adapted.tiers,
           units: adaptUnits(unitsRaw),
@@ -275,54 +287,57 @@ function DemoWorkspace({
       </main>
     );
   }
-  return <WorkspaceShell data={data} />;
+  return <WorkspaceShell key={correctionWorkspaceScopeKey(data.tenant, data.project, data.phase)} data={data} />;
 }
 
 function AuthedWorkspace() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const { data: sessionProfile, isLoading, error } = useQuery({
     queryKey: ["session-profile"],
     queryFn: getSessionAndProfile,
     retry: false,
   });
-  const tenantId = (sessionProfile?.profile as { tenant_id?: string } | null)?.tenant_id ?? null;
+  const tenantId = workspace?.tenantId ?? null;
   const actor =
     (sessionProfile?.session as { user?: { email?: string; id?: string } } | null)?.user?.email ??
     (sessionProfile?.session as { user?: { id?: string } } | null)?.user?.id ??
     "operator";
 
   const board = useQuery({
-    queryKey: ["correction-board", tenantId],
+    queryKey: ["correction-board", scopeKey],
     queryFn: async () => {
-      const { data, error: qErr } = await supabase.from("parcel_board_view").select("*").order("lot_number");
+      const { data, error: qErr } = await supabase.from("parcel_board_view").select("*")
+        .eq("tenant_id", tenantId!).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId).order("lot_number");
       if (qErr) throw qErr;
       return (data ?? []) as Array<Record<string, unknown>>;
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
   const tiersQuery = useQuery({
-    queryKey: ["correction-tiers", tenantId],
+    queryKey: ["correction-tiers", scopeKey],
     queryFn: async () => {
       const { data, error: qErr } = await supabase.from("lot_tiers").select("*").eq("tenant_id", tenantId);
       if (qErr) throw qErr;
       return (data ?? []) as Array<Record<string, unknown>>;
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
-  const orgQuery = useQuery({
-    queryKey: ["correction-org", tenantId],
+  const masterplanQuery = useQuery({
+    queryKey: ["correction-masterplan", scopeKey],
     queryFn: async () => {
-      const { data, error: qErr } = await supabase
-        .from("organizations")
-        .select("masterplan_image_url")
-        .eq("id", tenantId)
-        .maybeSingle();
-      if (qErr) throw qErr;
-      return (data ?? {}) as { masterplan_image_url?: string | null };
+      return loadCorrectionWorkspaceMasterplan(supabase, {
+        tenantId: tenantId!,
+        projectId: workspace!.projectId,
+        phaseId: workspace!.phaseId,
+        isDefaultProject: workspace!.isDefaultProject,
+        isDefaultPhase: workspace!.isDefaultPhase,
+      });
     },
-    enabled: tenantId !== null,
+    enabled: Boolean(tenantId && workspace),
   });
 
-  if (isLoading) {
+  if (isLoading || workspaceLoading) {
     return (
       <main className="p-6">
         <LoadingState label="Checking session" />
@@ -344,6 +359,9 @@ function AuthedWorkspace() {
       </main>
     );
   }
+  if (!workspace) {
+    return <main className="mx-auto max-w-2xl p-6"><ErrorState message={workspaceError ?? "Choose an accessible workspace before opening the local correction draft."} /></main>;
+  }
   if (board.isLoading || tiersQuery.isLoading) {
     return (
       <main className="p-6">
@@ -361,7 +379,8 @@ function AuthedWorkspace() {
   const adapted = adaptTiers(tiersQuery.data ?? []);
   const data: WorkspaceData = {
     tenant: tenantId ?? "local",
-    project: "default",
+    project: workspace.isDefaultProject ? "default" : workspace.projectId,
+    phase: workspace.phaseId,
     lots: adaptLots(
       (board.data ?? []).map((row) => ({
         id: String(row.id),
@@ -372,17 +391,17 @@ function AuthedWorkspace() {
     ),
     tiers: adapted.tiers,
     units: {},
-    planUrl: orgQuery.data?.masterplan_image_url ?? null,
+    planUrl: masterplanQuery.data ?? null,
     actor,
     serverBacked: false, // slice-1.5 migration unapplied: local drafts + banner
   };
   // NOTE: rendered outside AdminLayout's Outlet tree (route-level demo
   // bypass requires it); auth is enforced above, and admin nav links here.
-  return <WorkspaceShell data={data} />;
+  return <WorkspaceShell key={correctionWorkspaceScopeKey(data.tenant, data.project, data.phase)} data={data} />;
 }
 
-function storeKey(tenant: string, project: string): string {
-  return `cw:${tenant}:${project}`;
+function storeKey(data: Pick<WorkspaceData, "tenant" | "project" | "phase">): string {
+  return correctionWorkspaceDraftStorageKey(data.tenant, data.project, data.phase);
 }
 
 function restoreLocalCorrectionState(data: WorkspaceData): CorrectionState {
@@ -395,7 +414,7 @@ function restoreLocalCorrectionState(data: WorkspaceData): CorrectionState {
     project: data.project,
   });
   try {
-    const raw = localStorage.getItem(storeKey(data.tenant, data.project));
+    const raw = localStorage.getItem(storeKey(data));
     if (!raw) return initial;
     const saved = JSON.parse(raw) as Partial<CorrectionState>;
     const savedLots = saved.lots;
@@ -446,7 +465,7 @@ function WorkspaceShell({ data }: { data: WorkspaceData }) {
     fn(next); // throws on refusal: nothing committed, stored, or logged
     try {
       localStorage.setItem(
-        storeKey(next.tenant, next.project),
+        storeKey(data),
         JSON.stringify({ lots: next.lots, tiers: next.tiers, log: next.log, pointer: next.pointer, waivers: next.waivers, stage: next.stage, publishedAt: next.publishedAt, geometry_revisions: next.geometry_revisions }),
       );
     } catch {
@@ -634,7 +653,10 @@ function LotNumberReviewTab({
           benchmark_manifest_sha256: sha,
           source_image_sha256: parsed.source_image.sha256,
         };
-        const draftKey = splitDraftStorageKey(draftContext.benchmark_id, sha, parsed.source_image.sha256);
+        const draftKey = correctionWorkspacePhaseStorageKey(
+          splitDraftStorageKey(draftContext.benchmark_id, sha, parsed.source_image.sha256),
+          data.phase,
+        );
         setSplitDraftKey(draftKey);
         try {
           const savedDrafts = parseSplitDraftStore(localStorage.getItem(draftKey), draftContext);
@@ -649,7 +671,7 @@ function LotNumberReviewTab({
         if (imageSha !== parsed.source_image.sha256 || !dimensionsMatch) {
           setPackError("Source image fingerprint or dimensions do not match the benchmark. Label decisions and exports are disabled.");
         }
-        const key = `wamule-lot-number-benchmark-v1:${sha}`;
+        const key = correctionWorkspaceBenchmarkReviewStorageKey(parsed.benchmark_id, sha, data.phase);
         const saved = JSON.parse(localStorage.getItem(key) || "null") as Partial<LocalBenchmarkReview> | null;
         if (saved?.benchmark_id === parsed.benchmark_id && saved?.manifest_sha256 === sha) {
           const caseIds = new Set(parsed.cases.map((item) => item.id));
@@ -677,16 +699,17 @@ function LotNumberReviewTab({
     }
     void loadPack();
     return () => { cancelled = true; };
-  }, [data.planUrl, data.actor, data.reviewBenchmarkBase, data.reviewBenchmarkId, data.reviewExpectedCaseCount, data.reviewFixture, slotForCase]);
+  }, [data.planUrl, data.actor, data.phase, data.reviewBenchmarkBase, data.reviewBenchmarkId, data.reviewExpectedCaseCount, data.reviewFixture, slotForCase]);
 
   useEffect(() => {
     if (!stateLoaded || !manifestSha) return;
     try {
-      localStorage.setItem(`wamule-lot-number-benchmark-v1:${manifestSha}`, JSON.stringify(review));
+    const key = correctionWorkspaceBenchmarkReviewStorageKey(manifest?.benchmark_id ?? "hopkins-grove-lot-number-benchmark-v1", manifestSha, data.phase);
+    localStorage.setItem(key, JSON.stringify(review));
     } catch {
       setFeedback("Browser storage is unavailable. Export your review JSON before leaving this page.");
     }
-  }, [review, manifestSha, stateLoaded]);
+  }, [review, manifest, manifestSha, data.phase, stateLoaded]);
 
   useEffect(() => {
     const decision = currentIndex == null || !manifest ? null : review.reviews[manifest.cases[currentIndex]?.id] ?? null;

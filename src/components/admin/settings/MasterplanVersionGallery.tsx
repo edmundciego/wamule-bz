@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { formatDate } from "../../../lib/utils";
 import { Badge } from "../../ui/Badge";
@@ -10,6 +10,10 @@ import type { MasterplanVersion } from "../../../types/database";
 
 interface MasterplanVersionGalleryProps {
   tenantId: string | null;
+  projectId: string | null;
+  phaseId: string | null;
+  projectName: string | null;
+  phaseName: string | null;
   canManage: boolean;
   refreshSignal?: number;
   onChanged?: (imageUrl: string | null) => void;
@@ -34,15 +38,25 @@ function VersionThumbnail({ url, label }: { url: string; label: string }) {
   );
 }
 
-export function MasterplanVersionGallery({ tenantId, canManage, refreshSignal = 0, onChanged }: MasterplanVersionGalleryProps) {
+export function MasterplanVersionGallery({ tenantId, projectId, phaseId, projectName, phaseName, canManage, refreshSignal = 0, onChanged }: MasterplanVersionGalleryProps) {
   const [versions, setVersions] = useState<MasterplanVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [previewVersion, setPreviewVersion] = useState<MasterplanVersion | null>(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    requestIdRef.current++;
+    setVersions([]);
+    setPreviewVersion(null);
+    setError(null);
+    setLoading(Boolean(tenantId && projectId && phaseId));
+  }, [tenantId, projectId, phaseId]);
 
   const loadVersions = useCallback(async () => {
-    if (!tenantId) {
+    const requestId = ++requestIdRef.current;
+    if (!tenantId || !projectId || !phaseId) {
       setVersions([]);
       setLoading(false);
       return;
@@ -53,31 +67,42 @@ export function MasterplanVersionGallery({ tenantId, canManage, refreshSignal = 
       .from("masterplan_versions")
       .select("*")
       .eq("tenant_id", tenantId)
+      .eq("project_id", projectId)
+      .eq("phase_id", phaseId)
       .order("version_number", { ascending: false });
+    if (requestId !== requestIdRef.current) return;
     setLoading(false);
     if (queryError) {
       setError(queryError.message);
       return;
     }
     setVersions((data ?? []) as MasterplanVersion[]);
-  }, [tenantId]);
+  }, [tenantId, projectId, phaseId]);
 
   useEffect(() => {
     void loadVersions();
   }, [loadVersions, refreshSignal]);
 
   async function handleActivate(version: MasterplanVersion) {
-    if (!tenantId) return;
+    if (!tenantId || !projectId || !phaseId) return;
     setError(null);
     setActivatingId(version.id);
-    const { error: updateError } = await supabase
+    const { data: activated, error: updateError } = await supabase
       .from("masterplan_versions")
       .update({ is_active: true })
       .eq("id", version.id)
-      .eq("tenant_id", tenantId);
+      .eq("tenant_id", tenantId)
+      .eq("project_id", projectId)
+      .eq("phase_id", phaseId)
+      .select("id")
+      .maybeSingle();
     setActivatingId(null);
     if (updateError) {
       setError(updateError.message);
+      return;
+    }
+    if (!activated) {
+      setError("This map version is no longer available in the selected phase.");
       return;
     }
     // Single-active trigger deactivates the rest and syncs the tenant record.
@@ -91,6 +116,7 @@ export function MasterplanVersionGallery({ tenantId, canManage, refreshSignal = 
     <Card className="v2-workflow-panel">
       <CardHeader><CardTitle>Version History</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
+        <p className="text-sm text-muted-foreground">{projectName ?? "Project"} / {phaseName ?? "Phase"}</p>
         {error ? <ErrorState message={error} /> : null}
         {loading ? <LoadingState label="Loading versions" /> : null}
         {!loading && versions.length === 0 ? (
@@ -130,8 +156,10 @@ export function MasterplanVersionGallery({ tenantId, canManage, refreshSignal = 
           ))}
         </div>
         <MasterplanPreviewModal
-          open={previewVersion !== null}
+          open={previewVersion !== null && previewVersion.project_id === projectId && previewVersion.phase_id === phaseId}
           tenantId={tenantId}
+          projectId={projectId}
+          phaseId={phaseId}
           draftImageUrl={previewVersion?.image_url ?? null}
           draftLabel={previewVersion ? `Version ${previewVersion.version_number} alignment check` : ""}
           draftVersionId={previewVersion?.id ?? null}

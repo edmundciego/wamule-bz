@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  Building2,
   BookOpenText,
   Bot,
   ClipboardList,
@@ -30,8 +31,10 @@ import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
 import { useCompanyProfile } from "../../lib/brand";
 import type { AppRole, DeveloperFeedbackPriority, DeveloperFeedbackType } from "../../types/database";
+import { WorkspaceScopeProvider, WorkspaceSelector } from "../auth/WorkspaceScope";
+import { useWorkspaceScope } from "../auth/workspaceScopeContext";
 
-const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }> = [
+const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean; superAdminOnly?: boolean }> = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/briefs", label: "Daily Brief", icon: Bot },
   { href: "/emails", label: "Email Center", icon: Mail, adminOnly: true },
@@ -40,6 +43,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
     ? [{ href: "/information-centre", label: "Information Centre", icon: BookOpenText }]
     : []),
   { href: "/lots", label: "Lots", icon: Map },
+  { href: "/maps", label: "Maps", icon: Map, adminOnly: true },
   { href: "/lots/correct", label: "Correct", icon: ListChecks },
   { href: "/applications", label: "Applications", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },
@@ -49,6 +53,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/audit-trail", label: "Audit Trail", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/super-admin", label: "Tenant Console", icon: Building2, superAdminOnly: true },
 ];
 
 const feedbackTypes: DeveloperFeedbackType[] = ["Bug", "Question", "Feature Request", "Data Issue", "Other"];
@@ -60,6 +65,15 @@ export function AdminLayout() {
     queryFn: getSessionAndProfile,
   });
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
+
+  return (
+    <WorkspaceScopeProvider profile={sessionProfile?.profile ?? null} profileLoading={!sessionProfile}>
+      <AdminLayoutContent currentRole={currentRole} />
+    </WorkspaceScopeProvider>
+  );
+}
+
+function AdminLayoutContent({ currentRole }: { currentRole: AppRole | undefined }) {
   const isAdmin = currentRole === "Super Admin" || currentRole === "Admin";
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackType, setFeedbackType] = useState<DeveloperFeedbackType>("Bug");
@@ -68,11 +82,9 @@ export function AdminLayout() {
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
-
-  if (companyLoading) {
-    return <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">Loading workspace…</div>;
-  }
+  const { workspace } = useWorkspaceScope();
+  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile(workspace?.tenantId ?? null, workspace?.tenantName ?? null);
+  const showCompanyUnavailable = companyUnavailable && !companyLoading;
 
   async function submitFeedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -105,17 +117,17 @@ export function AdminLayout() {
       <aside className="border-r border-primary/15 bg-primary text-primary-foreground">
         <div className="flex h-16 items-center gap-3 border-b border-white/15 px-5">
           <img
-            src={companyUnavailable ? "/favicon/android-chrome-192x192.png" : company.logo_url}
-            alt={companyUnavailable ? "Company logo" : companyName}
+            src={showCompanyUnavailable ? "/favicon/android-chrome-192x192.png" : company.logo_url}
+            alt={showCompanyUnavailable ? "Company logo" : companyName}
             className="h-11 w-11 rounded-md border border-secondary/40 bg-background object-cover shadow-sm"
           />
           <div>
-            <p className="font-display text-xl font-semibold leading-tight">{companyUnavailable ? "Staff workspace" : shortName}</p>
-            <p className="text-xs uppercase tracking-[0.22em] text-white/65">{companyUnavailable ? "Configuration unavailable" : "Development"}</p>
+            <p className="font-display text-xl font-semibold leading-tight">{showCompanyUnavailable ? (workspace?.tenantName ?? "Staff workspace") : shortName}</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-white/65">{showCompanyUnavailable ? "Workspace defaults" : "Development"}</p>
           </div>
         </div>
         <nav className="grid gap-1 p-3">
-          {navItems.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+          {navItems.filter((item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || currentRole === "Super Admin")).map((item) => (
             <NavLink
               key={item.href}
               to={item.href}
@@ -139,11 +151,11 @@ export function AdminLayout() {
         </div>
       </aside>
       <div className="min-w-0 overflow-x-hidden">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur lg:px-6">
-          <p className="text-sm font-medium text-slate">Housing project operations CRM</p>
-          <NavLink className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground" to="/logout">
+        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-card/95 px-4 py-2 backdrop-blur lg:px-6">
+          <WorkspaceSelector />
+          <NavLink className="flex min-h-10 items-center gap-2 whitespace-nowrap text-sm font-medium text-muted-foreground hover:text-foreground" to="/logout">
             <LogOut className="h-4 w-4" />
-            Logout
+            Sign out
           </NavLink>
         </header>
         <main className="mx-auto max-w-7xl min-w-0 p-4 lg:p-6">

@@ -1,15 +1,14 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { WorkspaceScopeBoundary } from "./components/auth/WorkspaceScopeBoundary";
 import { featureFlags } from "./lib/featureFlags";
+import { PublicHostRoute } from "./pages/public/PublicHostRoute";
 
 const AdminLayout = lazy(() =>
   import("./components/layout/AdminLayout").then((module) => ({ default: module.AdminLayout })),
 );
 const ProtectedRoute = lazy(() =>
   import("./components/layout/ProtectedRoute").then((module) => ({ default: module.ProtectedRoute })),
-);
-const ApplicationPage = lazy(() =>
-  import("./pages/ApplicationPage").then((module) => ({ default: module.ApplicationPage })),
 );
 const ApplicationsPage = lazy(() =>
   import("./pages/ApplicationsPage").then((module) => ({ default: module.ApplicationsPage })),
@@ -51,24 +50,26 @@ const InformationPackDocumentPage = lazy(() =>
   import("./pages/InformationPackDocumentPage").then((module) => ({ default: module.InformationPackDocumentPage })),
 );
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
-const EmbeddableMapPage = lazy(() =>
-  import("./pages/public/EmbeddableMapPage").then((module) => ({ default: module.EmbeddableMapPage })),
-);
 const LotsPage = lazy(() => import("./pages/LotsPage").then((module) => ({ default: module.LotsPage })));
+const MapsPage = lazy(() => import("./pages/MapsPage").then((module) => ({ default: module.MapsPage })));
 const LeadsPage = lazy(() => import("./pages/LeadsPage").then((module) => ({ default: module.LeadsPage })));
 const LogoutPage = lazy(() => import("./pages/LogoutPage").then((module) => ({ default: module.LogoutPage })));
 const PaymentsPage = lazy(() => import("./pages/PaymentsPage").then((module) => ({ default: module.PaymentsPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const SuperAdminConsolePage = lazy(() => import("./pages/SuperAdminConsolePage").then((module) => ({ default: module.SuperAdminConsolePage })));
 
 export default function App() {
   return (
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>
-        <Route path="/" element={<ApplicationPage />} />
-        <Route path="/apply" element={<ApplicationPage />} />
-        <Route path="/embed/:tenant_slug" element={<EmbeddableMapPage />} />
-        <Route path="/embed/:tenant_slug/:project_slug" element={<EmbeddableMapPage />} />
+        <Route path="/" element={<PublicHostRoute />} />
+        <Route path="/apply" element={<PublicHostRoute />} />
+        <Route path="/hopkins" element={<PublicHostRoute />} />
+        <Route path="/hopkins/apply" element={<PublicHostRoute />} />
+        <Route path="/hopkins/application" element={<PublicHostRoute />} />
+        <Route path="/embed/:tenant_slug" element={<PublicHostRoute mapRoute />} />
+        <Route path="/embed/:tenant_slug/:project_slug" element={<PublicHostRoute mapRoute />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/logout" element={<LogoutPage />} />
         {/* Slice 1.5 workspace: DEV ?demo=1 fixture mode is compiled out of
@@ -80,7 +81,7 @@ export default function App() {
           path="/documents/:kind/:id"
           element={
             <ProtectedRoute>
-              <DocumentPage />
+              <WorkspaceScopeBoundary><DocumentPage /></WorkspaceScopeBoundary>
             </ProtectedRoute>
           }
         />
@@ -89,7 +90,7 @@ export default function App() {
             path="/information-packs/:id/print"
             element={
               <ProtectedRoute>
-                <InformationPackDocumentPage />
+                <WorkspaceScopeBoundary><InformationPackDocumentPage /></WorkspaceScopeBoundary>
               </ProtectedRoute>
             }
           />
@@ -109,6 +110,7 @@ export default function App() {
             <Route path="/information-centre" element={<InformationCenterPage />} />
           ) : null}
           <Route path="/lots" element={<LotsPage />} />
+          <Route path="/maps" element={<MapsPage />} />
           <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/customers/:id" element={<CustomerDetailPage />} />
@@ -119,6 +121,7 @@ export default function App() {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/audit-trail" element={<AuditTrailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/super-admin" element={<SuperAdminConsolePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

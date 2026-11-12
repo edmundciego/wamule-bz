@@ -30,6 +30,7 @@ export const contractSchema = z
     parcel_id: z.coerce.number().min(1, "Parcel is required"),
     final_purchase_price: z.coerce.number().positive("Final price must be greater than 0"),
     initial_deposit: z.coerce.number().min(0, "Initial deposit cannot be negative"),
+    currency: z.string().regex(/^[A-Z]{3}$/, "Choose a configured three-letter currency"),
     term_months: z.coerce.number().int().min(1).max(60, "Contract term cannot exceed 60 months"),
     start_date: z.string().min(1, "Start date is required"),
     payment_due_day: z.coerce.number().int().min(1).max(31),
@@ -42,9 +43,12 @@ export const contractSchema = z
 export const paymentSchema = z
   .object({
     customer_id: z.coerce.number().min(1, "Customer is required"),
-    contract_id: z.coerce.number().optional().or(z.literal("")),
+    fee_charge_id: z.coerce.number().optional().or(z.literal("")),
     transaction_type: z.enum(["Down Payment", "Land Installment", "Garbage Fee", "Road Maintenance"]),
     amount: z.coerce.number().positive("Amount must be greater than 0"),
+    currency: z.string().regex(/^[A-Z]{3}$/, "Choose a configured three-letter currency"),
+    unallocated_amount: z.coerce.number().min(0, "Unallocated remainder cannot be negative"),
+    allocation_reason: z.string().optional(),
     collection_method: z.enum(["Cash", "Online Transfer"]),
     bank_reference: z.string().optional(),
     manual_receipt_number: z.string().optional(),
@@ -62,12 +66,36 @@ export const paymentSchema = z
         path: ["bank_reference"],
       });
     }
-    if (["Down Payment", "Land Installment"].includes(data.transaction_type) && !data.contract_id) {
+    if (data.unallocated_amount > 0 && !data.allocation_reason?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Land payments require a contract",
-        path: ["contract_id"],
+        message: "Explain why this amount remains unallocated",
+        path: ["allocation_reason"],
       });
+    }
+    if (data.unallocated_amount > data.amount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Unallocated remainder cannot exceed the receipt total",
+        path: ["unallocated_amount"],
+      });
+    }
+    if (["Garbage Fee", "Road Maintenance"].includes(data.transaction_type)) {
+      const hasFeeTarget = data.fee_charge_id !== undefined && data.fee_charge_id !== "";
+      if (hasFeeTarget && data.unallocated_amount >= data.amount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "An assessed fee allocation must be greater than zero",
+          path: ["unallocated_amount"],
+        });
+      }
+      if (!hasFeeTarget && data.unallocated_amount !== data.amount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Select an assessed fee charge or leave the full receipt unallocated",
+          path: ["fee_charge_id"],
+        });
+      }
     }
   });
 

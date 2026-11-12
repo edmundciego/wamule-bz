@@ -20,6 +20,8 @@ export const ALLOWED_INQUIRY_INTERESTS = [
   "Site visit",
   "Buying process",
   "A specific lot",
+  "Map outline question",
+  "General project interest",
 ] as const;
 
 export type InquiryInterest = (typeof ALLOWED_INQUIRY_INTERESTS)[number];
@@ -44,9 +46,12 @@ export interface InquiryPayload {
   specific_lot_ref?: unknown;
   /** @deprecated Raw database ids are rejected; retained only to return a clear migration error. */
   specific_lot_id?: unknown;
+  specific_map_feature_ref?: unknown;
   message?: unknown;
   page_url?: unknown;
   tenant?: unknown;
+  project?: unknown;
+  phase?: unknown;
   client_reference_id?: unknown;
 }
 
@@ -57,8 +62,11 @@ export interface ValidInquiry {
   message: string;
   pageUrl: string;
   tenantSlug: string | null;
+  projectSlug: string | null;
+  phaseSlug: string | null;
   interests: string[];
   specificLotRef: string | null;
+  specificMapFeatureRef: string | null;
   clientReferenceId: string | null;
 }
 
@@ -85,6 +93,9 @@ export function buildInquiryPayload(input: {
   message?: string;
   pageUrl?: string;
   tenant?: string | null;
+  project?: string | null;
+  phase?: string | null;
+  specificMapFeatureRef?: string | null;
   clientReferenceId?: string;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
@@ -99,6 +110,9 @@ export function buildInquiryPayload(input: {
   if (input.message) body.message = input.message;
   if (input.pageUrl) body.page_url = input.pageUrl;
   if (input.tenant) body.tenant = input.tenant;
+  if (input.project) body.project = input.project;
+  if (input.phase) body.phase = input.phase;
+  if (input.specificMapFeatureRef) body.specific_map_feature_ref = input.specificMapFeatureRef;
   if (input.clientReferenceId) body.client_reference_id = input.clientReferenceId;
   return body;
 }
@@ -111,6 +125,8 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   const message = cleanText(body.message, INQUIRY_LIMITS.message);
   const pageUrl = cleanText(body.page_url, INQUIRY_LIMITS.pageUrl);
   const tenantSlug = cleanText(body.tenant, INQUIRY_LIMITS.tenant).toLowerCase() || null;
+  const projectSlug = cleanText(body.project, INQUIRY_LIMITS.tenant).toLowerCase() || null;
+  const phaseSlug = cleanText(body.phase, INQUIRY_LIMITS.tenant).toLowerCase() || null;
   const interests = Array.isArray(body.interests)
     ? [...new Set(body.interests.map((item) => cleanText(item, INQUIRY_LIMITS.interest)).filter(Boolean))]
     : [];
@@ -121,6 +137,10 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   const invalidSpecificLotRef = rawSpecificLotRef !== null && rawSpecificLotRef !== undefined && rawSpecificLotRef !== "" &&
     (typeof rawSpecificLotRef !== "string" || !parsePublicLotReference(rawSpecificLotRef));
   const specificLotRef = invalidSpecificLotRef ? null : typeof rawSpecificLotRef === "string" && rawSpecificLotRef ? rawSpecificLotRef : null;
+  const rawMapFeatureRef = body.specific_map_feature_ref;
+  const specificMapFeatureRef = typeof rawMapFeatureRef === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawMapFeatureRef)
+    ? rawMapFeatureRef.toLowerCase()
+    : null;
   const clientReferenceId = cleanText(body.client_reference_id, INQUIRY_LIMITS.clientReferenceId) || null;
 
   if (!name) return { error: "Name is required." };
@@ -134,11 +154,20 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   if (invalidSpecificLotRef) {
     return { error: "Select a valid lot from the current public map." };
   }
+  if (rawMapFeatureRef !== undefined && rawMapFeatureRef !== null && rawMapFeatureRef !== "" && !specificMapFeatureRef) {
+    return { error: "Select a valid plot from the current public map." };
+  }
+  if (specificLotRef && specificMapFeatureRef) {
+    return { error: "An inquiry can reference one map item at a time." };
+  }
+  if ((projectSlug && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(projectSlug)) || (phaseSlug && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(phaseSlug))) {
+    return { error: "The development or phase reference is invalid. Reload the map and try again." };
+  }
   if (clientReferenceId !== null && !/^[A-Za-z0-9-]{8,64}$/.test(clientReferenceId)) {
     return { error: "Invalid request reference. Please reload and try again." };
   }
 
-  return { name, email, phone, message, interests, specificLotRef, pageUrl, tenantSlug, clientReferenceId };
+  return { name, email, phone, message, interests, specificLotRef, specificMapFeatureRef, pageUrl, tenantSlug, projectSlug, phaseSlug, clientReferenceId };
 }
 
 /**
@@ -192,6 +221,7 @@ export function decideLeadTenant(input: {
   email: string;
   phone: string;
   parcelId: number | null;
+  mapFeatureRef?: string | null;
   /** Null = unknown (e.g. activity metadata missing): never conflicts. */
   interests: string[] | null;
 }
@@ -206,6 +236,7 @@ export function sameInquiryAs(a: InquiryFingerprint, b: InquiryFingerprint): boo
     a.email.toLowerCase() === b.email.toLowerCase() &&
     a.phone === b.phone &&
     a.parcelId === b.parcelId &&
+    (a.mapFeatureRef ?? null) === (b.mapFeatureRef ?? null) &&
     (a.interests === null ||
       b.interests === null ||
       (a.interests.length === b.interests.length && a.interests.every((interest) => b.interests!.includes(interest))))

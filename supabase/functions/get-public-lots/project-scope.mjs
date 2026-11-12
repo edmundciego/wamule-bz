@@ -38,6 +38,13 @@ export function normalizeActiveMapLookup(data, error) {
   };
 }
 
+/** Normalize an active masterplan-version lookup for submission handlers. */
+export function normalizeActiveVersionLookup(data, error) {
+  if (error) return { ok: false, versionId: null };
+  if (!data || typeof data.id !== "string") return { ok: true, versionId: null };
+  return { ok: true, versionId: data.id };
+}
+
 /** Scope a masterplan-version query to one project (or legacy NULL scope). */
 export function applyActiveVersionProjectScope(query, tenantId, projectId) {
   let scoped = query.eq("tenant_id", tenantId).eq("is_active", true);

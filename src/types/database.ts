@@ -1,4 +1,5 @@
 export type AppRole = "Super Admin" | "Admin" | "Staff" | "Read Only";
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 export type ParcelStatus = "Available" | "Reserved" | "Sold";
 export type ParcelZoning = "Residential" | "Commercial" | "Green Space";
 export type ApplicationStatus = "Pending Review" | "Approved" | "Declined";
@@ -196,7 +197,6 @@ export type Organization = {
   name: string;
   slug: string;
   inbound_alias: string | null;
-  gemini_api_key: string | null;
   masterplan_image_url: string | null;
   is_active: boolean;
   created_at: string;
@@ -217,6 +217,17 @@ export type AdminProfile = {
   updated_at: string;
 };
 
+export type ProjectMembership = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string | null;
+  user_id: string;
+  member_role: "owner" | "admin" | "staff" | "read_only";
+  created_at: string;
+  created_by: string | null;
+};
+
 export type ParcelMapPoint = {
   x: number;
   y: number;
@@ -225,6 +236,8 @@ export type ParcelMapPoint = {
 export type Parcel = {
   id: number;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lot_number: string;
   dimensions: string;
   lot_size_id: number | null;
@@ -308,6 +321,16 @@ export type DevelopmentUpdate = {
 export type Application = {
   id: number;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
+  application_kind?: "land_purchase" | "project_application" | string;
+  preferred_map_feature_refs?: string[] | null;
+  submission_reference?: string | null;
+  submission_fingerprint?: string | null;
+  project_notice_version?: string | null;
+  project_public_notice_snapshot?: string | null;
+  project_acknowledgment_snapshot?: string | null;
+  project_notice_acknowledged_at?: string | null;
   first_name: string;
   last_name: string;
   applicant_full_name: string | null;
@@ -348,14 +371,31 @@ export type Customer = {
   updated_at: string;
 };
 
+export type CustomerApplication = {
+  id: number;
+  tenant_id: string;
+  customer_id: number;
+  application_id: number;
+  relationship_role: "originating" | "additional_sale" | "legacy_origin";
+  is_primary: boolean;
+  linked_at: string;
+  linked_by: string | null;
+  link_source: "application_approval" | "explicit_admin_link" | "legacy_backfill";
+};
+
 export type Contract = {
   id: number;
   tenant_id?: string | null;
+  project_id: string | null;
+  phase_id: string | null;
+  application_id: number | null;
+  reservation_id: string | null;
   customer_id: number;
   parcel_id: number;
   final_purchase_price: number;
   initial_deposit: number;
   term_months: number;
+  currency: string | null;
   monthly_payment: number;
   start_date: string;
   payment_due_day: number;
@@ -379,6 +419,8 @@ export type Transaction = {
   customer_id: number;
   contract_id: number | null;
   amount: number;
+  currency: string | null;
+  allocation_version: "legacy" | "allocations_v1";
   transaction_type: TransactionType;
   collection_method: CollectionMethod;
   bank_reference: string | null;
@@ -418,6 +460,11 @@ export type PaymentRequest = {
   tenant_id?: string | null;
   customer_id: number;
   contract_id: number | null;
+  project_id: string | null;
+  phase_id: string | null;
+  fee_charge_id: number | null;
+  scope_kind: "company" | "project" | "phase" | "unallocated" | null;
+  currency: string | null;
   amount_due: number;
   due_date: string;
   reason: string;
@@ -440,6 +487,8 @@ export type BusinessSetting = {
 export type Lead = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   full_name: string;
   email: string | null;
   phone: string | null;
@@ -482,6 +531,8 @@ export type LeadActivity = {
 export type FollowUpTask = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -501,6 +552,8 @@ export type FollowUpTask = {
 export type SiteVisit = {
   id: string;
   tenant_id?: string | null;
+  project_id?: string | null;
+  phase_id?: string | null;
   lead_id: string | null;
   application_id: number | null;
   customer_id: number | null;
@@ -520,6 +573,8 @@ export type SiteVisit = {
 export type LotReservation = {
   id: string;
   tenant_id?: string | null;
+  project_id: string | null;
+  phase_id: string | null;
   reservation_code: string | null;
   lead_id: string | null;
   application_id: number | null;
@@ -528,6 +583,7 @@ export type LotReservation = {
   status: ReservationStatus;
   deposit_status: DepositStatus;
   expected_deposit_amount: number | null;
+  currency: string | null;
   deposit_due_at: string | null;
   deposit_paid_at: string | null;
   payment_id: number | null;
@@ -680,6 +736,46 @@ export type FeeType = {
   updated_at: string;
 };
 
+export type FeeCharge = {
+  id: number;
+  tenant_id: string;
+  customer_id: number;
+  fee_type_id: number;
+  amount: number;
+  currency: string;
+  scope_kind: "company" | "project" | "phase";
+  project_id: string | null;
+  phase_id: string | null;
+  contract_id: number | null;
+  reservation_id: string | null;
+  due_date: string | null;
+  description: string;
+  status: "open" | "voided";
+  assessed_by: string;
+  assessed_at: string;
+  created_at: string;
+};
+
+export type TransactionAllocation = {
+  id: number;
+  tenant_id: string;
+  transaction_id: number;
+  customer_id: number;
+  allocation_kind: "applied" | "unallocated" | "reversal";
+  amount: number;
+  currency: string | null;
+  scope_kind: "phase" | "project" | "company" | "unallocated";
+  project_id: string | null;
+  phase_id: string | null;
+  contract_id: number | null;
+  reservation_id: string | null;
+  fee_charge_id: number | null;
+  allocation_reason: string | null;
+  reversal_of_allocation_id: number | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type AiSetting = {
   id: number;
   tenant_id?: string | null;
@@ -736,6 +832,7 @@ export type CustomerAiSummary = {
   id: number;
   tenant_id?: string | null;
   customer_id: number;
+  generation_id: string | null;
   summary: string;
   account_status: CustomerAiAccountStatus;
   balance_summary: string;
@@ -754,6 +851,7 @@ export type LeadAiSummary = {
   id: string;
   tenant_id?: string | null;
   lead_id: string;
+  generation_id?: string | null;
   summary: string;
   readiness_status: string | null;
   key_risks: unknown[];
@@ -774,6 +872,7 @@ export type PostSalesAiSummary = {
   id: string;
   tenant_id?: string | null;
   checklist_id: string;
+  generation_id?: string | null;
   customer_id: number | null;
   application_id: number | null;
   contract_id: number | null;
@@ -872,6 +971,10 @@ export type DeveloperFeedback = {
 export type AuditEvent = {
   id: string;
   tenant_id?: string | null;
+  target_tenant_id: string | null;
+  target_project_id: string | null;
+  target_phase_id: string | null;
+  actor_kind: "human" | "service" | "system" | "legacy";
   entity_type: AuditEntityType;
   entity_id: string | null;
   action: AuditAction;
@@ -953,6 +1056,7 @@ export type MasterplanVersion = {
   id: string;
   tenant_id?: string | null;
   project_id: string | null;
+  phase_id: string | null;
   version_number: number;
   image_url: string;
   preview_url: string | null;
@@ -960,6 +1064,39 @@ export type MasterplanVersion = {
   is_active: boolean;
   created_at: string;
   created_by: string | null;
+};
+
+export type MapFeatureSnapshot = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string;
+  snapshot_fingerprint: string;
+  source_image_sha256: string;
+  detection_source_sha256: string;
+  correction_manifest_sha256: string;
+  correction_manifest_revision: number;
+  snapshot_version: number;
+  outline_count: number;
+  is_active: boolean;
+  activated_as_demo_at: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+export type ProjectMapPackage = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string;
+  snapshot_id: string;
+  dataset_id: string;
+  package_digest: string;
+  package_data: Json;
+  background_path: string | null;
+  created_by: string | null;
+  created_at: string;
+  published_at: string | null;
 };
 
 export type InformationPack = {
@@ -983,11 +1120,15 @@ export type Database = {
         Insert: Omit<AdminProfile, "created_at" | "updated_at">;
         Update: Partial<Omit<AdminProfile, "created_at" | "updated_at">>;
       };
+      project_memberships: {
+        Row: ProjectMembership;
+        Insert: Omit<ProjectMembership, "id" | "created_at"> & Partial<Pick<ProjectMembership, "id" | "created_at">>;
+        Update: Partial<Omit<ProjectMembership, "id" | "created_at">>;
+      };
       audit_events: {
         Row: AuditEvent;
-        Insert: Pick<AuditEvent, "entity_type" | "action" | "title"> &
-          Partial<Omit<AuditEvent, "id" | "entity_type" | "action" | "title" | "created_at">>;
-        Update: Partial<Omit<AuditEvent, "id" | "created_at">>;
+        Insert: never;
+        Update: never;
       };
       parcels: {
         Row: Parcel;
@@ -1006,6 +1147,16 @@ export type Database = {
         Insert: Omit<ProjectSetting, "updated_at" | "updated_by" | "value"> & Partial<Pick<ProjectSetting, "updated_by" | "value">>;
         Update: Partial<Pick<ProjectSetting, "value" | "updated_by">>;
       };
+      map_feature_snapshots: {
+        Row: MapFeatureSnapshot;
+        Insert: Omit<MapFeatureSnapshot, "id" | "created_at"> & Partial<Pick<MapFeatureSnapshot, "id" | "created_at" | "is_active" | "created_by" | "activated_as_demo_at">>;
+        Update: Partial<Omit<MapFeatureSnapshot, "id" | "created_at" | "tenant_id" | "project_id" | "phase_id">>;
+      };
+      project_map_packages: {
+        Row: ProjectMapPackage;
+        Insert: Omit<ProjectMapPackage, "id" | "created_at"> & Partial<Pick<ProjectMapPackage, "id" | "created_at" | "created_by" | "published_at">>;
+        Update: Partial<Omit<ProjectMapPackage, "id" | "created_at" | "tenant_id" | "project_id" | "phase_id" | "snapshot_id">>;
+      };
       project_lot_tiers: {
         Row: ProjectLotTier;
         Insert: Omit<ProjectLotTier, "id" | "created_at" | "updated_at" | "is_active" | "sort_order" | "corner_premium_cents"> &
@@ -1022,6 +1173,16 @@ export type Database = {
             Pick<
               Application,
               | "email"
+              | "project_id"
+              | "phase_id"
+              | "application_kind"
+              | "preferred_map_feature_refs"
+              | "submission_reference"
+              | "submission_fingerprint"
+              | "project_notice_version"
+              | "project_public_notice_snapshot"
+              | "project_acknowledgment_snapshot"
+              | "project_notice_acknowledged_at"
               | "parcel_id"
               | "applicant_full_name"
               | "applicant_address"
@@ -1046,6 +1207,11 @@ export type Database = {
         Row: Customer;
         Insert: Omit<Customer, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<Customer, "id" | "created_at" | "updated_at">>;
+      };
+      customer_applications: {
+        Row: CustomerApplication;
+        Insert: never;
+        Update: never;
       };
       contracts: {
         Row: Contract;
@@ -1079,8 +1245,13 @@ export type Database = {
       };
       transactions: {
         Row: Transaction;
-        Insert: Omit<Transaction, "id" | "receipt_number" | "receipt_file_path" | "created_at">;
+        Insert: Omit<Transaction, "id" | "receipt_number" | "receipt_file_path" | "created_at" | "currency" | "allocation_version"> & Partial<Pick<Transaction, "currency" | "allocation_version">>;
         Update: Partial<Omit<Transaction, "id" | "receipt_number" | "created_at">>;
+      };
+      transaction_allocations: {
+        Row: TransactionAllocation;
+        Insert: never;
+        Update: never;
       };
       payment_documents: {
         Row: PaymentDocument;
@@ -1089,8 +1260,13 @@ export type Database = {
       };
       payment_requests: {
         Row: PaymentRequest;
-        Insert: Omit<PaymentRequest, "id" | "created_at" | "updated_at">;
+        Insert: Omit<PaymentRequest, "id" | "created_at" | "updated_at" | "project_id" | "phase_id" | "fee_charge_id" | "scope_kind" | "currency"> & Partial<Pick<PaymentRequest, "project_id" | "phase_id" | "fee_charge_id" | "scope_kind" | "currency">>;
         Update: Partial<Omit<PaymentRequest, "id" | "created_at" | "updated_at">>;
+      };
+      fee_charges: {
+        Row: FeeCharge;
+        Insert: never;
+        Update: never;
       };
       business_settings: {
         Row: BusinessSetting;
@@ -1256,12 +1432,28 @@ export type Database = {
       };
       masterplan_versions: {
         Row: MasterplanVersion;
-        Insert: Omit<MasterplanVersion, "id" | "created_at" | "version_number" | "project_id" | "preview_url"> &
-          Partial<Pick<MasterplanVersion, "version_number" | "project_id" | "preview_url">>;
+        Insert: Omit<MasterplanVersion, "id" | "created_at" | "version_number" | "project_id" | "phase_id" | "preview_url"> &
+          Partial<Pick<MasterplanVersion, "version_number" | "project_id" | "phase_id" | "preview_url">>;
         Update: Partial<Omit<MasterplanVersion, "id" | "created_at">>;
       };
     };
     Views: {
+      contract_scope_metadata: {
+        Row: {
+          id: number;
+          tenant_id: string;
+          project_id: string;
+          phase_id: string;
+          customer_id: number;
+          parcel_id: number;
+          status: string;
+          is_active: boolean;
+          created_at: string;
+          customer_first_name: string;
+          customer_last_name: string;
+          lot_number: string | null;
+        };
+      };
       parcel_board_view: { Row: Parcel & { customer_name: string | null; contract_id: number | null; customer_id: number | null } };
       public_parcel_options: {
         Row: Pick<Parcel, "id" | "tenant_id" | "lot_number" | "dimensions" | "zoning" | "status" | "base_price" | "lot_size_id"> & {
@@ -1279,9 +1471,97 @@ export type Database = {
       };
     };
     Functions: {
+      resolve_public_hostname: {
+        Args: { p_hostname: string };
+        Returns: {
+          resolution: string;
+          reason: string | null;
+          tenant_slug: string | null;
+          project_slug: string | null;
+          phase_slug: string | null;
+        }[];
+      };
+      record_payment_with_allocations_v1: {
+        Args: {
+          p_customer_id: number;
+          p_amount: number;
+          p_currency: string;
+          p_transaction_type: TransactionType;
+          p_collection_method: CollectionMethod;
+          p_bank_reference: string | null;
+          p_manual_receipt_number: string | null;
+          p_receipt_date: string | null;
+          p_receipt_issued_by: string | null;
+          p_receipt_notes: string | null;
+          p_notes: string | null;
+          p_reversal_of_transaction_id: number | null;
+          p_allocations: Json;
+        };
+        Returns: Transaction;
+      };
+      assess_fee_charge_v1: {
+        Args: {
+          p_tenant_id: string;
+          p_customer_id: number;
+          p_fee_type_id: number;
+          p_amount: number;
+          p_currency: string;
+          p_scope_kind: "company" | "project" | "phase";
+          p_project_id: string | null;
+          p_phase_id: string | null;
+          p_contract_id: number | null;
+          p_reservation_id: string | null;
+          p_due_date: string | null;
+          p_description: string;
+        };
+        Returns: FeeCharge;
+      };
+      read_phase_payment_allocations_v1: {
+        Args: { p_tenant_id: string; p_project_id: string; p_phase_id: string };
+        Returns: Array<{
+          allocation_id: number;
+          transaction_id: number;
+          customer_id: number;
+          project_id: string;
+          phase_id: string;
+          contract_id: number | null;
+          reservation_id: string | null;
+          fee_charge_id: number | null;
+          allocation_amount: number;
+          currency: string | null;
+          transaction_type: string;
+          receipt_date: string | null;
+          created_at: string;
+          allocation_kind: string;
+        }>;
+      };
+      manage_workspace_member: {
+        Args: {
+          p_target_user_id: string;
+          p_tenant_id: string;
+          p_profile_role: AppRole;
+          p_memberships: Json;
+          p_email?: string | null;
+          p_full_name?: string | null;
+          p_actor_id?: string | null;
+        };
+        Returns: Json;
+      };
+      save_reservation_workflow_settings: {
+        Args: { p_tenant_id: string; p_value: Json };
+        Returns: Json;
+      };
+      record_inbound_email_review_event: {
+        Args: { p_tenant_id: string; p_event_code: string };
+        Returns: undefined;
+      };
       approve_application: {
         Args: { p_application_id: number; p_parcel_id: number };
         Returns: void;
+      };
+      link_approved_application_customer_v1: {
+        Args: { p_tenant_id: string; p_application_id: number; p_customer_id: number };
+        Returns: Json;
       };
       void_contract: {
         Args: { p_contract_id: number; p_void_reason: string };
@@ -1290,6 +1570,19 @@ export type Database = {
       release_alternate_reservations: {
         Args: { p_primary_reservation_id: string; p_reservation_ids: string[]; p_release_reason: string };
         Returns: ReleaseAlternateReservationsResult[];
+      };
+      get_project_site_experience: {
+        Args: { p_tenant_id: string; p_project_id: string };
+        Returns: { templateId: string; enabledModules: Record<string, boolean> };
+      };
+      save_project_site_experience: {
+        Args: {
+          p_tenant_id: string;
+          p_project_id: string;
+          p_template_id: string;
+          p_enabled_modules: { map: boolean; inquiry: boolean; application: boolean; pricing: boolean };
+        };
+        Returns: { templateId: string; enabledModules: Record<string, boolean> };
       };
     };
   };

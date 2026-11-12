@@ -25,8 +25,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { SmartInsightList } from "../components/ui/SmartInsightsPanel";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { getSessionAndProfile } from "../lib/data";
 import { buildOperationalAttention } from "../lib/operationalAttention";
+import { completeSummaryGeneration, getOrCreateSummaryGenerationId } from "../lib/summaryGenerationId.mjs";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
 import { activeReservationStatuses, leadSmartInsights, reservationReadinessInsights } from "../lib/smartInsights";
 import { supabase } from "../lib/supabase";
@@ -108,6 +110,7 @@ type LeadFormValues = {
 type ReservationFormValues = {
   reservation_code: string;
   parcel_id: string;
+  currency: string;
   status: ReservationStatus;
   deposit_status: DepositStatus;
   expected_deposit_amount: string;
@@ -137,6 +140,8 @@ export function LeadsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspace ? `${workspace.tenantId}:${workspace.projectId}:${workspace.phaseId}` : "unselected";
 
   const requestedLeadId = searchParams.get("lead");
   const requestedFocus = searchParams.get("focus");
@@ -145,122 +150,183 @@ export function LeadsPage() {
 
   const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
   const { data: adminProfiles } = useQuery({
-    queryKey: ["sales-admin-profiles"],
+    queryKey: ["sales-admin-profiles", scopeKey],
     queryFn: async () => {
-      const { data, error } = await supabase.from("admin_profiles").select("*").order("full_name");
+      const { data, error } = await supabase.from("admin_profiles").select("*").eq("tenant_id", workspace!.tenantId).order("full_name");
       if (error) throw error;
       return data as AdminProfile[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: aiSettings } = useQuery({
-    queryKey: ["lead-ai-settings"],
+    queryKey: ["lead-ai-settings", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("ai_settings")
         .select("is_enabled")
+        .eq("tenant_id", workspace!.tenantId)
         .order("id", { ascending: true })
         .limit(1)
         .maybeSingle();
       if (error) throw error;
       return data as { is_enabled: boolean } | null;
     },
+    enabled: Boolean(workspace),
   });
   const { data: leads, isLoading, error } = useQuery({
-    queryKey: ["sales-leads"],
+    queryKey: ["sales-leads", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("leads")
-        .select("*, parcels(id, lot_number, status), applications(id, applicant_full_name, first_name, last_name, status), customers(id, first_name, last_name)")
+        .select("*, parcels!leads_parcel_scope_fkey(id, lot_number, status), applications(id, applicant_full_name, first_name, last_name, status), customers(id, first_name, last_name)")
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
       return data as LeadWithRelations[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: activities } = useQuery({
-    queryKey: ["sales-lead-activities"],
+    queryKey: ["sales-lead-activities", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("lead_activities").select("*").order("created_at", { ascending: false });
+      const { data, error: queryError } = await supabase.from("lead_activities").select("*")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data as LeadActivity[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: tasks } = useQuery({
-    queryKey: ["sales-follow-up-tasks"],
+    queryKey: ["sales-follow-up-tasks", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("follow_up_tasks").select("*").order("due_at", { ascending: true, nullsFirst: false });
+      const { data, error: queryError } = await supabase.from("follow_up_tasks").select("*")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .order("due_at", { ascending: true, nullsFirst: false });
       if (queryError) throw queryError;
       return data as FollowUpTask[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: visits } = useQuery({
-    queryKey: ["sales-site-visits"],
+    queryKey: ["sales-site-visits", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("site_visits").select("*").order("scheduled_at", { ascending: true });
+      const { data, error: queryError } = await supabase.from("site_visits").select("*")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .order("scheduled_at", { ascending: true });
       if (queryError) throw queryError;
       return data as SiteVisit[];
     },
+    enabled: Boolean(workspace),
   });
   const { data: reservations } = useQuery({
-    queryKey: ["sales-lot-reservations"],
+    queryKey: ["sales-lot-reservations", scopeKey, (leads ?? []).map((lead) => lead.id).join(",")],
     queryFn: async () => {
+      const leadIds = (leads ?? []).map((lead) => lead.id);
+      if (!leadIds.length) return [] as ReservationWithRelations[];
       const { data, error: queryError } = await supabase
         .from("lot_reservations")
         .select("*, parcels(id, lot_number, status)")
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
+        .in("lead_id", leadIds)
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
       return data as ReservationWithRelations[];
     },
+    enabled: Boolean(workspace && leads),
   });
   const { data: reservationActivities } = useQuery({
-    queryKey: ["sales-reservation-activities"],
+    queryKey: ["sales-reservation-activities", scopeKey, (reservations ?? []).map((reservation) => reservation.id).join(",")],
     queryFn: async () => {
+      const reservationIds = (reservations ?? []).map((reservation) => reservation.id);
+      if (!reservationIds.length) return [] as ReservationActivity[];
       const { data, error: queryError } = await supabase
         .from("reservation_activities")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
+        .in("reservation_id", reservationIds)
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data as ReservationActivity[];
     },
+    enabled: Boolean(workspace && reservations),
   });
   const { data: leadAiSummaries } = useQuery({
-    queryKey: ["lead-ai-summaries"],
+    queryKey: ["lead-ai-summaries", scopeKey, (leads ?? []).map((lead) => lead.id).join(",")],
     queryFn: async () => {
+      const leadIds = (leads ?? []).map((lead) => lead.id);
+      if (!leadIds.length) return [] as LeadAiSummary[];
       const { data, error: queryError } = await supabase
         .from("lead_ai_summaries")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
+        .in("lead_id", leadIds)
         .order("generated_at", { ascending: false });
       if (queryError) throw queryError;
       return data as LeadAiSummary[];
     },
+    enabled: Boolean(workspace && leads),
   });
   const { data: applications } = useQuery({
-    queryKey: ["sales-application-options"],
+    queryKey: ["sales-application-options", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("applications").select("id, applicant_full_name, first_name, last_name, phone, email, status").order("created_at", { ascending: false });
+      let query = supabase.from("applications").select("id, applicant_full_name, first_name, last_name, phone, email, status")
+        .eq("tenant_id", workspace!.tenantId).eq("application_kind", "land_purchase");
+      if (workspace!.tenantSlug === "wamule" && workspace!.isDefaultProject && workspace!.isDefaultPhase) {
+        query = query.or(`and(project_id.eq.${workspace!.projectId},phase_id.eq.${workspace!.phaseId}),and(project_id.is.null,phase_id.is.null)`);
+      } else {
+        query = query.eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+      }
+      const { data, error: queryError } = await query.order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(workspace),
   });
   const { data: customers } = useQuery({
-    queryKey: ["sales-customer-options"],
+    queryKey: ["sales-customer-options", scopeKey, (leads ?? []).map((lead) => lead.customer_id ?? "").join(",")],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name, phone, email").order("last_name");
+      const customerIds = [...new Set((leads ?? []).map((lead) => lead.customer_id).filter((id): id is number => id !== null))];
+      if (!customerIds.length) return [];
+      const { data, error: queryError } = await supabase.from("customers").select("id, first_name, last_name, phone, email")
+        .eq("tenant_id", workspace!.tenantId).in("id", customerIds).order("last_name");
       if (queryError) throw queryError;
       return data;
     },
+    enabled: Boolean(workspace && leads),
   });
   const { data: parcels } = useQuery({
-    queryKey: ["sales-parcel-options"],
+    queryKey: ["sales-parcel-options", scopeKey],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase.from("parcels").select("id, lot_number, status").order("lot_number");
+      const { data, error: queryError } = await supabase.from("parcels").select("id, lot_number, status")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .order("lot_number");
       if (queryError) throw queryError;
       return data as Array<Pick<Parcel, "id" | "lot_number" | "status">>;
     },
+    enabled: Boolean(workspace),
   });
   const { data: reservationSettings = reservationWorkflowDefaults } = useQuery({
-    queryKey: ["reservation-workflow-settings"],
-    queryFn: fetchReservationWorkflowSettings,
+    queryKey: ["reservation-workflow-settings", workspace?.tenantId ?? "unselected"],
+    queryFn: () => fetchReservationWorkflowSettings(workspace!.tenantId),
+    enabled: Boolean(workspace),
   });
+  const { data: reservationCurrencyRows } = useQuery({
+    queryKey: ["reservation-currency-options", scopeKey],
+    queryFn: async () => {
+      const { data, error: queryError } = await supabase.from("payment_methods").select("currency")
+        .eq("tenant_id", workspace!.tenantId).eq("is_active", true).order("sort_order");
+      if (queryError) throw queryError;
+      return data as Array<{ currency: string }>;
+    },
+    enabled: Boolean(workspace),
+  });
+  const reservationCurrencies = Array.from(new Set((reservationCurrencyRows ?? [])
+    .map((row) => row.currency.toUpperCase()).filter((currency) => /^[A-Z]{3}$/.test(currency))));
 
   const currentRole = sessionProfile?.profile?.role;
   const canWrite = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
@@ -344,10 +410,13 @@ export function LeadsPage() {
   }
 
   async function generateLeadSummary(leadId: string) {
+    if (!workspace) return setActionError("Choose a workspace before generating a lead summary.");
     clearNotices();
     setGeneratingSummaryId(leadId);
+    const generationScope = `lead:${workspace.tenantId}:${leadId}`;
+    const generationId = getOrCreateSummaryGenerationId(generationScope);
     const { data: result, error: functionError } = await supabase.functions.invoke("generate-lead-summary", {
-      body: { lead_id: leadId },
+      body: { lead_id: leadId, tenant_id: workspace!.tenantId, generationId },
     });
     setGeneratingSummaryId(null);
     if (functionError) {
@@ -358,6 +427,7 @@ export function LeadsPage() {
       setActionError(String(result.error));
       return;
     }
+    completeSummaryGeneration(generationScope);
     setMessage(String(result?.message ?? "Lead Smart Summary generated."));
     await queryClient.invalidateQueries({ queryKey: ["lead-ai-summaries"] });
   }
@@ -372,14 +442,20 @@ export function LeadsPage() {
       }
       if (lead) {
         const previousStage = lead.pipeline_stage;
-        const { error: updateError } = await supabase.from("leads").update(patch).eq("id", lead.id);
+        const { error: updateError } = await supabase.from("leads").update(patch)
+          .eq("id", lead.id).eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
         if (updateError) throw updateError;
         if (previousStage !== patch.pipeline_stage) {
           await addActivity(lead.id, "status_change", "Pipeline stage updated", `${stageLabel(previousStage)} to ${stageLabel(patch.pipeline_stage)}`);
         }
         setMessage("Lead updated.");
       } else {
-        const { data, error: insertError } = await supabase.from("leads").insert(patch).select("id").single();
+        const { data, error: insertError } = await supabase.from("leads").insert({
+          ...patch,
+          tenant_id: workspace!.tenantId,
+          project_id: workspace!.projectId,
+          phase_id: workspace!.phaseId,
+        }).select("id").single();
         if (insertError) throw insertError;
         await addActivity(data.id, "note", "Lead created", "Sales lead added to the pipeline.");
         setSelectedLeadId(data.id);
@@ -395,6 +471,9 @@ export function LeadsPage() {
 
   async function addActivity(leadId: string, activityType: LeadActivityType, title: string, description?: string) {
     const { error } = await supabase.from("lead_activities").insert({
+      tenant_id: workspace!.tenantId,
+      project_id: workspace!.projectId,
+      phase_id: workspace!.phaseId,
       lead_id: leadId,
       activity_type: activityType,
       title,
@@ -411,6 +490,9 @@ export function LeadsPage() {
       const title = values.title.trim();
       if (!title) throw new Error("Follow-up title is required.");
       const { error } = await supabase.from("follow_up_tasks").insert({
+        tenant_id: workspace!.tenantId,
+        project_id: workspace!.projectId,
+        phase_id: workspace!.phaseId,
         lead_id: selectedLead.id,
         application_id: selectedLead.application_id,
         customer_id: selectedLead.customer_id,
@@ -442,7 +524,10 @@ export function LeadsPage() {
           completed_at: completed ? new Date().toISOString() : null,
           completed_by: completed ? sessionData.session?.user.id ?? null : null,
         })
-        .eq("id", task.id);
+        .eq("id", task.id)
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId);
       if (error) throw error;
       if (task.lead_id) await addActivity(task.lead_id, "follow_up", `Follow-up marked ${taskStatusLabel(status)}`, task.title);
       setMessage("Follow-up task updated.");
@@ -459,6 +544,9 @@ export function LeadsPage() {
       const scheduledAt = new Date(values.scheduled_at);
       if (Number.isNaN(scheduledAt.getTime())) throw new Error("Choose a valid date and time for the site visit.");
       const { error } = await supabase.from("site_visits").insert({
+        tenant_id: workspace!.tenantId,
+        project_id: workspace!.projectId,
+        phase_id: workspace!.phaseId,
         lead_id: selectedLead.id,
         application_id: selectedLead.application_id,
         customer_id: selectedLead.customer_id,
@@ -485,7 +573,7 @@ export function LeadsPage() {
       const { error } = await supabase.from("site_visits").update({
         status,
         completed_at: status === "completed" ? new Date().toISOString() : null,
-      }).eq("id", visit.id);
+      }).eq("id", visit.id).eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
       if (error) throw error;
       if (visit.lead_id) await addActivity(visit.lead_id, "site_visit", `Site visit marked ${visitStatusLabel(status)}`, visit.notes ?? undefined);
       setMessage("Site visit updated.");
@@ -509,10 +597,16 @@ export function LeadsPage() {
       if (reservationSettings.require_expected_deposit_amount && patch.expected_deposit_amount === null) {
         throw new Error("Expected deposit amount is required by reservation settings.");
       }
+      if (!reservationCurrencies.includes(patch.currency)) {
+        throw new Error("Choose a currency supported by an active company payment method before creating a reservation.");
+      }
       const { data, error } = await supabase
         .from("lot_reservations")
         .insert({
           ...patch,
+          tenant_id: workspace!.tenantId,
+          project_id: workspace!.projectId,
+          phase_id: workspace!.phaseId,
           lead_id: selectedLead.id,
           application_id: selectedLead.application_id,
           customer_id: selectedLead.customer_id,
@@ -533,10 +627,15 @@ export function LeadsPage() {
     clearNotices();
     try {
       const patch = normalizeReservationValues(values);
+      if (!reservationCurrencies.includes(patch.currency)) {
+        throw new Error("Choose a supported currency. Legacy reservations with unknown currency require an explicit reviewed choice before update.");
+      }
       if (patch.expected_deposit_amount !== null && patch.expected_deposit_amount < 0) {
         throw new Error("Expected deposit amount cannot be negative.");
       }
-      const { error } = await supabase.from("lot_reservations").update(patch).eq("id", reservation.id);
+      const { error } = await supabase.from("lot_reservations").update(patch)
+        .eq("id", reservation.id).eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
       if (error) throw error;
       if (reservation.status !== patch.status) {
         await addReservationActivity(reservation.id, "status_change", "Reservation status updated", `${reservationStatusLabel(reservation.status)} to ${reservationStatusLabel(patch.status)}`);
@@ -564,7 +663,9 @@ export function LeadsPage() {
         released_at: status === "released" || status === "cancelled" ? nowIso : reservation.released_at,
         deposit_paid_at: (depositStatus ?? reservation.deposit_status) === "confirmed" ? nowIso : reservation.deposit_paid_at,
       };
-      const { error } = await supabase.from("lot_reservations").update(patch).eq("id", reservation.id);
+      const { error } = await supabase.from("lot_reservations").update(patch)
+        .eq("id", reservation.id).eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
       if (error) throw error;
       await addReservationActivity(
         reservation.id,
@@ -610,6 +711,7 @@ export function LeadsPage() {
 
   async function addReservationActivity(reservationId: string, activityType: ReservationActivityType, title: string, description?: string) {
     const { error } = await supabase.from("reservation_activities").insert({
+      tenant_id: workspace!.tenantId,
       reservation_id: reservationId,
       activity_type: activityType,
       title,
@@ -631,6 +733,16 @@ export function LeadsPage() {
     } catch (activityError) {
       setActionError((activityError as Error).message);
     }
+  }
+
+  if (!workspace) {
+    return (
+      <div className="v2-workflow-panel grid min-h-48 place-items-center p-6">
+        {workspaceLoading ? <LoadingState label="Loading selected workspace" /> : (
+          <ErrorState message={workspaceError ?? "No accessible tenant, project, and phase are selected. Choose a permitted workspace above to view its leads."} />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -738,6 +850,7 @@ export function LeadsPage() {
                     parcels={parcels ?? []}
                     lead={selectedLead}
                     reservationSettings={reservationSettings}
+                    reservationCurrencies={reservationCurrencies}
                   />
                 </div>
                 <div className="grid min-w-0 content-start gap-4">
@@ -1379,6 +1492,7 @@ function ReservationsCard({
   parcels,
   lead,
   reservationSettings,
+  reservationCurrencies,
 }: {
   reservations: ReservationWithRelations[];
   tasks: FollowUpTask[];
@@ -1391,6 +1505,7 @@ function ReservationsCard({
   parcels: Array<Pick<Parcel, "id" | "lot_number" | "status">>;
   lead: LeadWithRelations;
   reservationSettings: ReservationWorkflowSettings;
+  reservationCurrencies: string[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creatingReservation, setCreatingReservation] = useState(false);
@@ -1468,6 +1583,7 @@ function ReservationsCard({
             adminProfiles={adminProfiles}
             parcels={parcels}
             reservationSettings={reservationSettings}
+            reservationCurrencies={reservationCurrencies}
             onSubmit={(values) => onSave(null, values)}
           />
           </div>
@@ -1481,7 +1597,7 @@ function ReservationsCard({
                   {reservation.reservation_code || "Reservation"} {reservation.parcels?.lot_number ? `- Lot ${reservation.parcels.lot_number}` : ""}
                 </p>
                 <p className="text-muted-foreground">
-                  Deposit {reservation.expected_deposit_amount ? money(reservation.expected_deposit_amount) : "not set"} | Due {reservation.deposit_due_at ? formatDate(reservation.deposit_due_at) : "not set"}
+                  Deposit {reservation.expected_deposit_amount ? `${money(reservation.expected_deposit_amount)} ${reservation.currency ?? "currency unverified"}` : "not set"} | Due {reservation.deposit_due_at ? formatDate(reservation.deposit_due_at) : "not set"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1532,6 +1648,7 @@ function ReservationsCard({
                 adminProfiles={adminProfiles}
                 parcels={parcels}
                 reservationSettings={reservationSettings}
+                reservationCurrencies={reservationCurrencies}
                 onSubmit={(values) => {
                   onSave(reservation, values);
                   setEditingId(null);
@@ -1630,6 +1747,7 @@ function ReservationForm({
   adminProfiles,
   parcels,
   reservationSettings,
+  reservationCurrencies,
   onSubmit,
 }: {
   lead: LeadWithRelations;
@@ -1637,9 +1755,10 @@ function ReservationForm({
   adminProfiles: AdminProfile[];
   parcels: Array<Pick<Parcel, "id" | "lot_number" | "status">>;
   reservationSettings: ReservationWorkflowSettings;
+  reservationCurrencies: string[];
   onSubmit: (values: ReservationFormValues) => void;
 }) {
-  const [values, setValues] = useState<ReservationFormValues>(() => reservationToFormValues(reservation, lead, reservationSettings));
+  const [values, setValues] = useState<ReservationFormValues>(() => reservationToFormValues(reservation, lead, reservationSettings, reservationCurrencies));
 
   function setField<K extends keyof ReservationFormValues>(key: K, value: ReservationFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -1660,6 +1779,13 @@ function ReservationForm({
         </div>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Reservation currency">
+          <Select value={values.currency} onChange={(event) => setField("currency", event.target.value)} disabled={!reservationCurrencies.length}>
+            <option value="">Select a configured currency</option>
+            {reservationCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+          </Select>
+          {!reservationCurrencies.length ? <p className="mt-1 text-xs text-muted-foreground">Add an active payment method with a currency before creating reservations.</p> : null}
+        </Field>
         <Field label="Reservation code">
           <Input value={values.reservation_code} onChange={(event) => setField("reservation_code", event.target.value)} placeholder="Optional" />
         </Field>
@@ -2099,6 +2225,7 @@ function normalizeReservationValues(values: ReservationFormValues) {
   return {
     reservation_code: values.reservation_code.trim() || null,
     parcel_id: values.parcel_id ? Number(values.parcel_id) : null,
+    currency: values.currency,
     status: values.status,
     deposit_status: values.deposit_status,
     expected_deposit_amount: values.expected_deposit_amount ? Number(values.expected_deposit_amount) : null,
@@ -2111,13 +2238,14 @@ function normalizeReservationValues(values: ReservationFormValues) {
   };
 }
 
-function reservationToFormValues(reservation: LotReservation | null, lead: Lead, settings: ReservationWorkflowSettings = reservationWorkflowDefaults): ReservationFormValues {
+function reservationToFormValues(reservation: LotReservation | null, lead: Lead, settings: ReservationWorkflowSettings = reservationWorkflowDefaults, currencies: string[] = []): ReservationFormValues {
   const defaultExpectedDeposit =
     settings.default_expected_deposit_amount !== null ? String(settings.default_expected_deposit_amount) : "";
 
   return {
     reservation_code: reservation?.reservation_code ?? "",
     parcel_id: reservation?.parcel_id ? String(reservation.parcel_id) : lead.parcel_id ? String(lead.parcel_id) : "",
+    currency: reservation?.currency ?? (reservation ? "" : currencies[0] ?? ""),
     status: reservation?.status ?? settings.default_reservation_status,
     deposit_status: reservation?.deposit_status ?? settings.default_deposit_status,
     expected_deposit_amount: reservation?.expected_deposit_amount ? String(reservation.expected_deposit_amount) : defaultExpectedDeposit,

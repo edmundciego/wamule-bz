@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ArrowUpRight } from "lucide-react";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { statusBadgeTone } from "../lib/statusBadgeTone";
 import { Button } from "../components/ui/Button";
@@ -9,10 +10,15 @@ import { SmartInsightsPanel } from "../components/ui/SmartInsightsPanel";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { getSessionAndProfile, updateApplicationStatus } from "../lib/data";
 import { fetchReservationWorkflowSettings, futureIsoFromDays, reservationWorkflowDefaults } from "../lib/reservationSettings";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { applicationSmartInsights, activeReservationStatuses } from "../lib/smartInsights";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/utils";
+import { isAvailableForSalesSelection, isInventoryRecordReadyForReservation } from "../../supabase/functions/_shared/parcel-provenance.mjs";
 import type { Application, ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation, PostSalesChecklist } from "../types/database";
+import hopkinsTierSource from "../../map-input/hopkins.tiers.json";
+import { resolveHopkinsReferencePrice, verifiedHopkinsPrintedNumber } from "../lib/hopkinsReferencePricing.mjs";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
 type ReviewFilter = ApplicationStatus | "All";
@@ -20,9 +26,25 @@ type ApplicationRow = Application & {
   parcels?: { id: number; lot_number: string | null; status: string | null } | null;
   application_ai_reviews?: ApplicationAiReview[] | ApplicationAiReview | null;
 };
-type LotOption = { id: number; lot_number: string | null; dimensions: string | null; status: string | null };
+type ApplicationMapFeature = {
+  identity_id: string;
+  demo_label: string;
+  tierKey: string | null;
+  sourceTierStatus: string | null;
+  verifiedPrintedNumber: string | null;
+};
+type LotOption = {
+  id: number;
+  lot_number: string | null;
+  dimensions: string | null;
+  status: string | null;
+  geometry_source: string | null;
+  needs_review: boolean | null;
+};
 
 export function ApplicationsPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [selectedLots, setSelectedLots] = useState<Record<number, string>>({});
@@ -37,22 +59,86 @@ export function ApplicationsPage() {
     queryFn: getSessionAndProfile,
   });
   const { data, isLoading, error } = useQuery({
-    queryKey: ["applications-kanban"],
+    queryKey: ["applications-kanban", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
-      const { data: applications, error: queryError } = await supabase
+      let applicationQuery = supabase
         .from("applications")
         .select("*, parcels(id, lot_number, status), application_ai_reviews(*)")
-        .order("created_at", { ascending: false });
+        .eq("tenant_id", workspace!.tenantId);
+      if (workspace!.tenantSlug === "wamule" && workspace!.isDefaultProject && workspace!.isDefaultPhase) {
+        applicationQuery = applicationQuery.or(`and(project_id.eq.${workspace!.projectId},phase_id.eq.${workspace!.phaseId}),and(project_id.is.null,phase_id.is.null)`);
+      } else {
+        applicationQuery = applicationQuery.eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId);
+      }
+      const { data: applications, error: queryError } = await applicationQuery.order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return applications as ApplicationRow[];
     },
   });
+  const projectApplications = useMemo(
+    () => (data ?? []).filter((application) => application.application_kind === "project_application"),
+    [data],
+  );
+  const selectedMapFeatureRefs = useMemo(
+    () => [...new Set(projectApplications.flatMap((application) => application.preferred_map_feature_refs ?? []))],
+    [projectApplications],
+  );
+  const { data: mapFeatureLabels = [] } = useQuery({
+    queryKey: ["application-map-feature-labels", scopeKey, selectedMapFeatureRefs.slice().sort().join(",")],
+    enabled: Boolean(workspace && selectedMapFeatureRefs.length),
+    queryFn: async () => {
+      const { data: snapshot, error: snapshotError } = await supabase.from("map_feature_snapshots").select("id")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .eq("is_active", true).maybeSingle();
+      if (snapshotError) throw snapshotError;
+      const findFeatures = () => supabase.from("map_features").select("identity_id,demo_label,provenance")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+        .in("identity_id", selectedMapFeatureRefs).eq("public_visible", true);
+      let activeFeatures: Array<Record<string, unknown>> = [];
+      if (snapshot) {
+        const { data: current, error: currentError } = await findFeatures().eq("snapshot_id", snapshot.id);
+        if (currentError) throw currentError;
+        activeFeatures = current ?? [];
+      }
+      const foundRefs = new Set(activeFeatures.map((feature) => String(feature.identity_id)));
+      const missingRefs = selectedMapFeatureRefs.filter((ref) => !foundRefs.has(ref));
+      let retainedFeatures: Array<Record<string, unknown>> = [];
+      if (missingRefs.length) {
+        const { data: retained, error: retainedError } = await supabase.from("map_features")
+          .select("identity_id,demo_label,provenance")
+          .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
+          .in("identity_id", missingRefs).eq("public_visible", true);
+        if (retainedError) throw retainedError;
+        retainedFeatures = retained ?? [];
+      }
+      const uniqueFeatures = new Map<string, Record<string, unknown>>();
+      for (const feature of [...activeFeatures, ...retainedFeatures]) {
+        const identity = String(feature.identity_id ?? "");
+        if (identity && !uniqueFeatures.has(identity)) uniqueFeatures.set(identity, feature);
+      }
+      return [...uniqueFeatures.values()].map((feature): ApplicationMapFeature => {
+        const provenance = feature.provenance && typeof feature.provenance === "object" && !Array.isArray(feature.provenance)
+          ? feature.provenance as Record<string, unknown>
+          : {};
+        return {
+          identity_id: String(feature.identity_id),
+          demo_label: typeof feature.demo_label === "string" ? feature.demo_label : `Map outline ${String(feature.identity_id).slice(0, 8)}`,
+          tierKey: typeof provenance.source_tier_key === "string" ? provenance.source_tier_key : null,
+          sourceTierStatus: typeof provenance.source_tier_status === "string" ? provenance.source_tier_status : null,
+          verifiedPrintedNumber: verifiedHopkinsPrintedNumber(provenance),
+        };
+      });
+    },
+  });
   const { data: aiSettings } = useQuery({
-    queryKey: ["application-ai-settings"],
+    queryKey: ["application-ai-settings", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
       const { data: settings, error: queryError } = await supabase
         .from("ai_settings")
         .select("is_enabled, application_summary_enabled")
+        .eq("tenant_id", workspace!.tenantId)
         .order("id", { ascending: true })
         .limit(1)
         .maybeSingle();
@@ -61,48 +147,63 @@ export function ApplicationsPage() {
     },
   });
   const { data: lotOptions } = useQuery({
-    queryKey: ["available-lots-for-approval"],
+    queryKey: ["available-lots-for-approval", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
       const { data: parcels, error: queryError } = await supabase
         .from("parcels")
-        .select("id, lot_number, dimensions, status")
+        .select("id, lot_number, dimensions, status, geometry_source, needs_review")
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .order("lot_number");
       if (queryError) throw queryError;
       return parcels as LotOption[];
     },
   });
   const { data: linkedLeads } = useQuery({
-    queryKey: ["application-linked-leads"],
+    queryKey: ["application-linked-leads", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
       const { data: leads, error: queryError } = await supabase
         .from("leads")
         .select("id, application_id, pipeline_stage, full_name, source, assigned_to, next_action, next_action_due_at, possible_duplicate, duplicate_reason")
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .not("application_id", "is", null);
       if (queryError) throw queryError;
       return leads as Pick<Lead, "id" | "application_id" | "pipeline_stage" | "full_name" | "source" | "assigned_to" | "next_action" | "next_action_due_at" | "possible_duplicate" | "duplicate_reason">[];
     },
   });
   const { data: linkedReservations } = useQuery({
-    queryKey: ["application-linked-reservations"],
+    queryKey: ["application-linked-reservations", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
       const { data: reservations, error: queryError } = await supabase
         .from("lot_reservations")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .or("application_id.not.is.null,lead_id.not.is.null");
       if (queryError) throw queryError;
       return reservations as LotReservation[];
     },
   });
   const { data: reservationSettings = reservationWorkflowDefaults } = useQuery({
-    queryKey: ["reservation-workflow-settings"],
-    queryFn: fetchReservationWorkflowSettings,
+    queryKey: ["reservation-workflow-settings", workspace?.tenantId ?? "unselected"],
+    queryFn: () => fetchReservationWorkflowSettings(workspace!.tenantId),
+    enabled: Boolean(workspace),
   });
   const { data: postSalesChecklists } = useQuery({
-    queryKey: ["application-post-sales-checklists"],
+    queryKey: ["application-post-sales-checklists", scopeKey],
+    enabled: Boolean(workspace),
     queryFn: async () => {
       const { data: checklists, error: queryError } = await supabase
         .from("post_sales_checklists")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .not("application_id", "is", null);
       if (queryError) throw queryError;
       return checklists as PostSalesChecklist[];
@@ -113,7 +214,7 @@ export function ApplicationsPage() {
     setActionError(null);
     const parcelId = selectedLots[id] ? Number(selectedLots[id]) : undefined;
     try {
-      await updateApplicationStatus(id, status, parcelId);
+      await updateApplicationStatus(id, status, workspace!.tenantId, workspace!.projectId, workspace!.phaseId, parcelId, workspace!.tenantSlug === "wamule" && workspace!.isDefaultProject && workspace!.isDefaultPhase);
       await queryClient.invalidateQueries({ queryKey: ["applications-kanban"] });
       await queryClient.invalidateQueries({ queryKey: ["lot-board"] });
       await queryClient.invalidateQueries({ queryKey: ["available-lots-for-approval"] });
@@ -123,10 +224,11 @@ export function ApplicationsPage() {
   }
 
   async function generateReview(applicationId: number) {
+    if (!workspace) return setActionError("Choose a workspace before generating an application review.");
     setActionError(null);
     setGeneratingReviewId(applicationId);
     const { data: result, error: functionError } = await supabase.functions.invoke("generate-application-review", {
-      body: { application_id: applicationId },
+      body: { application_id: applicationId, tenant_id: workspace!.tenantId },
     });
     setGeneratingReviewId(null);
     if (functionError) {
@@ -154,10 +256,17 @@ export function ApplicationsPage() {
     setActionError(null);
     const existingLead = linkedLeads?.find((lead) => lead.application_id === application.id);
     if (existingLead) return;
+    if (application.parcel_id && !lotOptions?.some((lot) => lot.id === application.parcel_id)) {
+      setActionError("This application references a lot outside the selected project and phase. Review the assignment before linking it.");
+      return;
+    }
     const leadName = (application.applicant_full_name ?? `${application.first_name} ${application.last_name}`).trim();
     const { data: insertedLead, error: insertError } = await supabase
       .from("leads")
       .insert({
+        tenant_id: workspace!.tenantId,
+        project_id: workspace!.projectId,
+        phase_id: workspace!.phaseId,
         full_name: leadName || `Application #${application.id}`,
         phone: application.phone,
         email: application.email,
@@ -178,6 +287,9 @@ export function ApplicationsPage() {
       return;
     }
     const { error: taskError } = await supabase.from("follow_up_tasks").insert({
+      tenant_id: workspace!.tenantId,
+      project_id: workspace!.projectId,
+      phase_id: workspace!.phaseId,
       lead_id: insertedLead.id,
       application_id: application.id,
       title: "Follow up on public application",
@@ -191,6 +303,9 @@ export function ApplicationsPage() {
       return;
     }
     const { error: activityError } = await supabase.from("lead_activities").insert({
+      tenant_id: workspace!.tenantId,
+      project_id: workspace!.projectId,
+      phase_id: workspace!.phaseId,
       lead_id: insertedLead.id,
       activity_type: "application_linked",
       title: "Lead created from public application",
@@ -215,6 +330,13 @@ export function ApplicationsPage() {
     setActionError(null);
     const linkedLead = linkedLeads?.find((lead) => lead.application_id === application.id) ?? null;
     const selectedParcelId = application.parcel_id ?? (selectedLots[application.id] ? Number(selectedLots[application.id]) : null);
+    if (selectedParcelId) {
+      const selectedParcel = lotOptions?.find((lot) => lot.id === selectedParcelId);
+      if (!selectedParcel || !isInventoryRecordReadyForReservation(selectedParcel)) {
+        setActionError("This parcel is not eligible for a new inventory reservation. Choose an existing manual inventory record and review its assignment.");
+        return;
+      }
+    }
     const existingReservation = linkedReservations?.find((reservation) =>
       reservation.application_id === application.id ||
       (linkedLead?.id && reservation.lead_id === linkedLead.id) ||
@@ -235,6 +357,9 @@ export function ApplicationsPage() {
     const { data: reservation, error: insertError } = await supabase
       .from("lot_reservations")
       .insert({
+        tenant_id: workspace!.tenantId,
+        project_id: workspace!.projectId,
+        phase_id: workspace!.phaseId,
         lead_id: linkedLead?.id ?? null,
         application_id: application.id,
         parcel_id: selectedParcelId,
@@ -253,6 +378,7 @@ export function ApplicationsPage() {
       return;
     }
     const { error: activityError } = await supabase.from("reservation_activities").insert({
+      tenant_id: workspace!.tenantId,
       reservation_id: reservation.id,
       activity_type: "application_linked",
       title: "Reservation linked to application",
@@ -278,9 +404,11 @@ export function ApplicationsPage() {
 
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
   const canWriteSales = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
+  const canApproveApplications = currentRole === "Super Admin" || currentRole === "Admin" || currentRole === "Staff";
+  const canDeclineApplications = currentRole === "Super Admin" || currentRole === "Admin";
   const canGenerateAiReview = currentRole === "Super Admin" || currentRole === "Admin";
   const aiReviewEnabled = Boolean(aiSettings?.is_enabled && aiSettings.application_summary_enabled);
-  const applications = useMemo(() => data ?? [], [data]);
+  const applications = useMemo(() => (data ?? []).filter((application) => application.application_kind !== "project_application"), [data]);
   useEffect(() => {
     if (!requestedApplicationId || !applications.some((application) => String(application.id) === requestedApplicationId)) return;
     setSelectedApplicationId(Number(requestedApplicationId));
@@ -303,6 +431,10 @@ export function ApplicationsPage() {
     ? applications.find((application) => String(application.id) === requestedApplicationId) ?? null
     : applications.find((application) => application.id === selectedApplicationId) ?? filteredApplications[0] ?? applications[0] ?? null;
 
+  if (!workspace) {
+    return workspaceLoading ? <LoadingState label="Loading selected workspace" /> : <ErrorState message={workspaceError ?? "Choose an accessible workspace to view applications."} />;
+  }
+
   return (
     <>
       <section className="mx-auto grid max-w-[1520px] gap-6">
@@ -322,7 +454,69 @@ export function ApplicationsPage() {
           onSelectStatus={setSelectedStatus}
         />
       </section>
-      {isLoading ? <LoadingState /> : null}
+      {projectApplications.length > 0 ? (
+        <section aria-labelledby="project-applications-heading" className="mx-auto mt-6 grid max-w-[1520px] gap-4 rounded-xl border border-primary/15 bg-card p-4 shadow-sm sm:p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">{workspace.projectName} · {workspace.phaseName}</p>
+            <h2 id="project-applications-heading" className="mt-1 text-xl font-semibold text-primary">Project applications</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Applications are separate from parcel-purchase records. Map-outline interests are not parcel IDs or allocations.</p>
+          </div>
+          <div className="grid gap-3">
+            {projectApplications.map((application) => (
+              <details key={application.id} className="rounded-lg border border-border bg-background">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4">
+                  <span className="min-w-0"><span className="block break-words font-semibold text-primary">{applicationName(application)}</span><span className="mt-1 block text-xs text-muted-foreground">Application #{application.id} · {formatDate(application.created_at)}</span></span>
+                  <Badge tone={statusBadgeTone(application.status)}>{application.status}</Badge>
+                </summary>
+                <div className="grid gap-4 border-t border-border p-4 md:grid-cols-2">
+                  <div className="grid content-start gap-2 text-sm">
+                    <p><span className="font-semibold text-primary">Project:</span> {workspace.projectName}</p>
+                    <p><span className="font-semibold text-primary">Phase:</span> {workspace.phaseName}</p>
+                    <p><span className="font-semibold text-primary">Email:</span> {application.email ?? "Not provided"}</p>
+                    <p><span className="font-semibold text-primary">Phone:</span> {application.phone}</p>
+                    <p><span className="font-semibold text-primary">Address:</span> {application.applicant_address ?? "Not provided"}</p>
+                    <p><span className="font-semibold text-primary">Nationality:</span> {application.nationality ?? "Not provided"}</p>
+                    <p><span className="font-semibold text-primary">Occupation:</span> {application.occupation ?? "Not provided"}</p>
+                    <p><span className="font-semibold text-primary">Intended use:</span> {application.intended_use ?? "Not provided"}{application.intended_use_other ? ` · ${application.intended_use_other}` : ""}</p>
+                  </div>
+                  <div className="grid content-start gap-3 text-sm">
+                    <div><p className="font-semibold text-primary">Map-outline interests</p>
+                      {application.preferred_map_feature_refs?.length ? <ul className="mt-2 grid gap-2">{application.preferred_map_feature_refs.map((ref) => {
+                        const feature = mapFeatureLabels.find((item) => item.identity_id === ref);
+                        const isHopkinsSourcePlan = workspace?.tenantSlug === "hopkins-grove" && workspace.projectSlug === "hopkins-grove";
+                        const reference = resolveHopkinsReferencePrice(
+                          feature?.sourceTierStatus === "source-tier-ambiguous-multiple-colors" ? null : feature?.tierKey,
+                          hopkinsTierSource,
+                        );
+                        const mapHref = workspace
+                          ? `/embed/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}?phase=${encodeURIComponent(workspace.phaseSlug)}&feature=${encodeURIComponent(ref)}`
+                          : null;
+                        return <li key={ref} className="grid gap-1 rounded-md border border-border bg-background p-2 text-muted-foreground">
+                          <span><span className="font-medium text-foreground">Generated map reference:</span> {feature?.demo_label ?? `Map outline ${ref.slice(0, 8)}`}</span>
+                          {isHopkinsSourcePlan ? <>
+                            <span>{feature?.verifiedPrintedNumber
+                              ? <><span className="font-medium text-foreground">Verified printed plan number:</span> {feature.verifiedPrintedNumber}</>
+                              : "No verified printed-number match"}</span>
+                            <span><span className="font-medium text-foreground">Source category:</span> {reference.categoryLabel}</span>
+                            <span><span className="font-medium text-foreground">Reference price:</span> {reference.display}{reference.basis ? ` · ${reference.basis}` : ""}</span>
+                          </> : null}
+                          {mapHref ? <Link to={mapHref} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 font-semibold text-primary underline underline-offset-2">
+                            Open this outline on the {workspace?.phaseName ?? "selected"} map <ArrowUpRight className="h-3.5 w-3.5" />
+                          </Link> : null}
+                        </li>;
+                      })}</ul> : <p className="mt-1 text-muted-foreground">No outline preference selected; general project interest.</p>}
+                      <p className="mt-2 text-xs text-muted-foreground">Reference prices are not offers or saleable inventory prices. No parcel is assigned, reserved, or priced as a final lot total here.</p>
+                    </div>
+                    <div><p className="font-semibold text-primary">Applicant notes</p><p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{application.notes || "No additional notes."}</p></div>
+                    <div><p className="font-semibold text-primary">Hopkins notice</p><p className="mt-1 text-muted-foreground">{application.project_public_notice_snapshot ?? "Not recorded"}</p></div>
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {isLoading || workspaceLoading ? <LoadingState /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
       <section className="mx-auto mt-6 grid max-w-[1520px] gap-6 xl:grid-cols-[minmax(320px,0.38fr)_minmax(0,1fr)]">
@@ -353,6 +547,8 @@ export function ApplicationsPage() {
             )}
             postSalesChecklist={postSalesChecklists?.find((checklist) => checklist.application_id === selectedApplication.id) ?? null}
             canWriteSales={canWriteSales}
+            canApproveApplications={canApproveApplications}
+            canDeclineApplications={canDeclineApplications}
             canGenerateAiReview={canGenerateAiReview}
             aiReviewEnabled={aiReviewEnabled}
             generatingReview={generatingReviewId === selectedApplication.id}
@@ -516,6 +712,8 @@ function ApplicationWorkbench({
   linkedReservation,
   postSalesChecklist,
   canWriteSales,
+  canApproveApplications,
+  canDeclineApplications,
   canGenerateAiReview,
   aiReviewEnabled,
   generatingReview,
@@ -536,6 +734,8 @@ function ApplicationWorkbench({
   linkedReservation: LotReservation | null;
   postSalesChecklist: PostSalesChecklist | null;
   canWriteSales: boolean;
+  canApproveApplications: boolean;
+  canDeclineApplications: boolean;
   canGenerateAiReview: boolean;
   aiReviewEnabled: boolean;
   generatingReview: boolean;
@@ -575,6 +775,8 @@ function ApplicationWorkbench({
               selectedLotValue={selectedLotValue}
               lotOptions={lotOptions}
               onSelectedLotChange={onSelectedLotChange}
+              canApprove={canApproveApplications}
+              canDecline={canDeclineApplications}
               onApprove={onApprove}
               onDecline={onDecline}
             />
@@ -670,6 +872,8 @@ function DecisionActions({
   selectedLotValue,
   lotOptions,
   onSelectedLotChange,
+  canApprove,
+  canDecline,
   onApprove,
   onDecline,
 }: {
@@ -677,29 +881,34 @@ function DecisionActions({
   selectedLotValue: string;
   lotOptions: LotOption[] | undefined;
   onSelectedLotChange: (value: string) => void;
+  canApprove: boolean;
+  canDecline: boolean;
   onApprove: () => void;
   onDecline: () => void;
 }) {
   return (
     <div className="grid w-full gap-3 rounded-xl border border-primary/15 bg-card/80 p-4 shadow-sm shadow-primary/5 lg:w-[320px]">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Review Decision</p>
-      {application.status !== "Approved" ? (
-        <Select value={selectedLotValue} onChange={(event) => onSelectedLotChange(event.target.value)}>
-          <option value="">Select lot to reserve</option>
-          {lotOptions
-            ?.filter((lot) => lot.status === "Available")
-            .map((lot) => (
-              <option key={lot.id} value={lot.id}>
-                Lot {lot.lot_number} - {lot.dimensions}
-              </option>
-            ))}
-        </Select>
-      ) : (
-        <p className="text-sm text-muted-foreground">Approved applications keep their recorded lot/customer context.</p>
-      )}
+      {canApprove ? (
+        application.status !== "Approved" ? (
+          <Select value={selectedLotValue} onChange={(event) => onSelectedLotChange(event.target.value)}>
+            <option value="">Select lot to reserve</option>
+            {lotOptions
+              ?.filter(isAvailableForSalesSelection)
+              .map((lot) => (
+                <option key={lot.id} value={lot.id}>
+                  Lot {lot.lot_number} · Existing inventory · {lot.dimensions}
+                </option>
+              ))}
+          </Select>
+        ) : (
+          <p className="text-sm text-muted-foreground">Approved applications keep their recorded lot/customer context.</p>
+        )
+      ) : null}
       <div className="flex flex-wrap gap-2">
-        {application.status !== "Approved" ? <Button type="button" onClick={onApprove}>Approve</Button> : null}
-        {application.status !== "Declined" ? <Button type="button" variant="outline" onClick={onDecline}>Decline</Button> : null}
+        {canApprove && application.status !== "Approved" ? <Button type="button" onClick={onApprove}>Approve</Button> : null}
+        {canDecline && application.status !== "Declined" ? <Button type="button" variant="outline" onClick={onDecline}>Decline</Button> : null}
+        {!canApprove && !canDecline ? <p className="text-sm text-muted-foreground">Your role can review this application but cannot change its decision.</p> : null}
       </div>
     </div>
   );

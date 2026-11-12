@@ -10,6 +10,12 @@ const corsHeaders = {
 };
 
 type AppRole = "Super Admin" | "Admin" | "Staff" | "Read Only";
+type MembershipInput = {
+  project_id: string;
+  phase_id: string | null;
+  member_role: "owner" | "admin" | "staff" | "read_only";
+  all_phases_confirmed?: boolean;
+};
 
 Deno.serve(async (request) => {
   try {
@@ -38,7 +44,7 @@ Deno.serve(async (request) => {
 
     const { data: currentProfile, error: profileError } = await supabase
       .from("admin_profiles")
-      .select("role")
+      .select("role, tenant_id")
       .eq("user_id", currentUserData.user.id)
       .maybeSingle();
 
@@ -46,8 +52,8 @@ Deno.serve(async (request) => {
       return json({ error: profileError.message }, 500);
     }
 
-    if (currentProfile?.role !== "Super Admin") {
-      return json({ error: "Only Super Admin users can manage users." }, 403);
+    if (!currentProfile || !["Super Admin", "Admin"].includes(currentProfile.role)) {
+      return json({ error: "Only a current Tenant Admin or Super Admin may manage staff." }, 403);
     }
 
     const body = await request.json().catch(() => null) as {
@@ -55,16 +61,34 @@ Deno.serve(async (request) => {
       full_name?: string;
       role?: AppRole;
       password?: string;
+      tenant_id?: string;
+      memberships?: MembershipInput[];
     } | null;
 
     const email = body?.email?.trim().toLowerCase();
     const fullName = body?.full_name?.trim() || null;
     const role = body?.role;
     const password = body?.password;
+    const tenantId = body?.tenant_id;
+    const memberships = body?.memberships;
 
-    if (!email || !role || !["Super Admin", "Admin", "Staff", "Read Only"].includes(role)) {
-      return json({ error: "Email and valid role are required." }, 400);
+    if (!email || !role || !["Admin", "Staff", "Read Only"].includes(role) || !tenantId
+      || (memberships !== undefined && !Array.isArray(memberships))) {
+      return json({ error: "Email, tenant, and a tenant staff role are required." }, 400);
     }
+
+    if (currentProfile.role === "Admin"
+      && (currentProfile.tenant_id !== tenantId || !["Staff", "Read Only"].includes(role))) {
+      return json({ error: "Tenant Admins may assign Staff or Read Only only within their own tenant." }, 403);
+    }
+
+    const { data: tenant, error: tenantError } = await supabase
+      .from("organizations")
+      .select("id, is_active")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (tenantError) return json({ error: tenantError.message }, 500);
+    if (!tenant || !tenant.is_active) return json({ error: "The selected tenant does not exist or is inactive." }, 404);
 
     if (password && password.length < 8) {
       return json({ error: "Temporary password must be at least 8 characters." }, 400);
@@ -99,22 +123,27 @@ Deno.serve(async (request) => {
       return json({ error: "Could not create or locate auth user." }, 500);
     }
 
-    const { data: profile, error: upsertError } = await supabase
-      .from("admin_profiles")
-      .upsert({
-        user_id: userId,
-        email,
-        full_name: fullName,
-        role,
-      }, { onConflict: "user_id" })
-      .select("user_id, email, full_name, role, created_at, updated_at")
-      .single();
+    const { data: access, error: accessError } = await supabase.rpc("manage_workspace_member", {
+      p_target_user_id: userId,
+      p_tenant_id: tenantId,
+      p_profile_role: role,
+      p_memberships: memberships ?? [],
+      p_email: email,
+      p_full_name: fullName,
+      // The ID comes from auth.getUser(token); the database RPC also checks
+      // the actor's live role and tenant before accepting the service call.
+      p_actor_id: currentUserData.user.id,
+    });
 
-    if (upsertError) {
-      return json({ error: upsertError.message }, 500);
+    if (accessError) {
+      if (mode !== "existing") {
+        const { error: cleanupError } = await supabase.auth.admin.deleteUser(userId);
+        if (cleanupError) console.error("manage-admin-user could not remove unassigned Auth user", cleanupError.message);
+      }
+      return json({ error: accessError.message }, 403);
     }
 
-    return json({ mode, profile });
+    return json({ mode, access });
   } catch (error) {
     console.error("manage-admin-user failed", error);
     return json({ error: "User management failed. Check the Edge Function logs for details." }, 500);

@@ -10,7 +10,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const DEFAULT_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 const VISION_MODEL = "gemini-3.1-flash-lite";
 
 const allowedAttachmentMimes = new Set([
@@ -66,16 +65,24 @@ Deno.serve(async (request) => {
     return json({ error: "Method not allowed." }, 405);
   }
 
+  // M8.2 is a map/CRM rehearsal, not inbound-email activation. Keep this
+  // handler inert until a separate activation explicitly enables it.
+  if ((Deno.env.get("INBOUND_EMAIL_ENABLED") ?? "").trim().toLowerCase() !== "true") {
+    return json({ error: "Inbound email intake is disabled." }, 503);
+  }
+
   // -- 0. Webhook signature verification (anti-forgery) -----------------------
   // The raw body must be captured before JSON parsing: the HMAC signature is
   // computed over the exact request bytes, so re-serializing would break it.
   const rawBody = await request.text();
+  const inboundEventId = request.headers.get("svix-id")?.trim() ?? "";
 
   const verification = await verifyResendWebhookSignature(request, rawBody);
   if (!verification.ok) {
     return json({ error: verification.error }, verification.status);
   }
 
+  if (!inboundEventId) return json({ error: "Missing webhook event id." }, 401);
   const body = JSON.parse(rawBody) as InboundBody;
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -88,14 +95,9 @@ Deno.serve(async (request) => {
 
   const organization = await resolveOrganization(supabase, tenantLookup);
   if (!organization) {
-    await logAudit(supabase, {
-      tenant_id: DEFAULT_TENANT_ID,
-      entity_type: "system",
-      action: "reviewed",
-      title: "Inbound email tenant not found",
-      summary: `No organization matched recipient "${recipientRaw || "unknown"}".`,
-      metadata: { recipient: recipientRaw },
-    });
+    // No verified target tenant exists for this message. Keep it in the
+    // function's operational logs instead of misattributing it to default-client.
+    console.warn("Inbound email tenant lookup failed; no workspace audit target exists.");
     return json({ error: "Tenant not found for recipient address." }, 404);
   }
   const tenantId = String(organization.id);
@@ -111,14 +113,12 @@ Deno.serve(async (request) => {
   const customerWasMatched = Boolean(matchedCustomer);
 
   if (!customer) {
-    await logAudit(supabase, {
-      tenant_id: tenantId,
-      entity_type: "payment",
-      action: "reviewed",
-      title: "Inbound email customer reconciliation needed",
-      summary: `Could not establish fallback customer for ${senderEmail}.`,
-      metadata: { sender: senderEmail, recipient: recipientRaw },
+    const createdLead = await createReconciliationLead(supabase, tenantId, inboundEventId, {
+      senderEmail,
+      subject: cleanText(body.subject, 200),
+      reason: "Could not establish a customer record.",
     });
+    if (createdLead) await logAudit(supabase, { tenant_id: tenantId, event_code: "customer_reconciliation_needed" });
     return json({ error: "Could not establish customer record." }, 500);
   }
 
@@ -127,32 +127,28 @@ Deno.serve(async (request) => {
   const processable = attachments.filter((a) => allowedAttachmentMimes.has(a.mime));
 
   if (!processable.length) {
-    await logAudit(supabase, {
-      tenant_id: tenantId,
-      entity_type: "payment",
-      action: "reviewed",
-      title: "Inbound email had no processable receipt",
-      summary: `Email from ${senderEmail} contained ${attachments.length} attachment(s), none images/PDF.`,
-      metadata: { sender: senderEmail, recipient: recipientRaw, subject: cleanText(body.subject, 200) },
-    });
-    // Still create a lead for manual follow-up so nothing is silently dropped.
-    await createReconciliationLead(supabase, tenantId, {
+    const createdLead = await createReconciliationLead(supabase, tenantId, inboundEventId, {
       senderEmail,
       subject: cleanText(body.subject, 200),
       reason: "No image/PDF attachment found.",
     });
-    return json({ ok: true, processed: 0, message: "No processable attachments. Lead created for manual review." });
+    if (createdLead) await logAudit(supabase, { tenant_id: tenantId, event_code: "no_processable_receipt" });
+    return json({ ok: true, processed: 0, message: "No processable attachments. The reconciliation lead is queued for manual review." });
   }
 
   // -- 4. Per-attachment: upload + Vision + draft rows -------------------------
-  const apiKey = String(organization.gemini_api_key ?? "").trim() || masterGeminiKey;
+  const tenantGeminiKey = await resolveOrganizationGeminiKey(supabase, tenantId);
+  const apiKey = tenantGeminiKey || masterGeminiKey;
   const results = [];
 
-  for (const attachment of processable) {
+  for (let attachmentIndex = 0; attachmentIndex < processable.length; attachmentIndex += 1) {
+    const attachment = processable[attachmentIndex];
     try {
       const result = await processAttachment(supabase, {
         tenantId,
         customerId: Number(customer.id),
+        eventId: inboundEventId,
+        attachmentIndex,
         senderEmail,
         subject: cleanText(body.subject, 200),
         textBody: cleanText(body.text ?? body.text_body ?? body.body_text, 2000),
@@ -171,14 +167,21 @@ Deno.serve(async (request) => {
   }
 
   const succeeded = results.filter((r) => r.ok).length;
+  const stagedCustomerId = results.find((result) => result.ok && typeof result.customer_id === "number")?.customer_id ?? customer.id;
+  const bankReferenceId = results.find((result) => result.ok && typeof result.bank_reference_id === "string")?.bank_reference_id ?? null;
+  const acknowledgment = succeeded > 0
+    ? await sendAcknowledgment({ toEmail: senderEmail, bankReferenceId }, `wamule-inbound-${tenantId}-${inboundEventId}`)
+    : { ok: false, error: "No receipt attachment was staged." };
+  const resultWithAcknowledgment = results.map((result) => ({ ...result, emailSent: acknowledgment.ok }));
   return json({
     ok: succeeded > 0,
     tenant_id: tenantId,
-    customer_id: customer.id,
-    customer_matched: customerWasMatched,
+    customer_id: stagedCustomerId,
+    customer_matched: customerWasMatched && Number(stagedCustomerId) === Number(customer.id),
     processed: succeeded,
     total: processable.length,
-    results,
+    results: resultWithAcknowledgment,
+    acknowledgment_sent: acknowledgment.ok,
   });
 });
 
@@ -187,6 +190,8 @@ async function processAttachment(
   input: {
     tenantId: string;
     customerId: number;
+    eventId: string;
+    attachmentIndex: number;
     senderEmail: string;
     subject: string;
     textBody: string;
@@ -195,17 +200,49 @@ async function processAttachment(
     customerWasMatched: boolean;
   },
 ) {
-  const stamp = Date.now();
   const safeName = input.attachment.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "receipt";
-  const filePath = `${input.tenantId}/${input.customerId}/${stamp}-${safeName}`;
+  const safeEventId = input.eventId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "event";
+  const eventMarker = `M77-INBOUND:${safeEventId}:${input.attachmentIndex}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("payment-documents")
-    .upload(filePath, input.attachment.bytes, {
-      contentType: input.attachment.mime,
-      upsert: false,
-    });
-  if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+  // Svix retries use the same signed event id. Reuse the staged transaction
+  // and deterministic asset path for an ordinary retry instead of creating
+  // a second needs_review payment. The database marker's unique index handles
+  // simultaneous deliveries; a losing insert reloads the winning transaction.
+  const { data: existingTransaction, error: existingTransactionError } = await supabase.from("transactions")
+    .select("id,customer_id,receipt_number,amount,bank_reference,status")
+    .eq("tenant_id", input.tenantId)
+    .eq("receipt_notes", eventMarker)
+    .maybeSingle();
+  if (existingTransactionError) throw new Error(`Inbound retry lookup failed: ${existingTransactionError.message}`);
+  type InboundTransaction = {
+    id: number;
+    customer_id: number;
+    receipt_number?: string;
+    amount?: number;
+    bank_reference?: string | null;
+    status?: string;
+  };
+  let transaction = existingTransaction as InboundTransaction | null;
+  if (transaction) {
+    const existingPath = inboundDocumentPath(input.tenantId, transaction.customer_id, safeEventId, input.attachmentIndex, safeName);
+    const { data: existingDocument, error: existingDocumentError } = await supabase.from("payment_documents")
+      .select("id,file_path,transaction_id")
+      .eq("tenant_id", input.tenantId)
+      .eq("transaction_id", transaction.id)
+      .eq("file_path", existingPath)
+      .maybeSingle();
+    if (existingDocumentError) throw new Error(`Inbound retry document lookup failed: ${existingDocumentError.message}`);
+    if (existingDocument) {
+      return {
+        transaction_id: transaction.id,
+        customer_id: transaction.customer_id,
+        file_path: existingDocument.file_path,
+        amount: transaction.amount,
+        bank_reference_id: transaction.bank_reference,
+        existing: true,
+      };
+    }
+  }
 
   // Vision OCR (deterministic fallback when no key or call fails).
   const vision = await runVisionOcr({
@@ -214,81 +251,122 @@ async function processAttachment(
     apiKey: input.apiKey,
   });
 
-  // Active contract link when available (staff corrects on review otherwise).
-  const contractId = await findActiveContractId(supabase, input.tenantId, input.customerId);
-
+  // OCR may identify amount and currency, but customer identity alone cannot
+  // identify a phase sale. Staff allocates the staged receipt.
   const amount = Number.isFinite(vision.amount_paid) && vision.amount_paid > 0 ? vision.amount_paid : 0;
   const bankRef = vision.bank_reference_id ? vision.bank_reference_id.toUpperCase().slice(0, 120) : null;
 
-  const { data: transaction, error: txError } = await supabase
-    .from("transactions")
-    .insert({
+  if (!transaction) {
+    const { data, error: txError } = await supabase
+      .from("transactions")
+      .insert({
+        tenant_id: input.tenantId,
+        customer_id: input.customerId,
+        // A sender/customer match alone cannot identify a phase sale. Multiple
+        // contracts are valid after M7.4, so inbound evidence remains unlinked
+        // and needs_review until an Admin allocates it to exact obligations.
+        contract_id: null,
+        amount,
+        currency: vision.currency,
+        transaction_type: "Land Installment",
+        collection_method: vision.payment_method,
+        bank_reference: vision.payment_method === "Online Transfer" ? bankRef : null,
+        receipt_date: vision.payment_date,
+        notes: `Auto-ingested from email. Ref: ${bankRef ?? "Pending"}. Scope remains unverified pending staff allocation.`,
+        receipt_notes: eventMarker,
+        status: "needs_review",
+      })
+      .select("id,customer_id,receipt_number,amount,bank_reference,status")
+      .single();
+    if (txError?.code === "23505") {
+      const { data: winner, error: winnerError } = await supabase.from("transactions")
+        .select("id,customer_id,receipt_number,amount,bank_reference,status")
+        .eq("tenant_id", input.tenantId).eq("receipt_notes", eventMarker).maybeSingle();
+      if (winnerError || !winner) {
+        throw new Error(`Inbound duplicate transaction could not be recovered: ${winnerError?.message ?? txError.message}`);
+      }
+      transaction = winner as InboundTransaction;
+    } else {
+      if (txError || !data) throw new Error(`Transaction insert failed: ${txError?.message ?? "unknown"}`);
+      transaction = data as InboundTransaction;
+    }
+  }
+
+  const filePath = inboundDocumentPath(input.tenantId, transaction.customer_id, safeEventId, input.attachmentIndex, safeName);
+  {
+    const { data: existingDocument, error: existingDocumentError } = await supabase.from("payment_documents")
+      .select("id,file_path,transaction_id")
+      .eq("tenant_id", input.tenantId)
+      .eq("transaction_id", transaction.id)
+      .eq("file_path", filePath)
+      .maybeSingle();
+    if (existingDocumentError) throw new Error(`Inbound retry document lookup failed: ${existingDocumentError.message}`);
+    if (existingDocument) {
+      return {
+        transaction_id: transaction.id,
+        customer_id: transaction.customer_id,
+        file_path: existingDocument.file_path,
+        amount: transaction.amount ?? amount,
+        bank_reference_id: transaction.bank_reference ?? bankRef,
+        existing: true,
+      };
+    }
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from("payment-documents")
+    .upload(filePath, input.attachment.bytes, {
+      contentType: input.attachment.mime,
+      upsert: true,
+    });
+  if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+
+  {
+    const { error: docError } = await supabase.from("payment_documents").insert({
       tenant_id: input.tenantId,
-      customer_id: input.customerId,
-      contract_id: contractId,
-      amount,
-      transaction_type: "Land Installment",
-      collection_method: vision.payment_method,
-      bank_reference: vision.payment_method === "Online Transfer" ? bankRef : null,
-      receipt_date: vision.payment_date,
-      notes: `Auto-ingested from email. Ref: ${bankRef ?? "Pending"}`,
-      receipt_notes: input.subject ? `Subject: ${input.subject}` : null,
-      status: "needs_review",
-    })
-    .select("id")
-    .single();
-  if (txError || !transaction) throw new Error(`Transaction insert failed: ${txError?.message ?? "unknown"}`);
-
-  const { error: docError } = await supabase.from("payment_documents").insert({
-    tenant_id: input.tenantId,
-    transaction_id: transaction.id,
-    customer_id: input.customerId,
-    document_type: "Bank Transfer Proof",
-    file_path: filePath,
-    original_file_name: input.attachment.filename,
-    uploaded_by: null,
-    parsed_metadata: vision.raw,
-    ai_confidence: vision.confidence_score,
-  });
-  if (docError) throw new Error(`Payment document insert failed: ${docError.message}`);
-
-  await logAudit(supabase, {
-    tenant_id: input.tenantId,
-    entity_type: "payment",
-    action: "created",
-    title: "Inbound receipt staged for review",
-    summary: `Transaction ${transaction.id} staged needs_review from ${input.senderEmail}. Ref: ${bankRef ?? "Pending"}.`,
-    entity_id: String(transaction.id),
-    metadata: {
       transaction_id: transaction.id,
-      sender: input.senderEmail,
-      customer_matched: input.customerWasMatched,
-      confidence: vision.confidence_score,
-    },
-  });
+      customer_id: transaction.customer_id,
+      document_type: "Bank Transfer Proof",
+      file_path: filePath,
+      original_file_name: input.attachment.filename,
+      uploaded_by: null,
+      parsed_metadata: vision.raw,
+      ai_confidence: vision.confidence_score,
+    });
+    if (docError?.code === "23505") {
+      const { data: winner, error: winnerError } = await supabase.from("payment_documents")
+        .select("id,file_path,transaction_id")
+        .eq("tenant_id", input.tenantId).eq("file_path", filePath).maybeSingle();
+      if (winnerError || !winner || Number(winner.transaction_id) !== Number(transaction.id)) {
+        throw new Error(`Inbound duplicate document could not be recovered: ${winnerError?.message ?? docError.message}`);
+      }
+    } else if (docError) {
+      throw new Error(`Payment document insert failed: ${docError.message}`);
+    }
+  }
 
   if (!input.customerWasMatched) {
-    await createReconciliationLead(supabase, input.tenantId, {
+    await createReconciliationLead(supabase, input.tenantId, input.eventId, {
       senderEmail: input.senderEmail,
       subject: input.subject,
       reason: `Sender did not match a customer; staged under fallback customer ${input.customerId}.`,
     });
   }
 
-  const emailResult = await sendAcknowledgment({
-    toEmail: input.senderEmail,
-    bankReferenceId: bankRef,
-  });
-
   return {
     transaction_id: transaction.id,
+    customer_id: transaction.customer_id,
     file_path: filePath,
     amount,
     bank_reference_id: bankRef,
     confidence: vision.confidence_score,
     vision_fallback: vision.raw.fallback === true,
-    emailSent: emailResult.ok,
+    existing: Boolean(existingTransaction),
   };
+}
+
+function inboundDocumentPath(tenantId: string, customerId: number, safeEventId: string, attachmentIndex: number, safeName: string) {
+  return `${tenantId}/${customerId}/${safeEventId}-${attachmentIndex}-${safeName}`;
 }
 
 // -- Tenant resolution ---------------------------------------------------------
@@ -306,22 +384,37 @@ async function resolveOrganization(
   if (lookup.alias) {
     const { data } = await supabase
       .from("organizations")
-      .select("id, slug, inbound_alias, gemini_api_key, is_active")
+      .select("id, slug, inbound_alias, is_active")
       .eq("inbound_alias", lookup.alias)
       .eq("is_active", true)
       .maybeSingle();
-    if (data) return data as { id: string; slug: string; inbound_alias: string | null; gemini_api_key: string | null };
+    if (data) return data as { id: string; slug: string; inbound_alias: string | null };
   }
   if (lookup.slugTag) {
     const { data } = await supabase
       .from("organizations")
-      .select("id, slug, inbound_alias, gemini_api_key, is_active")
+      .select("id, slug, inbound_alias, is_active")
       .eq("slug", lookup.slugTag)
       .eq("is_active", true)
       .maybeSingle();
-    if (data) return data as { id: string; slug: string; inbound_alias: string | null; gemini_api_key: string | null };
+    if (data) return data as { id: string; slug: string; inbound_alias: string | null };
   }
   return null;
+}
+
+async function resolveOrganizationGeminiKey(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("get_organization_gemini_api_key", {
+    p_tenant_id: tenantId,
+  });
+  if (error) {
+    // Never log or include provider credentials in errors or client responses.
+    console.error("Tenant provider credential lookup failed.", error.message);
+    return "";
+  }
+  return typeof data === "string" ? data.trim() : "";
 }
 
 // -- Customer matching ----------------------------------------------------------
@@ -381,30 +474,23 @@ async function ensureUnmatchedCustomer(
   return customer as { id: number; first_name: string; last_name: string; email: string | null };
 }
 
-async function findActiveContractId(
-  supabase: ReturnType<typeof createClient>,
-  tenantId: string,
-  customerId: number,
-): Promise<number | null> {
-  const { data } = await supabase
-    .from("contracts")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("customer_id", customerId)
-    .eq("is_active", true)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data ? Number((data as { id: number }).id) : null;
-}
-
 async function createReconciliationLead(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
+  eventId: string,
   input: { senderEmail: string; subject: string; reason: string },
 ) {
-  await supabase.from("leads").insert({
+  const safeEventId = eventId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "event";
+  const eventMarker = `M77-INBOUND:${safeEventId}:reconciliation`;
+  const note = `${eventMarker} | ${input.reason} Subject: ${input.subject || "(none)"}`.slice(0, 2000);
+  const { data: existingLead, error: lookupError } = await supabase.from("leads")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("notes", note)
+    .maybeSingle();
+  if (lookupError) throw new Error(`Inbound reconciliation retry lookup failed: ${lookupError.message}`);
+  if (existingLead) return false;
+  const { error } = await supabase.from("leads").insert({
     tenant_id: tenantId,
     full_name: input.senderEmail,
     email: input.senderEmail,
@@ -412,8 +498,10 @@ async function createReconciliationLead(
     pipeline_stage: "new_lead",
     buyer_journey_stage: "Inbound Receipt Reconciliation",
     next_action: "Reconcile inbound receipt sender",
-    notes: `${input.reason} Subject: ${input.subject || "(none)"}`.slice(0, 2000),
+    notes: note,
   });
+  if (error) throw new Error(`Inbound reconciliation lead insert failed: ${error.message}`);
+  return true;
 }
 
 // -- Webhook signature verification (Svix/Resend standard) ----------------------
@@ -431,16 +519,9 @@ async function verifyResendWebhookSignature(
   request: Request,
   rawBody: string,
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const environment = (Deno.env.get("ENVIRONMENT") ?? "").trim().toLowerCase();
   const secret = (Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "").trim();
 
   if (!secret) {
-    // Local/staging bypass: ONLY allowed when ENVIRONMENT is explicitly
-    // "development". Production and staging must never process unsigned input.
-    if (environment === "development") {
-      console.warn("receive-inbound-email: signature bypass active (ENVIRONMENT=development)");
-      return { ok: true };
-    }
     return {
       ok: false,
       error: "Webhook signature verification is not configured.",
@@ -478,7 +559,7 @@ async function verifyResendWebhookSignature(
     secretBytes,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["verify"],
+    ["sign", "verify"],
   );
   const signedBytes = new TextEncoder().encode(signedContent);
   const expectedMac = await crypto.subtle.sign("HMAC", key, signedBytes);
@@ -575,7 +656,7 @@ function sanitizeVision(value: Record<string, unknown>): VisionResult {
 
 // -- Acknowledgment email --------------------------------------------------------
 
-async function sendAcknowledgment(input: { toEmail: string; bankReferenceId: string | null }) {
+async function sendAcknowledgment(input: { toEmail: string; bankReferenceId: string | null }, idempotencyKey: string) {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
   const fromName = Deno.env.get("EMAIL_FROM_NAME") ?? "Wamule Development";
@@ -586,7 +667,11 @@ async function sendAcknowledgment(input: { toEmail: string; bankReferenceId: str
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
       body: JSON.stringify({
         from: `${fromName} <${fromAddress}>`,
         to: [input.toEmail],
@@ -610,23 +695,14 @@ async function logAudit(
   supabase: ReturnType<typeof createClient>,
   event: {
     tenant_id: string;
-    entity_type: string;
-    action: string;
-    title: string;
-    summary?: string;
-    entity_id?: string;
-    metadata?: Record<string, unknown>;
+    event_code: "customer_reconciliation_needed" | "no_processable_receipt";
   },
 ) {
-  await supabase.from("audit_events").insert({
-    tenant_id: event.tenant_id,
-    entity_type: event.entity_type,
-    entity_id: event.entity_id ?? null,
-    action: event.action,
-    title: event.title.slice(0, 200),
-    summary: event.summary?.slice(0, 2000) ?? null,
-    metadata: event.metadata ?? null,
+  const { error } = await supabase.rpc("record_inbound_email_review_event", {
+    p_tenant_id: event.tenant_id,
+    p_event_code: event.event_code,
   });
+  if (error) throw new Error(`Inbound review audit event failed: ${error.message}`);
 }
 
 function normalizeAttachments(value: unknown): Array<{ filename: string; mime: string; bytes: Uint8Array }> {

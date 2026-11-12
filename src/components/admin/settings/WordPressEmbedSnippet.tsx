@@ -1,76 +1,55 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../../../lib/supabase";
 import { Button } from "../../ui/Button";
 import { Field, Input, Select } from "../../ui/Field";
-import { ErrorState, LoadingState } from "../../ui/State";
+import { ErrorState } from "../../ui/State";
+import { resolvePublicHostname } from "../../../lib/publicHostResolver";
 
 type EmbedFilter = "all" | "available";
 
 const HEIGHT_PRESETS = ["500px", "700px", "900px"];
 const RADIUS_OPTIONS = ["0px", "8px", "12px", "20px"];
 
-export function WordPressEmbedSnippet() {
-  const [slug, setSlug] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+export function WordPressEmbedSnippet({ tenantSlug, projectSlug, phaseSlug }: { tenantSlug: string | null; projectSlug: string | null; phaseSlug: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState("700px");
   const [radius, setRadius] = useState("12px");
   const [filter, setFilter] = useState<EmbedFilter>("available");
-  const [project, setProject] = useState("");
   const [copied, setCopied] = useState(false);
+  const [hostReady, setHostReady] = useState(false);
+  const [hostChecking, setHostChecking] = useState(true);
 
   useEffect(() => {
+    setError(null);
     let cancelled = false;
-    async function loadTenantSlug() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        if (!cancelled) {
-          setError("Sign in again to load your tenant embed details.");
-          setLoading(false);
-        }
-        return;
-      }
-      const { data: profile, error: profileError } = await supabase
-        .from("admin_profiles")
-        .select("tenant_id")
-        .eq("user_id", sessionData.session.user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (profileError) {
-        setError(profileError.message);
-        setLoading(false);
-        return;
-      }
-      const tenantId = (profile as { tenant_id: string | null } | null)?.tenant_id;
-      if (!tenantId) {
-        setError("No tenant is linked to your login.");
-        setLoading(false);
-        return;
-      }
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .select("slug")
-        .eq("id", tenantId)
-        .maybeSingle();
-      if (cancelled) return;
-      setLoading(false);
-      if (orgError) {
-        setError(orgError.message);
-        return;
-      }
-      setSlug((org as { slug: string } | null)?.slug ?? null);
+    setHostReady(false);
+    if (!tenantSlug || !projectSlug) {
+      setHostChecking(false);
+      return () => { cancelled = true; };
     }
-    void loadTenantSlug();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setHostChecking(true);
+    void resolvePublicHostname(window.location.hostname).then((resolution) => {
+      if (cancelled) return;
+      setHostReady(resolution.resolved
+        && resolution.scope.tenantSlug === tenantSlug
+        && resolution.scope.projectSlug === projectSlug);
+      setHostChecking(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setHostReady(false);
+        setHostChecking(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [tenantSlug, projectSlug, phaseSlug]);
 
   const baseUrl = window.location.origin;
-  const projectPath = project.trim().toLowerCase();
-  const mapPath = projectPath ? `/embed/${slug}/${projectPath}` : `/embed/${slug}`;
-  const snippet = slug
-    ? `<iframe src="${baseUrl}${mapPath}?filter=${filter}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
+  const projectPath = projectSlug ? encodeURIComponent(projectSlug) : "";
+  const phasePath = phaseSlug ? encodeURIComponent(phaseSlug) : "";
+  const mapPath = tenantSlug && projectPath && phasePath && hostReady
+    ? `/embed/${encodeURIComponent(tenantSlug)}/${projectPath}?phase=${phasePath}&filter=${filter}`
+    : "";
+  const snippet = tenantSlug && mapPath
+    ? `<iframe src="${baseUrl}${mapPath}" width="100%" height="${height}" frameborder="0" style="border:0; border-radius:${radius}; width:100%; overflow:hidden;" allowfullscreen allow="fullscreen"></iframe>`
     : "";
 
   async function handleCopy() {
@@ -84,17 +63,21 @@ export function WordPressEmbedSnippet() {
     }
   }
 
-  if (loading) return <LoadingState label="Loading embed details" />;
-
   return (
     <div className="grid gap-4">
       {error ? <ErrorState message={error} /> : null}
-      {!slug && !error ? (
+      {(!tenantSlug || !projectSlug || !phaseSlug) && !error ? (
         <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">
-          Embed details appear once your login is linked to a tenant.
+          Embed details appear once your login is linked to a tenant, project and phase.
         </p>
       ) : null}
-      {slug ? (
+      {tenantSlug && projectSlug && phaseSlug && !hostReady && !hostChecking ? (
+        <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground" role="status">
+          This address is not an active public binding for the selected project. Open the admin app on that project&apos;s verified public hostname before copying an embed snippet.
+        </p>
+      ) : null}
+      {hostChecking && tenantSlug && projectSlug ? <p className="text-sm text-muted-foreground" role="status">Checking this public host binding…</p> : null}
+      {tenantSlug && projectSlug && phaseSlug && hostReady ? (
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Height">
@@ -117,13 +100,8 @@ export function WordPressEmbedSnippet() {
                 <option value="available">Available only</option>
               </Select>
             </Field>
-            <Field label="Project (optional — blank aliases the default project)">
-              <Input
-                value={project}
-                onChange={(event) => setProject(event.target.value)}
-                placeholder="default project"
-                maxLength={60}
-              />
+            <Field label="Workspace scope">
+              <Input readOnly value={`${projectSlug ?? "No project"} / ${phaseSlug ?? "No phase"}`} />
             </Field>
           </div>
           <Field label="Custom height (optional override)">
@@ -144,19 +122,12 @@ export function WordPressEmbedSnippet() {
             />
           </Field>
           <div>
-            <Button type="button" onClick={() => void handleCopy()}>
+            <Button type="button" disabled={!snippet} onClick={() => void handleCopy()}>
               {copied ? "Copied!" : "Copy to Clipboard"}
             </Button>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            Live map for tenant <strong>{slug}</strong>
-            {projectPath ? (
-              <>
-                {" "}project <strong>{projectPath}</strong>
-              </>
-            ) : (
-              <> (default project)</>
-            )}. Works in WordPress, Webflow, or any site that accepts iframes.
+            Live map for tenant <strong>{tenantSlug}</strong>, project <strong>{projectSlug}</strong>, phase <strong>{phaseSlug}</strong>. The selected phase is part of the generated link. Works in WordPress, Webflow, or any site that accepts iframes.
             Inquiries submitted inside the embed route to your tenant pipeline automatically.
             The snippet allows fullscreen mode; older embeds need <code>allow=&quot;fullscreen&quot;</code> added to the iframe tag for it to work.
           </p>

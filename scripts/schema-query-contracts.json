@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "purpose": "Explicit, source-anchored contracts for Supabase queries whose table or payload is assembled dynamically. The replayed-catalog CI gate validates every declared relation and column before these findings cease to block.",
+  "dynamic_queries": [
+    {
+      "id": "parcel-boundary-update",
+      "file": "src/components/admin/parcels/ParcelDrawer.tsx",
+      "anchor": "supabase.from(\"parcels\").update(payload)",
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.parcels", "select": ["id"], "filters": ["id", "tenant_id", "project_id", "phase_id"], "writes": ["tenant_id", "map_polygon"] }],
+      "evidence": "The local payload is built as { map_polygon, tenant_id }; the row is constrained by its id and verified workspace scope."
+    },
+    {
+      "id": "contract-create",
+      "file": "src/components/forms/ContractForm.tsx",
+      "anchor": "supabase.from(\"contracts\").insert({",
+      "reasons": ["dynamic_insert_payload"],
+      "tables": [{ "name": "public.contracts", "select": ["id"], "filters": [], "writes": ["customer_id", "parcel_id", "final_purchase_price", "initial_deposit", "currency", "term_months", "start_date", "payment_due_day", "tenant_id", "project_id", "phase_id", "application_id", "reservation_id", "signed_contract_file_path", "is_active"] }],
+      "evidence": "Form fields come from contractSchema in src/lib/schemas.ts; the handler adds verified tenant/project/phase and application/reservation references."
+    },
+    {
+      "id": "daily-brief-action-update",
+      "file": "src/pages/DailyBriefsPage.tsx",
+      "anchor": "supabase.from(\"brief_action_items\").update(patch)",
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.brief_action_items", "select": [], "filters": ["id", "tenant_id"], "writes": ["status", "resolved_at", "dismissed_at"] }],
+      "evidence": "The patch has status plus exactly one terminal timestamp; the tenant and item IDs scope the update."
+    },
+    {
+      "id": "daily-brief-source-revalidation",
+      "file": "src/pages/DailyBriefsPage.tsx",
+      "anchor": "(supabase as unknown as DynamicSourceClient).from(table).select(select)",
+      "reasons": ["dynamic_table_name", "dynamic_select"],
+      "tables": [
+        { "name": "public.leads", "select": ["updated_at", "status"], "required": ["updated_at", "status"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.follow_up_tasks", "select": ["updated_at", "status", "due_at", "leads.pipeline_stage"], "required": ["updated_at", "status", "due_at"], "filters": ["id", "tenant_id"], "writes": [], "related": [{ "table": "leads", "columns": ["pipeline_stage"] }] },
+        { "name": "public.site_visits", "select": ["updated_at", "status", "scheduled_at"], "required": ["updated_at", "status", "scheduled_at"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.applications", "select": ["updated_at", "status"], "required": ["updated_at", "status"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.lot_reservations", "select": ["updated_at", "status", "expires_at", "deposit_status", "deposit_due_at"], "required": ["updated_at", "status", "expires_at", "deposit_status", "deposit_due_at"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.transactions", "select": ["updated_at", "status", "manual_receipt_number", "collection_method", "payment_documents.id"], "required": ["updated_at", "status", "manual_receipt_number", "collection_method"], "filters": ["id", "tenant_id"], "writes": [], "related": [{ "table": "payment_documents", "columns": ["id"] }] },
+        { "name": "public.payment_requests", "select": ["updated_at", "status", "due_date"], "required": ["updated_at", "status", "due_date"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.customers", "select": ["updated_at"], "required": ["updated_at"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.post_sales_tasks", "select": ["updated_at", "status", "due_at"], "required": ["updated_at", "status", "due_at"], "filters": ["id", "tenant_id"], "writes": [] },
+        { "name": "public.post_sales_checklists", "select": ["updated_at", "status", "document_status", "collections_handoff_status"], "required": ["updated_at", "status", "document_status", "collections_handoff_status"], "filters": ["id", "tenant_id"], "writes": [] }
+      ],
+      "evidence": "sourceTable() maps the enumerated source types; select is '*' with two explicit joined relations. Runtime values from related_table must remain restricted to the same allowlist."
+    },
+    {
+      "id": "information-request-topic-links",
+      "file": "src/pages/InformationCenterPage.tsx",
+      "anchor": "supabase.from(\"information_request_topics\").insert(",
+      "reasons": ["dynamic_insert_payload"],
+      "tables": [{ "name": "public.information_request_topics", "select": [], "filters": [], "writes": ["tenant_id", "request_id", "topic_id"] }],
+      "evidence": "Each row is mapped from selectedTopicIds into a literal tenant/request/topic object."
+    },
+    {
+      "id": "information-request-workflow-update",
+      "file": "src/pages/InformationCenterPage.tsx",
+      "anchor": "supabase.from(\"information_requests\").update(updates)",
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.information_requests", "select": [], "filters": ["id", "tenant_id", "project_id", "phase_id"], "writes": ["status", "communication_status"] }],
+      "evidence": "updates is Partial<Pick<InformationRequest, 'status' | 'communication_status'>>."
+    },
+    {
+      "id": "lead-update",
+      "file": "src/pages/LeadsPage.tsx",
+      "anchor": "supabase.from(\"leads\").update(patch)",
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.leads", "select": [], "filters": ["id", "tenant_id", "project_id", "phase_id"], "writes": ["full_name", "email", "phone", "whatsapp", "parcel_id", "application_id", "customer_id", "source", "pipeline_stage", "buyer_journey_stage", "decision_blocker", "budget_min", "budget_max", "preferred_contact_method", "assigned_to", "next_action", "next_action_due_at", "notes", "lost_reason"] }],
+      "evidence": "patch is returned by normalizeLeadValues() in the same file."
+    },
+    {
+      "id": "lead-create",
+      "file": "src/pages/LeadsPage.tsx",
+      "anchor": "supabase.from(\"leads\").insert({",
+      "reasons": ["dynamic_insert_payload"],
+      "tables": [{ "name": "public.leads", "select": ["id"], "filters": [], "writes": ["full_name", "email", "phone", "whatsapp", "parcel_id", "application_id", "customer_id", "source", "pipeline_stage", "buyer_journey_stage", "decision_blocker", "budget_min", "budget_max", "preferred_contact_method", "assigned_to", "next_action", "next_action_due_at", "notes", "lost_reason", "tenant_id", "project_id", "phase_id"] }],
+      "evidence": "The mapped normalizeLeadValues() fields are combined with the active workspace scope; the inserted id is returned."
+    },
+    {
+      "id": "reservation-create",
+      "file": "src/pages/LeadsPage.tsx",
+      "anchor": "await supabase\n        .from(\"lot_reservations\")\n        .insert({",
+      "reasons": ["dynamic_insert_payload"],
+      "tables": [{ "name": "public.lot_reservations", "select": ["id"], "filters": [], "writes": ["reservation_code", "parcel_id", "currency", "status", "deposit_status", "expected_deposit_amount", "deposit_due_at", "deposit_paid_at", "reserved_at", "expires_at", "assigned_to", "notes", "tenant_id", "project_id", "phase_id", "lead_id", "application_id", "customer_id"] }],
+      "evidence": "patch is returned by normalizeReservationValues(); the handler adds tenant/project/phase and the selected lead/application/customer relationships."
+    },
+    {
+      "id": "reservation-update",
+      "file": "src/pages/LeadsPage.tsx",
+      "anchor": "supabase.from(\"lot_reservations\").update(patch)",
+      "occurrence": 1,
+      "expected_occurrences": 2,
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.lot_reservations", "select": [], "filters": ["id", "tenant_id", "project_id", "phase_id"], "writes": ["reservation_code", "parcel_id", "currency", "status", "deposit_status", "expected_deposit_amount", "deposit_due_at", "deposit_paid_at", "reserved_at", "expires_at", "assigned_to", "notes"] }],
+      "evidence": "patch is returned by normalizeReservationValues()."
+    },
+    {
+      "id": "reservation-status-update",
+      "file": "src/pages/LeadsPage.tsx",
+      "anchor": "supabase.from(\"lot_reservations\").update(patch)",
+      "occurrence": 2,
+      "expected_occurrences": 2,
+      "reasons": ["dynamic_update_payload"],
+      "tables": [{ "name": "public.lot_reservations", "select": [], "filters": ["id", "tenant_id", "project_id", "phase_id"], "writes": ["status", "deposit_status", "released_at", "deposit_paid_at"] }],
+      "evidence": "This is the separately anchored status-transition patch adjacent to reservation:updateReservation()."
+    },
+    {
+      "id": "tenant-settings-upsert",
+      "file": "src/pages/SettingsPage.tsx",
+      "anchor": "supabase.from(table).upsert(rows.map((row) => ({ ...row, tenant_id: tenantId })))",
+      "reasons": ["dynamic_table_name", "dynamic_upsert_payload"],
+      "tables": [
+        { "name": "public.payment_methods", "select": [], "filters": [], "writes": ["id", "tenant_id", "name", "method_type", "bank_name", "account_name", "account_number", "currency", "instructions", "is_active", "is_public", "sort_order"] },
+        { "name": "public.installment_plans", "select": [], "filters": [], "writes": ["id", "tenant_id", "name", "description", "reservation_fee", "initial_deposit", "final_purchase_price", "term_months", "monthly_payment", "is_active", "sort_order"] },
+        { "name": "public.lot_sizes", "select": [], "filters": [], "writes": ["id", "tenant_id", "name", "dimensions", "default_price", "description", "is_active", "sort_order"] },
+        { "name": "public.fee_types", "select": [], "filters": [], "writes": ["id", "tenant_id", "name", "description", "default_amount", "frequency", "is_required", "is_active", "sort_order"] }
+      ],
+      "evidence": "The table parameter is a four-table TypeScript union and each cleaner emits only its table's typed settings columns."
+    },
+    {
+      "id": "daily-brief-action-create",
+      "file": "supabase/functions/generate-daily-brief/index.ts",
+      "anchor": "await supabase\n      .from(\"brief_action_items\")\n      .insert(item)",
+      "reasons": ["dynamic_insert_payload"],
+      "tables": [{ "name": "public.brief_action_items", "select": ["*"], "filters": [], "writes": ["brief_id", "source_type", "source_key", "title", "details", "severity", "status", "related_table", "related_record_id", "attention_kind", "source_entity_type", "source_entity_id", "related_entity_id", "generated_status", "generated_due_at", "generated_source_updated_at", "destination_route", "first_seen_on", "last_seen_on", "tenant_id"] }],
+      "evidence": "item comes from actionItemFromIssue() plus tenant_id."
+    },
+    {
+      "id": "lead-summary-upsert",
+      "file": "supabase/functions/generate-lead-summary/index.ts",
+      "anchor": "supabase.from(\"lead_ai_summaries\")\n    .upsert(summaryPayload",
+      "reasons": ["dynamic_upsert_payload"],
+      "tables": [{ "name": "public.lead_ai_summaries", "select": ["*"], "filters": [], "writes": ["tenant_id", "lead_id", "generation_id", "summary", "readiness_status", "key_risks", "missing_information", "recommended_actions", "next_best_action", "confidence_notes", "source_snapshot", "model", "provider", "generated_by", "generated_at"] }],
+      "evidence": "summaryPayload is a literal object in the same handler; conflict target is tenant_id,lead_id,generation_id."
+    },
+    {
+      "id": "post-sales-summary-upsert",
+      "file": "supabase/functions/generate-post-sales-summary/index.ts",
+      "anchor": "supabase.from(\"post_sales_ai_summaries\")\n    .upsert(summaryPayload",
+      "reasons": ["dynamic_upsert_payload"],
+      "tables": [{ "name": "public.post_sales_ai_summaries", "select": ["*"], "filters": [], "writes": ["tenant_id", "checklist_id", "generation_id", "customer_id", "application_id", "contract_id", "lead_id", "reservation_id", "summary", "readiness_status", "key_blockers", "missing_information", "recommended_actions", "next_best_action", "confidence_notes", "source_snapshot", "model", "provider", "generated_by", "generated_at"] }],
+      "evidence": "summaryPayload is a literal object in the same handler; conflict target is tenant_id,checklist_id,generation_id."
+    }
+  ],
+  "dynamic_rpcs": [
+    {
+      "id": "super-admin-hierarchy-rpc",
+      "file": "supabase/functions/_shared/super-admin-console.mjs",
+      "anchor": "operator.rpc(\"super_admin_manage_workspace_hierarchy_v1\", args)",
+      "function": "super_admin_manage_workspace_hierarchy_v1",
+      "arguments": ["p_action", "p_tenant_id", "p_name", "p_slug", "p_project_id", "p_phase_id", "p_is_active", "p_map_experience_mode", "p_phase_slug", "p_phase_name"],
+      "signature": "(p_action text, p_tenant_id uuid, p_name text, p_slug text, p_project_id uuid, p_phase_id uuid, p_is_active boolean, p_map_experience_mode text, p_phase_slug text, p_phase_name text)",
+      "evidence": "The handler builds p_action and adds only the eight fields in its local allowlist; required p_tenant_id is checked before the call."
+    },
+    {
+      "id": "customer-summary-claim-rpc",
+      "file": "supabase/functions/generate-customer-summary/index.ts",
+      "anchor": "supabase.rpc(\"claim_ai_summary_generation_v1\", claimArgs)",
+      "function": "claim_ai_summary_generation_v1",
+      "arguments": ["p_summary_kind", "p_tenant_id", "p_parent_id", "p_generation_id", "p_actor_id"],
+      "signature": "(p_summary_kind text, p_tenant_id uuid, p_parent_id text, p_generation_id uuid, p_actor_id uuid)",
+      "evidence": "claimArgs is a literal five-field object; signature comes from 20261108140000_m77_job_idempotency_and_ai_scope.sql."
+    },
+    {
+      "id": "lead-summary-claim-rpc",
+      "file": "supabase/functions/generate-lead-summary/index.ts",
+      "anchor": "supabase.rpc(\"claim_ai_summary_generation_v1\", claimArgs)",
+      "function": "claim_ai_summary_generation_v1",
+      "arguments": ["p_summary_kind", "p_tenant_id", "p_parent_id", "p_generation_id", "p_actor_id"],
+      "signature": "(p_summary_kind text, p_tenant_id uuid, p_parent_id text, p_generation_id uuid, p_actor_id uuid)",
+      "evidence": "claimArgs is a literal five-field object; signature comes from 20261108140000_m77_job_idempotency_and_ai_scope.sql."
+    },
+    {
+      "id": "post-sales-summary-claim-rpc",
+      "file": "supabase/functions/generate-post-sales-summary/index.ts",
+      "anchor": "supabase.rpc(\"claim_ai_summary_generation_v1\", claimArgs)",
+      "function": "claim_ai_summary_generation_v1",
+      "arguments": ["p_summary_kind", "p_tenant_id", "p_parent_id", "p_generation_id", "p_actor_id"],
+      "signature": "(p_summary_kind text, p_tenant_id uuid, p_parent_id text, p_generation_id uuid, p_actor_id uuid)",
+      "evidence": "claimArgs is a literal five-field object; signature comes from 20261108140000_m77_job_idempotency_and_ai_scope.sql."
+    }
+  ]
+}

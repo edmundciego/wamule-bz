@@ -22,6 +22,9 @@ interface BoardRow {
 
 interface BulkIngestPanelProps {
   boardRows: BoardRow[];
+  tenantSlug: string | null;
+  projectSlug: string | null;
+  phaseSlug: string | null;
 }
 
 interface IngestStats {
@@ -55,10 +58,14 @@ function analyze(raw: unknown): IngestStats {
   return { lots, perTier, needsReview, badGeometry };
 }
 
-export function BulkIngestPanel({ boardRows }: BulkIngestPanelProps) {
+export function BulkIngestPanel({ boardRows, tenantSlug, projectSlug, phaseSlug }: BulkIngestPanelProps) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [stats, setStats] = useState<IngestStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const scopeArgs = tenantSlug && projectSlug && phaseSlug
+    ? `--tenant ${tenantSlug} --project ${projectSlug} --phase ${phaseSlug}`
+    : null;
+  const dryRunCommand = scopeArgs ? `npm run map:publish -- ${scopeArgs} --dir <out-dir> --dry-run` : null;
 
   const diff = useMemo(() => {
     if (!stats) return null;
@@ -100,8 +107,7 @@ export function BulkIngestPanel({ boardRows }: BulkIngestPanelProps) {
     <div className="grid gap-4">
       <div className="v2-workflow-panel p-4 text-sm text-primary">
         Preview-only: this panel validates a <code>map:build</code> <code>lots.json</code> file and diffs it against the
-        live board. Nothing is written from here — applying stays in the audited CLI (
-        <code>npm run map:publish -- --tenant &lt;slug&gt; --dir &lt;out&gt; --apply</code>), which inserts new lots
+        live board for {projectSlug ?? "the selected project"} / {phaseSlug ?? "the selected phase"}. Nothing is written from here — applying stays in the audited CLI, scoped to this exact tenant, project, and phase; it inserts new lots
         as Available, updates price + geometry only, and never deletes or flips statuses.
       </div>
       {error ? <ErrorState message={error} /> : null}
@@ -162,10 +168,9 @@ export function BulkIngestPanel({ boardRows }: BulkIngestPanelProps) {
           <div>
             <Button
               type="button"
+              disabled={!dryRunCommand}
               onClick={() => {
-                void navigator.clipboard?.writeText(
-                  `npm run map:publish -- --tenant <slug> --dir <out-dir> --dry-run`,
-                );
+                if (dryRunCommand) void navigator.clipboard?.writeText(dryRunCommand);
               }}
             >
               Copy dry-run command

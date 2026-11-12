@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, CheckCircle2, HelpCircle, MapPin, Send, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { z } from "zod";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -12,13 +12,14 @@ import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { PublicLotMap, type PublicLotParcel } from "../components/public/PublicLotMap";
 import { applicationSchema } from "../lib/schemas";
-import { resolveInquirySubmitError } from "../lib/functions";
+import { submitPublicFunction } from "../lib/publicSubmission";
+import type { PublicExperienceScope, PublicSiteModuleId, PublicSiteTemplateId } from "../lib/publicExperience.mjs";
+import type { PublicPhaseOption, PublicSiteData } from "../lib/publicSiteExperience";
 import { buildInquiryPayload } from "../../supabase/functions/_shared/inquiry-contract";
 import { buildPublicApplicationPayload } from "../../supabase/functions/_shared/public-application-contract";
-import { CANONICAL_COMPANY_NAME, defaultCompanyProfile } from "../lib/brand";
-import { hasSupabaseConfig, supabase } from "../lib/supabase";
+import { hasSupabaseConfig } from "../lib/supabase";
 import { cn, money } from "../lib/utils";
-import type { BusinessSetting, InstallmentPlan, PaymentMethod } from "../types/database";
+import type { InstallmentPlan, PaymentMethod } from "../types/database";
 
 type ApplicationValues = z.infer<typeof applicationSchema>;
 type PublicParcelOption = {
@@ -26,6 +27,7 @@ type PublicParcelOption = {
   local_key: number;
   lot_number: string;
   status: string | null;
+  sales_selectable: boolean;
   base_price: number;
   dimensions: string | null;
 };
@@ -41,7 +43,6 @@ const inquiryInterests = [
 
 type InquiryInterest = (typeof inquiryInterests)[number];
 const specificLotInterest: InquiryInterest = "A specific lot";
-
 function fallbackUuid(): string {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -79,67 +80,61 @@ function applicationStepForField(field: string) {
   return 4;
 }
 
-const defaultCompany = defaultCompanyProfile;
-
-const defaultApplicationSettings = {
-  applications_open: true,
-  public_notice_text:
-    `Submission of this application is solely a request to be considered for the purchase of a lot within ${CANONICAL_COMPANY_NAME}. Submission or acceptance of this application does not create any legal right to purchase land, does not reserve a lot, and does not guarantee that any lot will be sold or transferred to the applicant.`,
-  application_acknowledgment_text:
-    `By signing this application, I acknowledge and understand that submission does not guarantee approval or allocation of a lot; approval is subject to availability and acceptance by ${CANONICAL_COMPANY_NAME}; the reservation fee is non-refundable and paid to reserve a selected lot; final selection is subject to inspection and confirmation; only a signed purchase agreement may result in ownership transfer; utilities and closing charges may be applicant responsibilities; and this application is not a sale agreement.`,
-  show_lot_prices_publicly: true,
-  show_available_lot_count_publicly: true,
-  lot_map_tenant_slug: "",
-  default_confirmation_message: `Application submitted. A ${CANONICAL_COMPANY_NAME} representative will contact you after review.`,
-};
-
-const defaultLotPhase = {
-  phase_name: "Phase 1",
-  default_lot_size: "65 x 101 or 75 x 101 ft",
-  default_lot_price: 25000,
-  public_availability_display: true,
-};
-
-export function ApplicationPage() {
+export function ApplicationPage({
+  hostname,
+  scope,
+  phases,
+  company,
+  publicApplication,
+  installmentPlans: rawInstallmentPlans,
+  paymentMethods: rawPaymentMethods,
+  templateId: selectedTemplate,
+  enabledModules: selectedModules,
+}: {
+  hostname: string;
+  scope: PublicExperienceScope;
+  phases: PublicPhaseOption[];
+  company: PublicSiteData["company"];
+  publicApplication: PublicSiteData["publicApplication"];
+  installmentPlans: Array<Record<string, unknown>>;
+  paymentMethods: Array<Record<string, unknown>>;
+  templateId?: PublicSiteTemplateId;
+  enabledModules?: Record<PublicSiteModuleId, boolean>;
+}) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const templateId = selectedTemplate ?? "wamule-classic";
+  const modules = selectedModules ?? { map: true, inquiry: true, application: true, pricing: true };
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
-  const {
-    data: publicSettings,
-    isLoading: publicSettingsLoading,
-    isError: publicSettingsError,
-  } = useQuery({
-    queryKey: ["public-business-settings"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("business_settings")
-        .select("*")
-        .in("key", ["company_profile", "public_application", "lot_phase"]);
-      if (error) throw error;
-      return data as BusinessSetting[];
-    },
-    enabled: hasSupabaseConfig,
-  });
-  const companyProfile = settingValue<typeof defaultCompany>(publicSettings, "company_profile");
-  const hasCompanyProfile = publicSettings?.some((setting) => setting.key === "company_profile") ?? false;
-  const company = { ...defaultCompany, ...companyProfile };
-  const applicationSettings = {
-    ...defaultApplicationSettings,
-    ...settingValue<typeof defaultApplicationSettings>(publicSettings, "public_application"),
+  const applicationSettings = publicApplication;
+  const applicationTenantSlug = scope.tenantSlug;
+  const selectedPhase = phases.find((phase) => phase.slug === scope.phaseSlug);
+  const phaseName = selectedPhase?.name ?? scope.phaseSlug;
+  const changePhase = (phaseSlug: string) => {
+    // Applicant answers remain useful across phases, but parcel references do
+    // not. Clear old phase selections before the new public map is requested.
+    form.setValue("preferred_lot_refs", [], { shouldDirty: true, shouldValidate: true });
+    const params = new URLSearchParams(location.search);
+    params.set("phase", phaseSlug);
+    navigate(`${location.pathname}?${params.toString()}`);
   };
-  const lotPhase = { ...defaultLotPhase, ...settingValue<typeof defaultLotPhase>(publicSettings, "lot_phase") };
-  const configuredTenantSlug = applicationSettings.lot_map_tenant_slug;
-  const applicationTenantSlug = typeof configuredTenantSlug === "string" ? configuredTenantSlug.trim().toLowerCase() : "";
   const { data: parcels = [], isLoading, isError: parcelsError, error: parcelLoadError } = useQuery({
-    queryKey: ["public-application-lots", applicationTenantSlug],
+    queryKey: ["public-application-lots", hostname, scope.tenantSlug, scope.projectSlug, scope.phaseSlug],
     queryFn: async () => {
       const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
       if (!baseUrl || !anonKey) throw new Error("The public lot service is not configured.");
+      const params = new URLSearchParams({
+        host: hostname,
+        tenant: scope.tenantSlug,
+        project: scope.projectSlug,
+        phase: scope.phaseSlug,
+      });
       const response = await fetch(
-        `${baseUrl}/functions/v1/get-public-lots?tenant=${encodeURIComponent(applicationTenantSlug)}`,
-        { headers: { apikey: anonKey } },
+        `${baseUrl}/functions/v1/get-public-lots?${params}`,
+        { headers: { apikey: anonKey }, cache: "no-store" },
       );
       const body = await response.json().catch(() => ({})) as {
         parcels?: Array<Record<string, unknown>>;
@@ -152,40 +147,16 @@ export function ApplicationPage() {
           local_key: index + 1,
           lot_number: typeof parcel.lot_number === "string" ? parcel.lot_number : "",
           status: typeof parcel.status === "string" ? parcel.status : null,
+          sales_selectable: parcel.sales_selectable === true,
           base_price: Number(parcel.price ?? 0),
           dimensions: typeof parcel.dimensions === "string" ? parcel.dimensions : null,
         }))
-        .filter((parcel) => parcel.public_ref && parcel.status === "Available");
+        .filter((parcel) => parcel.public_ref && parcel.status === "Available" && parcel.sales_selectable);
     },
-    enabled: hasSupabaseConfig && Boolean(applicationTenantSlug),
+    enabled: hasSupabaseConfig && Boolean(hostname && applicationTenantSlug && scope.projectSlug && scope.phaseSlug),
   });
-  const { data: installmentPlans } = useQuery({
-    queryKey: ["public-installment-plans"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("installment_plans")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true });
-      if (error) throw error;
-      return data as InstallmentPlan[];
-    },
-    enabled: hasSupabaseConfig,
-  });
-  const { data: paymentMethods } = useQuery({
-    queryKey: ["public-payment-methods"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("payment_methods")
-        .select("*")
-        .eq("is_active", true)
-        .eq("is_public", true)
-        .order("sort_order", { ascending: true });
-      if (error) throw error;
-      return data as PaymentMethod[];
-    },
-    enabled: hasSupabaseConfig,
-  });
+  const installmentPlans = rawInstallmentPlans as InstallmentPlan[];
+  const paymentMethods = rawPaymentMethods as PaymentMethod[];
 
   const form = useForm<ApplicationValues>({
     resolver: zodResolver(applicationSchema),
@@ -220,7 +191,7 @@ export function ApplicationPage() {
 
   async function onSubmit(values: ApplicationValues) {
     setSubmitError(null);
-    if (!applicationSettings.applications_open) {
+    if (!applicationSettings.applications_open || !applicationSettings.notices_complete) {
       setSubmitError("Applications are currently closed.");
       return;
     }
@@ -228,15 +199,16 @@ export function ApplicationPage() {
       setSubmitError("This application page is not configured. Please contact the development team.");
       return;
     }
-    const { data, error: functionError } = await supabase.functions.invoke("submit-public-application", {
-      body: buildPublicApplicationPayload({ tenant: applicationTenantSlug, ...values }),
-    });
-    if (functionError || data?.error) {
-      setSubmitError(
-        functionError
-          ? await resolveInquirySubmitError(functionError)
-          : String(data?.error ?? "We could not submit your application. Please try again."),
-      );
+    try {
+      await submitPublicFunction("submit-public-application", buildPublicApplicationPayload({
+        tenant: applicationTenantSlug,
+        project: scope.projectSlug,
+        phase: scope.phaseSlug,
+        hostname,
+        ...values,
+      }));
+    } catch (failure) {
+      setSubmitError(failure instanceof Error ? failure.message : "We could not submit your application. Please try again.");
       return;
     }
     setSubmitted(true);
@@ -248,7 +220,9 @@ export function ApplicationPage() {
   }
 
   const availableLots = parcels?.length ?? 0;
-  const visiblePlans = installmentPlans?.length ? installmentPlans : fallbackApplicationPlans();
+  const visiblePlans = installmentPlans;
+  const visiblePrices = parcels.map((parcel) => parcel.base_price).filter((price) => Number.isFinite(price) && price > 0);
+  const startingPrice = visiblePrices.length ? Math.min(...visiblePrices) : null;
   const summaryRows = buildApplicationSummaryRows({
     activeStep,
     values: watchedValues,
@@ -256,14 +230,7 @@ export function ApplicationPage() {
     parcels,
   });
 
-  // The public page must never flash a bundled brand before the admin-managed
-  // company profile arrives. In a configured environment, branding is rendered
-  // only after the public settings query succeeds.
-  if (hasSupabaseConfig && publicSettingsLoading) {
-    return <PublicPageLoading />;
-  }
-
-  if (hasSupabaseConfig && (publicSettingsError || !hasCompanyProfile)) {
+  if (!company.company_name) {
     return <PublicSettingsUnavailable />;
   }
 
@@ -272,7 +239,7 @@ export function ApplicationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main data-site-template={templateId} data-site-map={modules.map} className="min-h-screen bg-background">
       <header className="border-b border-primary/10 bg-card/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <a href="/" className="flex items-center gap-3">
@@ -293,12 +260,18 @@ export function ApplicationPage() {
             <a className="hidden text-slate hover:text-primary sm:inline" href="#lots">
               Lots
             </a>
-            <a
+            {modules.application ? <a
               className="focus-ring inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]"
               href="#application"
             >
               Apply <ArrowRight className="h-4 w-4" />
-            </a>
+            </a> : null}
+            {phases.length > 1 ? <select
+              aria-label="Project phase"
+              className="h-10 rounded-md border border-primary/20 bg-background px-2 text-sm"
+              value={scope.phaseSlug}
+              onChange={(event) => changePhase(event.target.value)}
+            >{phases.map((phase) => <option key={phase.slug} value={phase.slug}>{phase.name}</option>)}</select> : null}
           </nav>
         </div>
       </header>
@@ -306,7 +279,7 @@ export function ApplicationPage() {
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
         <div className="min-w-0">
           <Badge tone={applicationSettings.applications_open ? "green" : "amber"}>
-            {lotPhase.phase_name} applications {applicationSettings.applications_open ? "open" : "closed"}
+            {phaseName} applications {applicationSettings.applications_open ? "open" : "closed"}
           </Badge>
           <h1 className="mt-5 max-w-3xl break-words font-display text-4xl font-semibold tracking-normal text-primary sm:text-5xl">
             {company.company_name} Land Application
@@ -316,9 +289,9 @@ export function ApplicationPage() {
           </p>
           <div className="wave-rule mt-6 h-3 w-56" />
           <div className="mt-7 grid gap-3 sm:grid-cols-3">
-            <InfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly ? money(Number(lotPhase.default_lot_price || 0)) : "Contact office"} />
-            <InfoTile label="Lot sizes" value={lotPhase.default_lot_size} />
-            <InfoTile label={lotPhase.phase_name} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
+            <InfoTile label="Starting price" value={applicationSettings.show_lot_prices_publicly && modules.pricing && startingPrice !== null ? money(startingPrice) : "Contact office"} />
+            <InfoTile label="Lot sizes" value={parcels.find((parcel) => parcel.dimensions)?.dimensions || "See available lot details"} />
+            <InfoTile label={phaseName} value={applicationSettings.show_available_lot_count_publicly ? `${availableLots} available` : "Availability by review"} />
           </div>
           <div className="mt-7 flex flex-wrap gap-3">
             <a className="focus-ring inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-primary-hover hover:shadow-[var(--shadow-button)]" href="#application">
@@ -335,13 +308,9 @@ export function ApplicationPage() {
                 <p className="font-display text-xl font-semibold text-primary">Available Lot Preferences</p>
                 <p className="text-sm text-muted-foreground">Select preferred lots in the application below.</p>
               </div>
-              {lotPhase.public_availability_display && applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null}
+              {applicationSettings.show_available_lot_count_publicly ? <Badge tone="green">{availableLots} available</Badge> : null}
             </div>
-            {!lotPhase.public_availability_display ? (
-              <div className="rounded-md border border-dashed bg-muted p-5 text-sm text-muted-foreground">
-                Lot availability is confirmed by {company.company_name} staff during application review.
-              </div>
-            ) : isLoading ? (
+            {isLoading ? (
               <LoadingState label="Loading lot availability" />
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -352,7 +321,7 @@ export function ApplicationPage() {
                       <span className="rounded-full bg-success/10 px-2 py-1 text-xs font-semibold text-success">{parcel.status}</span>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">{parcel.dimensions}</p>
-                    {applicationSettings.show_lot_prices_publicly ? <span className="mt-2 block font-semibold text-success">{money(parcel.base_price)}</span> : null}
+                    {applicationSettings.show_lot_prices_publicly && modules.pricing ? <span className="mt-2 block font-semibold text-success">{money(parcel.base_price)}</span> : null}
                   </div>
                 ))}
               </div>
@@ -364,15 +333,16 @@ export function ApplicationPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
+      {modules.inquiry ? <section className="mx-auto max-w-6xl px-4 pb-5" id="request-info">
         <PublicInquiryPanel
           companyName={company.company_name}
-          tenantSlug={applicationTenantSlug}
+          hostname={hostname}
+          scope={scope}
           parcels={parcels}
-          showPrices={applicationSettings.show_lot_prices_publicly}
+          showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
           hasSupabaseConfig={hasSupabaseConfig}
         />
-      </section>
+      </section> : null}
 
       <section className="mx-auto max-w-6xl px-4 pb-4" id="notice">
         <div className="grid gap-4 rounded-xl border border-secondary/20 bg-card p-5 shadow-sm shadow-secondary/5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
@@ -395,7 +365,7 @@ export function ApplicationPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
+      {modules.application ? <section className="mx-auto max-w-6xl px-4 py-10 lg:py-12" id="application">
         <div className="mb-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">Application</p>
@@ -442,7 +412,7 @@ export function ApplicationPage() {
               <div className="crm-success-panel m-5 p-4 text-sm">
                 {applicationSettings.default_confirmation_message}
               </div>
-            ) : !applicationSettings.applications_open ? (
+            ) : !applicationSettings.applications_open || !applicationSettings.notices_complete ? (
               <div className="crm-warning-panel m-5 p-4 text-sm">
                 Applications are currently closed. {applicationSettings.public_notice_text}
               </div>
@@ -506,19 +476,18 @@ export function ApplicationPage() {
 
                     {activeStep === 2 ? (
                       <FormStep title="Choose Your Preferred Lot" goal={applicationSteps[2].goal}>
-                        {applicationSettings.lot_map_tenant_slug || import.meta.env.DEV ? (
+                        {modules.map ? (
                           <div className="grid gap-2">
                             <div className="h-[560px] overflow-hidden rounded-xl border border-border lg:h-[640px]">
                               <PublicLotMap
-                                tenantSlug={applicationTenantSlug || "demo"}
+                                key={`${hostname}/${scope.tenantSlug}/${scope.projectSlug}/${scope.phaseSlug}`}
+                                hostname={hostname}
+                                tenantSlug={scope.tenantSlug}
+                                projectSlug={scope.projectSlug}
+                                phaseSlug={scope.phaseSlug}
                                 selectedLocalKeys={selectedLocalKeys}
                                 onToggleLot={toggleMapLot}
-                                showPrices={applicationSettings.show_lot_prices_publicly}
-                                demoDataUrl={
-                                  applicationSettings.lot_map_tenant_slug || !import.meta.env.DEV
-                                    ? undefined
-                                    : "/demo-map"
-                                }
+                                showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
                               />
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -546,7 +515,7 @@ export function ApplicationPage() {
                                       <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-secondary">Lot</span>
                                       <span className="mt-1 block text-2xl font-semibold text-primary">{parcel.lot_number}</span>
                                       <span className="mt-2 block text-sm text-muted-foreground">{parcel.dimensions}</span>
-                                      {applicationSettings.show_lot_prices_publicly ? <span className="mt-3 block font-semibold text-primary">{money(parcel.base_price)}</span> : null}
+                                      {applicationSettings.show_lot_prices_publicly && modules.pricing ? <span className="mt-3 block font-semibold text-primary">{money(parcel.base_price)}</span> : null}
                                       <span className={cn("absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-semibold", selected ? "bg-primary text-white" : "bg-success/10 text-success")}>
                                         {selected ? "Selected" : parcel.status}
                                       </span>
@@ -624,7 +593,7 @@ export function ApplicationPage() {
                         <ReviewSummary
                           values={watchedValues}
                           parcels={parcels}
-                          showPrices={applicationSettings.show_lot_prices_publicly}
+                          showPrices={applicationSettings.show_lot_prices_publicly && modules.pricing}
                           onEdit={setActiveStep}
                         />
                         <div className="grid gap-4">
@@ -683,20 +652,22 @@ export function ApplicationPage() {
             )}
           </CardContent>
         </Card>
-      </section>
+      </section> : null}
     </main>
   );
 }
 
 function PublicInquiryPanel({
   companyName,
-  tenantSlug,
+  hostname,
+  scope,
   parcels,
   showPrices,
   hasSupabaseConfig,
 }: {
   companyName: string;
-  tenantSlug: string;
+  hostname: string;
+  scope: PublicExperienceScope;
   parcels: PublicParcelOption[];
   showPrices: boolean;
   hasSupabaseConfig: boolean;
@@ -739,14 +710,14 @@ function PublicInquiryPanel({
       setError("Public inquiry submission is not configured in this environment.");
       return;
     }
-    if (!tenantSlug) {
+    if (!scope.tenantSlug || !scope.projectSlug || !scope.phaseSlug || !hostname) {
       setError("This application page is not configured. Please contact the development team.");
       return;
     }
 
     setSubmitting(true);
-    const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-      body: buildInquiryPayload({
+    try {
+      const data = await submitPublicFunction<{ emailSent?: boolean }>("submit-public-inquiry", buildInquiryPayload({
         name,
         email,
         phone,
@@ -754,29 +725,24 @@ function PublicInquiryPanel({
         specificLotRef: specificLotSelected && specificLotRef ? specificLotRef : null,
         message,
         pageUrl: window.location.href,
-        tenant: tenantSlug,
+        tenant: scope.tenantSlug,
+        project: scope.projectSlug,
+        phase: scope.phaseSlug,
         clientReferenceId,
-      }),
-    });
-    setSubmitting(false);
-
-    if (functionError || data?.error) {
-      setError(
-        functionError
-          ? await resolveInquirySubmitError(functionError)
-          : String(data?.error ?? "We could not submit your request. Please try again."),
-      );
-      return;
+      }));
+      setSubmitted(true);
+      setEmailSent(Boolean(data?.emailSent));
+      setName("");
+      setEmail("");
+      setPhone("");
+      setInterests([]);
+      setSpecificLotRef("");
+      setMessage("");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "We could not submit your request. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitted(true);
-    setEmailSent(Boolean(data?.emailSent));
-    setName("");
-    setEmail("");
-    setPhone("");
-    setInterests([]);
-    setSpecificLotRef("");
-    setMessage("");
   }
 
   if (submitted) {
@@ -1109,41 +1075,4 @@ function PublicSettingsUnavailable() {
 function lotLabel(parcels: PublicParcelOption[], reference: string) {
   const parcel = parcels.find((item) => item.public_ref === reference);
   return parcel ? `Lot ${parcel.lot_number}` : "Lot no longer listed";
-}
-
-function settingValue<T>(settings: BusinessSetting[] | undefined, key: string) {
-  return (settings?.find((setting) => setting.key === key)?.value ?? {}) as Partial<T>;
-}
-
-function fallbackApplicationPlans(): InstallmentPlan[] {
-  return [
-    {
-      id: -1,
-      name: "Installment Plan - 60 months",
-      description: "$2,500 reservation fee, $375.00 monthly",
-      reservation_fee: 2500,
-      initial_deposit: 2500,
-      final_purchase_price: 25000,
-      term_months: 60,
-      monthly_payment: 375,
-      is_active: true,
-      sort_order: 30,
-      created_at: "",
-      updated_at: "",
-    },
-    {
-      id: -2,
-      name: "Paid in Full",
-      description: "$2,500 reservation fee, remaining balance due at purchase agreement",
-      reservation_fee: 2500,
-      initial_deposit: 2500,
-      final_purchase_price: 25000,
-      term_months: 1,
-      monthly_payment: 0,
-      is_active: true,
-      sort_order: 40,
-      created_at: "",
-      updated_at: "",
-    },
-  ];
 }
