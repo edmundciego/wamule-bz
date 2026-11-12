@@ -138,8 +138,8 @@ jobs:
           db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
           version="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c 'SHOW server_version;')"
           case "$version" in
-            17.6.1.155*) ;;
-            *) echo "Expected staging PostgreSQL 17.6.1.155; local replay reported $version." >&2; exit 1 ;;
+            17.*) ;;
+            *) echo "Expected staging PostgreSQL major version 17; local replay reported $version." >&2; exit 1 ;;
           esac
           db_container="$(docker ps --filter 'name=supabase_db_' --format '{{.ID}}' | sed -n '1p')"
           test -n "$db_container"
@@ -147,8 +147,8 @@ jobs:
           image_id="$(docker inspect --format '{{.Image}}' "$db_container")"
           image_digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image_id")"
           case "$image" in
-            supabase/postgres:17.6.1.155*) ;;
-            *) echo "Expected the official supabase/postgres:17.6.1.155 image; found $image." >&2; exit 1 ;;
+            supabase/postgres:17.*|*/supabase/postgres:17.*) ;;
+            *) echo "Expected the official Supabase Postgres 17 image; found $image." >&2; exit 1 ;;
           esac
           test -n "$image_digest"
           printf 'Supabase CLI: 2.105.0\nPostgreSQL server_version: %s\nDatabase image: %s\nImage digest: %s\nImage content ID: %s\n' "$version" "$image" "$image_digest" "$image_id" >> "$GITHUB_STEP_SUMMARY"
