@@ -179,8 +179,32 @@ test("catalog comparison reports unresolved relationship tables without throwing
     line: 12,
     table: "public.applications",
     reason: "relationship_table_not_resolved",
-    relation: "missing_relation",
+    relation: "public.missing_relation",
   }]);
+});
+
+test("catalog comparison resolves already-qualified relationship names", () => {
+  const result = compareCatalog({
+    queries: [{
+      file: "src/example.ts",
+      line: 12,
+      table: "public.parcels",
+      columns: [],
+      nestedColumns: [{ table: "public.lot_tiers", column: "name" }],
+      filters: [],
+      writes: [],
+    }],
+    remoteFunctions: [],
+    unresolved: [],
+  }, {
+    columns: new Map([
+      ["public.parcels", new Set(["id"])],
+      ["public.lot_tiers", new Set(["name"])],
+    ]),
+    functions: [],
+  });
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.unresolved, []);
 });
 
 test("all source-level dynamic queries and RPC arguments have anchored contracts", () => {

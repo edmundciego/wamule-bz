@@ -490,11 +490,13 @@ export function compareCatalog(contract, catalog) {
       continue;
     }
     for (const reference of [...query.columns.map((entry) => ({ ...entry, kind: "select" })), ...query.nestedColumns.map((entry) => ({ ...entry, kind: "related_select" })), ...query.filters.map((entry) => ({ ...entry, kind: "filter" })), ...query.writes.map((entry) => ({ ...entry, kind: "write" }))]) {
-      const relationColumns = catalog.columns.get(`${query.table.split(".")[0]}.${reference.table}`) ?? (reference.table === query.table.split(".").at(-1) ? tableColumns : null);
+      const querySchema = query.table.includes(".") ? query.table.slice(0, query.table.lastIndexOf(".")) : "public";
+      const relationName = reference.table.includes(".") ? reference.table : `${querySchema}.${reference.table}`;
+      const relationColumns = catalog.columns.get(relationName) ?? (relationName === query.table ? tableColumns : null);
       if (!relationColumns) {
-        unresolved.push({ file: query.file, line: query.line, table: query.table, reason: "relationship_table_not_resolved", relation: reference.table });
+        unresolved.push({ file: query.file, line: query.line, table: query.table, reason: "relationship_table_not_resolved", relation: relationName });
       } else if (!relationColumns.has(reference.column)) {
-        mismatches.push({ file: query.file, line: query.line, table: `${query.table.split(".")[0]}.${reference.table}`, column: reference.column, access: reference.kind, reason: "column_missing_from_catalog" });
+        mismatches.push({ file: query.file, line: query.line, table: relationName, column: reference.column, access: reference.kind, reason: "column_missing_from_catalog" });
       }
     }
   }
