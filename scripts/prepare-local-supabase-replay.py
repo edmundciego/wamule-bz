@@ -25,6 +25,9 @@ M1_5_OVERLAY = ROOT / "supabase/staging-migrations/20261105000100_harden_sensiti
 M1_5_SHA256 = "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
 FOUNDATION_BASELINE = ROOT / "wamuale_supabase_foundation_migration.sql"
 FOUNDATION_BASELINE_SHA256 = "5671fe8bfb5e0fcd6318f92dc0147367ffb543234d7d8cc6d2bc0f8eaa3d265a"
+HOPKINS_WORKFLOW_FIXTURE = ROOT / "scripts/replay-fixtures/hopkins-workflow-precondition.sql"
+HOPKINS_WORKFLOW_FIXTURE_SHA256 = "7d44c34ccfa421e0b23a4ddce5b16448fb6366103a7c11834d694c7967fcc3bc"
+HOPKINS_WORKFLOW_FIXTURE_BEFORE = "20261016054341"
 M81_MANIFEST = ROOT / "evidence/M8.1-staging-source-manifest-2026-11-08.json"
 CAPTURED_69_INVENTORY = ROOT / "evidence/hopkins-initial-staging-replay-migration-inventory-2026-11-11.json"
 MAP_STUDIO_LEDGER_VERSION = "20261019225217"
@@ -116,6 +119,19 @@ def build(output: Path) -> dict:
     overlay_dir.mkdir()
     shutil.copy2(M1_5_OVERLAY, overlay_dir / M1_5_OVERLAY.name)
 
+    if not HOPKINS_WORKFLOW_FIXTURE.is_file() or sha256(HOPKINS_WORKFLOW_FIXTURE) != HOPKINS_WORKFLOW_FIXTURE_SHA256:
+        raise RuntimeError("The local Hopkins workflow precondition fixture differs from its reviewed hash.")
+    fixture_target = supabase_dir / "replay-fixtures" / HOPKINS_WORKFLOW_FIXTURE.name
+    fixture_target.parent.mkdir()
+    shutil.copy2(HOPKINS_WORKFLOW_FIXTURE, fixture_target)
+    local_data_preconditions = [{
+        "before_migration": HOPKINS_WORKFLOW_FIXTURE_BEFORE,
+        "path": str(fixture_target.relative_to(output)),
+        "sha256": HOPKINS_WORKFLOW_FIXTURE_SHA256,
+        "included_in_migration_count": False,
+        "purpose": "Synthetic active Hopkins tenant/project/initial phase required by migration 20261016054341.",
+    }]
+
     source_config = ROOT / "supabase/config.toml"
     config = source_config.read_text(encoding="utf-8")
     config = re.sub(r'(?m)^project_id\s*=\s*"[^"]+"\s*$', 'project_id = "wamule-local-replay"', config, count=1)
@@ -163,6 +179,7 @@ def build(output: Path) -> dict:
         },
         "m1_5_separate_overlay": {"path": str((overlay_dir / M1_5_OVERLAY.name).relative_to(output)), "sha256": M1_5_SHA256, "included_in_numbered_ledger": False},
         "excluded_local_only_migrations": ["20261110090000_audit_default_phase_before_after.sql"],
+        "local_data_preconditions": local_data_preconditions,
         "migrations": entries,
     }
     (output / "replay-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

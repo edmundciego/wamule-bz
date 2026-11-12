@@ -34,6 +34,13 @@ test("replay preparation matches all 69 captured staging migrations in order and
     });
     assert.equal(manifest.migrations.filter((row) => row.version === "20261019225217").length, 1);
     assert.equal(manifest.migrations.some((row) => row.version === "20261019194346"), false);
+    assert.deepEqual(manifest.local_data_preconditions.map(({ before_migration, sha256, included_in_migration_count }) => ({ before_migration, sha256, included_in_migration_count })), [
+      { before_migration: "20261016054341", sha256: "7d44c34ccfa421e0b23a4ddce5b16448fb6366103a7c11834d694c7967fcc3bc", included_in_migration_count: false },
+    ]);
+    const fixture = readFileSync(join(output, "supabase/replay-fixtures/hopkins-workflow-precondition.sql"), "utf8");
+    assert.match(fixture, /Hopkins Grove \(Local Replay Fixture\)/);
+    assert.match(fixture, /slug/);
+    assert.equal(manifest.migrations.filter((row) => row.version === "20261016054341").length, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

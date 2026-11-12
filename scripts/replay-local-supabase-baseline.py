@@ -71,6 +71,20 @@ def main() -> int:
         print("[local-postgres-replay] Expected 69 unique migrations in ascending version order.", file=sys.stderr)
         return 2
 
+    preconditions = manifest.get("local_data_preconditions", [])
+    preconditions_by_version: dict[str, list[tuple[dict, Path]]] = {}
+    for item in preconditions:
+        before_version = item.get("before_migration", "")
+        relative_path, expected_hash = item.get("path", ""), item.get("sha256", "")
+        path = (root / relative_path).resolve()
+        if (before_version not in versions or item.get("included_in_migration_count") is not False
+                or not VERSION_RE.fullmatch(before_version) or not SHA256_RE.fullmatch(expected_hash)
+                or root not in path.parents or not path.is_file() or path.suffix != ".sql"
+                or "migrations" in path.relative_to(root).parts or digest(path) != expected_hash):
+            print(f"[local-postgres-replay] Local data precondition failed path/hash validation before {before_version or '[unknown]' }.", file=sys.stderr)
+            return 2
+        preconditions_by_version.setdefault(before_version, []).append((item, path))
+
     foundation = manifest.get("foundation_schema_bootstrap", {})
     foundation_path = (root / foundation.get("path", "")).resolve()
     if root not in foundation_path.parents or not foundation_path.is_file() or digest(foundation_path) != FOUNDATION_SHA256:
@@ -114,6 +128,10 @@ def main() -> int:
         "expected_migration_count": EXPECTED_MIGRATION_COUNT,
         "applied_migration_count": 0,
         "applied_migrations": [],
+        "local_data_preconditions": [
+            {"before_migration": item["before_migration"], "path": item["path"], "sha256": item["sha256"], "applied": False}
+            for item in manifest.get("local_data_preconditions", [])
+        ],
         "ordered_manifest_match": False,
     }
     write_state(state_path, state)
@@ -132,6 +150,18 @@ def main() -> int:
     write_state(state_path, state)
 
     for position, (entry, path) in enumerate(prepared, start=1):
+        for item, fixture_path in preconditions_by_version.get(entry["version"], []):
+            result = run_psql(database_url, ["-f", str(fixture_path)])
+            if result.returncode != 0:
+                print(f"[local-postgres-replay] Local data precondition failed before migration {entry['version']} ({fixture_path.name}).", file=sys.stderr)
+                print(safe_error(result.stderr), file=sys.stderr)
+                return 1
+            for state_item in state["local_data_preconditions"]:
+                if state_item["before_migration"] == item["before_migration"] and state_item["sha256"] == item["sha256"]:
+                    state_item["applied"] = True
+                    break
+            write_state(state_path, state)
+            print(f"[local-postgres-replay] applied local-only data precondition before migration {entry['version']}; excluded from the numbered migration count.")
         result = run_psql(database_url, ["-f", str(path)])
         if result.returncode != 0:
             print(f"[local-postgres-replay] Failed migration {entry['version']} ({path.name}) at position {position}/{EXPECTED_MIGRATION_COUNT}.", file=sys.stderr)
@@ -148,8 +178,9 @@ def main() -> int:
 
     applied_versions = [entry["version"] for entry in state["applied_migrations"]]
     state["ordered_manifest_match"] = applied_versions == versions
-    if state["applied_migration_count"] != EXPECTED_MIGRATION_COUNT or not state["ordered_manifest_match"]:
-        print("[local-postgres-replay] Final applied count/order did not match the manifest.", file=sys.stderr)
+    if (state["applied_migration_count"] != EXPECTED_MIGRATION_COUNT or not state["ordered_manifest_match"]
+            or any(not item["applied"] for item in state["local_data_preconditions"])):
+        print("[local-postgres-replay] Final applied count/order or local fixture state did not match the manifest.", file=sys.stderr)
         return 1
     write_state(state_path, state)
     print(json.dumps({key: value for key, value in state.items() if key != "applied_migrations"}, indent=2))
