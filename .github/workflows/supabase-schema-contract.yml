@@ -92,11 +92,12 @@ jobs:
           type_present="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c "SELECT to_regtype('public.parcel_status') IS NOT NULL;")"
           test "$type_present" = "t" || { echo "The foundation bootstrap did not create public.parcel_status." >&2; exit 1; }
           mv "$REPLAY_DIR/supabase/replay-migrations" "$REPLAY_DIR/supabase/migrations"
-          if ! ./node_modules/.bin/supabase migration up --local --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-migration-up.log" 2>&1; then
-            echo "Failing command: ./node_modules/.bin/supabase migration up --local --workdir \"$REPLAY_DIR\"" >&2
+          if ! ./node_modules/.bin/supabase migration up --local --include-all --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-migration-up.log" 2>&1; then
+            echo "Failing command: ./node_modules/.bin/supabase migration up --local --include-all --workdir \"$REPLAY_DIR\"" >&2
             python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-migration-up.log" | tail -n 80 >&2
             exit 1
           fi
+          python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-migration-up.log" | grep -E 'Applying migration|Applied migration|up to date|No migrations' >> "$GITHUB_STEP_SUMMARY" || true
           actual_versions="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c 'SELECT version FROM supabase_migrations.schema_migrations ORDER BY version;')"
           expected_versions="$(python3 -c 'import json,os; print("\n".join(row["version"] for row in json.load(open(os.path.join(os.environ["REPLAY_DIR"],"replay-manifest.json")))["migrations"]))')"
           diff -u <(printf '%s\n' "$expected_versions") <(printf '%s\n' "$actual_versions")
