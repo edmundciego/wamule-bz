@@ -64,24 +64,46 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$SUPABASE_HOME"
+          # The captured 69-entry ledger follows the legacy foundation SQL,
+          # which is not itself a numbered staging migration. Keep the
+          # migrations out of Supabase's startup hook until that schema exists.
+          mv "$REPLAY_DIR/supabase/migrations" "$REPLAY_DIR/supabase/replay-migrations"
+          mkdir "$REPLAY_DIR/supabase/migrations"
           if ! ./node_modules/.bin/supabase start --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
             echo "Failing command: ./node_modules/.bin/supabase start --workdir \"$REPLAY_DIR\"" >&2
             python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-start.log" | tail -n 40 >&2
             exit 1
           fi
 
-      - name: Replay the 69-entry staging baseline and apply the separate M1.5 overlay
+      - name: Bootstrap the foundation and replay the 69-entry staging ledger
         env:
           REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
           SUPABASE_HOME: ${{ runner.temp }}/supabase-home
           SUPABASE_TELEMETRY_DISABLED: "1"
         shell: bash
         run: |
-          if ! ./node_modules/.bin/supabase db reset --local --no-seed --workdir "$REPLAY_DIR" --yes > "$RUNNER_TEMP/supabase-reset.log" 2>&1; then
-            echo "Failing command: ./node_modules/.bin/supabase db reset --local --no-seed --workdir \"$REPLAY_DIR\" --yes" >&2
-            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-reset.log" | tail -n 60 >&2
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          if ! psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$REPLAY_DIR/supabase/foundation.sql" > "$RUNNER_TEMP/foundation-bootstrap.log" 2>&1; then
+            echo "Failing input: the reviewed legacy foundation schema bootstrap" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/foundation-bootstrap.log" | tail -n 60 >&2
             exit 1
           fi
+          type_present="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c "SELECT to_regtype('public.parcel_status') IS NOT NULL;")"
+          test "$type_present" = "t" || { echo "The foundation bootstrap did not create public.parcel_status." >&2; exit 1; }
+          mv "$REPLAY_DIR/supabase/replay-migrations" "$REPLAY_DIR/supabase/migrations"
+          if ! ./node_modules/.bin/supabase migration up --local --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-migration-up.log" 2>&1; then
+            echo "Failing command: ./node_modules/.bin/supabase migration up --local --workdir \"$REPLAY_DIR\"" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-migration-up.log" | tail -n 80 >&2
+            exit 1
+          fi
+          actual_versions="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c 'SELECT version FROM supabase_migrations.schema_migrations ORDER BY version;')"
+          expected_versions="$(python3 -c 'import json,os; print("\n".join(row["version"] for row in json.load(open(os.path.join(os.environ["REPLAY_DIR"],"replay-manifest.json")))["migrations"]))')"
+          diff -u <(printf '%s\n' "$expected_versions") <(printf '%s\n' "$actual_versions")
+          migration_count="$(psql "$db_url" -X -q -t -A -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM supabase_migrations.schema_migrations;')"
+          test "$migration_count" = "69" || { echo "Expected 69 replayed migration rows; found $migration_count." >&2; exit 1; }
+          printf 'Applied migrations: %s (ordered versions match the replay manifest).\n' "$migration_count" >> "$GITHUB_STEP_SUMMARY"
+
           overlay="$REPLAY_DIR/supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql"
           if ! ./node_modules/.bin/supabase db query --local --workdir "$REPLAY_DIR" --file "$overlay" > "$RUNNER_TEMP/m1-5-overlay.log" 2>&1; then
             echo "Failing command: ./node_modules/.bin/supabase db query --local --workdir \"$REPLAY_DIR\" --file \"$overlay\"" >&2

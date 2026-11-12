@@ -23,6 +23,8 @@ HOPKINS_PHASE_GATE = ROOT / "supabase/migrations/20261111030739_initial_phase_ap
 HOPKINS_PHASE_GATE_SHA256 = "3faf71cd8ce96fef584998ba083f895024f7699a2edeedc8e59aa57aad468235"
 M1_5_OVERLAY = ROOT / "supabase/staging-migrations/20261105000100_harden_sensitive_view_access.sql"
 M1_5_SHA256 = "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
+FOUNDATION_BASELINE = ROOT / "wamuale_supabase_foundation_migration.sql"
+FOUNDATION_BASELINE_SHA256 = "5671fe8bfb5e0fcd6318f92dc0147367ffb543234d7d8cc6d2bc0f8eaa3d265a"
 M81_MANIFEST = ROOT / "evidence/M8.1-staging-source-manifest-2026-11-08.json"
 CAPTURED_69_INVENTORY = ROOT / "evidence/hopkins-initial-staging-replay-migration-inventory-2026-11-11.json"
 MAP_STUDIO_LEDGER_VERSION = "20261019225217"
@@ -125,6 +127,11 @@ def build(output: Path) -> dict:
         config = re.sub(r"(?m)^major_version\s*=.*$", "major_version = 17", config, count=1)
     (supabase_dir / "config.toml").write_text(config, encoding="utf-8")
 
+    if not FOUNDATION_BASELINE.is_file() or sha256(FOUNDATION_BASELINE) != FOUNDATION_BASELINE_SHA256:
+        raise RuntimeError("The M2.4 reconciled foundation schema bootstrap is missing or its reviewed hash changed.")
+    foundation_target = supabase_dir / "foundation.sql"
+    shutil.copy2(FOUNDATION_BASELINE, foundation_target)
+
     functions_target = supabase_dir / "functions"
     functions_source = ROOT / "supabase/functions"
     functions_target.symlink_to(functions_source, target_is_directory=True)
@@ -133,6 +140,11 @@ def build(output: Path) -> dict:
         "target_kind": "local-only Supabase CLI project",
         "hosted_project_ref_used": False,
         "postgres_major_version": PG_MAJOR,
+        "foundation_schema_bootstrap": {
+            "path": str(foundation_target.relative_to(output)),
+            "sha256": FOUNDATION_BASELINE_SHA256,
+            "included_in_migration_count": False,
+        },
         "m2_4_captured_migrations": 55,
         "m8_1_forward_migrations": 13,
         "hopkins_phase_gate_migration": HOPKINS_PHASE_GATE.name,
@@ -168,7 +180,7 @@ def main() -> int:
         print(f"[local-supabase-replay] FAIL: {error}", file=sys.stderr)
         return 2
     print(json.dumps({key: value for key, value in manifest.items() if key != "migrations"}, indent=2))
-    print(f"[local-supabase-replay] prepared {manifest['numbered_migration_count']} migrations; no hosted connection was used.")
+    print(f"[local-supabase-replay] prepared foundation bootstrap plus {manifest['numbered_migration_count']} migrations; no hosted connection was used.")
     return 0
 
 

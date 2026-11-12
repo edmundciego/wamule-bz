@@ -17,6 +17,12 @@ test("replay preparation matches all 69 captured staging migrations in order and
     });
     const manifest = JSON.parse(readFileSync(join(output, "replay-manifest.json"), "utf8"));
     assert.equal(manifest.numbered_migration_count, 69);
+    assert.deepEqual(manifest.foundation_schema_bootstrap, {
+      path: "supabase/foundation.sql",
+      sha256: "5671fe8bfb5e0fcd6318f92dc0147367ffb543234d7d8cc6d2bc0f8eaa3d265a",
+      included_in_migration_count: false,
+    });
+    assert.equal(readFileSync(join(output, "supabase/foundation.sql"), "utf8").length, 49693);
     assert.equal(manifest.captured_ledger_comparison.ordered_version_name_match, true);
     assert.equal(manifest.captured_ledger_comparison.captured_entry_count, 69);
     assert.deepEqual(manifest.map_studio_alias, {
