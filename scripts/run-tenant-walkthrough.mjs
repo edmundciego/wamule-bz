@@ -348,7 +348,7 @@ async function main() {
         anonymous_site_experience_status: anonSite.response.status, anonymous_storage_access: anonAsset.error ? "denied" : "no object",
         admin_signoff: signoff,
       };
-      await staffPage.getByRole("button", { name: "Sign out", exact: true }).click();
+      await staffPage.getByRole("link", { name: "Sign out", exact: true }).click();
       await staffPage.waitForURL(/\/login$/, { timeout: 15000 });
       return { selectedFeatureId: selectedIdentity.id, revision: snapshot.snapshot_version };
     });
