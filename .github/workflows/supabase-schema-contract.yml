@@ -273,7 +273,15 @@ jobs:
           trap 'kill "$vite_pid" "$functions_pid" 2>/dev/null || true' EXIT
           ready=0
           for attempt in $(seq 1 90); do
-            if curl --silent --output /dev/null "$SUPABASE_URL/functions/v1/get-public-lots?tenant=healthcheck"; then
+            # Wait for the target function's intentional unauthenticated 401.
+            # A generic HTTP response can be Kong's 502 while Edge Runtime is cold-starting.
+            function_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --request POST \
+              --header "apikey: $SUPABASE_ANON_KEY" \
+              --header 'Content-Type: application/json' \
+              --data '{}' \
+              "$SUPABASE_URL/functions/v1/super-admin-console" || true)"
+            if [ "$function_status" = "401" ]; then
               if curl --fail --silent --output /dev/null http://127.0.0.1:5173/; then ready=1; break; fi
             fi
             sleep 2
