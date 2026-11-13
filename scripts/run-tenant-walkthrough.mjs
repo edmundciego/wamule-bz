@@ -15,6 +15,7 @@ assert(["postgres:", "postgresql:"].includes(databaseUrl.protocol), "Walkthrough
 const webOrigin = process.env.WALKTHROUGH_WEB_ORIGIN ?? "http://127.0.0.1:5173";
 const mailpitApi = process.env.WALKTHROUGH_MAILPIT_API ?? "http://127.0.0.1:54324/api/v1/messages";
 const evidencePath = resolve(process.env.WALKTHROUGH_EVIDENCE_PATH ?? "/tmp/wamule-tenant-walkthrough.json");
+const stageTimeoutMs = 5 * 60 * 1000;
 const runToken = randomUUID();
 const tenantSlug = `ci-${runToken.slice(0, 12)}`;
 const projectSlug = "review-map";
@@ -41,6 +42,7 @@ const report = {
 
 let browser;
 let context;
+let stageTimedOut = false;
 const signedInClients = [];
 
 async function main() {
@@ -533,9 +535,16 @@ async function main() {
     console.error(JSON.stringify(report, null, 2));
     process.exitCode = 1;
   } finally {
-    await context?.close().catch(() => {});
-    await browser?.close().catch(() => {});
-    await Promise.all(signedInClients.map((client) => client.auth.signOut().catch(() => {})));
+    const closeResources = async () => {
+      await context?.close().catch(() => {});
+      await browser?.close().catch(() => {});
+      await Promise.all(signedInClients.map((client) => client.auth.signOut().catch(() => {})));
+    };
+    if (stageTimedOut) {
+      await Promise.race([closeResources(), new Promise((resolve) => setTimeout(resolve, 5000))]);
+      process.exit(124);
+    }
+    await closeResources();
   }
 }
 
@@ -544,8 +553,18 @@ async function timedStage(name, operation) {
   report.stages.push(stage);
   console.log(`[walkthrough] started: ${name}`);
   const start = performance.now();
+  let timer;
+  let timedOut = false;
   try {
-    const result = await operation();
+    const result = await Promise.race([
+      operation(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(`Stage exceeded its ${stageTimeoutMs / 1000}-second runtime limit.`));
+        }, stageTimeoutMs);
+      }),
+    ]);
     stage.machine_runtime_ms = Math.round(performance.now() - start);
     stage.status = "passed";
     console.log(`[walkthrough] passed: ${name} (${stage.machine_runtime_ms} ms)`);
@@ -554,8 +573,11 @@ async function timedStage(name, operation) {
     stage.machine_runtime_ms = Math.round(performance.now() - start);
     stage.status = "failed";
     stage.error = cleanFailure(error);
+    stageTimedOut ||= timedOut;
     console.error(`[walkthrough] failed: ${name} (${stage.machine_runtime_ms} ms): ${stage.error}`);
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
