@@ -239,7 +239,10 @@ async function main() {
     });
 
     await timedStage("3. Configure one reference-only phase with intake closed", async () => {
-      const projectSettings = checked(await scope.admin.from("project_settings").select("key,value")
+      const deniedProjectSettings = await scope.admin.from("project_settings").select("key")
+        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).limit(1);
+      assert(deniedProjectSettings.error?.code === "42501", "Authenticated Admin unexpectedly gained direct access to server-only project settings.");
+      const projectSettings = checked(await service.from("project_settings").select("key,value")
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).in("key", ["tenant_theme", "public_application"]), "Read scoped project configuration");
       const settingsByKey = Object.fromEntries(projectSettings.map((row) => [row.key, row.value]));
       const appSetting = settingsByKey.public_application;
@@ -260,6 +263,7 @@ async function main() {
       report.stages[2].evidence = {
         project_template: settingsByKey.tenant_theme.site_experience.templateId,
         project_application_type: appSetting.application_type, intended_phase_intake_open: false,
+        project_settings_access: "server-only; authenticated Admin denied by table ACL; scoped values verified through the application service role",
         reference_only_demo_mode: true, saleable_parcel_count: parcelCount,
         other_phase_package_count: otherPackages, other_phase_outline_count: otherFeatures,
         other_phase_public_map_status: otherPublicMap.response.status,
@@ -356,9 +360,9 @@ async function main() {
       const projectSetting = scope.projectApplication;
       const publicSetting = { ...projectSetting, applications_open: true, allowed_phase_ids: [scope.phaseId] };
       const tenantSetting = { applications_open: true, show_lot_prices_publicly: false, show_available_lot_count_publicly: false };
-      const updatedProjectSetting = await scope.admin.from("project_settings").update({ value: publicSetting })
+      const updatedProjectSetting = await service.from("project_settings").update({ value: publicSetting })
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("key", "public_application").select("value").single();
-      if (updatedProjectSetting.error) throw new Error(`Open only the allowlisted phase intake: ${updatedProjectSetting.error.message}`);
+      if (updatedProjectSetting.error) throw new Error(`Open only the allowlisted phase intake through its server-owned configuration: ${updatedProjectSetting.error.message}`);
       const updatedTenantSetting = await scope.admin.from("business_settings").update({ value: tenantSetting })
         .eq("tenant_id", scope.tenantId).eq("key", "public_application").select("value").single();
       if (updatedTenantSetting.error) throw new Error(`Open synthetic tenant application gate: ${updatedTenantSetting.error.message}`);
