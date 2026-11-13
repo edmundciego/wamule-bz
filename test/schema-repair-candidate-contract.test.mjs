@@ -68,3 +68,19 @@ test("receipt lifecycle guard uses the authoritative tenant/project/phase helper
   assert.doesNotMatch(guard, /from\("projects"\)[\s\S]*?is_active/);
   assert.match(guard, /phaseId !== null && scope\.projectId === null/);
 });
+
+test("PostgREST JSON claim compatibility is a separate forward-only runtime delta", async () => {
+  const migration = await file("supabase/migrations/20261112040000_postgrest_json_jwt_role_claims.sql");
+  assert.equal(createHash("sha256").update(migration).digest("hex"), "9773c4d937e914bd2802aed851041babfbe5cf8f2e9ee153b4bad2f723574da5");
+  assert.match(migration, /provisioning_private\.request_role_v1\(\)[\s\S]*?request\.jwt\.claim\.role[\s\S]*?request\.jwt\.claims/);
+  assert.match(migration, /IF provisioning_private\.request_role_v1\(\) IS DISTINCT FROM 'service_role' THEN/);
+  for (const name of [
+    "_assert_application_decision_scope", "enforce_verified_audit_attribution", "save_reservation_workflow_settings",
+    "record_inbound_email_review_event", "manage_workspace_member", "manage_workspace_member_unlogged", "onboard_project_tenant",
+    "guard_reservation_workflow_setting_write", "provision_workspace_v1", "preflight_workspace_member_onboarding_v1",
+    "prepare_workspace_identity_onboarding_v1", "record_workspace_identity_onboarding_v1", "assign_workspace_member_onboarding_v1",
+  ]) {
+    assert.equal((migration.match(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\b`, "g")) ?? []).length, 1, `${name} has one active forward override`);
+  }
+  assert.match(migration, /FROM PUBLIC, anon, authenticated, service_role/);
+});

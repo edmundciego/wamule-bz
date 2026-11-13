@@ -41,12 +41,14 @@ const signedInClients = [];
 
 async function main() {
   try {
-    const [appliedBytes, numberedBytes] = await Promise.all([
+    const [appliedBytes, numberedBytes, runtimeDeltaBytes] = await Promise.all([
       readFile(resolve(replayDir, "applied-migrations.json")),
       readFile(resolve(replayDir, "numbered-migrations.json")),
+      readFile(resolve(replayDir, "runtime-delta.json")),
     ]);
     const appliedLedger = JSON.parse(appliedBytes.toString("utf8"));
     const numberedLedger = JSON.parse(numberedBytes.toString("utf8"));
+    const runtimeDelta = JSON.parse(runtimeDeltaBytes.toString("utf8"));
     const versions = (numberedLedger.migrations ?? []).map((entry) => String(entry.version));
     const overlay = numberedLedger.separately_applied_overlay;
     assert(versions.length === 71 && appliedLedger.applied_migration_count === 71
@@ -56,10 +58,20 @@ async function main() {
       && overlay?.included_in_numbered_ledger === false
       && overlay?.sha256 === "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631",
     "The disposable walkthrough requires the exact 71-entry candidate ledger plus the separate M1.5 view-security overlay.");
+    assert(runtimeDelta.applied_after_exact_baseline === true && runtimeDelta.numbered_baseline_count === 71
+      && runtimeDelta.migrations?.length === 1
+      && runtimeDelta.migrations[0]?.version === "20261112040000"
+      && runtimeDelta.migrations[0]?.sha256 === "9773c4d937e914bd2802aed851041babfbe5cf8f2e9ee153b4bad2f723574da5"
+      && runtimeDelta.checks?.json_claim_service_role_zero_write_probe === "passed"
+      && runtimeDelta.checks?.legacy_claim_service_role_zero_write_probe === "passed"
+      && runtimeDelta.checks?.authenticated_claim_rejected === "passed",
+    "The local runtime must record the separate hash-pinned PostgREST role-claims compatibility migration after the 71-entry baseline.");
     report.database = {
       postgres_major: 17, numbered_migration_count: versions.length, m1_5_overlay_separate: true,
       candidate_migration_versions: versions.slice(-2), numbered_ledger_sha256: sha256(numberedBytes),
-      m1_5_overlay_sha256: overlay.sha256,
+      m1_5_overlay_sha256: overlay.sha256, runtime_compatibility_delta_count: runtimeDelta.migrations.length,
+      runtime_compatibility_delta_version: runtimeDelta.migrations[0].version,
+      runtime_compatibility_delta_sha256: runtimeDelta.migrations[0].sha256,
     };
     const mailpitStartCount = await capturedMailCount();
     assert(mailpitStartCount === 0, "Disposable Mailpit did not start empty; refusing to mix pre-existing mail evidence.");

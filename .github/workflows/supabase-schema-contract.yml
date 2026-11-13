@@ -203,7 +203,7 @@ jobs:
           db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
           SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/verify-schema-repair-postgres.mjs | tee "$RUNNER_TEMP/schema-repair-results.json"
           printf '\n#### Candidate repair behavior checks\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf '%s\n' '- Local PostgreSQL 17 only; the captured 69-entry base ledger was verified before applying the two candidate migrations.' '- The final ordered numbered ledger contains 71 entries; the separately reviewed M1.5 view-security correction remains an unnumbered overlay.' '- The post-sales migration was first rejected against two synthetic conflicting rows, with transaction rollback verified; after removing only those fixtures, unambiguous backfill and scoped access tests passed.' '- The separately reviewed M1.5 overlay was applied before the community-fee view repair and its security-invoker/grant constraints were rechecked.' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' '- Local PostgreSQL 17 only; the captured 69-entry base ledger was verified before applying the two candidate migrations.' '- The final ordered numbered candidate baseline contains 71 entries; the separately reviewed M1.5 view-security correction remains an unnumbered overlay.' '- The post-sales migration was first rejected against two synthetic conflicting rows, with transaction rollback verified; after removing only those fixtures, unambiguous backfill and scoped access tests passed.' '- The separately reviewed M1.5 overlay was applied before the community-fee view repair and its security-invoker/grant constraints were rechecked.' >> "$GITHUB_STEP_SUMMARY"
           python3 - "$REPLAY_DIR/applied-migrations.json" "$REPLAY_DIR/numbered-migrations.json" <<'PY'
           import json, sys
           applied = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -219,7 +219,7 @@ jobs:
           assert numbered.get("separately_applied_overlay", {}).get("sha256") == "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
           print("Verified exact ordered 71-entry numbered ledger and separate hash-pinned M1.5 overlay.")
           PY
-          printf 'Final numbered ledger: exactly 71 ordered entries; M1.5 verified as a separate overlay.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Candidate numbered baseline: exactly 71 ordered entries; M1.5 verified as a separate overlay.\n' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scan source queries against the repaired local catalog
         env:
@@ -306,8 +306,10 @@ jobs:
           assert report.get("result") == "passed", report.get("failure")
           assert len(report.get("stages", [])) == 5 and all(stage.get("status") == "passed" for stage in report["stages"]), report.get("stages")
           assert report.get("database", {}).get("numbered_migration_count") == 71
+          assert report.get("database", {}).get("runtime_compatibility_delta_count") == 1
           assert report.get("database", {}).get("m1_5_overlay_separate") is True
           summary = [f"- Schema baseline: `{report.get('schema_baseline_commit')}`", f"- Tested commit: `{report.get('tested_commit')}`", f"- Automated machine runtime: {report.get('total_machine_runtime_ms')} ms"]
+          summary.append(f"- Numbered schema baseline: 71 migrations; M1.5 overlay separate; runtime compatibility delta: `{report['database']['runtime_compatibility_delta_version']}` ({report['database']['runtime_compatibility_delta_sha256']})")
           for stage in report["stages"]:
               summary.append(f"- {stage['name']}: {stage['status']} in {stage['machine_runtime_ms']} ms")
           submission = report.get("synthetic_submission", {})
@@ -365,6 +367,7 @@ jobs:
             ${{ runner.temp }}/schema-contract-baseline.json
             ${{ runner.temp }}/schema-contract-repaired.json
             ${{ runner.temp }}/wamule-reconciled-replay/schema-repair-results.json
+            ${{ runner.temp }}/wamule-reconciled-replay/runtime-delta.json
             ${{ runner.temp }}/tenant-walkthrough.json
             ${{ runner.temp }}/tenant-walkthrough-public-map.png
             ${{ runner.temp }}/tenant-walkthrough-private-preview.png

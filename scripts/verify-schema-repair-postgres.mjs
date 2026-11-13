@@ -10,9 +10,11 @@ const databaseUrl = process.env.SCHEMA_QUERY_DATABASE_URL ?? "";
 const replayDir = resolve(process.env.REPLAY_DIR ?? "");
 const POST_SALES_VERSION = "20261112033403";
 const VIEW_VERSION = "20261112033404";
+const ROLE_CLAIMS_VERSION = "20261112040000";
 const POST_SALES_SHA256 = "18e060bd642cad681e5aef988aa06149d90e5627cb0ffe6b90828f8dd4ab12f5";
 const VIEW_SHA256 = "e814ea50e238d58e94144cee4b4926f42a8dc49fd849873d66c48b64fe7a5672";
 const M1_5_SHA256 = "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631";
+const ROLE_CLAIMS_SHA256 = "9773c4d937e914bd2802aed851041babfbe5cf8f2e9ee153b4bad2f723574da5";
 
 function fail(message) {
   throw new Error(message);
@@ -72,15 +74,18 @@ async function main() {
 
   const postSalesPath = resolve(ROOT, "supabase/migrations/20261112033403_post_sales_project_phase_scope.sql");
   const viewPath = resolve(ROOT, "supabase/migrations/20261112033404_community_fee_view_tenant_scope.sql");
+  const roleClaimsPath = resolve(ROOT, `supabase/migrations/${ROLE_CLAIMS_VERSION}_postgrest_json_jwt_role_claims.sql`);
   const m15Path = resolve(replayDir, "supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql");
   const hashes = {
     postSales: digest(await readFile(postSalesPath)),
     m1_5: digest(await readFile(m15Path)),
     view: digest(await readFile(viewPath)),
+    roleClaims: digest(await readFile(roleClaimsPath)),
   };
   if (hashes.postSales !== POST_SALES_SHA256) fail(`Post-sales migration SHA-256 differs from reviewed body: ${hashes.postSales}`);
   if (hashes.view !== VIEW_SHA256) fail(`Community-fee view migration SHA-256 differs from reviewed body: ${hashes.view}`);
   if (hashes.m1_5 !== M1_5_SHA256) fail(`M1.5 overlay SHA-256 differs from the separately reviewed correction: ${hashes.m1_5}`);
+  if (hashes.roleClaims !== ROLE_CLAIMS_SHA256) fail(`PostgREST JWT-claims compatibility migration SHA-256 differs from its reviewed body: ${hashes.roleClaims}`);
 
   runPsql(["-f", resolve(ROOT, "scripts/schema-repair-fixtures.sql")], "Seed synthetic legacy rows and phase-restricted users");
 
@@ -158,6 +163,45 @@ async function main() {
   };
   await writeFile(resolve(replayDir, "applied-migrations.json"), `${JSON.stringify(finalApplied, null, 2)}\n`, "utf8");
 
+  // Preserve the candidate's exact 71-entry numbered baseline and record the
+  // runtime compatibility fix as a distinct, hash-pinned forward delta.
+  const roleClaimsMigration = await apply(roleClaimsPath, `Apply separate ${ROLE_CLAIMS_VERSION} PostgREST role-claims compatibility migration`);
+  runPsql(["-c", `DO $checks$
+DECLARE v jsonb;
+BEGIN
+  PERFORM pg_catalog.set_config('request.jwt.claim.role', '', true);
+  PERFORM pg_catalog.set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  v := public.provision_workspace_v1(NULL, FALSE);
+  IF v->>'status' IS DISTINCT FROM 'invalid' OR v->>'writes' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'JSON service-role claim was not accepted as a read-only onboarding probe.';
+  END IF;
+
+  PERFORM pg_catalog.set_config('request.jwt.claims', '', true);
+  PERFORM pg_catalog.set_config('request.jwt.claim.role', 'service_role', true);
+  v := public.provision_workspace_v1(NULL, FALSE);
+  IF v->>'status' IS DISTINCT FROM 'invalid' OR v->>'writes' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'Legacy service-role claim compatibility failed the read-only onboarding probe.';
+  END IF;
+
+  PERFORM pg_catalog.set_config('request.jwt.claim.role', '', true);
+  PERFORM pg_catalog.set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+  BEGIN
+    PERFORM public.provision_workspace_v1(NULL, FALSE);
+    RAISE EXCEPTION 'An authenticated JWT claim bypassed the service-role onboarding guard.';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+END;
+$checks$;`], "Verify both JWT-claim formats and preserve the service-role gate");
+  const runtimeDelta = {
+    applied_after_exact_baseline: true,
+    numbered_baseline_count: 71,
+    numbered_baseline_manifest: "numbered-migrations.json",
+    migrations: [{ version: ROLE_CLAIMS_VERSION, filename: `${ROLE_CLAIMS_VERSION}_postgrest_json_jwt_role_claims.sql`, ...roleClaimsMigration }],
+    checks: { json_claim_service_role_zero_write_probe: "passed", legacy_claim_service_role_zero_write_probe: "passed", authenticated_claim_rejected: "passed" },
+  };
+  await writeFile(resolve(replayDir, "runtime-delta.json"), `${JSON.stringify(runtimeDelta, null, 2)}\n`, "utf8");
+
   const report = {
     mode: "disposable-local-supabase-postgresql-17",
     hosted_target_used: false,
@@ -166,6 +210,7 @@ async function main() {
     schema_baseline_source_project: "kvocwmrcuhiaezlcgzjf",
     baseline: { migration_count: 69, ordered_match: true },
     final_numbered_ledger: { migration_count: 71, ordered_match: true, manifest: "numbered-migrations.json" },
+    runtime_compatibility_delta: { numbered_migration_count: 1, migration: runtimeDelta.migrations[0], checks: runtimeDelta.checks },
     expected_conflicting_legacy_preflight: { passed: true, rejected_rows: 2, migration_rollback_probe: afterRejectedMigration },
     candidate_migrations: appliedRepairs.filter((entry) => entry.sha256 !== hashes.m1_5),
     separate_m1_5_overlay: appliedRepairs.find((entry) => entry.sha256 === hashes.m1_5),
