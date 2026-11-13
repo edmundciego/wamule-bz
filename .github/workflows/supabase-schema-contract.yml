@@ -264,8 +264,8 @@ jobs:
           export VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
           local_functions_env="$RUNNER_TEMP/local-functions.env"
           umask 077
-          printf 'SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\n' \
-            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > "$local_functions_env"
+          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\n' \
+            "$SUPABASE_SERVICE_ROLE_KEY" > "$local_functions_env"
           ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
           functions_pid=$!
           npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite-walkthrough.log" 2>&1 &
