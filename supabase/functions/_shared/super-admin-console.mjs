@@ -110,7 +110,10 @@ export async function handleSuperAdminConsole(request, dependencies = {}) {
     const anonKey = env.SUPABASE_ANON_KEY;
     if (!supabaseUrl || !serviceRoleKey || !anonKey) return json({ error: "Super Admin server credentials are not configured." }, 503);
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${serviceRoleKey}` } },
+    });
     const operator = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${token}` } },

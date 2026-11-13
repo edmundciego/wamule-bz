@@ -65,6 +65,11 @@ async function main() {
     assert(mailpitStartCount === 0, "Disposable Mailpit did not start empty; refusing to mix pre-existing mail evidence.");
     report.outbound_delivery = { sink: "local Mailpit only", captured_messages_before: mailpitStartCount };
     const scope = await timedStage("1. Create synthetic tenant and phase-limited Staff", async () => {
+      const serviceRoleProbe = checked(await service.rpc("provision_workspace_v1", {
+        p_manifest: null, p_apply: false,
+      }), "Run the read-only service-role onboarding probe");
+      assert(serviceRoleProbe?.status === "invalid" && serviceRoleProbe?.writes === 0,
+        "The service-role onboarding probe must reject its empty manifest without writes.");
       const operator = await bootstrapSuperAdmin();
       const companyProfile = {
         company_name: "Wamule CI Synthetic Tenant",
@@ -156,7 +161,8 @@ async function main() {
       report.stages[0].evidence = {
         tenant_id: tenant.id, project_id: project.id, phase_ids: [phase.id, otherPhase.id],
         staff_memberships: staffMemberships.length, staff_assigned_phase_id: staffMemberships[0].phase_id,
-        hostname_binding_count: bindingCount, onboarding: "supported provision_workspace_v1 and M4.3 member onboarding",
+        hostname_binding_count: bindingCount, service_role_rpc_probe: "passed (read-only, zero writes)",
+        onboarding: "supported provision_workspace_v1 and M4.3 member onboarding",
       };
       return { tenantId: tenant.id, projectId: project.id, phaseId: phase.id, otherPhaseId: otherPhase.id, admin, staff, manifest, projectApplication };
     });
