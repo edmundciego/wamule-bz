@@ -13,6 +13,10 @@ export function projectRefFromUrl(value) {
     throw new Error("SUPABASE_URL must be a valid Supabase project URL.");
   }
   if (["localhost", "127.0.0.1"].includes(url.hostname)) return "local";
+  // The Supabase CLI injects its Docker-network API gateway URL into local
+  // Edge Functions. Accept only the known gateway names on the local HTTP
+  // port; arbitrary custom hosts remain blocked by the project guard.
+  if (url.protocol === "http:" && url.port === "8000" && ["kong", "api-gw"].includes(url.hostname.toLowerCase())) return "local";
   const match = url.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i);
   if (!match) throw new Error("SUPABASE_URL must identify a Supabase project; custom hosts require a reviewed resolver.");
   return match[1];

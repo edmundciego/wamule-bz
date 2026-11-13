@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       - name: Verify replay inputs and dynamic query contracts
-        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs test/schema-repair-candidate-contract.test.mjs test/generate-receipts-postgres17-candidate.test.mjs
+        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs test/schema-repair-candidate-contract.test.mjs test/generate-receipts-postgres17-candidate.test.mjs test/tenant-provisioning-target.test.mjs
 
       - name: Check candidate patch formatting
         run: git diff --check
@@ -287,8 +287,8 @@ jobs:
           export WALKTHROUGH_WEB_ORIGIN="http://127.0.0.1:5173"
           if ! node scripts/run-tenant-walkthrough.mjs; then
             echo "The synthetic walkthrough failed. Redacted local Edge Function and Vite logs follow." >&2
-            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/local-functions.log" | tail -n 100 >&2
-            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 50 >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 100 >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 50 >&2
             exit 1
           fi
           printf '\n#### Five-stage synthetic-tenant walkthrough\n\n' >> "$GITHUB_STEP_SUMMARY"
