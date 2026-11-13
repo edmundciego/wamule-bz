@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { assertTargetIdentity, projectRefFromUrl } from "../scripts/lib/tenant-provisioning-service.mjs";
 
 test("the Supabase CLI Edge Runtime gateways resolve to the disposable local project", () => {
@@ -34,4 +35,12 @@ test("the target guard still pins staging and blocks production", () => {
     () => assertTargetIdentity({ supabaseUrl: "https://mtjlvzrtihslcftxnlso.supabase.co", expectedProjectRef: "mtjlvzrtihslcftxnlso", apply: true }),
     /production Wamule project is blocked/,
   );
+});
+
+test("private hostname binding verification is a local read-only count", () => {
+  const runner = readFileSync(new URL("../scripts/run-tenant-walkthrough.mjs", import.meta.url), "utf8");
+  assert.match(runner, /SCHEMA_QUERY_DATABASE_URL/);
+  assert.match(runner, /\["localhost", "127\.0\.0\.1", "::1"\]/);
+  assert.match(runner, /BEGIN READ ONLY; SELECT count\(\*\)::text FROM public\.public_hostname_bindings/);
+  assert.doesNotMatch(runner, /FROM public\.public_hostname_bindings[^\n]*(?:hostname|verification_evidence)/i);
 });

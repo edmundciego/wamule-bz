@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
@@ -8,6 +9,9 @@ const supabaseUrl = required("SUPABASE_URL");
 const anonKey = required("SUPABASE_ANON_KEY");
 const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
 const replayDir = required("REPLAY_DIR");
+const databaseUrl = new URL(required("SCHEMA_QUERY_DATABASE_URL"));
+assert(["localhost", "127.0.0.1", "::1"].includes(databaseUrl.hostname), "Walkthrough database connection must target the disposable local Supabase stack.");
+assert(["postgres:", "postgresql:"].includes(databaseUrl.protocol), "Walkthrough database connection must use PostgreSQL.");
 const webOrigin = process.env.WALKTHROUGH_WEB_ORIGIN ?? "http://127.0.0.1:5173";
 const mailpitApi = process.env.WALKTHROUGH_MAILPIT_API ?? "http://127.0.0.1:54324/api/v1/messages";
 const evidencePath = resolve(process.env.WALKTHROUGH_EVIDENCE_PATH ?? "/tmp/wamule-tenant-walkthrough.json");
@@ -163,17 +167,15 @@ async function main() {
       const staff = await signedInClient(staffEmail);
       const staffMemberships = checked(await staff.from("project_memberships").select("project_id,phase_id,member_role").eq("tenant_id", tenant.id), "Read Staff phase assignments");
       assert(staffMemberships.length === 1 && staffMemberships[0].phase_id === phase.id, "Staff received access outside the one assigned phase.");
-      const bindingResult = await service.from("public_hostname_bindings").select("tenant_id", { count: "exact", head: true })
-        .eq("tenant_id", tenant.id);
-      if (bindingResult.error) throw new Error(`Verify synthetic tenant hostname bindings: ${bindingResult.error.message}`);
-      const bindingCount = bindingResult.count ?? 0;
+      const bindingCount = countLocalHostnameBindings(tenant.id);
       assert(bindingCount === 0, "Synthetic tenant unexpectedly has a hostname binding.");
 
       report.identities = { admin_user_id: adminUser.id, staff_user_id: staffUser.id, operator_user_id: operator.userId };
       report.stages[0].evidence = {
         tenant_id: tenant.id, project_id: project.id, phase_ids: [phase.id, otherPhase.id],
         staff_memberships: staffMemberships.length, staff_assigned_phase_id: staffMemberships[0].phase_id,
-        hostname_binding_count: bindingCount, service_role_rpc_probe: "passed (read-only, zero writes)",
+        hostname_binding_count: bindingCount, hostname_binding_count_source: "local PostgreSQL read-only count query",
+        service_role_rpc_probe: "passed (read-only, zero writes)",
         onboarding: "supported provision_workspace_v1 and M4.3 member onboarding",
       };
       return { tenantId: tenant.id, projectId: project.id, phaseId: phase.id, otherPhaseId: otherPhase.id, admin, staff, manifest, projectApplication };
@@ -615,6 +617,33 @@ async function countRows(client, table, filters) {
   const result = await query;
   if (result.error) throw new Error(`Count synthetic ${table} rows: ${result.error.message}`);
   return result.count ?? 0;
+}
+
+function countLocalHostnameBindings(tenantId) {
+  assert(UUID(tenantId), "Hostname binding count requires the synthetic tenant UUID.");
+  const result = spawnSync("psql", [
+    "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-v", `tenant_id=${tenantId}`,
+    "-c", "BEGIN READ ONLY; SELECT count(*)::text FROM public.public_hostname_bindings WHERE tenant_id = :'tenant_id'::uuid; COMMIT;",
+  ], {
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+    env: {
+      PATH: process.env.PATH,
+      PGHOST: databaseUrl.hostname,
+      PGPORT: databaseUrl.port || "5432",
+      PGUSER: decodeURIComponent(databaseUrl.username),
+      PGPASSWORD: decodeURIComponent(databaseUrl.password),
+      PGDATABASE: decodeURIComponent(databaseUrl.pathname.slice(1)),
+      PGSSLMODE: "disable",
+      PGPASSFILE: "/dev/null",
+    },
+  });
+  if (result.error || result.status !== 0) throw new Error("The local read-only hostname binding count query failed.");
+  const countText = result.stdout.trim();
+  assert(/^\d+$/.test(countText), "The local hostname binding count query did not return a count.");
+  const count = Number(countText);
+  assert(Number.isSafeInteger(count), "The local hostname binding count is outside the supported integer range.");
+  return count;
 }
 
 async function capturedMailCount() {
