@@ -622,8 +622,8 @@ async function countRows(client, table, filters) {
 function countLocalHostnameBindings(tenantId) {
   assert(UUID(tenantId), "Hostname binding count requires the synthetic tenant UUID.");
   const result = spawnSync("psql", [
-    "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-v", `tenant_id=${tenantId}`,
-    "-c", "BEGIN READ ONLY; SELECT count(*)::text FROM public.public_hostname_bindings WHERE tenant_id = :'tenant_id'::uuid; COMMIT;",
+    "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1",
+    "-c", `BEGIN READ ONLY; SELECT count(*)::text FROM public.public_hostname_bindings WHERE tenant_id = '${tenantId}'::uuid; COMMIT;`,
   ], {
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
@@ -638,7 +638,10 @@ function countLocalHostnameBindings(tenantId) {
       PGPASSFILE: "/dev/null",
     },
   });
-  if (result.error || result.status !== 0) throw new Error("The local read-only hostname binding count query failed.");
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message ?? String(result.stderr ?? "").trim().split(/\r?\n/).slice(0, 3).join(" ");
+    throw new Error(`The local read-only hostname binding count query failed${detail ? `: ${cleanFailure(detail)}` : "."}`);
+  }
   const countText = result.stdout.trim();
   assert(/^\d+$/.test(countText), "The local hostname binding count query did not return a count.");
   const count = Number(countText);
