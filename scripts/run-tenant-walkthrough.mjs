@@ -259,7 +259,8 @@ async function main() {
       assert(otherPublicMap.response.status === 404, "Other phase map was available before publication.");
       const closedBody = submissionBody(tenantSlug, projectSlug, otherPhaseSlug, randomUUID(), []);
       const closedResponse = await postPublic("submit-hopkins-project-application", closedBody);
-      assert(closedResponse.status === 403, "Other phase intake was not denied while it remained closed.");
+      assert(closedResponse.status === 403,
+        `Other phase intake was not denied while it remained closed (HTTP ${closedResponse.status}: ${closedResponse.body?.error ?? "no error detail"}).`);
       report.stages[2].evidence = {
         project_template: settingsByKey.tenant_theme.site_experience.templateId,
         project_application_type: appSetting.application_type, intended_phase_intake_open: false,
@@ -675,7 +676,7 @@ async function postPublic(functionName, body) {
     headers: { apikey: anonKey, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return response.status;
+  return { status: response.status, body: await response.json().catch(() => ({})) };
 }
 
 function submissionBody(tenant, project, phase, reference, refs) {
