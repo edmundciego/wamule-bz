@@ -79,6 +79,7 @@ async function main() {
       runtime_compatibility_delta_version: runtimeDelta.migrations[0].version,
       runtime_compatibility_delta_sha256: runtimeDelta.migrations[0].sha256,
     };
+    console.log("[walkthrough] checking that local Mailpit starts empty");
     const mailpitStartCount = await capturedMailCount();
     assert(mailpitStartCount === 0, "Disposable Mailpit did not start empty; refusing to mix pre-existing mail evidence.");
     report.outbound_delivery = { sink: "local Mailpit only", captured_messages_before: mailpitStartCount };
@@ -536,15 +537,14 @@ async function main() {
     process.exitCode = 1;
   } finally {
     const closeResources = async () => {
-      await context?.close().catch(() => {});
-      await browser?.close().catch(() => {});
-      await Promise.all(signedInClients.map((client) => client.auth.signOut().catch(() => {})));
+      await withTimeout(() => context?.close(), 10000, "Browser context cleanup").catch(() => {});
+      await withTimeout(() => browser?.close(), 10000, "Browser cleanup").catch(() => {});
+      await Promise.all(signedInClients.map((client) =>
+        withTimeout(() => client.auth.signOut(), 10000, "Local Auth cleanup").catch(() => {})));
     };
-    if (stageTimedOut) {
-      await Promise.race([closeResources(), new Promise((resolve) => setTimeout(resolve, 5000))]);
-      process.exit(124);
-    }
     await closeResources();
+    await new Promise((resolve) => process.stdout.write("", resolve));
+    process.exit(stageTimedOut ? 124 : (process.exitCode ?? 0));
   }
 }
 
@@ -680,28 +680,34 @@ function countLocalHostnameBindings(tenantId) {
 }
 
 async function capturedMailCount() {
-  const response = await fetch(mailpitApi, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Local Mailpit did not respond with its captured-message list (${response.status}).`);
-  const body = await response.json().catch(() => ({}));
-  const count = Number(body.total ?? body.count ?? (Array.isArray(body.messages) ? body.messages.length : NaN));
-  if (!Number.isSafeInteger(count) || count < 0) throw new Error("Local Mailpit returned an unrecognized message count.");
-  return count;
+  return withTimeout(async () => {
+    const response = await fetch(mailpitApi, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Local Mailpit did not respond with its captured-message list (${response.status}).`);
+    const body = await response.json().catch(() => ({}));
+    const count = Number(body.total ?? body.count ?? (Array.isArray(body.messages) ? body.messages.length : NaN));
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error("Local Mailpit returned an unrecognized message count.");
+    return count;
+  }, 30000, "Local Mailpit read");
 }
 
 async function publicGet(functionName, params) {
-  const query = new URLSearchParams(params);
-  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}?${query}`, { headers: { apikey: anonKey }, cache: "no-store" });
-  const body = await response.json().catch(() => ({}));
-  return { response, body };
+  return withTimeout(async () => {
+    const query = new URLSearchParams(params);
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}?${query}`, { headers: { apikey: anonKey }, cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    return { response, body };
+  }, 30000, `Local ${functionName} read`);
 }
 
 async function postPublic(functionName, body) {
-  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-    method: "POST",
-    headers: { apikey: anonKey, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return { status: response.status, body: await response.json().catch(() => ({})) };
+  return withTimeout(async () => {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: { apikey: anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  }, 30000, `Local ${functionName} submission`);
 }
 
 function submissionBody(tenant, project, phase, reference, refs) {
@@ -718,6 +724,20 @@ function submissionBody(tenant, project, phase, reference, refs) {
 async function saveReport() {
   await mkdir(dirname(evidencePath), { recursive: true });
   await writeFile(evidencePath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+}
+
+async function withTimeout(operation, timeoutMs, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded its ${timeoutMs / 1000}-second limit.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function cleanFailure(error) {
