@@ -285,7 +285,12 @@ jobs:
             exit 1
           fi
           export WALKTHROUGH_WEB_ORIGIN="http://127.0.0.1:5173"
-          node scripts/run-tenant-walkthrough.mjs
+          if ! node scripts/run-tenant-walkthrough.mjs; then
+            echo "The synthetic walkthrough failed. Redacted local Edge Function and Vite logs follow." >&2
+            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/local-functions.log" | tail -n 100 >&2
+            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 50 >&2
+            exit 1
+          fi
           printf '\n#### Five-stage synthetic-tenant walkthrough\n\n' >> "$GITHUB_STEP_SUMMARY"
           python3 - "$RUNNER_TEMP/tenant-walkthrough.json" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys

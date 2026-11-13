@@ -563,7 +563,23 @@ async function invoke(client, functionName, body) {
   const { data, error } = await client.functions.invoke(functionName, { body });
   if (error) {
     let detail = error.message;
-    try { detail = (await error.context.json()).error ?? detail; } catch { /* Keep the safe message only. */ }
+    const context = error.context;
+    if (context && typeof context.text === "function") {
+      try {
+        const bodyText = await context.clone().text();
+        const payload = JSON.parse(bodyText);
+        detail = payload.error ?? payload.message ?? payload.msg ?? JSON.stringify(payload);
+      } catch {
+        try {
+          const bodyText = await context.clone().text();
+          if (bodyText.trim()) detail = `HTTP ${context.status ?? "error"}: ${bodyText.trim().slice(0, 500)}`;
+        } catch { /* Keep the safe SDK message if the response cannot be read. */ }
+      }
+      if (context.status) detail = `HTTP ${context.status}: ${detail}`;
+    }
+    detail = String(detail)
+      .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL REDACTED]")
+      .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "[JWT REDACTED]");
     throw new Error(`${functionName} failed: ${detail}`);
   }
   if (data?.ok === false || data?.error) throw new Error(`${functionName} failed: ${data.error ?? "request was rejected"}`);
