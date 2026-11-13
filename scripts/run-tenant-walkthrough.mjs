@@ -479,7 +479,7 @@ async function main() {
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.otherPhaseId);
       assert(finalStaffPackages.data?.length === 0 && finalStaffFeatures.data?.length === 0,
         "Phase-limited Staff read another phase after publication.");
-      await adminPage.getByRole("button", { name: "Sign out", exact: true }).click();
+      await adminPage.getByRole("link", { name: "Sign out", exact: true }).click();
       await adminPage.waitForURL(/\/login$/, { timeout: 15000 });
 
       const result = {
