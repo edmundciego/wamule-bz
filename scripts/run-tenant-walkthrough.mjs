@@ -466,7 +466,7 @@ async function main() {
       await adminPage.getByText("Phase: Initial Review Phase", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
       await adminPage.getByText(new RegExp(`Generated map reference: ${escapeRegex(firstPublicLabel)}`)).waitFor({ state: "visible", timeout: 15000 });
       const mapLink = adminPage.getByRole("link", { name: "Open this outline on the Initial Review Phase map" });
-      const [mapPopup] = await Promise.all([context.waitForEvent("page"), mapLink.click()]);
+      const [mapPopup] = await Promise.all([context.waitForEvent("page", { timeout: 15000 }), mapLink.click()]);
       await mapPopup.waitForLoadState("domcontentloaded");
       assert(mapPopup.url().includes(`/p/${tenantSlug}/${projectSlug}/${phaseSlug}?map=1&feature=${staffPreview.selectedFeatureId}`),
         "Admin application map link did not resolve to the scoped shared-platform phase route.");
@@ -542,16 +542,19 @@ async function main() {
 async function timedStage(name, operation) {
   const stage = { name, status: "running", machine_runtime_ms: 0 };
   report.stages.push(stage);
+  console.log(`[walkthrough] started: ${name}`);
   const start = performance.now();
   try {
     const result = await operation();
     stage.machine_runtime_ms = Math.round(performance.now() - start);
     stage.status = "passed";
+    console.log(`[walkthrough] passed: ${name} (${stage.machine_runtime_ms} ms)`);
     return result;
   } catch (error) {
     stage.machine_runtime_ms = Math.round(performance.now() - start);
     stage.status = "failed";
     stage.error = cleanFailure(error);
+    console.error(`[walkthrough] failed: ${name} (${stage.machine_runtime_ms} ms): ${stage.error}`);
     throw error;
   }
 }
