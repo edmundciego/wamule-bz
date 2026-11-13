@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUpRight, CheckCircle2, MapPin, Send } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { PublicLotMap, type PublicLotParcel } from "../../components/public/PublicLotMap";
 import { Button } from "../../components/ui/Button";
 import { Field, Input, Select, Textarea } from "../../components/ui/Field";
@@ -88,7 +88,8 @@ async function loadPublicProjectPage(hostname: string, scope: PublicExperienceSc
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
   if (!baseUrl || !anonKey) throw new Error("The public project page is not configured.");
 
-  const params = new URLSearchParams({ host: hostname, tenant: scope.tenantSlug, project: scope.projectSlug, phase: scope.phaseSlug });
+  const params = new URLSearchParams({ tenant: scope.tenantSlug, project: scope.projectSlug, phase: scope.phaseSlug });
+  if (hostname) params.set("host", hostname);
   const response = await fetch(`${baseUrl}/functions/v1/get-public-project-page?${params}`, {
     method: "GET",
     headers: { apikey: anonKey, Accept: "application/json" },
@@ -120,7 +121,6 @@ export function HopkinsPublicPage({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const templateId = selectedTemplate ?? "hopkins-project";
   const modules = selectedModules ?? { map: true, inquiry: true, application: true, pricing: true };
   const outlineSelectionKey = selectionStorageKey(hostname, scope);
@@ -143,7 +143,9 @@ export function HopkinsPublicPage({
   const selectedMapFeatureRefs = outlineSelection.key === outlineSelectionKey ? outlineSelection.refs : [];
   const mapFeatureLabels = outlineSelection.key === outlineSelectionKey ? outlineSelection.labels : [];
   const [mapPreferenceError, setMapPreferenceError] = useState<string | null>(null);
-  const mapUrl = `/embed/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`;
+  const mapUrl = hostname
+    ? `/embed/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`
+    : `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}/${encodeURIComponent(scope.phaseSlug)}?map=1&view=tier`;
 
   function changePhase(phaseSlug: string) {
     const params = new URLSearchParams(location.search);

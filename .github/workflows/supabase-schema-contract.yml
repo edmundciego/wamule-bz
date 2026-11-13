@@ -2,7 +2,7 @@ name: Supabase schema contract
 
 on:
   push:
-    branches: [codex/schema-replay-69-review, codex/schema-repair-fbc1ee4-review]
+    branches: [codex/schema-replay-69-review, codex/schema-repair-fbc1ee4-review, codex/five-stage-tenant-walkthrough]
   workflow_dispatch:
     inputs:
       run_staging_catalog:
@@ -19,6 +19,8 @@ jobs:
     name: Reconcile and scan local PostgreSQL 17 replay
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      WAMULE_SCHEMA_BASE_COMMIT: d26e3de510d0668bae0f8b616eed7dddc7b5fdd7
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,6 +49,11 @@ jobs:
 
       - name: Check candidate patch formatting
         run: git diff --check
+
+      - name: Build the reviewed frontend and check lint
+        run: |
+          npm run lint
+          npm run build
 
       - name: Confirm the reviewed Supabase CLI version
         run: |
@@ -196,7 +203,23 @@ jobs:
           db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
           SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/verify-schema-repair-postgres.mjs | tee "$RUNNER_TEMP/schema-repair-results.json"
           printf '\n#### Candidate repair behavior checks\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf '%s\n' '- Local PostgreSQL 17 only; the 69-entry numbered baseline was not modified.' '- The post-sales migration was first rejected against two synthetic conflicting rows, with transaction rollback verified; after removing only those fixtures, unambiguous backfill and scoped access tests passed.' '- The separately reviewed M1.5 overlay was applied before the community-fee view repair and its security-invoker/grant constraints were rechecked.' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' '- Local PostgreSQL 17 only; the captured 69-entry base ledger was verified before applying the two candidate migrations.' '- The final ordered numbered ledger contains 71 entries; the separately reviewed M1.5 view-security correction remains an unnumbered overlay.' '- The post-sales migration was first rejected against two synthetic conflicting rows, with transaction rollback verified; after removing only those fixtures, unambiguous backfill and scoped access tests passed.' '- The separately reviewed M1.5 overlay was applied before the community-fee view repair and its security-invoker/grant constraints were rechecked.' >> "$GITHUB_STEP_SUMMARY"
+          python3 - "$REPLAY_DIR/applied-migrations.json" "$REPLAY_DIR/numbered-migrations.json" <<'PY'
+          import json, sys
+          applied = json.load(open(sys.argv[1], encoding="utf-8"))
+          numbered = json.load(open(sys.argv[2], encoding="utf-8"))
+          versions = [str(item["version"]) for item in applied["applied_migrations"]]
+          assert len(versions) == 71 and len(set(versions)) == 71
+          assert applied.get("applied_migration_count") == 71 and applied.get("ordered_manifest_match") is True
+          assert numbered.get("numbered_migration_count") == 71 and numbered.get("ordered_manifest_match") is True
+          assert [str(item["version"]) for item in numbered["migrations"]] == versions
+          assert versions[-2:] == ["20261112033403", "20261112033404"]
+          assert applied.get("m1_5_view_security_overlay", {}).get("included_in_numbered_ledger") is False
+          assert numbered.get("separately_applied_overlay", {}).get("included_in_numbered_ledger") is False
+          assert numbered.get("separately_applied_overlay", {}).get("sha256") == "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
+          print("Verified exact ordered 71-entry numbered ledger and separate hash-pinned M1.5 overlay.")
+          PY
+          printf 'Final numbered ledger: exactly 71 ordered entries; M1.5 verified as a separate overlay.\n' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scan source queries against the repaired local catalog
         env:
@@ -219,19 +242,70 @@ jobs:
               stream.write(f"- Query chains: {report.get('query_chains')}; mismatches: {report.get('mismatch_count')}; unresolved dynamic checks: {report.get('dynamic_or_unresolved_count')}; RPC signatures: {report.get('rpc_signature_count')}\n")
           PY
 
-      - name: Retain replay evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-replayed-schema-contract
-          path: |
-            ${{ runner.temp }}/wamule-reconciled-replay/replay-manifest.json
-            ${{ runner.temp }}/wamule-reconciled-replay/applied-migrations.json
-            ${{ runner.temp }}/replay-run-summary.json
-            ${{ runner.temp }}/schema-contract-baseline.json
-            ${{ runner.temp }}/schema-contract-repaired.json
-            ${{ runner.temp }}/wamule-reconciled-replay/schema-repair-results.json
-          if-no-files-found: warn
+      - name: Install Chromium for the authenticated walkthrough
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the five-stage walkthrough against local Auth, Storage, PostgreSQL and Edge Functions
+        id: tenant-walkthrough
+        env:
+          REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
+          SUPABASE_HOME: ${{ runner.temp }}/supabase-home
+          SUPABASE_TELEMETRY_DISABLED: "1"
+          WALKTHROUGH_EVIDENCE_PATH: ${{ runner.temp }}/tenant-walkthrough.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          export SUPABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" API_URL)"
+          export SUPABASE_ANON_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" ANON_KEY)"
+          export SUPABASE_SERVICE_ROLE_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" SERVICE_ROLE_KEY)"
+          export SCHEMA_QUERY_DATABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          export VITE_SUPABASE_URL="$SUPABASE_URL"
+          export VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          local_functions_env="$RUNNER_TEMP/local-functions.env"
+          umask 077
+          printf 'SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\n' \
+            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > "$local_functions_env"
+          ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
+          functions_pid=$!
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite-walkthrough.log" 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid" "$functions_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl --silent --output /dev/null "$SUPABASE_URL/functions/v1/get-public-lots?tenant=healthcheck"; then
+              if curl --fail --silent --output /dev/null http://127.0.0.1:5173/; then ready=1; break; fi
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local Supabase Edge Functions or Vite did not become ready." >&2
+            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/local-functions.log" | tail -n 60 >&2
+            python3 scripts/redact-supabase-ci-log.py < "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 40 >&2
+            exit 1
+          fi
+          export WALKTHROUGH_WEB_ORIGIN="http://127.0.0.1:5173"
+          node scripts/run-tenant-walkthrough.mjs
+          printf '\n#### Five-stage synthetic-tenant walkthrough\n\n' >> "$GITHUB_STEP_SUMMARY"
+          python3 - "$RUNNER_TEMP/tenant-walkthrough.json" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report.get("result") == "passed", report.get("failure")
+          assert len(report.get("stages", [])) == 5 and all(stage.get("status") == "passed" for stage in report["stages"]), report.get("stages")
+          assert report.get("database", {}).get("numbered_migration_count") == 71
+          assert report.get("database", {}).get("m1_5_overlay_separate") is True
+          summary = [f"- Schema baseline: `{report.get('schema_baseline_commit')}`", f"- Tested commit: `{report.get('tested_commit')}`", f"- Automated machine runtime: {report.get('total_machine_runtime_ms')} ms"]
+          for stage in report["stages"]:
+              summary.append(f"- {stage['name']}: {stage['status']} in {stage['machine_runtime_ms']} ms")
+          submission = report.get("synthetic_submission", {})
+          summary.extend([
+              f"- Synthetic application ID: `{submission.get('application_id')}`; linked lead ID: `{submission.get('lead_id')}`",
+              f"- Retry reused the same application ID: `{submission.get('same_id_on_retry')}`",
+              f"- Outbound email / payment transaction / reservation rows: {submission.get('outbound_email_rows')} / {submission.get('payment_transaction_rows')} / {submission.get('reservation_rows')}",
+          ])
+          with open(sys.argv[2], "a", encoding="utf-8") as stream:
+              stream.write("\n".join(summary) + "\n")
+          PY
 
       - name: Stop the isolated Supabase stack
         if: always()
@@ -239,7 +313,50 @@ jobs:
           REPLAY_DIR: ${{ runner.temp }}/wamule-reconciled-replay
           SUPABASE_HOME: ${{ runner.temp }}/supabase-home
           SUPABASE_TELEMETRY_DISABLED: "1"
-        run: ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup || true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_status="passed"
+          if [ -d "$REPLAY_DIR" ]; then
+            if ! ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup; then
+              cleanup_status="failed"
+            fi
+          fi
+          remaining="$(docker ps -a --filter 'name=supabase_' --format '{{.ID}}')"
+          if [ -n "$remaining" ]; then
+            cleanup_status="failed"
+            echo "Disposable Supabase containers remain after stop." >&2
+          fi
+          remaining_volumes="$(docker volume ls --format '{{.Name}}' | python3 -c 'import sys; print("\n".join(name for name in sys.stdin.read().splitlines() if "supabase" in name.lower()))')"
+          if [ -n "$remaining_volumes" ]; then
+            cleanup_status="failed"
+            echo "Disposable Supabase data volumes remain after stop." >&2
+          fi
+          if [ "$cleanup_status" != "passed" ]; then
+            printf '{"status":"failed","stack":"wamule-local-replay","volumes_removed":false}\n' > "$RUNNER_TEMP/tenant-walkthrough-cleanup.json"
+            exit 1
+          fi
+          printf '{"status":"passed","stack":"wamule-local-replay","volumes_removed":true,"auth_storage_database_and_functions_discarded":true}\n' > "$RUNNER_TEMP/tenant-walkthrough-cleanup.json"
+          printf '\n#### Disposable stack cleanup\n\n- Passed: `supabase stop --no-backup` removed the local stack and data volumes; no Supabase containers or volumes remain.\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain replay and walkthrough evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-tenant-walkthrough-d26e3de
+          path: |
+            ${{ runner.temp }}/wamule-reconciled-replay/replay-manifest.json
+            ${{ runner.temp }}/wamule-reconciled-replay/numbered-migrations.json
+            ${{ runner.temp }}/wamule-reconciled-replay/applied-migrations.json
+            ${{ runner.temp }}/replay-run-summary.json
+            ${{ runner.temp }}/schema-contract-baseline.json
+            ${{ runner.temp }}/schema-contract-repaired.json
+            ${{ runner.temp }}/wamule-reconciled-replay/schema-repair-results.json
+            ${{ runner.temp }}/tenant-walkthrough.json
+            ${{ runner.temp }}/tenant-walkthrough-public-map.png
+            ${{ runner.temp }}/tenant-walkthrough-private-preview.png
+            ${{ runner.temp }}/tenant-walkthrough-cleanup.json
+          if-no-files-found: warn
 
   staging-read-only-catalog:
     name: Read-only staging catalog contract

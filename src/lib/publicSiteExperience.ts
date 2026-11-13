@@ -44,7 +44,9 @@ async function loadPublicSiteExperience(
   requestedPhaseSlug: string | null,
 ): Promise<PublicSiteData> {
   if (!endpoint || !anonKey) throw new Error("Public project information is not configured.");
-  const params = new URLSearchParams({ host: hostname });
+  const params = hostname
+    ? new URLSearchParams({ host: hostname })
+    : new URLSearchParams({ tenant: binding.tenantSlug, project: binding.projectSlug });
   if (requestedPhaseSlug !== null) params.set("phase", requestedPhaseSlug);
   const response = await fetch(`${endpoint}/functions/v1/get-public-site-experience?${params}`, {
     method: "GET",
@@ -90,7 +92,7 @@ export function usePublicSiteExperience(
   return useQuery({
     queryKey: ["public-site-experience", hostname, binding.tenantSlug, binding.projectSlug, requestedPhaseSlug ?? "default"],
     queryFn: () => loadPublicSiteExperience(hostname, binding, requestedPhaseSlug),
-    enabled: allow && hasSupabaseConfig && Boolean(hostname && binding.tenantSlug && binding.projectSlug),
+    enabled: allow && hasSupabaseConfig && Boolean(binding.tenantSlug && binding.projectSlug),
     staleTime: 0,
     retry: false,
   });

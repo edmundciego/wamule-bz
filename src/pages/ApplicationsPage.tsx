@@ -489,7 +489,7 @@ export function ApplicationsPage() {
                           hopkinsTierSource,
                         );
                         const mapHref = workspace
-                          ? `/embed/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}?phase=${encodeURIComponent(workspace.phaseSlug)}&feature=${encodeURIComponent(ref)}`
+                          ? `/p/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}/${encodeURIComponent(workspace.phaseSlug)}?map=1&feature=${encodeURIComponent(ref)}`
                           : null;
                         return <li key={ref} className="grid gap-1 rounded-md border border-border bg-background p-2 text-muted-foreground">
                           <span><span className="font-medium text-foreground">Generated map reference:</span> {feature?.demo_label ?? `Map outline ${ref.slice(0, 8)}`}</span>

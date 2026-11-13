@@ -13,10 +13,12 @@ export function PublicExperienceRoute({
   hostname,
   binding,
   mapRoute = false,
+  phaseLocked = false,
 }: {
-  hostname: string;
+  hostname?: string;
   binding: Extract<PublicHostnameResolution, { resolved: true }>["scope"];
   mapRoute?: boolean;
+  phaseLocked?: boolean;
 }) {
   const params = useParams<{ tenant_slug?: string; project_slug?: string }>();
   const [searchParams] = useSearchParams();
@@ -26,29 +28,31 @@ export function PublicExperienceRoute({
   );
   const explicitPhase = searchParams.has("phase");
   const requestedPhaseSlug = explicitPhase ? searchParams.get("phase") : binding.phaseSlug;
+  const lockedPhaseMismatch = phaseLocked && explicitPhase && requestedPhaseSlug !== binding.phaseSlug;
   const { data, isLoading, isError, error } = usePublicSiteExperience(
-    hostname,
+    hostname ?? "",
     binding,
     requestedPhaseSlug,
-    pathScopeMatches,
+    pathScopeMatches && !lockedPhaseMismatch,
   );
 
-  if (!pathScopeMatches) return <PublicUnavailable message="This map address does not match the verified project for this host." />;
+  if (!pathScopeMatches || lockedPhaseMismatch) return <PublicUnavailable message="This public project path does not match its verified tenant, project, or phase." />;
   if (isLoading) return <main className="grid min-h-screen place-items-center px-4" role="status">Loading public project information…</main>;
   if (isError || !data) {
     return <PublicUnavailable message={error instanceof Error ? error.message : "This public project could not be verified."} />;
   }
 
   const scope: PublicExperienceScope = data.scope;
+  const phases = phaseLocked ? data.phases.filter((phase) => phase.slug === binding.phaseSlug) : data.phases;
   if (mapRoute) {
-    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={data.phases} />;
+    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={phases} />;
   }
 
   const templateId: PublicSiteTemplateId = data.siteExperience.templateId;
   const enabledModules = data.siteExperience.enabledModules;
   return data.siteExperience.applicationType === "project_application"
-    ? <HopkinsPublicPage hostname={hostname} scope={scope} phases={data.phases} templateId={templateId} enabledModules={enabledModules} />
-    : <ApplicationPage hostname={hostname} scope={scope} phases={data.phases} company={data.company} publicApplication={data.publicApplication}
+    ? <HopkinsPublicPage hostname={hostname ?? ""} scope={scope} phases={phases} templateId={templateId} enabledModules={enabledModules} />
+    : <ApplicationPage hostname={hostname ?? ""} scope={scope} phases={phases} company={data.company} publicApplication={data.publicApplication}
       installmentPlans={data.installmentPlans} paymentMethods={data.paymentMethods} templateId={templateId} enabledModules={enabledModules} />;
 }
 

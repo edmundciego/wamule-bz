@@ -40,7 +40,7 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const scope = await resolveScope(client, input);
-  if (!scope) return json({ error: "Hopkins Grove applications are temporarily unavailable." }, 503);
+  if (!scope) return json({ error: "Project applications are temporarily unavailable." }, 503);
   const { tenantId, projectId, phaseId } = scope;
 
   const [{ data: companySettings, error: companyError }, { data: settingsRow, error: settingError }] = await Promise.all([
@@ -56,6 +56,9 @@ Deno.serve(async (request) => {
     ...objectValue(companySettings?.value),
     ...objectValue(settingsRow.value),
   } as ProjectApplicationSettings;
+  if (objectValue(settingsRow.value).application_type !== "project_application") {
+    return json({ error: "Project applications are not enabled for this project." }, 404);
+  }
   const effective = resolvePublicApplicationSettings(companySettings?.value, settingsRow.value, phaseId);
   const maxMapPreferences = boundedInteger(settings.max_map_preferences, 0, 10, 5);
   const inputValidation = validateHopkinsProjectApplicationPayload(body, maxMapPreferences);
@@ -163,11 +166,13 @@ Deno.serve(async (request) => {
 });
 
 async function resolveScope(client: ReturnType<typeof createClient>, input: { hostname: string; tenant: string; project: string; phase: string }) {
-  const hostname = normalizePublicHostname(input.hostname);
-  if (!hostname) return null;
-  const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
-  const binding = bindingError ? { resolved: false as const } : parsePublicHostnameResolution(bindingData);
-  if (!binding.resolved || binding.scope.tenantSlug !== input.tenant || binding.scope.projectSlug !== input.project) return null;
+  if (input.hostname) {
+    const hostname = normalizePublicHostname(input.hostname);
+    if (!hostname) return null;
+    const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
+    const binding = bindingError ? { resolved: false as const } : parsePublicHostnameResolution(bindingData);
+    if (!binding.resolved || binding.scope.tenantSlug !== input.tenant || binding.scope.projectSlug !== input.project) return null;
+  }
   const { data: tenant, error: tenantError } = await client.from("organizations")
     .select("id").eq("slug", input.tenant).eq("is_active", true).maybeSingle();
   if (tenantError || !tenant) return null;

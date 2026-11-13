@@ -43,6 +43,7 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboar
     ? [{ href: "/information-centre", label: "Information Centre", icon: BookOpenText }]
     : []),
   { href: "/lots", label: "Lots", icon: Map },
+  { href: "/map-review", label: "Map Review", icon: Map },
   { href: "/maps", label: "Maps", icon: Map, adminOnly: true },
   { href: "/lots/correct", label: "Correct", icon: ListChecks },
   { href: "/applications", label: "Applications", icon: ClipboardList },

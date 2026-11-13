@@ -8,7 +8,7 @@ export function EmbeddableMapPage({
   scope,
   phases,
 }: {
-  hostname: string;
+  hostname?: string;
   scope: PublicExperienceScope;
   phases: PublicPhaseOption[];
 }) {

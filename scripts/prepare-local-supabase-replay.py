@@ -151,6 +151,11 @@ def build(output: Path) -> dict:
     functions_target = supabase_dir / "functions"
     functions_source = ROOT / "supabase/functions"
     functions_target.symlink_to(functions_source, target_is_directory=True)
+    # Edge Functions import a small number of reviewed frontend helpers and
+    # the supported tenant onboarding service by repository-relative path.
+    # Keep those import roots visible from the isolated CLI workdir as well.
+    for name in ("src", "scripts"):
+        (output / name).symlink_to(ROOT / name, target_is_directory=True)
 
     manifest = {
         "target_kind": "local-only Supabase CLI project",

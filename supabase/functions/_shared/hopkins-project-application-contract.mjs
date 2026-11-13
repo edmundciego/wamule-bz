@@ -40,10 +40,11 @@ export function validateHopkinsProjectApplicationPayload(body, maxMapPreferences
   const project = cleanText(body.project, 160).toLowerCase();
   const phase = cleanText(body.phase, 160).toLowerCase();
   const hostname = cleanText(body.hostname, 253).toLowerCase().replace(/\.$/, "");
+  const validHostname = !hostname || /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname);
   if (!/^[a-z0-9][a-z0-9-]{0,78}$/.test(tenant) || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(project)
     || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(phase)
-    || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)) {
-    return { error: "This application link does not match a verified project address." };
+    || !validHostname) {
+    return { error: "This application link does not match a verified project or platform path." };
   }
   const submission_reference = cleanText(body.submission_reference, 36).toLowerCase();
   if (!UUID_PATTERN.test(submission_reference)) return { error: "Refresh the form and try submitting again." };

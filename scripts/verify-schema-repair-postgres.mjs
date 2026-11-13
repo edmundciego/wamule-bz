@@ -124,18 +124,51 @@ async function main() {
   const anonError = `${anonDenied.stdout ?? ""}\n${anonDenied.stderr ?? ""}`;
   if (!anonDenied.status || !anonError.toLowerCase().includes("permission denied")) fail("Anonymous SQL query was not denied by view grants.");
 
-  const baselineStillOrdered = JSON.parse(await readFile(resolve(replayDir, "applied-migrations.json"), "utf8"));
-  if (baselineStillOrdered.applied_migration_count !== 69 || baselineStillOrdered.ordered_manifest_match !== true) {
-    fail("The numbered baseline manifest was changed while applying overlays.");
+  const baseVersions = applied.applied_migrations.map((entry) => String(entry.version));
+  const finalMigrations = [
+    ...applied.applied_migrations,
+    { position: 70, version: POST_SALES_VERSION, filename: `${POST_SALES_VERSION}_post_sales_project_phase_scope.sql`, sha256: hashes.postSales },
+    { position: 71, version: VIEW_VERSION, filename: `${VIEW_VERSION}_community_fee_view_tenant_scope.sql`, sha256: hashes.view },
+  ];
+  const finalVersions = finalMigrations.map((entry) => String(entry.version));
+  if (baseVersions.length !== 69 || finalMigrations.length !== 71
+    || new Set(finalVersions).size !== 71 || finalVersions.some((version, index) => index > 0 && version <= finalVersions[index - 1])) {
+    fail("The final numbered migration manifest is not the exact ordered 71-entry baseline plus candidate repairs.");
   }
+  const numberedManifest = {
+    mode: "disposable-local-supabase-postgresql-17",
+    hosted_target_used: false,
+    schema_baseline_commit: process.env.WAMULE_SCHEMA_BASE_COMMIT ?? null,
+    tested_commit: process.env.GITHUB_SHA ?? null,
+    base_ledger_count: 69,
+    numbered_migration_count: 71,
+    ordered_manifest_match: true,
+    separately_applied_overlay: { name: "20261105000100_harden_sensitive_view_access.sql", sha256: hashes.m1_5, included_in_numbered_ledger: false },
+    migrations: finalMigrations,
+  };
+  await writeFile(resolve(replayDir, "numbered-migrations.json"), `${JSON.stringify(numberedManifest, null, 2)}\n`, "utf8");
+  const finalApplied = {
+    ...applied,
+    expected_migration_count: 71,
+    applied_migration_count: 71,
+    applied_migrations: finalMigrations,
+    base_ledger_count: 69,
+    ordered_manifest_match: true,
+    m1_5_view_security_overlay: { name: "20261105000100_harden_sensitive_view_access.sql", sha256: hashes.m1_5, applied: true, included_in_numbered_ledger: false },
+  };
+  await writeFile(resolve(replayDir, "applied-migrations.json"), `${JSON.stringify(finalApplied, null, 2)}\n`, "utf8");
 
   const report = {
     mode: "disposable-local-supabase-postgresql-17",
     hosted_target_used: false,
-    staging_target_project: "kvocwmrcuhiaezlcgzjf",
+    schema_baseline_commit: process.env.WAMULE_SCHEMA_BASE_COMMIT ?? null,
+    tested_commit: process.env.GITHUB_SHA ?? null,
+    schema_baseline_source_project: "kvocwmrcuhiaezlcgzjf",
     baseline: { migration_count: 69, ordered_match: true },
+    final_numbered_ledger: { migration_count: 71, ordered_match: true, manifest: "numbered-migrations.json" },
     expected_conflicting_legacy_preflight: { passed: true, rejected_rows: 2, migration_rollback_probe: afterRejectedMigration },
-    overlays: appliedRepairs,
+    candidate_migrations: appliedRepairs.filter((entry) => entry.sha256 !== hashes.m1_5),
+    separate_m1_5_overlay: appliedRepairs.find((entry) => entry.sha256 === hashes.m1_5),
     sha256: hashes,
     checks: {
       synthetic_same_scope_backfill: "passed",

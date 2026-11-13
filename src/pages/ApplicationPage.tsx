@@ -1051,16 +1051,6 @@ function SummaryLine({ label, value, muted = false }: { label: string; value: st
   );
 }
 
-function PublicPageLoading() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 text-center shadow-sm">
-        <LoadingState label="Loading application information…" />
-      </div>
-    </main>
-  );
-}
-
 function PublicSettingsUnavailable() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">

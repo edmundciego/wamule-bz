@@ -1084,6 +1084,34 @@ export type MapFeatureSnapshot = {
   created_by: string | null;
 };
 
+export type MapFeatureIdentity = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string;
+  feature_key: string;
+  created_at: string;
+};
+
+export type MapFeature = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  phase_id: string;
+  snapshot_id: string;
+  identity_id: string;
+  demo_label: string;
+  feature_kind: string;
+  parent_feature_key: string | null;
+  source_detection_id: string | null;
+  map_polygon: Json;
+  provenance: Json;
+  is_active: boolean;
+  public_visible: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProjectMapPackage = {
   id: string;
   tenant_id: string;
@@ -1151,6 +1179,16 @@ export type Database = {
         Row: MapFeatureSnapshot;
         Insert: Omit<MapFeatureSnapshot, "id" | "created_at"> & Partial<Pick<MapFeatureSnapshot, "id" | "created_at" | "is_active" | "created_by" | "activated_as_demo_at">>;
         Update: Partial<Omit<MapFeatureSnapshot, "id" | "created_at" | "tenant_id" | "project_id" | "phase_id">>;
+      };
+      map_feature_identities: {
+        Row: MapFeatureIdentity;
+        Insert: Omit<MapFeatureIdentity, "id" | "created_at"> & Partial<Pick<MapFeatureIdentity, "id" | "created_at">>;
+        Update: Partial<Omit<MapFeatureIdentity, "id" | "created_at" | "tenant_id" | "project_id" | "phase_id">>;
+      };
+      map_features: {
+        Row: MapFeature;
+        Insert: Omit<MapFeature, "id" | "created_at" | "updated_at"> & Partial<Pick<MapFeature, "id" | "created_at" | "updated_at">>;
+        Update: Partial<Omit<MapFeature, "id" | "created_at" | "updated_at" | "tenant_id" | "project_id" | "phase_id" | "snapshot_id" | "identity_id">>;
       };
       project_map_packages: {
         Row: ProjectMapPackage;

@@ -18,27 +18,42 @@ Deno.serve(async (request) => {
   if (request.method !== "GET") return json({ error: "Method not allowed." }, 405);
 
   const query = new URL(request.url).searchParams;
-  const hostname = normalizePublicHostname(query.get("host") ?? "");
+  const hostParam = query.get("host");
+  const hostname = normalizePublicHostname(hostParam ?? "");
+  const requestedTenantSlug = slug(query.get("tenant"));
+  const requestedProjectSlug = slug(query.get("project"));
   const explicitPhase = query.has("phase");
   const requestedPhaseSlug = explicitPhase ? slug(query.get("phase")) : null;
-  if (!hostname || (explicitPhase && !requestedPhaseSlug)) {
+  const platformPath = !hostname;
+  if ((hostParam !== null && !hostname)
+    || (platformPath && (!requestedTenantSlug || !requestedProjectSlug || !requestedPhaseSlug))
+    || (explicitPhase && !requestedPhaseSlug)) {
     return json({ error: "This public project address or phase is invalid." }, 400);
   }
 
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
-  const binding = bindingError ? { resolved: false as const, reason: "resolver_unavailable" } : parsePublicHostnameResolution(bindingData);
-  if (!binding.resolved) return json({ error: "This public project address could not be verified." }, 404);
+  let resolvedTenantSlug = requestedTenantSlug;
+  let resolvedProjectSlug = requestedProjectSlug;
+  let defaultPhaseSlug: string | null = null;
+  if (!platformPath) {
+    const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
+    const binding = bindingError ? { resolved: false as const, reason: "resolver_unavailable" } : parsePublicHostnameResolution(bindingData);
+    if (!binding.resolved) return json({ error: "This public project address could not be verified." }, 404);
+    resolvedTenantSlug = binding.scope.tenantSlug;
+    resolvedProjectSlug = binding.scope.projectSlug;
+    defaultPhaseSlug = binding.scope.phaseSlug;
+  }
+  if (!resolvedTenantSlug || !resolvedProjectSlug) return json({ error: "A tenant and project are required." }, 400);
 
   const { data: tenant, error: tenantError } = await client.from("organizations")
-    .select("id,name,slug,is_active").eq("slug", binding.scope.tenantSlug).eq("is_active", true).maybeSingle();
+    .select("id,name,slug,is_active").eq("slug", resolvedTenantSlug).eq("is_active", true).maybeSingle();
   if (tenantError || !tenant) return json({ error: "Public project information is unavailable." }, 404);
 
   const { data: project, error: projectError } = await client.from("projects")
     .select("id,name,slug,map_experience_mode").eq("tenant_id", tenant.id)
-    .eq("slug", binding.scope.projectSlug).maybeSingle();
+    .eq("slug", resolvedProjectSlug).maybeSingle();
   if (projectError || !project) return json({ error: "Public project information is unavailable." }, 404);
 
   const { data: activePhases, error: phasesError } = await client.from("development_phases")
@@ -49,11 +64,27 @@ Deno.serve(async (request) => {
   }
 
   let phaseSlug = requestedPhaseSlug;
-  if (!explicitPhase) phaseSlug = binding.scope.phaseSlug ?? null;
+  if (!explicitPhase) phaseSlug = defaultPhaseSlug;
   const phase = phaseSlug
     ? activePhases.find((candidate) => candidate.slug === phaseSlug)
     : activePhases.find((candidate) => candidate.is_default === true);
   if (!phase) return json({ error: "The selected project phase is unavailable." }, 404);
+
+  // Path-based tenant routes are public only after that exact phase has an
+  // explicitly published Map Studio package. Unpublished maps stay behind
+  // authenticated workspace RLS and the private Storage bucket.
+  if (platformPath) {
+    const { data: snapshot, error: snapshotError } = await client.from("map_feature_snapshots")
+      .select("id").eq("tenant_id", tenant.id).eq("project_id", project.id).eq("phase_id", phase.id)
+      .eq("is_active", true).maybeSingle();
+    if (snapshotError) return json({ error: "The public phase could not be verified." }, 503);
+    if (!snapshot) return json({ error: "This phase is not published." }, 404);
+    const { data: packageRow, error: packageError } = await client.from("project_map_packages")
+      .select("id").eq("tenant_id", tenant.id).eq("project_id", project.id).eq("phase_id", phase.id)
+      .eq("snapshot_id", snapshot.id).not("published_at", "is", null).maybeSingle();
+    if (packageError) return json({ error: "The public phase could not be verified." }, 503);
+    if (!packageRow) return json({ error: "This phase is not published." }, 404);
+  }
 
   const [companySettingsResult, projectSettingsResult, plansResult, methodsResult] = await Promise.all([
     client.from("business_settings").select("key,value").eq("tenant_id", tenant.id)
@@ -100,7 +131,7 @@ Deno.serve(async (request) => {
 
   const theme = objectValue(projectSettings.tenant_theme);
   const rawExperience = objectValue(theme.site_experience);
-  const fallbackTemplate: TemplateId = project.map_experience_mode === "demo" && binding.scope.tenantSlug === "hopkins-grove"
+  const fallbackTemplate: TemplateId = project.map_experience_mode === "demo" && tenant.slug === "hopkins-grove"
     ? "hopkins-project"
     : "wamule-classic";
   const templateId: TemplateId = rawExperience.templateId === "wamule-classic" || rawExperience.templateId === "hopkins-project"
