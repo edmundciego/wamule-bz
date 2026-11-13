@@ -75,6 +75,7 @@ async function main() {
   const postSalesPath = resolve(ROOT, "supabase/migrations/20261112033403_post_sales_project_phase_scope.sql");
   const viewPath = resolve(ROOT, "supabase/migrations/20261112033404_community_fee_view_tenant_scope.sql");
   const roleClaimsPath = resolve(ROOT, `supabase/migrations/${ROLE_CLAIMS_VERSION}_postgrest_json_jwt_role_claims.sql`);
+  const reviewerLinkPath = resolve(ROOT, "supabase/migrations/20261113050506_shareable_map_reviewer_links.sql");
   const m15Path = resolve(replayDir, "supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql");
   const hashes = {
     postSales: digest(await readFile(postSalesPath)),
@@ -202,6 +203,28 @@ $checks$;`], "Verify both JWT-claim formats and preserve the service-role gate")
   };
   await writeFile(resolve(replayDir, "runtime-delta.json"), `${JSON.stringify(runtimeDelta, null, 2)}\n`, "utf8");
 
+  // The signed reviewer-link table is a feature overlay for the disposable
+  // walkthrough. Keep it distinct from both the exact 71-entry schema
+  // baseline and the PostgREST-only runtime compatibility delta.
+  const reviewerLinkMigration = await apply(reviewerLinkPath, "Apply reviewer-link schema overlay to disposable PostgreSQL only");
+  const reviewerOverlay = {
+    name: "20261113050506_shareable_map_reviewer_links.sql",
+    ...reviewerLinkMigration,
+    applied_after_runtime_compatibility_delta: true,
+    hosted_target_used: false,
+  };
+  const anonReviewLinkRead = safePsql(["-c", "SET ROLE anon; SELECT count(*) FROM public.project_map_review_links;"]);
+  if (anonReviewLinkRead.status === 0 || !`${anonReviewLinkRead.stdout ?? ""}\n${anonReviewLinkRead.stderr ?? ""}`.toLowerCase().includes("permission denied")) {
+    fail("Anonymous SQL access to project_map_review_links must remain denied.");
+  }
+  const authenticatedReviewLinkRead = safePsql(["-c", "SET ROLE authenticated; SELECT count(*) FROM public.project_map_review_links;"]);
+  if (authenticatedReviewLinkRead.status === 0 || !`${authenticatedReviewLinkRead.stdout ?? ""}\n${authenticatedReviewLinkRead.stderr ?? ""}`.toLowerCase().includes("permission denied")) {
+    fail("Authenticated SQL access to project_map_review_links must remain denied.");
+  }
+  const serviceReviewLinkRead = scalar("SET ROLE service_role; SELECT count(*) FROM public.project_map_review_links; RESET ROLE;");
+  if (serviceReviewLinkRead !== "0") fail("The server-side service role cannot access the private review-link table.");
+  await writeFile(resolve(replayDir, "reviewer-link-overlay.json"), `${JSON.stringify(reviewerOverlay, null, 2)}\n`, "utf8");
+
   const report = {
     mode: "disposable-local-supabase-postgresql-17",
     hosted_target_used: false,
@@ -214,6 +237,7 @@ $checks$;`], "Verify both JWT-claim formats and preserve the service-role gate")
     expected_conflicting_legacy_preflight: { passed: true, rejected_rows: 2, migration_rollback_probe: afterRejectedMigration },
     candidate_migrations: appliedRepairs.filter((entry) => entry.sha256 !== hashes.m1_5),
     separate_m1_5_overlay: appliedRepairs.find((entry) => entry.sha256 === hashes.m1_5),
+    reviewer_link_schema_overlay: reviewerOverlay,
     sha256: hashes,
     checks: {
       synthetic_same_scope_backfill: "passed",
@@ -230,6 +254,8 @@ $checks$;`], "Verify both JWT-claim formats and preserve the service-role gate")
       unrelated_tenant_and_anon_view_denied: "passed",
       receipt_scope_helper_active_inactive_mismatched_and_tenant_suspension: "passed",
       receipt_handler_job_and_retry: "covered by separate handler runtime test",
+      reviewer_link_table_anon_and_authenticated_denied: "passed",
+      reviewer_link_table_service_role_only: "passed",
     },
     limitations: [
       "Auth claims and receipt Storage are synthetic/mocked in handler tests; the PostgreSQL database behavior runs against the local Supabase PostgreSQL 17 stack.",

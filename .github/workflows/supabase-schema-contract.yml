@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       - name: Verify replay inputs and dynamic query contracts
-        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs test/schema-repair-candidate-contract.test.mjs test/generate-receipts-postgres17-candidate.test.mjs test/tenant-provisioning-target.test.mjs
+        run: node --test test/local-supabase-replay.test.mjs test/schema-query-contract.test.mjs test/daily-brief-source-table.test.mjs test/redact-supabase-ci-log.test.mjs test/schema-repair-candidate-contract.test.mjs test/generate-receipts-postgres17-candidate.test.mjs test/tenant-provisioning-target.test.mjs test/project-map-review-link.test.mjs
 
       - name: Check candidate patch formatting
         run: git diff --check
@@ -174,17 +174,21 @@ jobs:
           post_sales = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] in {"post_sales_tasks", "post_sales_checklists"}]
           fee_tenant = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] == "community_fee_account_status" and item.get("column") == "tenant_id"]
           project_lifecycle = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] == "projects" and item.get("column") == "is_active"]
+          reviewer_links = [item for item in mismatches if str(item.get("table", "")).split(".")[-1] == "project_map_review_links"]
+          existing_schema_mismatches = [item for item in mismatches if item not in reviewer_links]
           assert report.get("mode") == "local-replayed-schema", report.get("mode")
           assert scan_status == 1, f"Expected scanner mismatch exit 1, got {scan_status}"
-          assert report.get("mismatch_count") == 9, report.get("mismatch_count")
+          assert report.get("mismatch_count") == 14, report.get("mismatch_count")
+          assert len(existing_schema_mismatches) == 9, f"Expected nine existing catalog mismatches before repairs, got {existing_schema_mismatches}"
+          assert len(reviewer_links) == 5 and all(str(item.get("table", "")).split(".")[-1] == "project_map_review_links" for item in reviewer_links), reviewer_links
           assert len(post_sales) == 8, f"Expected eight post-sales findings, got {post_sales}"
           assert len(fee_tenant) == 1, f"Expected one community-fee tenant finding, got {fee_tenant}"
           assert len(project_lifecycle) == 0, f"Receipt code still queries a nonexistent project lifecycle field: {project_lifecycle}"
           assert report.get("dynamic_or_unresolved_count") == 0, unresolved
-          print(json.dumps({"mode": report.get("mode"), "query_chains": report.get("query_chains"), "mismatch_count": report.get("mismatch_count"), "post_sales_findings": len(post_sales), "community_fee_tenant_findings": len(fee_tenant), "receipt_project_lifecycle_findings": len(project_lifecycle), "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count")}, indent=2))
+          print(json.dumps({"mode": report.get("mode"), "query_chains": report.get("query_chains"), "mismatch_count": report.get("mismatch_count"), "existing_schema_findings": len(existing_schema_mismatches), "local_reviewer_overlay_references": len(reviewer_links), "post_sales_findings": len(post_sales), "community_fee_tenant_findings": len(fee_tenant), "receipt_project_lifecycle_findings": len(project_lifecycle), "dynamic_or_unresolved_count": report.get("dynamic_or_unresolved_count")}, indent=2))
           with open(sys.argv[3], "a", encoding="utf-8") as stream:
               stream.write("\n#### Baseline schema/query scan (before repair overlays)\n\n")
-              stream.write("- Expected baseline: 9 confirmed mismatches (8 post-sales scope columns and 1 missing community-fee view tenant column). The receipt handler has already been corrected in source to use the existing tenant/project/phase lifecycle helper, so the previous nonexistent-project-column mismatch is absent.\n")
+              stream.write("- Expected baseline: 9 existing catalog mismatches (8 post-sales scope columns and 1 missing community-fee view tenant column), plus 5 references to the reviewer-link relation that is applied as a separate local-only feature overlay after this preflight. The receipt handler has already been corrected in source to use the existing tenant/project/phase lifecycle helper, so the previous nonexistent-project-column mismatch is absent.\n")
               stream.write(f"- Query chains: {report.get('query_chains')}; mismatches: {report.get('mismatch_count')}; unresolved dynamic checks: {report.get('dynamic_or_unresolved_count')}\n")
               for item in mismatches:
                   location = f"{item.get('file')}:{item.get('line')}"
@@ -264,8 +268,10 @@ jobs:
           export VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
           local_functions_env="$RUNNER_TEMP/local-functions.env"
           umask 077
-          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\n' \
-            "$SUPABASE_SERVICE_ROLE_KEY" > "$local_functions_env"
+          reviewer_signing_secret="$(openssl rand -hex 32)"
+          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\nMAP_REVIEW_LINK_SIGNING_SECRET=%s\n' \
+            "$SUPABASE_SERVICE_ROLE_KEY" "$reviewer_signing_secret" > "$local_functions_env"
+          unset reviewer_signing_secret
           ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
           functions_pid=$!
           npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite-walkthrough.log" 2>&1 &
@@ -310,6 +316,9 @@ jobs:
           assert report.get("database", {}).get("m1_5_overlay_separate") is True
           summary = [f"- Schema baseline: `{report.get('schema_baseline_commit')}`", f"- Tested commit: `{report.get('tested_commit')}`", f"- Automated machine runtime: {report.get('total_machine_runtime_ms')} ms"]
           summary.append(f"- Numbered schema baseline: 71 migrations; M1.5 overlay separate; runtime compatibility delta: `{report['database']['runtime_compatibility_delta_version']}` ({report['database']['runtime_compatibility_delta_sha256']})")
+          reviewer = report["stages"][3].get("evidence", {}).get("reviewer_link", {})
+          summary.append(f"- Signed reviewer link: signed-out review, pinned revision, phase/Admin/submit denial, expiry (`{reviewer.get('expired_data_status')}`), and revocation (`{reviewer.get('revoked_data_status')}`); private asset revalidation passed.")
+          summary.append("- Reviewer link tokens are omitted from the evidence artifact. The 2.4-second automated expiry wait is machine time, not a human operator timing.")
           for stage in report["stages"]:
               summary.append(f"- {stage['name']}: {stage['status']} in {stage['machine_runtime_ms']} ms")
           submission = report.get("synthetic_submission", {})
@@ -368,9 +377,11 @@ jobs:
             ${{ runner.temp }}/schema-contract-repaired.json
             ${{ runner.temp }}/wamule-reconciled-replay/schema-repair-results.json
             ${{ runner.temp }}/wamule-reconciled-replay/runtime-delta.json
+            ${{ runner.temp }}/wamule-reconciled-replay/reviewer-link-overlay.json
             ${{ runner.temp }}/tenant-walkthrough.json
             ${{ runner.temp }}/tenant-walkthrough-public-map.png
             ${{ runner.temp }}/tenant-walkthrough-private-preview.png
+            ${{ runner.temp }}/tenant-walkthrough-signed-review.png
             ${{ runner.temp }}/tenant-walkthrough-cleanup.json
           if-no-files-found: warn
 

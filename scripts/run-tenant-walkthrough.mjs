@@ -52,9 +52,14 @@ async function main() {
       readFile(resolve(replayDir, "numbered-migrations.json")),
       readFile(resolve(replayDir, "runtime-delta.json")),
     ]);
+    const reviewerOverlayBytes = await readFile(resolve(replayDir, "reviewer-link-overlay.json"));
     const appliedLedger = JSON.parse(appliedBytes.toString("utf8"));
     const numberedLedger = JSON.parse(numberedBytes.toString("utf8"));
     const runtimeDelta = JSON.parse(runtimeDeltaBytes.toString("utf8"));
+    const reviewerOverlay = JSON.parse(reviewerOverlayBytes.toString("utf8"));
+    const reviewerMigrationName = "20261113050506_shareable_map_reviewer_links.sql";
+    const reviewerMigrationPath = resolve(dirname(new URL(import.meta.url).pathname), `../supabase/migrations/${reviewerMigrationName}`);
+    const reviewerMigrationHash = sha256(await readFile(reviewerMigrationPath));
     const versions = (numberedLedger.migrations ?? []).map((entry) => String(entry.version));
     const overlay = numberedLedger.separately_applied_overlay;
     assert(versions.length === 71 && appliedLedger.applied_migration_count === 71
@@ -72,12 +77,17 @@ async function main() {
       && runtimeDelta.checks?.legacy_claim_service_role_zero_write_probe === "passed"
       && runtimeDelta.checks?.authenticated_claim_rejected === "passed",
     "The local runtime must record the separate hash-pinned PostgREST role-claims compatibility migration after the 71-entry baseline.");
+    assert(reviewerOverlay.name === reviewerMigrationName && reviewerOverlay.hosted_target_used === false
+      && reviewerOverlay.applied_after_runtime_compatibility_delta === true
+      && reviewerOverlay.sha256 === reviewerMigrationHash,
+    "The signed reviewer-link schema must be the exact local-only overlay applied after the compatibility delta.");
     report.database = {
       postgres_major: 17, numbered_migration_count: versions.length, m1_5_overlay_separate: true,
       candidate_migration_versions: versions.slice(-2), numbered_ledger_sha256: sha256(numberedBytes),
       m1_5_overlay_sha256: overlay.sha256, runtime_compatibility_delta_count: runtimeDelta.migrations.length,
       runtime_compatibility_delta_version: runtimeDelta.migrations[0].version,
       runtime_compatibility_delta_sha256: runtimeDelta.migrations[0].sha256,
+      reviewer_link_schema_overlay: { name: reviewerOverlay.name, sha256: reviewerOverlay.sha256, local_only: true },
     };
     console.log("[walkthrough] checking that local Mailpit starts empty");
     const mailpitStartCount = await capturedMailCount();
@@ -264,6 +274,10 @@ async function main() {
       const closedResponse = await postPublic("submit-hopkins-project-application", closedBody);
       assert(closedResponse.status === 403,
         `Other phase intake was not denied while it remained closed (HTTP ${closedResponse.status}: ${closedResponse.body?.error ?? "no error detail"}).`);
+      const intendedClosedBody = submissionBody(tenantSlug, projectSlug, phaseSlug, randomUUID(), []);
+      const intendedClosedResponse = await postPublic("submit-hopkins-project-application", intendedClosedBody);
+      assert(intendedClosedResponse.status === 403,
+        `The intended phase intake opened before the public stage (HTTP ${intendedClosedResponse.status}: ${intendedClosedResponse.body?.error ?? "no error detail"}).`);
       report.stages[2].evidence = {
         project_template: settingsByKey.tenant_theme.site_experience.templateId,
         project_application_type: appSetting.application_type, intended_phase_intake_open: false,
@@ -272,6 +286,7 @@ async function main() {
         other_phase_package_count: otherPackages, other_phase_outline_count: otherFeatures,
         other_phase_public_map_status: otherPublicMap.response.status,
         other_phase_submission_status: closedResponse.status,
+        intended_phase_submission_status: intendedClosedResponse.status,
       };
     });
 
@@ -334,10 +349,183 @@ async function main() {
       assert(anonMap.response.status === 404 && anonSite.response.status === 404 && anonAsset.data === null,
         "Anonymous caller loaded private map data before sign-off.");
       const signoff = checked(await scope.admin.rpc("review_project_map_package", { p_package_id: imported.packageId }), "Admin sign off reviewed package");
-      const reviewedFeature = checked(await scope.admin.from("map_features").select("provenance")
+      const reviewedFeatures = checked(await scope.admin.from("map_features").select("identity_id,provenance")
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
-        .eq("snapshot_id", imported.snapshotId).limit(1).single(), "Verify Admin sign-off marker");
-      assert(reviewedFeature.provenance?.reviewed === true, "Map sign-off did not mark the reviewed revision.");
+        .eq("snapshot_id", imported.snapshotId), "Verify Admin sign-off markers");
+      assert(reviewedFeatures.length === snapshot.outline_count && reviewedFeatures.every((feature) => feature.provenance?.reviewed === true),
+        "Map sign-off did not mark every outline in the reviewed revision.");
+
+      await staffPage.getByRole("link", { name: "Sign out", exact: true }).click();
+      await staffPage.waitForURL(/\/login$/, { timeout: 15000 });
+      const adminPage = await context.newPage();
+      await adminPage.goto(`${webOrigin}/login`, { waitUntil: "domcontentloaded" });
+      await adminPage.getByLabel("Email", { exact: true }).fill(adminEmail);
+      await adminPage.getByLabel("Password", { exact: true }).fill(password);
+      await adminPage.getByRole("button", { name: /Sign in/ }).click();
+      await adminPage.waitForURL(/\/dashboard$/, { timeout: 30000 });
+      await adminPage.getByLabel("Workspace phase").waitFor({ state: "visible", timeout: 30000 });
+      assert(await adminPage.getByLabel("Workspace tenant").inputValue() === scope.tenantId
+        && await adminPage.getByLabel("Workspace project").inputValue() === scope.projectId
+        && await adminPage.getByLabel("Workspace phase").inputValue() === scope.phaseId,
+      "Admin reviewer-link creation did not resolve the intended workspace and phase.");
+      await adminPage.goto(`${webOrigin}/map-review`, { waitUntil: "domcontentloaded" });
+      await adminPage.getByRole("heading", { name: "Private map preview", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      await adminPage.getByRole("heading", { name: "Signed reviewer link", exact: true }).waitFor({ state: "visible", timeout: 15000 });
+      await adminPage.getByRole("button", { name: "Create reviewer link", exact: true }).click();
+      const primaryLinkUrl = await adminPage.getByLabel("New signed reviewer link").inputValue();
+      const primaryToken = primaryLinkUrl.split("#").at(-1) ?? "";
+      const primaryTokenParts = primaryToken.split(".");
+      assert(primaryLinkUrl.startsWith(`${webOrigin}/review#v1.`) && primaryTokenParts.length === 4
+        && UUID(primaryTokenParts[1]), "Admin did not create a signed fragment-only reviewer link.");
+      const primaryLinkId = primaryTokenParts[1];
+      const primaryLinkList = await invoke(scope.admin, "project-map-review-link", {
+        action: "list", tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+      });
+      const primaryRecord = primaryLinkList.links?.find((link) => link.id === primaryLinkId);
+      assert(primaryRecord?.snapshot_id === imported.snapshotId && primaryRecord?.package_id === imported.packageId,
+        "The signed reviewer link was not stored against the exact approved map package and snapshot.");
+      const frozenSettings = primaryRecord.settings_snapshot;
+      assert(frozenSettings?.phase_slug === phaseSlug && frozenSettings?.template_id === "wamule-classic"
+        && frozenSettings?.application_type === "project_application"
+        && frozenSettings?.public_application?.applications_open === false
+        && frozenSettings?.public_application?.notices_complete === true
+        && frozenSettings?.public_application?.intended_uses?.[0] === "Residential"
+        && frozenSettings?.public_application?.max_map_preferences === 3,
+      "The reviewer link did not freeze the intended phase, application type, presentation, and closed intake settings.");
+      const anonymousLinkTable = await anonymous.from("project_map_review_links").select("id").limit(1);
+      assert(anonymousLinkTable.error, "Anonymous callers can read the private review-link table directly.");
+
+      const initialResolve = await postPublic("project-map-review-link", { action: "resolve", token: primaryToken });
+      assert(initialResolve.status === 200 && initialResolve.body.revision?.snapshot_id === imported.snapshotId
+        && initialResolve.body.revision?.snapshot_version === snapshot.snapshot_version
+        && initialResolve.body.features?.length === snapshot.outline_count,
+      "The signed link did not resolve to the reviewed unpublished snapshot.");
+      const resolverHeaders = {
+        apikey: anonKey,
+        "Content-Type": "application/json",
+      };
+      const assetResponse = await fetch(`${supabaseUrl}/functions/v1/project-map-review-link`, {
+        method: "POST", headers: resolverHeaders,
+        body: JSON.stringify({ action: "asset", token: primaryToken }), cache: "no-store",
+      });
+      const reviewerAssetBytes = Buffer.from(await assetResponse.arrayBuffer());
+      assert(assetResponse.status === 200 && reviewerAssetBytes.length > 0
+        && assetResponse.headers.get("content-type") === "image/png"
+        && /no-store/i.test(assetResponse.headers.get("cache-control") ?? "")
+        && /no-referrer/i.test(assetResponse.headers.get("referrer-policy") ?? ""),
+      "The reviewer link did not load the private background through a no-store, revocable asset path.");
+
+      const crossPhaseAttempt = await postPublic("project-map-review-link", {
+        action: "resolve", token: primaryToken, phase_id: scope.otherPhaseId,
+      });
+      assert(crossPhaseAttempt.status === 404, "The reviewer link resolved when asked to open another phase.");
+      const crossPhaseAssetAttempt = await postPublic("project-map-review-link", {
+        action: "asset", token: primaryToken, phase_id: scope.otherPhaseId,
+      });
+      assert(crossPhaseAssetAttempt.status === 404, "The reviewer link served a private asset when asked to open another phase.");
+      const tamperedToken = `${primaryToken.slice(0, -1)}${primaryToken.endsWith("A") ? "B" : "A"}`;
+      const tamperedAttempt = await postPublic("project-map-review-link", { action: "resolve", token: tamperedToken });
+      assert(tamperedAttempt.status === 404, "A modified reviewer-link signature was accepted.");
+
+      let reviewMeta;
+      let applicationsBeforeReviewerPost;
+      let leadsBeforeReviewerPost;
+      let applicationsAfterReviewerPost;
+      let leadsAfterReviewerPost;
+      let blockedReviewerSubmission;
+      let unsupportedReviewSubmit;
+      const reviewerContext = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+      try {
+        assert((await reviewerContext.cookies()).length === 0, "The signed-out reviewer browser inherited an authenticated cookie.");
+        const reviewerPage = await reviewerContext.newPage();
+        await reviewerPage.goto(primaryLinkUrl, { waitUntil: "domcontentloaded" });
+        await reviewerPage.getByRole("heading", { name: "Synthetic Studio Review Project map review", exact: true })
+          .waitFor({ state: "visible", timeout: 30000 });
+        await reviewerPage.getByText(`Map revision: ${snapshot.snapshot_version} · package revision ${imported.packageData.revision}`, { exact: true })
+          .waitFor({ state: "visible", timeout: 15000 });
+        const reviewerBackground = reviewerPage.locator("svg image");
+        await reviewerBackground.waitFor({ state: "attached", timeout: 15000 });
+        assert((await reviewerBackground.getAttribute("href"))?.startsWith("blob:"),
+          "The signed-out reviewer page did not load the private Storage asset into the reviewed map.");
+        assert(reviewedFeatures.some((feature) => feature.identity_id === selectedIdentity.id),
+          "The reviewed snapshot lost the outline selected during Staff sign-off.");
+        await reviewerPage.getByRole("button", { name: `Select outline ${selectedFeature.demo_label}`, exact: true }).last().click();
+        await reviewerPage.getByRole("status", { name: "Selected outline" }).getByText(selectedIdentity.id, { exact: false }).waitFor({ state: "visible", timeout: 10000 });
+        const selectedPreviewValue = await reviewerPage.getByLabel(/Optional map-outline interests/).inputValue();
+        assert(selectedPreviewValue.includes(selectedIdentity.id), "The selected outline was not carried into the read-only form preview.");
+        const previewForm = reviewerPage.locator('form[aria-label="Read-only application form preview"]');
+        assert(await previewForm.locator('button[type="submit"]').count() === 0
+          && await previewForm.locator("fieldset input:enabled").count() === 0,
+        "The signed reviewer form preview exposes an editable or submit control.");
+        reviewMeta = await reviewerPage.evaluate(() => ({
+          robots: document.querySelector('meta[name="robots"]')?.getAttribute("content"),
+          referrer: document.querySelector('meta[name="referrer"]')?.getAttribute("content"),
+        }));
+        assert(reviewMeta.robots?.includes("noindex") && reviewMeta.robots.includes("nofollow")
+          && reviewMeta.referrer === "no-referrer", "The signed reviewer route is missing no-index or no-referrer metadata.");
+        await reviewerPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-signed-review.png"), fullPage: false });
+
+        applicationsBeforeReviewerPost = await countRows(scope.admin, "applications", {
+          tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+        });
+        leadsBeforeReviewerPost = await countRows(scope.admin, "leads", {
+          tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+        });
+        assert(applicationsBeforeReviewerPost === 0 && leadsBeforeReviewerPost === 0,
+          "Synthetic applications or leads existed before public intake opened.");
+        blockedReviewerSubmission = await postPublic("submit-hopkins-project-application", {
+          ...submissionBody(tenantSlug, projectSlug, phaseSlug, randomUUID(), [selectedIdentity.id]),
+          reviewer_link_token: primaryToken,
+        });
+        applicationsAfterReviewerPost = await countRows(scope.admin, "applications", {
+          tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+        });
+        leadsAfterReviewerPost = await countRows(scope.admin, "leads", {
+          tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+        });
+        assert(blockedReviewerSubmission.status === 400 && applicationsAfterReviewerPost === 0 && leadsAfterReviewerPost === 0,
+          "A reviewer capability submitted an application or changed the application/lead counts.");
+        unsupportedReviewSubmit = await postPublic("project-map-review-link", { action: "submit", token: primaryToken });
+        assert(unsupportedReviewSubmit.status === 401, "The anonymous reviewer capability reached an Admin or application action.");
+        await reviewerPage.goto(`${webOrigin}/dashboard`, { waitUntil: "domcontentloaded" });
+        await reviewerPage.waitForURL(/\/login$/, { timeout: 15000 });
+      } finally {
+        await reviewerContext.close();
+      }
+
+      // Revoke a second link through the Admin control and prove that both its
+      // map data and private asset paths reject the old bearer capability.
+      await adminPage.getByRole("button", { name: "Create reviewer link", exact: true }).click();
+      const revokeProbeUrl = await adminPage.getByLabel("New signed reviewer link").inputValue();
+      const revokeProbeToken = revokeProbeUrl.split("#").at(-1) ?? "";
+      const revokeProbeId = revokeProbeToken.split(".")[1];
+      assert(UUID(revokeProbeId), "Admin could not create a second reviewer link for the revocation check.");
+      const revokeProbeRow = adminPage.locator(`[data-review-link-id="${revokeProbeId}"]`);
+      await revokeProbeRow.getByRole("button", { name: "Revoke reviewer link", exact: true }).click();
+      await revokeProbeRow.getByText("Revoked", { exact: true }).waitFor({ state: "visible", timeout: 10000 });
+      const revokedResolve = await postPublic("project-map-review-link", { action: "resolve", token: revokeProbeToken });
+      const revokedAsset = await postPublic("project-map-review-link", { action: "asset", token: revokeProbeToken });
+      assert(revokedResolve.status === 410 && revokedAsset.status === 410,
+        "Revoking the reviewer link did not immediately block new map-data and private-asset requests.");
+
+      const expiringLink = await invoke(scope.admin, "project-map-review-link", {
+        action: "create", tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+        package_id: imported.packageId, expires_in_seconds: 2,
+      });
+      assert(typeof expiringLink.token === "string", "The Admin could not create a short-lived link for the expiry check.");
+      const expiryWaitStart = performance.now();
+      await new Promise((resolve) => setTimeout(resolve, 2400));
+      const expiryWaitMs = Math.round(performance.now() - expiryWaitStart);
+      const expiredResolve = await postPublic("project-map-review-link", { action: "resolve", token: expiringLink.token });
+      assert(expiredResolve.status === 410, "The short-lived reviewer link remained usable after its expiration.");
+
+      const signedOutAdminAction = await postPublic("project-map-review-link", {
+        action: "list", tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId,
+      });
+      assert(signedOutAdminAction.status === 401, "The reviewer link or anonymous caller reached the Admin link-management action.");
+      await adminPage.getByRole("link", { name: "Sign out", exact: true }).click();
+      await adminPage.waitForURL(/\/login$/, { timeout: 15000 });
+
       report.stages[3].evidence = {
         staff_session_authenticated: true, staff_workspace_lookup_verified: true,
         allowed_workspace_choice_counts: { tenants: tenantChoiceCount, projects: projectChoiceCount, phases: phaseOptions.length },
@@ -350,10 +538,38 @@ async function main() {
         private_background_loaded_from_storage: true, anonymous_map_status: anonMap.response.status,
         anonymous_site_experience_status: anonSite.response.status, anonymous_storage_access: anonAsset.error ? "denied" : "no object",
         admin_signoff: signoff,
+        reviewer_link: {
+          created_in_admin_ui_before_publication: true,
+          signed_out_browser: true,
+          link_recorded_in_evidence: false,
+          scope_snapshot_id: imported.snapshotId,
+          frozen_settings: { template_id: frozenSettings.template_id, application_type: frozenSettings.application_type, applications_open: frozenSettings.public_application.applications_open, notice_version: frozenSettings.public_application.notice_version, max_map_preferences: frozenSettings.public_application.max_map_preferences },
+          private_background_loaded_through_revocable_proxy: reviewerAssetBytes.length > 0,
+          selected_outline_id: selectedIdentity.id,
+          selected_outline_in_form_preview: true,
+          no_submit_control: true,
+          robots_meta: reviewMeta.robots,
+          referrer_meta: reviewMeta.referrer,
+          other_phase_status: crossPhaseAttempt.status,
+          other_phase_asset_status: crossPhaseAssetAttempt.status,
+          modified_signature_status: tamperedAttempt.status,
+          protected_admin_route_redirected_to_login: true,
+          direct_link_table_access_denied: true,
+          application_submit_status: blockedReviewerSubmission.status,
+          application_submit_error: blockedReviewerSubmission.body?.error ?? null,
+          unsupported_link_submit_action_status: unsupportedReviewSubmit.status,
+          applications_before_after_submit: [applicationsBeforeReviewerPost, applicationsAfterReviewerPost],
+          leads_before_after_submit: [leadsBeforeReviewerPost, leadsAfterReviewerPost],
+          revoked_data_status: revokedResolve.status,
+          revoked_asset_status: revokedAsset.status,
+          expired_data_status: expiredResolve.status,
+          expiry_wait_ms: expiryWaitMs,
+          expiry_wait_reason: "Waited for the separately created 2-second test capability to expire before checking the 410 response.",
+          admin_link_action_without_session_status: signedOutAdminAction.status,
+        },
       };
-      await staffPage.getByRole("link", { name: "Sign out", exact: true }).click();
-      await staffPage.waitForURL(/\/login$/, { timeout: 15000 });
-      return { selectedFeatureId: selectedIdentity.id, revision: snapshot.snapshot_version };
+      await context.close();
+      return { selectedFeatureId: selectedIdentity.id, revision: snapshot.snapshot_version, reviewerToken: primaryToken, reviewerLinkId: primaryLinkId };
     });
 
     const submission = await timedStage("5. Publish one shared-platform phase and submit idempotently", async () => {
@@ -384,6 +600,14 @@ async function main() {
       const mapped = await publicGet("get-public-lots", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       assert(mapped.response.ok && mapped.body.map_experience_mode === "demo" && mapped.body.features?.length === 2,
         "Published shared-platform map did not return the two synthetic outlines.");
+      const reviewerAfterPublication = await postPublic("project-map-review-link", {
+        action: "resolve", token: staffPreview.reviewerToken,
+      });
+      assert(reviewerAfterPublication.status === 200
+        && reviewerAfterPublication.body.revision?.snapshot_id === imported.snapshotId
+        && reviewerAfterPublication.body.revision?.snapshot_version === staffPreview.revision
+        && reviewerAfterPublication.body.scope?.public_application?.applications_open === false,
+      "The reviewer link changed revision or settings after publication and intake opened.");
 
       browser = await chromium.launch({ headless: true });
       context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
@@ -482,6 +706,19 @@ async function main() {
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.otherPhaseId);
       assert(finalStaffPackages.data?.length === 0 && finalStaffFeatures.data?.length === 0,
         "Phase-limited Staff read another phase after publication.");
+
+      await invoke(scope.admin, "project-map-review-link", {
+        action: "revoke", tenant_id: scope.tenantId, project_id: scope.projectId,
+        phase_id: scope.phaseId, link_id: staffPreview.reviewerLinkId,
+      });
+      const reviewerAfterRevoke = await postPublic("project-map-review-link", {
+        action: "resolve", token: staffPreview.reviewerToken,
+      });
+      const reviewerAssetAfterRevoke = await postPublic("project-map-review-link", {
+        action: "asset", token: staffPreview.reviewerToken,
+      });
+      assert(reviewerAfterRevoke.status === 410 && reviewerAssetAfterRevoke.status === 410,
+        "The primary reviewer link remained usable after Admin revocation.");
       await adminPage.getByRole("link", { name: "Sign out", exact: true }).click();
       await adminPage.waitForURL(/\/login$/, { timeout: 15000 });
 
@@ -513,6 +750,13 @@ async function main() {
         admin_workspace: { project: "Synthetic Studio Review Project", phase: "Initial Review Phase" },
         admin_application_id: applicationId, linked_lead_id: leadId,
         admin_map_link_opened: true, admin_map_link_selected_outline: true,
+        reviewer_link_after_publication: {
+          remained_on_reviewed_snapshot: reviewerAfterPublication.body.revision.snapshot_id === imported.snapshotId,
+          frozen_intake_setting: reviewerAfterPublication.body.scope.public_application.applications_open,
+          revoked_after_walkthrough: true,
+          revoked_data_status: reviewerAfterRevoke.status,
+          revoked_asset_status: reviewerAssetAfterRevoke.status,
+        },
         phase_restricted_staff_other_phase_package_rows: finalStaffPackages.data?.length ?? null,
         phase_restricted_staff_other_phase_outline_rows: finalStaffFeatures.data?.length ?? null,
         outbound_email_rows: emailNotifications, payment_transaction_rows: transactions, reservation_rows: reservations,

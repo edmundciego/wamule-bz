@@ -53,6 +53,7 @@ const InformationPackDocumentPage = lazy(() =>
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const LotsPage = lazy(() => import("./pages/LotsPage").then((module) => ({ default: module.LotsPage })));
 const MapPackagePreviewPage = lazy(() => import("./pages/MapPackagePreviewPage").then((module) => ({ default: module.MapPackagePreviewPage })));
+const MapReviewerLinkPage = lazy(() => import("./pages/MapReviewerLinkPage").then((module) => ({ default: module.MapReviewerLinkPage })));
 const MapsPage = lazy(() => import("./pages/MapsPage").then((module) => ({ default: module.MapsPage })));
 const LeadsPage = lazy(() => import("./pages/LeadsPage").then((module) => ({ default: module.LeadsPage })));
 const LogoutPage = lazy(() => import("./pages/LogoutPage").then((module) => ({ default: module.LogoutPage })));
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/hopkins" element={<PublicHostRoute />} />
         <Route path="/hopkins/apply" element={<PublicHostRoute />} />
         <Route path="/hopkins/application" element={<PublicHostRoute />} />
+        <Route path="/review" element={<MapReviewerLinkPage />} />
         <Route path="/p/:tenant_slug/:project_slug/:phase_slug" element={<PublicPlatformRoute />} />
         <Route path="/embed/:tenant_slug" element={<PublicHostRoute mapRoute />} />
         <Route path="/embed/:tenant_slug/:project_slug" element={<PublicHostRoute mapRoute />} />
