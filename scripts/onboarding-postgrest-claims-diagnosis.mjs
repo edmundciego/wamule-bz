@@ -481,8 +481,8 @@ async function provisioningAuditSummary(tenantId) {
     SELECT json_build_object(
       'count', count(*)::integer,
       'attributed_count', count(*) FILTER (
-        WHERE tenant_id = :'tenant_id'::uuid
-          AND target_tenant_id = :'tenant_id'::uuid
+        WHERE tenant_id = '${tenantId}'::uuid
+          AND target_tenant_id = '${tenantId}'::uuid
           AND target_project_id IS NULL
           AND target_phase_id IS NULL
           AND entity_type = 'system'
@@ -494,10 +494,10 @@ async function provisioningAuditSummary(tenantId) {
       )::integer
     )::text
     FROM public.audit_events
-    WHERE target_tenant_id = :'tenant_id'::uuid
+    WHERE target_tenant_id = '${tenantId}'::uuid
       AND metadata->>'event_code' = 'tenant_workspace_provisioned'
   `;
-  const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-v", "tenant_id=" + tenantId, "-c", query], {
+  const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c", query], {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, PGPASSWORD: undefined },
@@ -518,20 +518,20 @@ async function staffAssignmentAuditSummary(tenantId, actorId) {
     SELECT json_build_object(
       'count', count(*)::integer,
       'attributed_count', count(*) FILTER (
-        WHERE tenant_id = :'tenant_id'::uuid
-          AND target_tenant_id = :'tenant_id'::uuid
-          AND actor_user_id = :'actor_id'::uuid
+        WHERE tenant_id = '${tenantId}'::uuid
+          AND target_tenant_id = '${tenantId}'::uuid
+          AND actor_user_id = '${actorId}'::uuid
           AND actor_kind = 'human'
       )::integer
     )::text
     FROM public.audit_events
-    WHERE target_tenant_id = :'tenant_id'::uuid
+    WHERE target_tenant_id = '${tenantId}'::uuid
       AND entity_type = 'user'
       AND action = 'updated'
       AND title = 'Workspace membership changed'
   `;
   const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-    "-v", "tenant_id=" + tenantId, "-v", "actor_id=" + actorId, "-c", query], {
+    "-c", query], {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, PGPASSWORD: undefined },
