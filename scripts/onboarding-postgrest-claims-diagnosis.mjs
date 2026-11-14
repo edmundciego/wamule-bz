@@ -378,6 +378,13 @@ function sanitize(value) {
     .slice(0, 500);
 }
 
+function assertInvalidZeroWrite(result, label) {
+  assert(result.http_status === 200 && result.application_status === "invalid" && result.writes === 0,
+    label + " expected HTTP 200 with status=invalid and writes=0; observed HTTP "
+      + result.http_status + ", status=" + result.application_status + ", writes=" + result.writes
+      + ", message=" + sanitize(result.message));
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }

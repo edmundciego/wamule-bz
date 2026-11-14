@@ -152,10 +152,17 @@ jobs:
           if [ -d "$REPLAY_DIR" ]; then
             if ! ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup; then cleanup_status=failed; fi
           fi
-          remaining="$(docker ps -a --filter 'name=supabase_' --format '{{.ID}}')"
-          if [ -n "$remaining" ]; then cleanup_status=failed; echo "Supabase containers remain." >&2; fi
-          remaining_volumes="$(docker volume ls --format '{{.Name}}' | python3 -c 'import sys; print("\\n".join(name for name in sys.stdin.read().splitlines() if "supabase" in name.lower()))')"
-          if [ -n "$remaining_volumes" ]; then cleanup_status=failed; echo "Supabase data volumes remain." >&2; fi
+          stack_label="com.supabase.cli.project=wamule-local-replay"
+          containers="$(docker ps -a -q --filter "label=$stack_label")"
+          if [ -n "$containers" ]; then docker rm --force $containers >/dev/null; fi
+          volumes="$(docker volume ls -q --filter "label=$stack_label")"
+          if [ -n "$volumes" ]; then docker volume rm $volumes >/dev/null; fi
+          remaining_containers="$(docker ps -a -q --filter "label=$stack_label")"
+          remaining_volumes="$(docker volume ls -q --filter "label=$stack_label")"
+          if [ -n "$remaining_containers" ] || [ -n "$remaining_volumes" ]; then
+            cleanup_status=failed
+            echo "Disposable Supabase resources remain after cleanup." >&2
+          fi
           test "$cleanup_status" = passed
           printf '{"status":"passed","hosted_target_used":false,"volumes_removed":true}\n' > "$REPLAY_DIR/onboarding-diagnosis-cleanup.json"
       - name: Retain sanitized disposable evidence
