@@ -30,6 +30,7 @@ const report = {
   patch: { applied: false },
   after_probe: null,
   console_preview: null,
+  direct_valid_preflight: null,
   workspace: null,
   staff_assignment: null,
   direct_service_rpc_denials: [],
@@ -117,6 +118,15 @@ async function runOnboardingFlow() {
   await verifyServiceOnlyRpcDenials();
   const operator = await createSuperAdmin();
   const manifest = buildManifest();
+  const directPreview = await rpcProbe(SERVICE_ROLE_KEY, SERVICE_ROLE_KEY, "provision_workspace_v1", {
+    p_manifest: { ...manifest, users: [] }, p_apply: false,
+  });
+  report.direct_valid_preflight = directPreview;
+  assert(directPreview.http_status === 200 && directPreview.application_status === "dry_run"
+      && directPreview.writes === 0 && directPreview.can_apply === true,
+    "Valid direct PostgREST call to public.provision_workspace_v1 failed: HTTP " + directPreview.http_status
+      + ", SQLSTATE=" + directPreview.sqlstate + ", message=" + sanitize(directPreview.message)
+      + ", details=" + sanitize(directPreview.details) + ", hint=" + sanitize(directPreview.hint));
   const previewResponse = await consoleRequest(operator.token, manifest, false);
   report.console_preview = summarizeConsole(previewResponse);
   assert(previewResponse.http_status === 200 && previewResponse.body?.ok === true, "Actual super-admin-console preview failed: " + (report.console_preview.sanitized_error || "no sanitized detail"));
@@ -405,10 +415,14 @@ async function rpcProbe(apiKey, bearer, name, args) {
   const message = body.message || body.error || body.msg || "";
   return {
     http_status: response.status,
+    routine: "public." + name,
     sqlstate: typeof body.code === "string" ? body.code : null,
     message: sanitize(message),
+    details: sanitize(body.details || ""),
+    hint: sanitize(body.hint || ""),
     application_status: typeof body.status === "string" ? body.status : null,
     writes: Number.isInteger(body.writes) ? body.writes : null,
+    can_apply: body.can_apply === true,
   };
 }
 
