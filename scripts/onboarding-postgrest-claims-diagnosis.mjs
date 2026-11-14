@@ -109,7 +109,7 @@ async function runOnboardingFlow() {
   const manifest = buildManifest();
   const previewResponse = await consoleRequest(operator.token, manifest, false);
   report.console_preview = summarizeConsole(previewResponse);
-  assert(previewResponse.http_status === 200 && previewResponse.body?.ok === true, "Actual super-admin-console preview failed: " + (report.console_preview.message || "no sanitized detail"));
+  assert(previewResponse.http_status === 200 && previewResponse.body?.ok === true, "Actual super-admin-console preview failed: " + (report.console_preview.sanitized_error || "no sanitized detail"));
   const preflight = previewResponse.body?.preflight;
   assert(preflight?.status === "dry_run" && preflight?.writes === 0 && preflight?.can_apply === true && previewResponse.body?.applied === false,
     "Console preview did not return a valid zero-write provisioning plan.");
@@ -316,9 +316,12 @@ async function consoleRequest(token, manifest, apply) {
     body: JSON.stringify({ action: "provision", manifest, apply }),
     cache: "no-store",
   });
+  let rawBody = "";
+  try { rawBody = await response.text(); } catch { rawBody = ""; }
   let body = {};
-  try { body = await response.json(); } catch { body = {}; }
-  return { http_status: response.status, body };
+  try { body = rawBody ? JSON.parse(rawBody) : {}; } catch { body = { message: rawBody }; }
+  if (!body || typeof body !== "object" || Array.isArray(body)) body = { message: rawBody };
+  return { http_status: response.status, body, response_message: sanitize(body.error || body.message || body.msg || rawBody) };
 }
 
 function summarizeConsole(result) {
@@ -333,7 +336,7 @@ function summarizeConsole(result) {
     preflight_writes: Number.isInteger(preflight.writes) ? preflight.writes : null,
     can_apply: preflight.can_apply === true,
     result_status: body.result?.status || null,
-    sanitized_error: sanitize(body.error || body.result?.error || ""),
+    sanitized_error: sanitize(body.error || body.result?.error || body.message || result.response_message || ""),
   };
 }
 

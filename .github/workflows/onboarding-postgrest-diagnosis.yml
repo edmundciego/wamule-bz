@@ -142,7 +142,11 @@ jobs:
             python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 100 >&2
             exit 1
           fi
-          node scripts/onboarding-postgrest-claims-diagnosis.mjs
+          if ! node scripts/onboarding-postgrest-claims-diagnosis.mjs; then
+            echo "The local PostgREST/console diagnosis failed; redacted Edge Function logs follow." >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 120 >&2
+            exit 1
+          fi
       - name: Stop disposable Supabase stack
         if: always()
         shell: bash
