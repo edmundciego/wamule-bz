@@ -13,7 +13,7 @@ const DB_URL = required("SCHEMA_QUERY_DATABASE_URL");
 const REPLAY_DIR = required("REPLAY_DIR");
 const EVIDENCE_PATH = resolve(process.env.ONBOARDING_DIAGNOSIS_EVIDENCE_PATH || resolve(REPLAY_DIR, "onboarding-postgrest-diagnosis.json"));
 const DRAFT_PATH = resolve(new URL("../supabase/migrations/20261114054243_onboarding_postgrest_role_claims.sql", import.meta.url).pathname);
-const DRAFT_SHA256 = "303d7d7c16890cfa90bdcbd301b55d14ea99c5dd6c8cd1b031b7dcbaf64a412b";
+const DRAFT_SHA256 = "b8cbda1b0e628b4eabfbbfb2bfaeb31e2623097d7da190d4d188f3f5d7314e22";
 const GUARD_MESSAGE = "Workspace provisioning is restricted to the trusted service role.";
 const dbUrl = new URL(DB_URL);
 assert(["localhost", "127.0.0.1", "::1"].includes(dbUrl.hostname), "Refusing a non-local PostgreSQL target.");
@@ -33,6 +33,7 @@ const report = {
   workspace: null,
   staff_assignment: null,
   direct_service_rpc_denials: [],
+  audit_attribution: null,
   outcome: "running",
 };
 
@@ -60,6 +61,7 @@ async function main() {
   report.before_probe = before;
   if (before.sqlstate === "42501" && before.message === GUARD_MESSAGE) {
     const migrationBytes = await readFile(DRAFT_PATH);
+    const triggerBefore = await auditTriggerSnapshot();
     const actualHash = sha256(migrationBytes);
     if (actualHash !== DRAFT_SHA256) throw new Error("Conditional onboarding repair hash mismatch: " + actualHash);
     report.patch.sha256 = actualHash;
@@ -74,6 +76,14 @@ async function main() {
       throw new Error("Failing command: psql <local database URL> -X -q -v ON_ERROR_STOP=1 -f supabase/migrations/20261114054243_onboarding_postgrest_role_claims.sql; " + detail);
     }
     report.patch.applied = true;
+    const triggerAfter = await auditTriggerSnapshot();
+    verifyAuditTriggerReplacement(triggerBefore, triggerAfter);
+    report.audit_attribution = {
+      trigger_body_changed_only_for_role_extraction: true,
+      actor_operation_context_scope_and_scrubbing_checks_preserved: true,
+      function_acl_preserved: true,
+      trigger_binding_preserved: true,
+    };
     const after = await rpcProbe(SERVICE_ROLE_KEY, SERVICE_ROLE_KEY, "provision_workspace_v1", { p_manifest: null, p_apply: false });
     report.after_probe = after;
     assertInvalidZeroWrite(after, "Post-repair PostgREST service-role probe");
@@ -121,6 +131,9 @@ async function runOnboardingFlow() {
   assert(firstRows.tenants.length === 1 && firstRows.projects.length === 1 && firstRows.phases.length === 2,
     "The first apply did not create exactly one synthetic workspace, project, and two phases.");
   const firstIds = idsFromRows(firstRows);
+  const firstAudit = await provisioningAuditSummary(firstIds.tenant_id);
+  assert(firstAudit.count === 1 && firstAudit.attributed_count === 1,
+    "The first apply did not create exactly one correctly attributed scoped workspace audit record.");
 
   const retryResponse = await consoleRequest(operator.token, manifest, true);
   assert(retryResponse.http_status === 200 && retryResponse.body?.ok === true && retryResponse.body?.applied === true,
@@ -130,6 +143,9 @@ async function runOnboardingFlow() {
     "The retry created duplicate workspace rows.");
   const secondIds = idsFromRows(secondRows);
   assert(JSON.stringify(firstIds) === JSON.stringify(secondIds), "The same-operation retry did not reuse the original workspace and phase IDs.");
+  const retryAudit = await provisioningAuditSummary(firstIds.tenant_id);
+  assert(retryAudit.count === 1 && retryAudit.attributed_count === 1,
+    "The same-operation retry duplicated or changed the workspace audit record.");
 
   report.workspace = {
     preview: { status: preflight.status, writes: preflight.writes, can_apply: preflight.can_apply },
@@ -176,11 +192,43 @@ async function runOnboardingFlow() {
   assert(membershipRows.length === 1 && membershipRows[0].project_id === firstIds.project_id
     && membershipRows[0].phase_id === firstIds.phase_ids[0] && membershipRows[0].member_role === "staff",
   "Staff received access outside the assigned phase or did not receive the intended assignment.");
+  const staffClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+  const staffLogin = await staffClient.auth.signInWithPassword({ email: staffEmail, password: staffPassword });
+  if (staffLogin.error || !staffLogin.data?.session?.access_token) {
+    throw new Error("Synthetic phase-limited Staff sign-in failed: " + sanitize(staffLogin.error?.message || "no session"));
+  }
+  const initialPhaseId = firstRows.phases.find((phase) => phase.slug === "initial")?.id;
+  const laterPhaseId = firstRows.phases.find((phase) => phase.slug === "later")?.id;
+  assert(initialPhaseId && laterPhaseId, "The synthetic project phases were not found by slug.");
+  const [initialAccess, laterAccess, staffMembershipRead] = await Promise.all([
+    staffClient.rpc("user_has_project_access", { p_tenant_id: firstIds.tenant_id, p_project_id: firstIds.project_id, p_phase_id: initialPhaseId }),
+    staffClient.rpc("user_has_project_access", { p_tenant_id: firstIds.tenant_id, p_project_id: firstIds.project_id, p_phase_id: laterPhaseId }),
+    staffClient.from("project_memberships").select("phase_id,member_role")
+      .eq("tenant_id", firstIds.tenant_id).eq("project_id", firstIds.project_id),
+  ]);
+  if (initialAccess.error) throw new Error("Staff assigned-phase access check failed: " + sanitize(initialAccess.error.message));
+  if (laterAccess.error) throw new Error("Staff other-phase denial check failed: " + sanitize(laterAccess.error.message));
+  if (staffMembershipRead.error) throw new Error("Staff membership RLS read failed: " + sanitize(staffMembershipRead.error.message));
+  assert(initialAccess.data === true && laterAccess.data === false,
+    "The Staff JWT did not receive access only to the assigned phase.");
+  const visibleMemberships = staffMembershipRead.data || [];
+  assert(visibleMemberships.length === 1 && visibleMemberships[0].phase_id === initialPhaseId
+    && visibleMemberships[0].member_role === "staff",
+  "The signed-in Staff RLS read did not show only the assigned phase membership.");
+  const staffAudit = await staffAssignmentAuditSummary(firstIds.tenant_id, operator.user_id);
+  assert(staffAudit.count === 1 && staffAudit.attributed_count === 1,
+    "The Staff assignment audit event did not preserve the verified human actor attribution.");
   report.staff_assignment = {
     status: staffApply.body?.result?.status || null,
     phase_limited: true,
     membership_count: membershipRows.length,
     assigned_phase_id: membershipRows[0].phase_id,
+    signed_in_membership_read_count: visibleMemberships.length,
+    assigned_phase_access: initialAccess.data,
+    other_phase_access: laterAccess.data,
+    phase_access_check: "user_has_project_access under synthetic Staff JWT; scoped by the same policy helper used for protected data",
+    human_actor_audit_records: staffAudit.count,
+    human_actor_attribution_verified: staffAudit.attributed_count === 1,
   };
 }
 
@@ -362,6 +410,124 @@ async function rpcProbe(apiKey, bearer, name, args) {
     application_status: typeof body.status === "string" ? body.status : null,
     writes: Number.isInteger(body.writes) ? body.writes : null,
   };
+}
+
+async function auditTriggerSnapshot() {
+  const query = `
+    SELECT json_build_object(
+      'oid', p.oid::text,
+      'prosrc', p.prosrc,
+      'proacl', COALESCE(p.proacl::text, '<default>'),
+      'prosecdef', p.prosecdef,
+      'proconfig', COALESCE(p.proconfig::text, ''),
+      'trigger_count', count(t.oid)::integer,
+      'trigger_details', COALESCE(string_agg(t.tgname || ':' || t.tgenabled::text, ',' ORDER BY t.tgname), '')
+    )::text
+    FROM pg_proc AS p
+    JOIN pg_namespace AS n ON n.oid = p.pronamespace
+    LEFT JOIN pg_trigger AS t
+      ON t.tgfoid = p.oid
+     AND t.tgrelid = 'public.audit_events'::regclass
+     AND t.tgname = 'trg_enforce_verified_audit_attribution'
+     AND NOT t.tgisinternal
+    WHERE n.nspname = 'public'
+      AND p.proname = 'enforce_verified_audit_attribution'
+    GROUP BY p.oid, p.prosrc, p.proacl, p.prosecdef, p.proconfig
+  `;
+  const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c", query], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, PGPASSWORD: undefined },
+  });
+  if (result.error || result.status !== 0 || !result.stdout.trim()) {
+    throw new Error("Could not inspect local audit trigger state: " + sanitize(result.stderr || result.error?.message || "no result"));
+  }
+  try { return JSON.parse(result.stdout.trim()); } catch {
+    throw new Error("Local audit trigger state was not valid JSON.");
+  }
+}
+
+function verifyAuditTriggerReplacement(before, after) {
+  const oldRole = "v_request_role text := NULLIF(current_setting('request.jwt.claim.role', true), '');";
+  const newRole = "v_request_role text := COALESCE(NULLIF(auth.jwt()->>'role', ''), NULLIF(pg_catalog.current_setting('request.jwt.claim.role', true), ''));";
+  assert(before && after && before.trigger_count === 1 && after.trigger_count === 1,
+    "The audit-attribution trigger is missing or duplicated.");
+  assert(before.prosecdef === true && after.prosecdef === true,
+    "The audit-attribution trigger function must remain SECURITY DEFINER.");
+  assert(before.prosrc.includes(oldRole) && after.prosrc === before.prosrc.replace(oldRole, newRole),
+    "The audit-attribution trigger body changed beyond the reviewed JWT role extraction.");
+  assert(before.oid === after.oid && before.proacl === after.proacl && before.proconfig === after.proconfig
+      && before.trigger_details === after.trigger_details,
+    "The audit-attribution trigger binding, function ACL, or security configuration changed.");
+}
+
+async function provisioningAuditSummary(tenantId) {
+  assert(/^[0-9a-f-]{36}$/i.test(tenantId), "Synthetic tenant ID was not a UUID.");
+  const query = `
+    SELECT json_build_object(
+      'count', count(*)::integer,
+      'attributed_count', count(*) FILTER (
+        WHERE tenant_id = :'tenant_id'::uuid
+          AND target_tenant_id = :'tenant_id'::uuid
+          AND target_project_id IS NULL
+          AND target_phase_id IS NULL
+          AND entity_type = 'system'
+          AND action = 'created'
+          AND title = 'Workspace provisioned'
+          AND actor_kind = 'service'
+          AND actor_user_id IS NULL
+          AND metadata->>'source' = 'tenant_provisioning'
+      )::integer
+    )::text
+    FROM public.audit_events
+    WHERE target_tenant_id = :'tenant_id'::uuid
+      AND metadata->>'event_code' = 'tenant_workspace_provisioned'
+  `;
+  const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-v", "tenant_id=" + tenantId, "-c", query], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, PGPASSWORD: undefined },
+  });
+  if (result.error || result.status !== 0 || !result.stdout.trim()) {
+    throw new Error("Could not verify the synthetic workspace audit count: " + sanitize(result.stderr || result.error?.message || "no result"));
+  }
+  try { return JSON.parse(result.stdout.trim()); } catch {
+    throw new Error("Synthetic workspace audit summary was not valid JSON.");
+  }
+}
+
+async function staffAssignmentAuditSummary(tenantId, actorId) {
+  for (const [label, value] of [["tenant", tenantId], ["actor", actorId]]) {
+    assert(/^[0-9a-f-]{36}$/i.test(value), "Synthetic " + label + " ID was not a UUID.");
+  }
+  const query = `
+    SELECT json_build_object(
+      'count', count(*)::integer,
+      'attributed_count', count(*) FILTER (
+        WHERE tenant_id = :'tenant_id'::uuid
+          AND target_tenant_id = :'tenant_id'::uuid
+          AND actor_user_id = :'actor_id'::uuid
+          AND actor_kind = 'human'
+      )::integer
+    )::text
+    FROM public.audit_events
+    WHERE target_tenant_id = :'tenant_id'::uuid
+      AND entity_type = 'user'
+      AND action = 'updated'
+      AND title = 'Workspace membership changed'
+  `;
+  const result = spawnSync("psql", [DB_URL, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1",
+    "-v", "tenant_id=" + tenantId, "-v", "actor_id=" + actorId, "-c", query], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, PGPASSWORD: undefined },
+  });
+  if (result.error || result.status !== 0 || !result.stdout.trim()) {
+    throw new Error("Could not verify the synthetic Staff audit attribution: " + sanitize(result.stderr || result.error?.message || "no result"));
+  }
+  try { return JSON.parse(result.stdout.trim()); } catch {
+    throw new Error("Synthetic Staff audit summary was not valid JSON.");
+  }
 }
 
 async function saveReport() {

@@ -5,8 +5,9 @@
 --
 -- PostgREST supplies JWT claims as request.jwt.claims JSON. auth.jwt() reads
 -- the signed claim role; the legacy single-claim setting remains a fallback.
--- This changes only onboarding role-claim extraction. CREATE OR REPLACE
--- preserves the existing function ACLs; no grant widening is performed here.
+-- This repairs onboarding role-claim extraction and the M3.5 audit-attribution
+-- trigger. CREATE OR REPLACE preserves existing function ACLs; no grant widening
+-- is performed. The audit trigger body is unchanged except for the role source.
 
 CREATE OR REPLACE FUNCTION public.guard_reservation_workflow_setting_write()
 RETURNS trigger
@@ -1680,3 +1681,232 @@ BEGIN
   );
 END;
 $function$;
+
+-- Use the signed JWT role claim for service audit inserts, with the same legacy
+-- fallback as the eight onboarding routines above. Keep actor verification,
+-- verified operation-context requirements, target-scope derivation, and data
+-- scrubbing intact; only role extraction changes in this trigger body.
+CREATE OR REPLACE FUNCTION public.enforce_verified_audit_attribution()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  v_request_role text := COALESCE(NULLIF(auth.jwt()->>'role', ''), NULLIF(pg_catalog.current_setting('request.jwt.claim.role', true), ''));
+  v_actor_id uuid;
+  v_actor_name text;
+  v_actor_email text;
+  v_actor_role text;
+  v_actor_tenant_id uuid;
+  v_source_tenant_id uuid;
+  v_source_project_id uuid;
+  v_source_phase_id uuid;
+  v_target_tenant_id uuid;
+  v_target_project_id uuid;
+  v_target_phase_id uuid;
+  v_context record;
+  v_scope_from_record boolean := false;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION 'Audit events are append-only.';
+  END IF;
+
+  IF v_request_role = 'authenticated' OR (v_request_role IS NULL AND auth.uid() IS NOT NULL) THEN
+    v_actor_id := auth.uid();
+    IF v_actor_id IS NULL OR (NEW.actor_user_id IS NOT NULL AND NEW.actor_user_id IS DISTINCT FROM v_actor_id) THEN
+      RAISE EXCEPTION 'The audit actor must be the current authenticated user.';
+    END IF;
+    SELECT ap.full_name, ap.email, ap.role::text, ap.tenant_id
+      INTO v_actor_name, v_actor_email, v_actor_role, v_actor_tenant_id
+    FROM public.admin_profiles AS ap WHERE ap.user_id = v_actor_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The authenticated audit actor has no active Wamule profile.';
+    END IF;
+    IF NEW.actor_name IS NOT NULL AND NEW.actor_name IS DISTINCT FROM v_actor_name THEN
+      RAISE EXCEPTION 'The audit actor name must come from the current profile.';
+    END IF;
+    IF NEW.actor_email IS NOT NULL AND lower(NEW.actor_email) IS DISTINCT FROM lower(v_actor_email) THEN
+      RAISE EXCEPTION 'The audit actor email must come from the current profile.';
+    END IF;
+    NEW.actor_user_id := v_actor_id;
+    NEW.actor_name := v_actor_name;
+    NEW.actor_email := v_actor_email;
+    NEW.actor_kind := 'human';
+  ELSIF v_request_role = 'service_role' THEN
+    SELECT c.actor_id, c.target_tenant_id
+      INTO v_context
+    FROM audit_private.verified_operation_context AS c
+    WHERE c.backend_pid = pg_catalog.pg_backend_pid()
+      AND c.transaction_id = pg_catalog.txid_current()
+      AND c.purpose = 'workspace_member';
+    IF FOUND THEN
+      v_actor_id := v_context.actor_id;
+      IF NEW.actor_user_id IS NOT NULL AND NEW.actor_user_id IS DISTINCT FROM v_actor_id THEN
+        RAISE EXCEPTION 'The server audit actor does not match its verified operation context.';
+      END IF;
+      SELECT ap.full_name, ap.email, ap.role::text, ap.tenant_id
+        INTO v_actor_name, v_actor_email, v_actor_role, v_actor_tenant_id
+      FROM public.admin_profiles AS ap WHERE ap.user_id = v_actor_id;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'The verified server actor has no active Wamule profile.';
+      END IF;
+      NEW.actor_user_id := v_actor_id;
+      NEW.actor_name := v_actor_name;
+      NEW.actor_email := v_actor_email;
+      NEW.actor_kind := 'human';
+    ELSE
+      IF NEW.actor_user_id IS NOT NULL THEN
+        RAISE EXCEPTION 'A service event cannot claim a human actor without a verified operation context.';
+      END IF;
+      NEW.actor_user_id := NULL;
+      NEW.actor_name := 'Service operation';
+      NEW.actor_email := NULL;
+      NEW.actor_kind := 'service';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'Audit events require an authenticated actor or trusted service operation.';
+  END IF;
+
+  IF NEW.entity_id IS NOT NULL AND NEW.entity_type NOT IN ('user') THEN
+    SELECT resolved.tenant_id, resolved.project_id, resolved.phase_id
+      INTO v_source_tenant_id, v_source_project_id, v_source_phase_id
+    FROM audit_private.resolve_audit_scope(NEW.entity_type, NEW.entity_id) AS resolved;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The audit entity does not resolve to an existing verified record.';
+    END IF;
+    v_scope_from_record := true;
+  END IF;
+
+  v_target_tenant_id := CASE WHEN v_scope_from_record THEN v_source_tenant_id ELSE NEW.target_tenant_id END;
+  v_target_project_id := CASE WHEN v_scope_from_record THEN v_source_project_id ELSE NEW.target_project_id END;
+  v_target_phase_id := CASE WHEN v_scope_from_record THEN v_source_phase_id ELSE NEW.target_phase_id END;
+
+  IF v_target_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'A new audit event must identify its verified target tenant.';
+  END IF;
+  IF v_scope_from_record AND NEW.target_tenant_id IS NOT NULL
+     AND NEW.target_tenant_id IS DISTINCT FROM v_source_tenant_id THEN
+    RAISE EXCEPTION 'The audit target tenant does not match the referenced record.';
+  END IF;
+  IF v_scope_from_record AND NEW.target_project_id IS NOT NULL
+     AND NEW.target_project_id IS DISTINCT FROM v_source_project_id THEN
+    RAISE EXCEPTION 'The audit target project does not match the referenced record.';
+  END IF;
+  IF v_scope_from_record AND NEW.target_phase_id IS NOT NULL
+     AND NEW.target_phase_id IS DISTINCT FROM v_source_phase_id THEN
+    RAISE EXCEPTION 'The audit target phase does not match the referenced record.';
+  END IF;
+  IF NEW.tenant_id IS NOT NULL AND NEW.tenant_id IS DISTINCT FROM v_target_tenant_id THEN
+    RAISE EXCEPTION 'The compatibility tenant_id must equal the verified target tenant.';
+  END IF;
+
+  IF NEW.entity_type IN ('customer', 'settings', 'user')
+     AND (v_target_project_id IS NOT NULL OR v_target_phase_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'Tenant-shared audit operations cannot inherit an arbitrary project or phase.';
+  END IF;
+
+  IF v_target_project_id IS NOT NULL THEN
+    PERFORM 1 FROM public.projects AS p
+    WHERE p.id = v_target_project_id AND p.tenant_id = v_target_tenant_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The audit project does not belong to the verified target tenant.';
+    END IF;
+  END IF;
+  IF v_target_phase_id IS NOT NULL THEN
+    IF v_target_project_id IS NULL THEN
+      RAISE EXCEPTION 'A target phase requires a verified project.';
+    END IF;
+    PERFORM 1 FROM public.development_phases AS ph
+    WHERE ph.id = v_target_phase_id
+      AND ph.project_id = v_target_project_id
+      AND ph.tenant_id = v_target_tenant_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The audit phase does not belong to the verified project and tenant.';
+    END IF;
+  END IF;
+
+  IF v_request_role = 'authenticated' OR (v_request_role IS NULL AND auth.uid() IS NOT NULL) THEN
+    IF NEW.entity_type IN ('settings', 'user', 'system') THEN
+      IF v_actor_role <> 'Super Admin'
+         AND (v_actor_role <> 'Admin' OR v_actor_tenant_id IS DISTINCT FROM v_target_tenant_id) THEN
+        RAISE EXCEPTION 'This tenant-wide audit operation requires a Tenant Admin or Super Admin for the verified target.';
+      END IF;
+      IF NEW.entity_type = 'user' AND NOT EXISTS (
+        SELECT 1 FROM audit_private.verified_operation_context AS c
+        WHERE c.backend_pid = pg_catalog.pg_backend_pid()
+          AND c.transaction_id = pg_catalog.txid_current()
+          AND c.purpose = 'workspace_member'
+          AND c.actor_id = v_actor_id
+          AND c.target_tenant_id = v_target_tenant_id
+      ) THEN
+        RAISE EXCEPTION 'Workspace membership events require the atomic membership operation.';
+      END IF;
+      IF NEW.entity_type = 'user' THEN
+        DELETE FROM audit_private.verified_operation_context AS c
+        WHERE c.backend_pid = pg_catalog.pg_backend_pid()
+          AND c.transaction_id = pg_catalog.txid_current()
+          AND c.purpose = 'workspace_member'
+          AND c.actor_id = v_actor_id
+          AND c.target_tenant_id = v_target_tenant_id;
+      END IF;
+    ELSIF v_actor_role <> 'Super Admin' AND v_actor_tenant_id IS DISTINCT FROM v_target_tenant_id THEN
+      RAISE EXCEPTION 'The authenticated actor cannot create an event for another tenant.';
+    END IF;
+  END IF;
+
+  IF v_request_role = 'service_role' AND NEW.actor_kind = 'human' THEN
+    IF v_context.target_tenant_id IS DISTINCT FROM v_target_tenant_id THEN
+      RAISE EXCEPTION 'The verified service actor is not authorized for this target tenant.';
+    END IF;
+    DELETE FROM audit_private.verified_operation_context AS c
+    WHERE c.backend_pid = pg_catalog.pg_backend_pid()
+      AND c.transaction_id = pg_catalog.txid_current()
+      AND c.purpose = 'workspace_member';
+  END IF;
+
+  NEW.target_tenant_id := v_target_tenant_id;
+  NEW.target_project_id := v_target_project_id;
+  NEW.target_phase_id := v_target_phase_id;
+  NEW.tenant_id := v_target_tenant_id;
+
+  -- Keep the audit useful while discarding free-text notes, document paths,
+  -- bank/receipt identifiers, contact details and other sensitive row fields.
+  IF NEW.entity_type = 'payment' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['status','amount','transaction_type','collection_method','receipt_date','created_at']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['status','amount','transaction_type','collection_method','receipt_date','created_at']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['amount','transaction_type','collection_method','linked_posted_payment_count','linked_posted_payment_total','confidence','customer_matched']);
+  ELSIF NEW.entity_type = 'contract' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['status','is_active','final_purchase_price','term_months','start_date','payment_due_day']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['status','is_active','final_purchase_price','term_months','start_date','payment_due_day']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['final_purchase_price','linked_posted_payment_count','linked_posted_payment_total','resolution_type']);
+  ELSIF NEW.entity_type = 'reservation' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['status','deposit_status','released_at']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['status','deposit_status','released_at']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['primary_reservation_id']);
+  ELSIF NEW.entity_type = 'parcel' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['parcel_status','resolution_status']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['parcel_status','resolution_status','resolution_type']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['resolution_status','resolution_type']);
+  ELSIF NEW.entity_type = 'settings' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['setting_key']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['setting_key']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['setting_key']);
+  ELSIF NEW.entity_type = 'user' THEN
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['role']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['role']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['membership_count']);
+  ELSIF NEW.entity_type = 'system' THEN
+    NEW.before_data := NULL;
+    NEW.after_data := NULL;
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['event_code','source']);
+  ELSE
+    NEW.before_data := audit_private.keep_json_keys(NEW.before_data, ARRAY['status','created_at','updated_at']);
+    NEW.after_data := audit_private.keep_json_keys(NEW.after_data, ARRAY['status','created_at','updated_at']);
+    NEW.metadata := audit_private.keep_json_keys(NEW.metadata, ARRAY['event_code','source']);
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.enforce_verified_audit_attribution() FROM PUBLIC, anon, authenticated, service_role;
