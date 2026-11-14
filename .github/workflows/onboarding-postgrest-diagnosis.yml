@@ -1,0 +1,174 @@
+name: Onboarding PostgREST claims diagnosis
+
+on:
+  push:
+    branches:
+      - codex/onboarding-postgrest-claims-diagnosis
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-onboarding-diagnosis:
+    name: Disposable 72-migration onboarding diagnosis
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      WAMULE_SCHEMA_BASE_COMMIT: a59714143d582a022e10eb075a3479e2b518ffa7
+      REPLAY_DIR: /tmp/wamule-onboarding-postgrest-replay
+      SUPABASE_HOME: /tmp/wamule-supabase-home
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out isolated review commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify Supabase CLI
+        run: |
+          version="$(./node_modules/.bin/supabase --version)"
+          test "$version" = "2.105.0" || { echo "Expected Supabase CLI 2.105.0; found $version." >&2; exit 1; }
+      - name: Prepare replay inputs
+        run: python3 scripts/prepare-local-supabase-replay.py --out "$REPLAY_DIR"
+      - name: Start disposable Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SUPABASE_HOME"
+          mv "$REPLAY_DIR/supabase/migrations" "$REPLAY_DIR/supabase/replay-migrations"
+          mkdir "$REPLAY_DIR/supabase/migrations"
+          if ! ./node_modules/.bin/supabase start --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            echo 'Failing command: supabase start --workdir "$REPLAY_DIR"' >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-start.log" | tail -n 50 >&2
+            exit 1
+          fi
+      - name: Replay the ordered 69-entry base ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          if [ -n "$(find "$REPLAY_DIR/supabase/migrations" -mindepth 1 -print -quit)" ]; then
+            echo "Unexpected migration files appeared during stack startup." >&2
+            exit 1
+          fi
+          rmdir "$REPLAY_DIR/supabase/migrations"
+          mv "$REPLAY_DIR/supabase/replay-migrations" "$REPLAY_DIR/supabase/migrations"
+          if ! SCHEMA_QUERY_DATABASE_URL="$db_url" python3 scripts/replay-local-supabase-baseline.py --manifest "$REPLAY_DIR/replay-manifest.json" > "$RUNNER_TEMP/replay-run-summary.json" 2> "$RUNNER_TEMP/replay-run-error.log"; then
+            echo 'Failing command: replay-local-supabase-baseline.py --manifest "$REPLAY_DIR/replay-manifest.json" (local psql only)' >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/replay-run-error.log" | tail -n 80 >&2
+            exit 1
+          fi
+          python3 - "$REPLAY_DIR/applied-migrations.json" <<'PY'
+          import json, sys
+          ledger = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert ledger.get("applied_migration_count") == 69
+          assert ledger.get("ordered_manifest_match") is True
+          assert len(ledger.get("applied_migrations", [])) == 69
+          print("Exact ordered 69-entry base replay passed.")
+          PY
+      - name: Apply separate M1.5 and finish the exact 72-entry ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          if ! SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/verify-onboarding-postgrest-baseline.mjs > "$RUNNER_TEMP/onboarding-baseline.stdout.json" 2> "$RUNNER_TEMP/onboarding-baseline.stderr.log"; then
+            echo "Failing command: node scripts/verify-onboarding-postgrest-baseline.mjs against local replay" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/onboarding-baseline.stderr.log" | tail -n 80 >&2
+            exit 1
+          fi
+          cat "$REPLAY_DIR/onboarding-postgrest-baseline.json"
+          python3 - "$REPLAY_DIR/applied-migrations.json" "$REPLAY_DIR/numbered-migrations.json" "$REPLAY_DIR/onboarding-postgrest-baseline.json" <<'PY'
+          import json, sys
+          applied, numbered, baseline = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+          versions = [str(row["version"]) for row in numbered.get("migrations", [])]
+          assert applied.get("applied_migration_count") == 72
+          assert applied.get("ordered_manifest_match") is True
+          assert numbered.get("numbered_migration_count") == 72
+          assert versions[-3:] == ["20261112033403", "20261112033404", "20261113050506"]
+          assert "20261112040000" not in versions
+          assert baseline.get("compatibility_delta_applied") is False
+          assert baseline.get("m1_5_overlay", {}).get("included_in_numbered_ledger") is False
+          print("Exact ordered 72-entry ledger passed; M1.5 is separate; broad compatibility migration is absent.")
+          PY
+      - name: Probe PostgREST and exercise console onboarding
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          export SUPABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" API_URL)"
+          export SUPABASE_ANON_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" ANON_KEY)"
+          export SUPABASE_SERVICE_ROLE_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" SERVICE_ROLE_KEY)"
+          export SCHEMA_QUERY_DATABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          export ONBOARDING_DIAGNOSIS_EVIDENCE_PATH="$REPLAY_DIR/onboarding-postgrest-diagnosis.json"
+          echo "::add-mask::$SUPABASE_ANON_KEY"
+          echo "::add-mask::$SUPABASE_SERVICE_ROLE_KEY"
+          echo "::add-mask::$SCHEMA_QUERY_DATABASE_URL"
+          local_functions_env="$RUNNER_TEMP/local-functions.env"
+          umask 077
+          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\n' "$SUPABASE_SERVICE_ROLE_KEY" > "$local_functions_env"
+          ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
+          functions_pid=$!
+          trap 'kill "$functions_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 90); do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 \
+              --request POST "$SUPABASE_URL/functions/v1/super-admin-console" \
+              --header "apikey: $SUPABASE_ANON_KEY" \
+              --header "Content-Type: application/json" \
+              --data '{"action":"readiness-probe"}' || true)"
+            case "$status" in
+              000|502|503) sleep 2 ;;
+              *) ready=1; break ;;
+            esac
+          done
+          if [ "$ready" != 1 ]; then
+            echo "The local console function did not become ready." >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 100 >&2
+            exit 1
+          fi
+          node scripts/onboarding-postgrest-claims-diagnosis.mjs
+      - name: Stop disposable Supabase stack
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_status=passed
+          if [ -d "$REPLAY_DIR" ]; then
+            if ! ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup; then cleanup_status=failed; fi
+          fi
+          remaining="$(docker ps -a --filter 'name=supabase_' --format '{{.ID}}')"
+          if [ -n "$remaining" ]; then cleanup_status=failed; echo "Supabase containers remain." >&2; fi
+          remaining_volumes="$(docker volume ls --format '{{.Name}}' | python3 -c 'import sys; print("\\n".join(name for name in sys.stdin.read().splitlines() if "supabase" in name.lower()))')"
+          if [ -n "$remaining_volumes" ]; then cleanup_status=failed; echo "Supabase data volumes remain." >&2; fi
+          test "$cleanup_status" = passed
+          printf '{"status":"passed","hosted_target_used":false,"volumes_removed":true}\n' > "$REPLAY_DIR/onboarding-diagnosis-cleanup.json"
+      - name: Retain sanitized disposable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboarding-postgrest-claims-diagnosis
+          path: |
+            /tmp/wamule-onboarding-postgrest-replay/replay-manifest.json
+            /tmp/wamule-onboarding-postgrest-replay/applied-migrations.json
+            /tmp/wamule-onboarding-postgrest-replay/numbered-migrations.json
+            /tmp/wamule-onboarding-postgrest-replay/onboarding-postgrest-baseline.json
+            /tmp/wamule-onboarding-postgrest-replay/onboarding-postgrest-diagnosis.json
+            /tmp/wamule-onboarding-postgrest-replay/onboarding-diagnosis-cleanup.json
+            /tmp/replay-run-summary.json
+          if-no-files-found: warn
