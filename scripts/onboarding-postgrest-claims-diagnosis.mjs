@@ -31,6 +31,7 @@ const report = {
   after_probe: null,
   console_preview: null,
   direct_valid_preflight: null,
+  console_preview_attempts: [],
   workspace: null,
   staff_assignment: null,
   direct_service_rpc_denials: [],
@@ -127,7 +128,15 @@ async function runOnboardingFlow() {
     "Valid direct PostgREST call to public.provision_workspace_v1 failed: HTTP " + directPreview.http_status
       + ", SQLSTATE=" + directPreview.sqlstate + ", message=" + sanitize(directPreview.message)
       + ", details=" + sanitize(directPreview.details) + ", hint=" + sanitize(directPreview.hint));
-  const previewResponse = await consoleRequest(operator.token, manifest, false);
+  let previewResponse = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    previewResponse = await consoleRequest(operator.token, manifest, false);
+    report.console_preview_attempts.push({ attempt, ...summarizeConsole(previewResponse) });
+    if (previewResponse.http_status === 200 && previewResponse.body?.ok === true
+        && previewResponse.body?.preflight?.status === "dry_run" && previewResponse.body?.preflight?.writes === 0) break;
+    if (previewResponse.http_status !== 502 || attempt === 3) break;
+    await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+  }
   report.console_preview = summarizeConsole(previewResponse);
   assert(previewResponse.http_status === 200 && previewResponse.body?.ok === true, "Actual super-admin-console preview failed: " + (report.console_preview.sanitized_error || "no sanitized detail"));
   const preflight = previewResponse.body?.preflight;
@@ -394,7 +403,7 @@ function summarizeConsole(result) {
     preflight_writes: Number.isInteger(preflight.writes) ? preflight.writes : null,
     can_apply: preflight.can_apply === true,
     result_status: body.result?.status || null,
-    sanitized_error: sanitize(body.error || body.result?.error || body.message || result.response_message || ""),
+    sanitized_error: body.ok === true ? "" : sanitize(body.error || body.result?.error || body.message || result.response_message || ""),
   };
 }
 
