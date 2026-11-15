@@ -267,6 +267,20 @@ jobs:
             "$cleanup_status" "$([ "$cleanup_status" = passed ] && echo true || echo false)" > "$RUNNER_TEMP/admin-launch-cleanup.json"
           test "$cleanup_status" = passed
 
+      - name: Stage replay evidence for artifact upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/wamule-admin-launch-replay"
+          mkdir -p "$evidence_dir"
+          for file in \
+            staging-inventory.json replay-manifest.json applied-migrations.json \
+            numbered-migrations.json admin-launch-baseline.json \
+            project-application-admin-settings-overlay.json schema-query-contract.json; do
+            if [ -s "$REPLAY_DIR/$file" ]; then cp "$REPLAY_DIR/$file" "$evidence_dir/$file"; fi
+          done
+
       - name: Retain sanitized replay and walkthrough evidence
         if: always()
         uses: actions/upload-artifact@v4
