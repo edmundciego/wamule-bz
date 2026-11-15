@@ -15,8 +15,8 @@ jobs:
     timeout-minutes: 60
     env:
       WAMULE_SCHEMA_BASE_COMMIT: d26e3de510d0668bae0f8b616eed7dddc7b5fdd7
-      REPLAY_DIR: ${{ runner.temp }}/wamule-admin-launch-replay
-      SUPABASE_HOME: ${{ runner.temp }}/wamule-supabase-home
+      REPLAY_DIR: /tmp/wamule-admin-launch-replay
+      SUPABASE_HOME: /tmp/wamule-supabase-home
       SUPABASE_TELEMETRY_DISABLED: "1"
 
     steps:
