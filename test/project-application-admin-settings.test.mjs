@@ -29,6 +29,7 @@ test("project application Admin controls use scoped authorized RPCs and preserve
 test("map publishing displays phase and package revision before the existing guarded RPC", async () => {
   const publisher = await read("../src/components/admin/maps/ProjectMapPackagePublisher.tsx");
   const mapMigration = await read("../supabase/migrations/20261019194346_map_studio_packages_and_project_plot_content.sql");
+  assert.match(publisher, /<Select aria-label="Map Studio packages for this phase"/);
   assert.match(publisher, /Target phase:/);
   assert.match(publisher, /Package revision:/);
   assert.match(publisher, /role="alertdialog"/);

@@ -111,7 +111,7 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
       {displayError ? <ErrorState message={displayError} /> : null}
       {notice ? <p role="status" className="rounded-md border border-secondary/30 bg-secondary/5 p-3 text-sm text-primary">{notice}</p> : null}
       <Field label="Map Studio packages for this phase">
-        <Select value={selectedId} disabled={state.isLoading || busy} onChange={(event) => { setSelectedId(event.target.value); setConfirming(false); setConfirmReplace(false); setErrorMessage(null); }}>
+        <Select aria-label="Map Studio packages for this phase" value={selectedId} disabled={state.isLoading || busy} onChange={(event) => { setSelectedId(event.target.value); setConfirming(false); setConfirmReplace(false); setErrorMessage(null); }}>
           <option value="">Select a package</option>
           {packages.map((item) => {
             const itemRevision = packageRevision(item.package_data);
