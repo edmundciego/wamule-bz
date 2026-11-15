@@ -30,9 +30,17 @@ HOPKINS_WORKFLOW_FIXTURE_SHA256 = "7d44c34ccfa421e0b23a4ddce5b16448fb6366103a7c1
 HOPKINS_WORKFLOW_FIXTURE_BEFORE = "20261016054341"
 M81_MANIFEST = ROOT / "evidence/M8.1-staging-source-manifest-2026-11-08.json"
 CAPTURED_69_INVENTORY = ROOT / "evidence/hopkins-initial-staging-replay-migration-inventory-2026-11-11.json"
+RECONCILED_73_INVENTORY = ROOT / "evidence/admin-launch-controls-staging-inventory-73-reconciled.json"
 MAP_STUDIO_LEDGER_VERSION = "20261019225217"
 MAP_STUDIO_SOURCE = "supabase/migrations/20261019194346_map_studio_packages_and_project_plot_content.sql"
 MAP_STUDIO_SOURCE_SHA256 = "86766d43a0335a046e2224fdbb43c78f66ac02df91230f803b7959d56ec775f5"
+SUPPLEMENTAL_MIGRATIONS = (
+    "supabase/migrations/20261112033403_post_sales_project_phase_scope.sql",
+    "supabase/migrations/20261112033404_community_fee_view_tenant_scope.sql",
+    "supabase/migrations/20261113050506_shareable_map_reviewer_links.sql",
+    "supabase/migrations/20261114054243_onboarding_postgrest_role_claims.sql",
+)
+EXCLUDED_COMPATIBILITY_VERSION = "20261112040000"
 
 
 def sha256(path: Path) -> str:
@@ -50,7 +58,7 @@ def load_replay_builder():
     return module
 
 
-def build(output: Path) -> dict:
+def build(output: Path, inventory_path: Path = RECONCILED_73_INVENTORY) -> dict:
     if output.exists() and any(output.iterdir()):
         raise RuntimeError(f"Output directory is not empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
@@ -59,6 +67,7 @@ def build(output: Path) -> dict:
     migrations_dir.mkdir(parents=True, exist_ok=True)
 
     reconciler = load_replay_builder()
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     baseline_files, _ = reconciler.create_replay_migrations(migrations_dir)
     alias_rows = [entry for entry in baseline_files if entry["version"] == MAP_STUDIO_LEDGER_VERSION]
     if len(alias_rows) != 1 or alias_rows[0]["source"] != MAP_STUDIO_SOURCE:
@@ -94,30 +103,56 @@ def build(output: Path) -> dict:
     shutil.copy2(HOPKINS_PHASE_GATE, migrations_dir / HOPKINS_PHASE_GATE.name)
     entries.append({"version": HOPKINS_PHASE_GATE.name.split("_", 1)[0], "path": f"supabase/migrations/{HOPKINS_PHASE_GATE.name}", "sha256": HOPKINS_PHASE_GATE_SHA256, "source": str(HOPKINS_PHASE_GATE.relative_to(ROOT))})
 
+    for source_relative in SUPPLEMENTAL_MIGRATIONS:
+        source = ROOT / source_relative
+        if not source.is_file():
+            raise RuntimeError(f"Reviewed staging migration source is missing: {source_relative}")
+        target = migrations_dir / source.name
+        shutil.copy2(source, target)
+        entries.append({"version": source.name.split("_", 1)[0], "path": str(target.relative_to(output)), "sha256": sha256(target), "source": source_relative})
+
     versions = [entry["version"] for entry in entries]
-    if len(entries) != 69 or len(set(versions)) != len(versions) or versions != sorted(versions):
-        raise RuntimeError("The expected 69-entry staging migration sequence is not unique and chronological.")
+    if len(entries) != 73 or len(set(versions)) != len(versions) or versions != sorted(versions):
+        raise RuntimeError("The expected 73-entry staging migration sequence is not unique and chronological.")
     captured = json.loads(CAPTURED_69_INVENTORY.read_text(encoding="utf-8"))
     captured_rows = captured.get("files", [])
-    expected_order = [(row["version"], row["name"]) for row in captured_rows]
-    actual_order = []
+    actual_rows = []
     for entry in entries:
         filename = Path(entry["path"]).name
         version, name = filename.split("_", 1)
-        actual_order.append((version, name))
+        actual_rows.append({"version": version, "name": name, "sha256": entry["sha256"]})
+    expected_rows = inventory.get("files", [])
     if captured.get("target_project_ref") != STAGING_REF or len(captured_rows) != 69:
         raise RuntimeError("The captured staging migration inventory no longer identifies the expected 69-entry staging ledger.")
-    if actual_order != expected_order:
-        first = next((index for index, pair in enumerate(zip(actual_order, expected_order), start=1) if pair[0] != pair[1]), None)
-        raise RuntimeError(f"The prepared migration order differs from the captured 69-entry staging ledger at position {first}.")
+    if inventory.get("target_project_ref") != STAGING_REF or inventory.get("inventory_count") != 73 or len(expected_rows) != 73:
+        raise RuntimeError("The reconciled staging inventory must identify the staging project and contain exactly 73 rows.")
+    if actual_rows != expected_rows:
+        first = next((index for index, pair in enumerate(zip(actual_rows, expected_rows), start=1) if pair[0] != pair[1]), None)
+        raise RuntimeError(f"Prepared version, filename, or SHA-256 differs from the reviewed 73-entry inventory at position {first}.")
+    if any(row["version"] == EXCLUDED_COMPATIBILITY_VERSION for row in expected_rows):
+        raise RuntimeError("The broad 20261112040000 compatibility migration must remain excluded from this replay.")
+    excluded = inventory.get("excluded_migrations", [])
+    if not any(row.get("version") == EXCLUDED_COMPATIBILITY_VERSION for row in excluded):
+        raise RuntimeError("The 73-entry inventory must explicitly record exclusion of migration 20261112040000.")
     captured_alias = [row for row in captured_rows if row["version"] == MAP_STUDIO_LEDGER_VERSION]
     if len(captured_alias) != 1 or captured_alias[0]["sha256"] != MAP_STUDIO_SOURCE_SHA256:
         raise RuntimeError("The captured applied Map Studio alias/hash is absent or ambiguous.")
     if not M1_5_OVERLAY.is_file() or sha256(M1_5_OVERLAY) != M1_5_SHA256:
         raise RuntimeError("The separately applied M1.5 view overlay does not match its recorded hash.")
+    overlays = inventory.get("separate_overlays", [])
+    m1_5 = [row for row in overlays if row.get("name") == M1_5_OVERLAY.name.removeprefix("20261105000100_")]
+    if (len(m1_5) != 1 or m1_5[0].get("version") != "20261105000100"
+            or m1_5[0].get("sha256") != M1_5_SHA256
+            or m1_5[0].get("included_in_numbered_ledger") is not False
+            or m1_5[0].get("apply_after_version") not in versions):
+        raise RuntimeError("The 73-entry inventory's separate M1.5 position or SHA-256 is missing or invalid.")
+    overlay_position = versions.index(m1_5[0]["apply_after_version"])
+    if overlay_position + 1 >= len(versions) or versions[overlay_position + 1] != "20261112033404":
+        raise RuntimeError("M1.5 must be replayed after 20261112033403 and before 20261112033404.")
     overlay_dir = supabase_dir / "local-overlays"
     overlay_dir.mkdir()
     shutil.copy2(M1_5_OVERLAY, overlay_dir / M1_5_OVERLAY.name)
+    shutil.copy2(inventory_path, output / "staging-inventory.json")
 
     if not HOPKINS_WORKFLOW_FIXTURE.is_file() or sha256(HOPKINS_WORKFLOW_FIXTURE) != HOPKINS_WORKFLOW_FIXTURE_SHA256:
         raise RuntimeError("The local Hopkins workflow precondition fixture differs from its reviewed hash.")
@@ -170,6 +205,13 @@ def build(output: Path) -> dict:
         "m8_1_forward_migrations": 13,
         "hopkins_phase_gate_migration": HOPKINS_PHASE_GATE.name,
         "numbered_migration_count": len(entries),
+        "inventory_entry_count": len(expected_rows),
+        "staging_inventory": {
+            "path": "staging-inventory.json",
+            "evidence": str(inventory_path.relative_to(ROOT)) if inventory_path.is_relative_to(ROOT) else inventory_path.name,
+            "ordered_version_filename_sha256_match": True,
+            "broad_compatibility_migration_excluded": EXCLUDED_COMPATIBILITY_VERSION,
+        },
         "captured_ledger_comparison": {
             "evidence": str(CAPTURED_69_INVENTORY.relative_to(ROOT)),
             "ordered_version_name_match": True,
@@ -182,8 +224,8 @@ def build(output: Path) -> dict:
             "sha256": MAP_STUDIO_SOURCE_SHA256,
             "included_exactly_once": True,
         },
-        "m1_5_separate_overlay": {"path": str((overlay_dir / M1_5_OVERLAY.name).relative_to(output)), "sha256": M1_5_SHA256, "included_in_numbered_ledger": False},
-        "excluded_local_only_migrations": ["20261110090000_audit_default_phase_before_after.sql"],
+        "m1_5_separate_overlay": {"path": str((overlay_dir / M1_5_OVERLAY.name).relative_to(output)), "sha256": M1_5_SHA256, "apply_after_version": m1_5[0]["apply_after_version"], "included_in_numbered_ledger": False},
+        "excluded_local_only_migrations": ["20261110090000_audit_default_phase_before_after.sql", "20261112040000_postgrest_json_jwt_role_claims.sql"],
         "local_data_preconditions": local_data_preconditions,
         "migrations": entries,
     }
@@ -194,10 +236,12 @@ def build(output: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True, type=Path, help="Empty temporary project directory")
+    parser.add_argument("--inventory", type=Path, default=RECONCILED_73_INVENTORY, help="Reviewed 73-entry staging migration inventory JSON")
     args = parser.parse_args()
     try:
         output = args.out.resolve()
-        manifest = build(output)
+        inventory_path = args.inventory.resolve()
+        manifest = build(output, inventory_path)
     except Exception as error:
         print(f"[local-supabase-replay] FAIL: {error}", file=sys.stderr)
         return 2

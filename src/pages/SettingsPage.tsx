@@ -10,6 +10,7 @@ import { UploadFileSummary } from "../components/uploads/UploadFileSummary";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
 import { WordPressEmbedSnippet } from "../components/admin/settings/WordPressEmbedSnippet";
 import { PublicExperienceTemplateSettings } from "../components/admin/settings/PublicExperienceTemplateSettings";
+import { ProjectApplicationSettings } from "../components/admin/settings/ProjectApplicationSettings";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { DataManagementPanel } from "../components/settings/DataManagementPanel";
 import {
@@ -40,7 +41,7 @@ import type {
 const roles: AppRole[] = ["Super Admin", "Admin", "Staff", "Read Only"];
 const paymentMethodTypes: PaymentMethodType[] = ["Cash", "Bank Transfer", "Other"];
 const feeFrequencies: FeeFrequency[] = ["One-Time", "Monthly", "Yearly", "As Needed"];
-const settingsSections = ["Company Profile", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles", "Website Integration & Embeds", "Data Management"] as const;
+const settingsSections = ["Company Profile", "Project Applications", "Payment Methods", "Installment Plans", "Lot Sizes", "Fee Types", "CRM Workflow Guide", "Reservation Settings", "AI Settings", "Users & Roles", "Website Integration & Embeds", "Data Management"] as const;
 
 type SettingsSection = (typeof settingsSections)[number];
 type DraftPaymentMethod = PaymentMethod & { isNew?: boolean };
@@ -660,6 +661,7 @@ export function SettingsPage() {
             </Card>
           </div>
         ) : null}
+        {activeSection === "Project Applications" ? <ProjectApplicationSettings workspace={workspace} canManage={canManageConfig} /> : null}
         {activeSection === "Website Integration & Embeds" ? (
           <Card className="v2-workflow-panel">
             <CardHeader><CardTitle>Website Integration & Embeds</CardTitle></CardHeader>

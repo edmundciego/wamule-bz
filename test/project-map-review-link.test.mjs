@@ -63,9 +63,10 @@ test("review surface is signed-out, no-index, revision-bound, and has no submiss
 
 test("walkthrough tests reviewer denial, expiry, revocation, and post-publication revision lock", async () => {
   const script = await file("scripts/run-tenant-walkthrough.mjs");
-  const replay = await file("scripts/verify-schema-repair-postgres.mjs");
-  const workflow = await file(".github/workflows/supabase-schema-contract.yml");
-  assert.match(script, /The signed reviewer-link schema must be the exact local-only overlay/);
+  const baseline = await file("scripts/verify-admin-launch-baseline.mjs");
+  const workflow = await file(".github/workflows/admin-launch-controls-replay.yml");
+  assert.match(baseline, /migration_inventory_count: 73/);
+  assert.match(baseline, /project_map_packages/);
   assert.match(script, /other_phase_status: crossPhaseAttempt\.status/);
   assert.match(script, /other_phase_asset_status: crossPhaseAssetAttempt\.status/);
   assert.match(script, /unsupported_link_submit_action_status: unsupportedReviewSubmit\.status/);
@@ -79,11 +80,8 @@ test("walkthrough tests reviewer denial, expiry, revocation, and post-publicatio
   assert.match(script, /intended_phase_submission_status: intendedClosedResponse\.status/);
   assert.match(script, /blockedReviewerSubmission\.status === 400/);
   assert.match(script, /unsupportedReviewSubmit\.status === 401/);
-  assert.match(replay, /reviewer-link-overlay\.json/);
-  assert.match(replay, /hosted_target_used: false/);
   assert.match(workflow, /MAP_REVIEW_LINK_SIGNING_SECRET=%s/);
-  assert.match(workflow, /tenant-walkthrough-signed-review\.png/);
-  assert.match(workflow, /reviewer-link-overlay\.json/);
-  assert.match(workflow, /local_reviewer_overlay_references/);
-  assert.match(workflow, /Expected nine existing catalog mismatches before repairs/);
+  assert.match(workflow, /tenant-walkthrough-shared-map-link\.png/);
+  assert.match(workflow, /WALKTHROUGH_EVIDENCE_PATH/);
+  assert.match(workflow, /Stop and remove the disposable stack/);
 });

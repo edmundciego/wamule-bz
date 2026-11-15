@@ -7,7 +7,7 @@ import test from "node:test";
 
 const root = new URL("..", import.meta.url).pathname;
 
-test("replay preparation matches all 69 captured staging migrations in order and aliases Map Studio once", () => {
+test("replay preparation matches every 73 staging migration version, filename, and SHA-256 in order", () => {
   const directory = mkdtempSync(join(tmpdir(), "wamule-staging-replay-"));
   const output = join(directory, "replay");
   try {
@@ -16,7 +16,18 @@ test("replay preparation matches all 69 captured staging migrations in order and
       stdio: "pipe",
     });
     const manifest = JSON.parse(readFileSync(join(output, "replay-manifest.json"), "utf8"));
-    assert.equal(manifest.numbered_migration_count, 69);
+    const inventory = JSON.parse(readFileSync(join(output, "staging-inventory.json"), "utf8"));
+    assert.equal(manifest.numbered_migration_count, 73);
+    assert.equal(manifest.inventory_entry_count, 73);
+    assert.equal(manifest.staging_inventory.ordered_version_filename_sha256_match, true);
+    assert.equal(manifest.staging_inventory.broad_compatibility_migration_excluded, "20261112040000");
+    assert.equal(inventory.files.length, 73);
+    assert.deepEqual(manifest.migrations.map((row) => ({
+      version: row.version,
+      name: row.path.split("/").at(-1).split("_").slice(1).join("_"),
+      sha256: row.sha256,
+    })), inventory.files);
+    assert.equal(manifest.migrations.some((row) => row.version === "20261112040000"), false);
     assert.deepEqual(manifest.foundation_schema_bootstrap, {
       path: "supabase/foundation.sql",
       sha256: "5671fe8bfb5e0fcd6318f92dc0147367ffb543234d7d8cc6d2bc0f8eaa3d265a",
@@ -34,6 +45,12 @@ test("replay preparation matches all 69 captured staging migrations in order and
     });
     assert.equal(manifest.migrations.filter((row) => row.version === "20261019225217").length, 1);
     assert.equal(manifest.migrations.some((row) => row.version === "20261019194346"), false);
+    assert.deepEqual(manifest.m1_5_separate_overlay, {
+      path: "supabase/local-overlays/20261105000100_harden_sensitive_view_access.sql",
+      sha256: "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631",
+      apply_after_version: "20261112033403",
+      included_in_numbered_ledger: false,
+    });
     assert.deepEqual(manifest.local_data_preconditions.map(({ before_migration, sha256, included_in_migration_count }) => ({ before_migration, sha256, included_in_migration_count })), [
       { before_migration: "20261016054341", sha256: "7d44c34ccfa421e0b23a4ddce5b16448fb6366103a7c11834d694c7967fcc3bc", included_in_migration_count: false },
     ]);

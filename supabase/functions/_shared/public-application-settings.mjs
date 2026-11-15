@@ -40,12 +40,21 @@ export function resolvePublicApplicationSettings(companyInput, projectInput, pha
       && allowed.some((candidate) => candidate.toLowerCase() === phaseId.toLowerCase());
   }
 
+  const requiresProjectApplicationForm = project.application_type === "project_application";
+  const noticeVersionSource = Object.prototype.hasOwnProperty.call(project, "notice_version") ? project : company;
+  const intendedUsesSource = Object.prototype.hasOwnProperty.call(project, "allowed_intended_uses") ? project : company;
+  const projectFormComplete = !requiresProjectApplicationForm || (
+    cleanText(noticeVersionSource.notice_version).length > 0
+    && Array.isArray(intendedUsesSource.allowed_intended_uses)
+    && intendedUsesSource.allowed_intended_uses.some((value) => cleanText(value).length > 0)
+  );
+
   return {
     applicationsOpen: company.applications_open === true
       && project.applications_open === true
       && phaseAllowed,
     publicNoticeText: text.public_notice_text,
     acknowledgmentText: text.application_acknowledgment_text,
-    noticesComplete: NOTICE_FIELDS.every((field) => text[field].length > 0),
+    noticesComplete: NOTICE_FIELDS.every((field) => text[field].length > 0) && projectFormComplete,
   };
 }

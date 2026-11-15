@@ -2,6 +2,8 @@ import { ArrowUpRight, ClipboardList, Layers3, Map } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
+import { SharedProjectLinks } from "../components/admin/settings/SharedProjectLinks";
+import { ProjectMapPackagePublisher } from "../components/admin/maps/ProjectMapPackagePublisher";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
@@ -16,7 +18,7 @@ export function MapsPage() {
   if (workspaceError) return <ErrorState message={workspaceError} />;
   if (!workspace) return <ErrorState message="Select a verified project and phase workspace to manage its map." />;
 
-  const mapPath = `/embed/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}?phase=${encodeURIComponent(workspace.phaseSlug)}`;
+  const mapPath = `/p/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}/map?phase=${encodeURIComponent(workspace.phaseSlug)}`;
 
   return (
     <div className="mx-auto grid max-w-[1520px] gap-6 p-4 sm:p-6">
@@ -25,6 +27,9 @@ export function MapsPage() {
         <h1 className="v2-page-title">Maps</h1>
         <p className="v2-page-description">{workspace.tenantName} · {workspace.projectName} · {workspace.phaseName}. Map revisions and backgrounds are phase scoped; stable outline identities are retained across revisions.</p>
       </header>
+
+      <ProjectMapPackagePublisher workspace={workspace} canManage={canManage} />
+      <SharedProjectLinks workspace={workspace} />
 
       <Card>
         <CardHeader><CardTitle>Phase map background and revisions</CardTitle></CardHeader>

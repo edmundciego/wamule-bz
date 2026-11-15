@@ -96,7 +96,7 @@ export function validatePublicApplicationPayload(body: PublicApplicationPayload)
   const phase = text(body.phase, 80)?.toLowerCase() ?? "";
   const hostname = text(body.hostname, 253)?.toLowerCase().replace(/\.$/, "") ?? "";
   if (!/^[a-z0-9][a-z0-9-]{0,78}$/.test(project) || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(phase)
-    || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)) {
+    || (hostname !== "" && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname))) {
     return { error: "Reload the public project link and try again." };
   }
 

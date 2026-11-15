@@ -26,7 +26,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   const body = await request.json().catch(() => null);
-  const preliminary = validateHopkinsProjectApplicationPayload(body, 5);
+  const preliminary = validateHopkinsProjectApplicationPayload(body, 5, null);
   if ("error" in preliminary) return json({ error: preliminary.error }, 400);
   const input = preliminary as {
     tenant: string; project: string; phase: string; hostname: string; submission_reference: string;
@@ -40,7 +40,7 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const scope = await resolveScope(client, input);
-  if (!scope) return json({ error: "Project applications are temporarily unavailable." }, 503);
+  if (!scope) return json({ error: "Hopkins Grove applications are temporarily unavailable." }, 503);
   const { tenantId, projectId, phaseId } = scope;
 
   const [{ data: companySettings, error: companyError }, { data: settingsRow, error: settingError }] = await Promise.all([
@@ -56,12 +56,9 @@ Deno.serve(async (request) => {
     ...objectValue(companySettings?.value),
     ...objectValue(settingsRow.value),
   } as ProjectApplicationSettings;
-  if (objectValue(settingsRow.value).application_type !== "project_application") {
-    return json({ error: "Project applications are not enabled for this project." }, 404);
-  }
   const effective = resolvePublicApplicationSettings(companySettings?.value, settingsRow.value, phaseId);
   const maxMapPreferences = boundedInteger(settings.max_map_preferences, 0, 10, 5);
-  const inputValidation = validateHopkinsProjectApplicationPayload(body, maxMapPreferences);
+  const inputValidation = validateHopkinsProjectApplicationPayload(body, maxMapPreferences, settings.allowed_intended_uses);
   if ("error" in inputValidation) return json({ error: inputValidation.error }, 400);
   if (!effective.noticesComplete || !settings.notice_version
     || !Array.isArray(settings.allowed_intended_uses)
@@ -166,9 +163,8 @@ Deno.serve(async (request) => {
 });
 
 async function resolveScope(client: ReturnType<typeof createClient>, input: { hostname: string; tenant: string; project: string; phase: string }) {
-  if (input.hostname) {
-    const hostname = normalizePublicHostname(input.hostname);
-    if (!hostname) return null;
+  const hostname = normalizePublicHostname(input.hostname);
+  if (hostname) {
     const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
     const binding = bindingError ? { resolved: false as const } : parsePublicHostnameResolution(bindingData);
     if (!binding.resolved || binding.scope.tenantSlug !== input.tenant || binding.scope.projectSlug !== input.project) return null;

@@ -16,20 +16,19 @@ Deno.serve(async (request) => {
   if (request.method !== "GET") return json({ error: "Method not allowed." }, 405);
 
   const params = new URL(request.url).searchParams;
-  const hostParam = params.get("host");
-  const hostname = normalizePublicHostname(hostParam ?? "");
+  const hostname = normalizePublicHostname(params.get("host") ?? "");
+  if (params.has("host") && !hostname) return json({ error: "This public project host is invalid." }, 400);
   const tenantSlug = slug(params.get("tenant"));
   const projectSlug = slug(params.get("project"));
   const phaseSlug = slug(params.get("phase"));
-  const platformPath = !hostname;
-  if ((hostParam !== null && !hostname) || !tenantSlug || !projectSlug || !phaseSlug) {
-    return json({ error: "A verified host or explicit tenant, project, and phase are required." }, 400);
+  if (!tenantSlug || !projectSlug || !phaseSlug) {
+    return json({ error: "A project and phase are required." }, 400);
   }
 
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  if (!platformPath) {
+  if (hostname) {
     const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
     const binding = bindingError ? { resolved: false as const } : parsePublicHostnameResolution(bindingData);
     if (!binding.resolved || binding.scope.tenantSlug !== tenantSlug || binding.scope.projectSlug !== projectSlug) {
@@ -43,26 +42,13 @@ Deno.serve(async (request) => {
   const { data: project, error: projectError } = await client.from("projects")
     .select("id,name,slug,map_experience_mode").eq("tenant_id", tenant.id)
     .eq("slug", projectSlug).maybeSingle();
-  if (projectError || !project || project.map_experience_mode !== "demo") {
+  if (projectError || !project) {
     return json({ error: "Public project information is unavailable." }, 503);
   }
   const { data: phase, error: phaseError } = await client.from("development_phases")
     .select("id,name,slug,is_active").eq("tenant_id", tenant.id).eq("project_id", project.id)
     .eq("slug", phaseSlug).eq("is_active", true).maybeSingle();
   if (phaseError || !phase) return json({ error: "The selected project phase is not active." }, 404);
-
-  if (platformPath) {
-    const { data: snapshot, error: snapshotError } = await client.from("map_feature_snapshots")
-      .select("id").eq("tenant_id", tenant.id).eq("project_id", project.id).eq("phase_id", phase.id)
-      .eq("is_active", true).maybeSingle();
-    if (snapshotError) return json({ error: "The public phase could not be verified." }, 503);
-    if (!snapshot) return json({ error: "This phase is not published." }, 404);
-    const { data: packageRow, error: packageError } = await client.from("project_map_packages")
-      .select("id").eq("tenant_id", tenant.id).eq("project_id", project.id).eq("phase_id", phase.id)
-      .eq("snapshot_id", snapshot.id).not("published_at", "is", null).maybeSingle();
-    if (packageError) return json({ error: "The public phase could not be verified." }, 503);
-    if (!packageRow) return json({ error: "This phase is not published." }, 404);
-  }
 
   const [{ data: companyRows, error: companyError }, { data: projectRows, error: projectSettingsError }] = await Promise.all([
     client.from("business_settings").select("key,value").eq("tenant_id", tenant.id)
@@ -105,7 +91,7 @@ Deno.serve(async (request) => {
 
   return json({
     tenant: { name: text(tenant.name, 120), slug: tenant.slug },
-    project: { name: text(project.name, 120), slug: project.slug, mapExperienceMode: "demo" },
+    project: { name: text(project.name, 120), slug: project.slug, mapExperienceMode: project.map_experience_mode === "demo" ? "demo" : "sales" },
     phase: { name: text(phase.name, 120), slug: phase.slug },
     company: { name: companyName, email, phone, website, location, description, publicNotice },
     applicationSettings: publicApplication,

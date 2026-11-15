@@ -14,7 +14,8 @@ from urllib.parse import urlsplit
 
 
 FOUNDATION_SHA256 = "5671fe8bfb5e0fcd6318f92dc0147367ffb543234d7d8cc6d2bc0f8eaa3d265a"
-EXPECTED_MIGRATION_COUNT = 69
+EXPECTED_MIGRATION_COUNT = 73
+EXCLUDED_COMPATIBILITY_VERSION = "20261112040000"
 VERSION_RE = re.compile(r"^\d{14}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -68,7 +69,44 @@ def main() -> int:
     migrations = manifest.get("migrations", [])
     versions = [entry.get("version", "") for entry in migrations]
     if len(migrations) != EXPECTED_MIGRATION_COUNT or len(set(versions)) != EXPECTED_MIGRATION_COUNT or versions != sorted(versions):
-        print("[local-postgres-replay] Expected 69 unique migrations in ascending version order.", file=sys.stderr)
+        print("[local-postgres-replay] Expected 73 unique migrations in ascending version order.", file=sys.stderr)
+        return 2
+    inventory_info = manifest.get("staging_inventory", {})
+    inventory_path = (root / inventory_info.get("path", "")).resolve()
+    if (manifest.get("inventory_entry_count") != EXPECTED_MIGRATION_COUNT
+            or inventory_info.get("ordered_version_filename_sha256_match") is not True
+            or root not in inventory_path.parents or not inventory_path.is_file()):
+        print("[local-postgres-replay] Manifest does not contain a validated 73-entry source inventory.", file=sys.stderr)
+        return 2
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory_rows = inventory.get("files", [])
+    migration_rows = [{
+        "version": entry.get("version", ""),
+        "name": Path(entry.get("path", "")).name.split("_", 1)[-1],
+        "sha256": entry.get("sha256", ""),
+    } for entry in migrations]
+    if len(inventory_rows) != EXPECTED_MIGRATION_COUNT or inventory_rows != migration_rows:
+        print("[local-postgres-replay] Version, filename, or SHA-256 differs from the complete ordered 73-entry inventory.", file=sys.stderr)
+        return 2
+    if EXCLUDED_COMPATIBILITY_VERSION in versions or inventory_info.get("broad_compatibility_migration_excluded") != EXCLUDED_COMPATIBILITY_VERSION:
+        print("[local-postgres-replay] Broad 20261112040000 compatibility migration must remain excluded.", file=sys.stderr)
+        return 2
+
+    overlay = manifest.get("m1_5_separate_overlay", {})
+    overlay_path = (root / overlay.get("path", "")).resolve()
+    overlay_after_version = overlay.get("apply_after_version", "")
+    overlay_filename = overlay_path.name
+    if (overlay.get("included_in_numbered_ledger") is not False
+            or overlay.get("sha256") != "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631"
+            or overlay_after_version not in versions
+            or root not in overlay_path.parents or not overlay_path.is_file()
+            or digest(overlay_path) != overlay.get("sha256")
+            or overlay_filename != "20261105000100_harden_sensitive_view_access.sql"):
+        print("[local-postgres-replay] Separate M1.5 overlay path, position, or SHA-256 is invalid.", file=sys.stderr)
+        return 2
+    overlay_index = versions.index(overlay_after_version)
+    if overlay_after_version != "20261112033403" or versions[overlay_index + 1:overlay_index + 2] != ["20261112033404"]:
+        print("[local-postgres-replay] M1.5 must be separately applied after 20261112033403 and before 20261112033404.", file=sys.stderr)
         return 2
 
     preconditions = manifest.get("local_data_preconditions", [])
@@ -126,8 +164,16 @@ def main() -> int:
         "server_version_num": server_version_num,
         "foundation_bootstrap": {"path": foundation["path"], "sha256": FOUNDATION_SHA256, "applied": False},
         "expected_migration_count": EXPECTED_MIGRATION_COUNT,
+        "inventory_entry_count": EXPECTED_MIGRATION_COUNT,
         "applied_migration_count": 0,
         "applied_migrations": [],
+        "m1_5_view_security_overlay": {
+            "name": overlay_filename,
+            "sha256": overlay["sha256"],
+            "apply_after_version": overlay_after_version,
+            "applied": False,
+            "included_in_numbered_ledger": False,
+        },
         "local_data_preconditions": [
             {"before_migration": item["before_migration"], "path": item["path"], "sha256": item["sha256"], "applied": False}
             for item in manifest.get("local_data_preconditions", [])
@@ -175,16 +221,44 @@ def main() -> int:
         })
         state["applied_migration_count"] = position
         write_state(state_path, state)
+        if entry["version"] == overlay_after_version:
+            overlay_result = run_psql(database_url, ["-f", str(overlay_path)])
+            if overlay_result.returncode != 0:
+                print("[local-postgres-replay] Separate M1.5 security overlay failed after " + overlay_after_version + ".", file=sys.stderr)
+                print(safe_error(overlay_result.stderr), file=sys.stderr)
+                return 1
+            state["m1_5_view_security_overlay"]["applied"] = True
+            write_state(state_path, state)
+            print(f"[local-postgres-replay] applied separate M1.5 overlay after {overlay_after_version}; excluded from the numbered migration count.")
 
     applied_versions = [entry["version"] for entry in state["applied_migrations"]]
-    state["ordered_manifest_match"] = applied_versions == versions
+    applied_rows = [{"version": entry["version"], "name": entry["filename"].split("_", 1)[-1], "sha256": entry["sha256"]} for entry in state["applied_migrations"]]
+    state["ordered_manifest_match"] = applied_versions == versions and applied_rows == inventory_rows
     if (state["applied_migration_count"] != EXPECTED_MIGRATION_COUNT or not state["ordered_manifest_match"]
+            or not state["m1_5_view_security_overlay"]["applied"]
             or any(not item["applied"] for item in state["local_data_preconditions"])):
         print("[local-postgres-replay] Final applied count/order or local fixture state did not match the manifest.", file=sys.stderr)
         return 1
     write_state(state_path, state)
+    numbered_manifest = {
+        "mode": "disposable-local-supabase-postgresql-17",
+        "hosted_target_used": False,
+        "schema_baseline_commit": os.environ.get("WAMULE_SCHEMA_BASE_COMMIT"),
+        "tested_commit": os.environ.get("GITHUB_SHA"),
+        "numbered_migration_count": EXPECTED_MIGRATION_COUNT,
+        "inventory_entry_count": EXPECTED_MIGRATION_COUNT,
+        "ordered_manifest_match": True,
+        "separately_applied_overlay": {
+            "name": overlay_filename,
+            "sha256": overlay["sha256"],
+            "apply_after_version": overlay_after_version,
+            "included_in_numbered_ledger": False,
+        },
+        "migrations": state["applied_migrations"],
+    }
+    write_state(root / "numbered-migrations.json", numbered_manifest)
     print(json.dumps({key: value for key, value in state.items() if key != "applied_migrations"}, indent=2))
-    print(f"[local-postgres-replay] applied {EXPECTED_MIGRATION_COUNT} migrations in manifest order to disposable PostgreSQL {server_version_num}.")
+    print(f"[local-postgres-replay] applied {EXPECTED_MIGRATION_COUNT} migrations in exact inventory order plus separate M1.5 to disposable PostgreSQL {server_version_num}.")
     return 0
 
 

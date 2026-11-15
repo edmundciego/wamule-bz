@@ -4,6 +4,7 @@ import { WorkspaceScopeBoundary } from "./components/auth/WorkspaceScopeBoundary
 import { featureFlags } from "./lib/featureFlags";
 import { PublicHostRoute } from "./pages/public/PublicHostRoute";
 import { PublicPlatformRoute } from "./pages/public/PublicPlatformRoute";
+import { SharedProjectRoute } from "./pages/public/SharedProjectRoute";
 
 const AdminLayout = lazy(() =>
   import("./components/layout/AdminLayout").then((module) => ({ default: module.AdminLayout })),
@@ -73,6 +74,8 @@ export default function App() {
         <Route path="/hopkins/application" element={<PublicHostRoute />} />
         <Route path="/review" element={<MapReviewerLinkPage />} />
         <Route path="/p/:tenant_slug/:project_slug/:phase_slug" element={<PublicPlatformRoute />} />
+        <Route path="/p/:tenant_slug/:project_slug" element={<SharedProjectRoute />} />
+        <Route path="/p/:tenant_slug/:project_slug/map" element={<SharedProjectRoute mapRoute />} />
         <Route path="/embed/:tenant_slug" element={<PublicHostRoute mapRoute />} />
         <Route path="/embed/:tenant_slug/:project_slug" element={<PublicHostRoute mapRoute />} />
         <Route path="/login" element={<LoginPage />} />

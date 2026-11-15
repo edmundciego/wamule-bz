@@ -42,52 +42,44 @@ const report = {
 
 let browser;
 let context;
+let adminBrowser;
+let adminContext;
+let adminPage;
 let stageTimedOut = false;
 const signedInClients = [];
 
 async function main() {
   try {
-    const [appliedBytes, numberedBytes, runtimeDeltaBytes] = await Promise.all([
+    const [appliedBytes, numberedBytes, adminOverlayBytes] = await Promise.all([
       readFile(resolve(replayDir, "applied-migrations.json")),
       readFile(resolve(replayDir, "numbered-migrations.json")),
-      readFile(resolve(replayDir, "runtime-delta.json")),
+      readFile(resolve(replayDir, "project-application-admin-settings-overlay.json")),
     ]);
-    const reviewerOverlayBytes = await readFile(resolve(replayDir, "reviewer-link-overlay.json"));
     const appliedLedger = JSON.parse(appliedBytes.toString("utf8"));
     const numberedLedger = JSON.parse(numberedBytes.toString("utf8"));
-    const runtimeDelta = JSON.parse(runtimeDeltaBytes.toString("utf8"));
-    const reviewerOverlay = JSON.parse(reviewerOverlayBytes.toString("utf8"));
-    const reviewerMigrationName = "20261113050506_shareable_map_reviewer_links.sql";
-    const reviewerMigrationPath = resolve(dirname(new URL(import.meta.url).pathname), `../supabase/migrations/${reviewerMigrationName}`);
-    const reviewerMigrationHash = sha256(await readFile(reviewerMigrationPath));
+    const adminOverlay = JSON.parse(adminOverlayBytes.toString("utf8"));
     const versions = (numberedLedger.migrations ?? []).map((entry) => String(entry.version));
-    const overlay = numberedLedger.separately_applied_overlay;
-    assert(versions.length === 71 && appliedLedger.applied_migration_count === 71
+    const overlay = numberedLedger.separately_applied_overlay ?? appliedLedger.m1_5_view_security_overlay;
+    assert(versions.length === 73 && appliedLedger.applied_migration_count === 73
       && appliedLedger.ordered_manifest_match === true && numberedLedger.ordered_manifest_match === true
-      && versions.at(-2) === "20261112033403" && versions.at(-1) === "20261112033404"
+      && appliedLedger.inventory_entry_count === 73 && numberedLedger.inventory_entry_count === 73
+      && !versions.includes("20261112040000")
       && overlay?.name === "20261105000100_harden_sensitive_view_access.sql"
       && overlay?.included_in_numbered_ledger === false
       && overlay?.sha256 === "d16b6fba02cb210e9e628f5cf11c555f74db7e18fbe6afe663150158cb72d631",
-    "The disposable walkthrough requires the exact 71-entry candidate ledger plus the separate M1.5 view-security overlay.");
-    assert(runtimeDelta.applied_after_exact_baseline === true && runtimeDelta.numbered_baseline_count === 71
-      && runtimeDelta.migrations?.length === 1
-      && runtimeDelta.migrations[0]?.version === "20261112040000"
-      && runtimeDelta.migrations[0]?.sha256 === "9773c4d937e914bd2802aed851041babfbe5cf8f2e9ee153b4bad2f723574da5"
-      && runtimeDelta.checks?.json_claim_service_role_zero_write_probe === "passed"
-      && runtimeDelta.checks?.legacy_claim_service_role_zero_write_probe === "passed"
-      && runtimeDelta.checks?.authenticated_claim_rejected === "passed",
-    "The local runtime must record the separate hash-pinned PostgREST role-claims compatibility migration after the 71-entry baseline.");
-    assert(reviewerOverlay.name === reviewerMigrationName && reviewerOverlay.hosted_target_used === false
-      && reviewerOverlay.applied_after_runtime_compatibility_delta === true
-      && reviewerOverlay.sha256 === reviewerMigrationHash,
-    "The signed reviewer-link schema must be the exact local-only overlay applied after the compatibility delta.");
+    "The disposable walkthrough requires the exact ordered 73-entry inventory, excludes 20261112040000, and keeps M1.5 separate.");
+    const adminMigrationName = "20261115052849_project_application_admin_settings.sql";
+    const adminMigrationPath = resolve(dirname(new URL(import.meta.url).pathname), `../supabase/migrations/${adminMigrationName}`);
+    const adminMigrationHash = sha256(await readFile(adminMigrationPath));
+    assert(adminOverlay.name === adminMigrationName && adminOverlay.hosted_target_used === false
+      && adminOverlay.applied_after_inventory_count === 73 && adminOverlay.included_in_numbered_inventory === false
+      && adminOverlay.sha256 === adminMigrationHash,
+    "The project application Admin RPC migration must be recorded as a separate local-only feature overlay.");
     report.database = {
       postgres_major: 17, numbered_migration_count: versions.length, m1_5_overlay_separate: true,
-      candidate_migration_versions: versions.slice(-2), numbered_ledger_sha256: sha256(numberedBytes),
-      m1_5_overlay_sha256: overlay.sha256, runtime_compatibility_delta_count: runtimeDelta.migrations.length,
-      runtime_compatibility_delta_version: runtimeDelta.migrations[0].version,
-      runtime_compatibility_delta_sha256: runtimeDelta.migrations[0].sha256,
-      reviewer_link_schema_overlay: { name: reviewerOverlay.name, sha256: reviewerOverlay.sha256, local_only: true },
+      numbered_ledger_sha256: sha256(numberedBytes), m1_5_overlay_sha256: overlay.sha256,
+      excluded_compatibility_migration: "20261112040000",
+      project_application_admin_settings_overlay: { name: adminOverlay.name, sha256: adminOverlay.sha256, local_only: true },
     };
     console.log("[walkthrough] checking that local Mailpit starts empty");
     const mailpitStartCount = await capturedMailCount();
@@ -251,7 +243,15 @@ async function main() {
       return { packageId: stagedRow.id, snapshotId: stagedRow.snapshot_id, packageData, backgroundPath, featureIdentities };
     });
 
-    await timedStage("3. Configure one reference-only phase with intake closed", async () => {
+    await timedStage("3. Configure project application settings in Admin with intake closed", async () => {
+      const settingsPage = await ensureAdminPage(scope);
+      await settingsPage.goto(`${webOrigin}/settings`, { waitUntil: "domcontentloaded" });
+      await settingsPage.getByRole("heading", { name: "Settings", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      await setTenantApplicationGate(settingsPage, false);
+      await saveProjectApplicationControls(settingsPage, false);
+      const effective = await effectiveIntakeRows(settingsPage);
+      assert(/Closed/.test(effective.initial) && /Closed/.test(effective.later),
+        `The Admin effective intake view must show both phases closed before publication: ${JSON.stringify(effective)}`);
       const deniedProjectSettings = await scope.admin.from("project_settings").select("key")
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).limit(1);
       assert(deniedProjectSettings.error?.code === "42501", "Authenticated Admin unexpectedly gained direct access to server-only project settings.");
@@ -259,9 +259,18 @@ async function main() {
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).in("key", ["tenant_theme", "public_application"]), "Read scoped project configuration");
       const settingsByKey = Object.fromEntries(projectSettings.map((row) => [row.key, row.value]));
       const appSetting = settingsByKey.public_application;
+      const companyApplication = checked(await service.from("business_settings").select("value")
+        .eq("tenant_id", scope.tenantId).eq("key", "public_application").single(), "Read tenant-wide application gate after Admin save");
       assert(settingsByKey.tenant_theme?.site_experience?.templateId === "wamule-classic", "Project presentation did not preserve wamule-classic.");
-      assert(appSetting.application_type === "project_application" && appSetting.applications_open === false,
-        "Initial project application type or closed intake was not preserved.");
+      assert(appSetting.application_type === "project_application" && appSetting.applications_open === false
+        && JSON.stringify(appSetting.allowed_phase_ids) === JSON.stringify([scope.phaseId])
+        && appSetting.notice_version === "synthetic-ci-v1"
+        && appSetting.public_notice_text.includes("Synthetic CI notice only")
+        && appSetting.application_acknowledgment_text.includes("CI testing only")
+        && JSON.stringify(appSetting.allowed_intended_uses) === JSON.stringify(["Residential"]),
+      "Admin did not save the project application type, Initial-only allowlist, required notice, acknowledgment, and intended use.");
+      assert(companyApplication?.value?.applications_open === false,
+        "The existing tenant-wide application gate was not closed through Admin.");
       const [parcelCount, otherPackages, otherFeatures] = await Promise.all([
         countRows(service, "parcels", { tenant_id: scope.tenantId, project_id: scope.projectId }),
         countRows(scope.admin, "project_map_packages", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.otherPhaseId }),
@@ -280,7 +289,12 @@ async function main() {
         `The intended phase intake opened before the public stage (HTTP ${intendedClosedResponse.status}: ${intendedClosedResponse.body?.error ?? "no error detail"}).`);
       report.stages[2].evidence = {
         project_template: settingsByKey.tenant_theme.site_experience.templateId,
-        project_application_type: appSetting.application_type, intended_phase_intake_open: false,
+        admin_click_path: ["Settings", "Company Profile", "Public Application Settings", "Applications open: off", "Save section", "Project Applications", "Application type: Project application", "Allowed phases: Initial Review Phase only", "Save project application settings"],
+        tenant_applications_open: companyApplication.value.applications_open,
+        project_application_type: appSetting.application_type, project_applications_open: appSetting.applications_open,
+        allowed_phase_ids: appSetting.allowed_phase_ids, effective_intake_by_phase: effective,
+        notice_version: appSetting.notice_version, intended_uses: appSetting.allowed_intended_uses,
+        intended_phase_intake_open: false,
         project_settings_access: "server-only; authenticated Admin denied by table ACL; scoped values verified through the application service role",
         reference_only_demo_mode: true, saleable_parcel_count: parcelCount,
         other_phase_package_count: otherPackages, other_phase_outline_count: otherFeatures,
@@ -569,23 +583,61 @@ async function main() {
         },
       };
       await context.close();
-      return { selectedFeatureId: selectedIdentity.id, revision: snapshot.snapshot_version, reviewerToken: primaryToken, reviewerLinkId: primaryLinkId };
+      return { selectedFeatureId: selectedIdentity.id, revision: snapshot.snapshot_version, reviewerToken: primaryToken, reviewerLinkId: primaryLinkId, expiredToken: expiringLink.token };
     });
 
-    const submission = await timedStage("5. Publish one shared-platform phase and submit idempotently", async () => {
-      const publication = checked(await scope.admin.rpc("publish_project_map_package", {
-        p_package_id: imported.packageId, p_expected_active_id: null, p_replace_current: false,
-      }), "Publish only the intended phase map");
-      assert(publication.published === true && publication.snapshot_id === imported.snapshotId, "Admin publication selected an unexpected map revision.");
-      const projectSetting = scope.projectApplication;
-      const publicSetting = { ...projectSetting, applications_open: true, allowed_phase_ids: [scope.phaseId] };
-      const tenantSetting = { applications_open: true, show_lot_prices_publicly: false, show_available_lot_count_publicly: false };
-      const updatedProjectSetting = await service.from("project_settings").update({ value: publicSetting })
-        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("key", "public_application").select("value").single();
-      if (updatedProjectSetting.error) throw new Error(`Open only the allowlisted phase intake through its server-owned configuration: ${updatedProjectSetting.error.message}`);
-      const updatedTenantSetting = await scope.admin.from("business_settings").update({ value: tenantSetting })
-        .eq("tenant_id", scope.tenantId).eq("key", "public_application").select("value").single();
-      if (updatedTenantSetting.error) throw new Error(`Open synthetic tenant application gate: ${updatedTenantSetting.error.message}`);
+    const submission = await timedStage("5. Publish through Admin, open shared links signed out, and submit idempotently", async () => {
+      const settingsPage = await ensureAdminPage(scope);
+      await settingsPage.goto(`${webOrigin}/maps`, { waitUntil: "domcontentloaded" });
+      await settingsPage.getByRole("heading", { name: "Publish reviewed map package", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      const packageSelect = settingsPage.getByLabel("Map Studio packages for this phase", { exact: true });
+      await packageSelect.selectOption(imported.packageId);
+      await settingsPage.getByText("Target phase: Initial Review Phase (initial)", { exact: false }).waitFor({ state: "visible", timeout: 15000 });
+      await settingsPage.getByText(`Package revision: ${imported.packageData.revision}`, { exact: true }).waitFor({ state: "visible", timeout: 15000 });
+      await settingsPage.getByRole("button", { name: "Review publish details", exact: true }).click();
+      const publishDialog = settingsPage.getByRole("alertdialog", { name: "Confirm map publication" });
+      await publishDialog.getByText(`This publishes revision ${imported.packageData.revision} to phase Initial Review Phase.`, { exact: false })
+        .waitFor({ state: "visible", timeout: 10000 });
+      await publishDialog.getByLabel(/I confirm this reviewed package should become the displayed map/).check();
+      await publishDialog.getByRole("button", { name: "Publish map", exact: true }).click();
+      await settingsPage.getByRole("status").filter({ hasText: `Revision ${imported.packageData.revision} is now published for Initial Review Phase. Intake settings were not changed.` })
+        .waitFor({ state: "visible", timeout: 20000 });
+      const publishedSnapshot = checked(await scope.admin.from("map_feature_snapshots").select("id,snapshot_version,is_active")
+        .eq("id", imported.snapshotId).single(), "Verify map revision after Admin publication");
+      assert(publishedSnapshot.is_active === true && publishedSnapshot.snapshot_version === staffPreview.revision,
+        "Admin publication did not activate the reviewed map revision for Initial.");
+      await settingsPage.goto(`${webOrigin}/settings`, { waitUntil: "domcontentloaded" });
+      await settingsPage.getByRole("button", { name: "Project Applications", exact: true }).click();
+      const closedAfterPublication = await effectiveIntakeRows(settingsPage);
+      assert(/Closed/.test(closedAfterPublication.initial) && /Closed/.test(closedAfterPublication.later),
+        "Publishing the reviewed map changed an intake gate.");
+      await settingsPage.goto(`${webOrigin}/maps`, { waitUntil: "domcontentloaded" });
+      await settingsPage.getByRole("heading", { name: "Shared project links", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      const applicationLink = await settingsPage.getByLabel("Shared project application link", { exact: true }).inputValue();
+      const mapLink = await settingsPage.getByLabel("Shared project map link", { exact: true }).inputValue();
+      const expectedProjectLink = `${webOrigin}/p/${tenantSlug}/${projectSlug}?phase=${phaseSlug}`;
+      const expectedMapLink = `${webOrigin}/p/${tenantSlug}/${projectSlug}/map?phase=${phaseSlug}`;
+      assert(applicationLink === expectedProjectLink && mapLink === expectedMapLink,
+        "Admin shared links do not use the selected tenant, project, and phase slugs.");
+      const hostnameBindingCount = countLocalHostnameBindings(scope.tenantId);
+      assert(hostnameBindingCount === 0, "Shared project links must work with zero hostname bindings.");
+
+      await settingsPage.goto(`${webOrigin}/settings`, { waitUntil: "domcontentloaded" });
+      await saveProjectApplicationControls(settingsPage, true);
+      await setTenantApplicationGate(settingsPage, true);
+      await settingsPage.getByRole("button", { name: "Project Applications", exact: true }).click();
+      const effectiveBeforeSubmit = await effectiveIntakeRows(settingsPage);
+      assert(effectiveBeforeSubmit.initial.includes("Initial Review Phase") && /\bOpen\b/.test(effectiveBeforeSubmit.initial)
+        && effectiveBeforeSubmit.later.includes("Later Review Phase") && /Closed/.test(effectiveBeforeSubmit.later),
+      `Admin effective intake must allow Initial only before submission: ${JSON.stringify(effectiveBeforeSubmit)}`);
+      const projectSettingsBeforeSubmit = checked(await service.from("project_settings").select("value")
+        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("key", "public_application").single(), "Verify project allowlist before public submission");
+      const tenantSettingsBeforeSubmit = checked(await service.from("business_settings").select("value")
+        .eq("tenant_id", scope.tenantId).eq("key", "public_application").single(), "Verify tenant application gate before public submission");
+      assert(projectSettingsBeforeSubmit.value?.applications_open === true
+        && JSON.stringify(projectSettingsBeforeSubmit.value?.allowed_phase_ids) === JSON.stringify([scope.phaseId])
+        && tenantSettingsBeforeSubmit.value?.applications_open === true,
+      "The saved Admin settings do not open only Initial behind both existing gates.");
 
       const pageSettings = await publicGet("get-public-site-experience", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       assert(pageSettings.response.ok && pageSettings.body.siteExperience?.templateId === "wamule-classic"
@@ -600,6 +652,9 @@ async function main() {
       const mapped = await publicGet("get-public-lots", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       assert(mapped.response.ok && mapped.body.map_experience_mode === "demo" && mapped.body.features?.length === 2,
         "Published shared-platform map did not return the two synthetic outlines.");
+      const syn001 = mapped.body.features.find((feature) => feature.demo_label === "SYN-001");
+      assert(syn001?.map_feature_ref && syn001.map_feature_ref === staffPreview.selectedFeatureId,
+        "SYN-001 is not the same stable outline reviewed by Staff.");
       const reviewerAfterPublication = await postPublic("project-map-review-link", {
         action: "resolve", token: staffPreview.reviewerToken,
       });
@@ -607,12 +662,18 @@ async function main() {
         && reviewerAfterPublication.body.revision?.snapshot_id === imported.snapshotId
         && reviewerAfterPublication.body.revision?.snapshot_version === staffPreview.revision
         && reviewerAfterPublication.body.scope?.public_application?.applications_open === false,
-      "The reviewer link changed revision or settings after publication and intake opened.");
+      "Map publication or intake changes altered the reviewed reviewer-link snapshot.");
 
       browser = await chromium.launch({ headless: true });
       context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
       const publicPage = await context.newPage();
       const pageErrors = [];
+      const publicFunctionRequests = [];
+      context.on("request", (request) => {
+        if (request.url().includes("/functions/v1/") || request.url().includes("/rest/v1/rpc/")) {
+          publicFunctionRequests.push(request.url());
+        }
+      });
       publicPage.on("pageerror", (error) => pageErrors.push(error.message));
       const routeState = { first: true, payloads: [], responses: [] };
       await publicPage.route("**/functions/v1/submit-hopkins-project-application", async (route) => {
@@ -629,11 +690,36 @@ async function main() {
         }
         return route.fulfill({ status: response.status(), headers: response.headers(), body: text });
       });
-      await publicPage.goto(`${webOrigin}/p/${tenantSlug}/${projectSlug}/${phaseSlug}`, { waitUntil: "domcontentloaded" });
+      await publicPage.goto(applicationLink, { waitUntil: "domcontentloaded" });
       await publicPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
       await publicPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
-      const firstPublicLabel = String(mapped.body.features[0].demo_label);
-      await publicPage.getByRole("option", { name: new RegExp(`Select generated map reference ${escapeRegex(firstPublicLabel)}`) }).click();
+      assert(await publicPage.locator('main[data-site-template="wamule-classic"]').count() === 1,
+        "Generated signed-out project link did not render the selected project template.");
+      await publicPage.getByText("Synthetic CI notice only. Applications are reviewed for testing and do not allocate land.", { exact: true })
+        .waitFor({ state: "visible", timeout: 10000 });
+      const publicMapPage = await context.newPage();
+      await publicMapPage.goto(mapLink, { waitUntil: "domcontentloaded" });
+      await publicMapPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
+      await publicMapPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).waitFor({ state: "visible", timeout: 15000 });
+      const expiredBackgroundStatus = await publicPage.evaluate(async ({ baseUrl, apiKey, token }) => {
+        const response = await fetch(`${baseUrl}/functions/v1/project-map-review-link`, {
+          method: "POST",
+          headers: { apikey: apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "asset", token }),
+          cache: "no-store",
+        });
+        await response.arrayBuffer();
+        return response.status;
+      }, { baseUrl: supabaseUrl, apiKey: anonKey, token: staffPreview.expiredToken });
+      assert(expiredBackgroundStatus === 410, "Signed-out expired reviewer background request did not return HTTP 410.");
+      const publicCookies = await context.cookies();
+      const publicStorageKeys = await publicPage.evaluate(() => Object.keys(window.localStorage));
+      assert(publicCookies.length === 0 && publicStorageKeys.length === 0,
+        "Generated shared project and map links were not exercised in a signed-out browser context.");
+      assert(publicFunctionRequests.some((url) => url.includes("get-public-site-experience"))
+        && publicFunctionRequests.every((url) => !url.includes("resolve_public_hostname") && !/[?&]host=/.test(url)),
+      "Shared slug routes attempted hostname resolution or sent a host selector.");
+      await publicPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).click();
       const removeOutline = publicPage.getByRole("button", { name: "Remove outline from application" });
       await removeOutline.waitFor({ state: "visible", timeout: 10000 });
       await publicPage.getByLabel("Full legal name").fill("Wamule CI Synthetic Applicant");
@@ -657,49 +743,48 @@ async function main() {
         && routeState.responses[1].body.deduplicated === true
         && routeState.responses[1].body.application_id === routeState.responses[0].body.application_id,
       "Retry with the same form reference did not return the original application ID.");
-      const expectedRefs = [staffPreview.selectedFeatureId];
+      const expectedRefs = [syn001.map_feature_ref];
       assert(JSON.stringify(routeState.payloads[0].preferred_map_feature_refs) === JSON.stringify(expectedRefs),
-        "Visible form submission did not preserve the selected stable map outline ID.");
+        "Visible form submission did not preserve the SYN-001 stable map outline ID.");
       assert(UUID(routeState.payloads[0].submission_reference),
         "Public form submission reference is missing or invalid.");
       assert(JSON.stringify(routeState.payloads[0]) === JSON.stringify(routeState.payloads[1]), "Visible retry changed the original application payload.");
       assert(pageErrors.length === 0, "Public application page reported a browser runtime error.");
       const applicationId = Number(routeState.responses[0].body.application_id);
-      const applicationCounts = await countRows(service, "applications", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId, submission_reference: routeState.payloads[0].submission_reference });
+      const applicationsInInitial = await countRows(service, "applications", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId });
+      const applicationCountForReference = await countRows(service, "applications", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId, submission_reference: routeState.payloads[0].submission_reference });
       const linkedLeads = checked(await service.from("leads").select("id,application_id").eq("tenant_id", scope.tenantId)
         .eq("project_id", scope.projectId).eq("phase_id", scope.phaseId).eq("application_id", applicationId), "Count linked synthetic lead");
-      assert(applicationCounts === 1 && linkedLeads.length === 1, "Expected exactly one synthetic application and one linked lead.");
+      const leadsInInitial = await countRows(service, "leads", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId });
+      assert(applicationsInInitial === 1 && applicationCountForReference === 1 && leadsInInitial === 1 && linkedLeads.length === 1,
+        "Expected exactly one Initial application and one Initial lead linked to it.");
       const leadId = linkedLeads[0].id;
       const reservations = await countRows(service, "lot_reservations", { tenant_id: scope.tenantId, application_id: applicationId });
-      const transactions = await countRows(service, "transactions", { tenant_id: scope.tenantId });
+      const transactions = await countRows(scope.admin, "transactions", { tenant_id: scope.tenantId });
+      const paymentAllocations = await countRows(scope.admin, "transaction_allocations", { tenant_id: scope.tenantId });
+      const feeCharges = await countRows(scope.admin, "fee_charges", { tenant_id: scope.tenantId });
       const emailNotifications = await countRows(service, "email_notifications", { related_table: "applications", related_record_id: String(applicationId) });
       const mailpitEndCount = await capturedMailCount();
-      assert(reservations === 0 && transactions === 0 && emailNotifications === 0,
-        "The synthetic project application created a reservation, transaction, or outbound message row.");
+      assert(reservations === 0 && transactions === 0 && paymentAllocations === 0 && feeCharges === 0 && emailNotifications === 0,
+        "The synthetic project application created a reservation, payment, fee, or outbound message row.");
       assert(mailpitEndCount === mailpitStartCount, "The synthetic walkthrough generated a captured outbound email.");
 
-      const adminPage = await context.newPage();
-      await adminPage.goto(`${webOrigin}/login`, { waitUntil: "domcontentloaded" });
-      await adminPage.getByLabel("Email", { exact: true }).fill(adminEmail);
-      await adminPage.getByLabel("Password", { exact: true }).fill(password);
-      await adminPage.getByRole("button", { name: /Sign in/ }).click();
-      await adminPage.waitForURL(/\/dashboard$/, { timeout: 30000 });
-      await adminPage.goto(`${webOrigin}/applications`, { waitUntil: "domcontentloaded" });
-      await adminPage.getByRole("heading", { name: "Applications", exact: true }).waitFor({ state: "visible", timeout: 30000 });
-      const applicationSummary = adminPage.getByText(new RegExp(`Application #${applicationId}\\b`));
+      await settingsPage.goto(`${webOrigin}/applications`, { waitUntil: "domcontentloaded" });
+      await settingsPage.getByRole("heading", { name: "Applications", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      const applicationSummary = settingsPage.getByText(new RegExp(`Application #${applicationId}\\b`));
       await applicationSummary.waitFor({ state: "visible", timeout: 30000 });
       await applicationSummary.click();
-      await adminPage.getByText("Project: Synthetic Studio Review Project", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
-      await adminPage.getByText("Phase: Initial Review Phase", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
-      await adminPage.getByText(new RegExp(`Generated map reference: ${escapeRegex(firstPublicLabel)}`)).waitFor({ state: "visible", timeout: 15000 });
-      const mapLink = adminPage.getByRole("link", { name: "Open this outline on the Initial Review Phase map" });
-      const [mapPopup] = await Promise.all([context.waitForEvent("page", { timeout: 15000 }), mapLink.click()]);
+      await settingsPage.getByText("Project: Synthetic Studio Review Project", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
+      await settingsPage.getByText("Phase: Initial Review Phase", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
+      await settingsPage.getByText(/Generated map reference: SYN-001/).waitFor({ state: "visible", timeout: 15000 });
+      const applicationMapLink = settingsPage.getByRole("link", { name: "Open this outline on the Initial Review Phase map" });
+      const [mapPopup] = await Promise.all([adminContext.waitForEvent("page", { timeout: 15000 }), applicationMapLink.click()]);
       await mapPopup.waitForLoadState("domcontentloaded");
-      assert(mapPopup.url().includes(`/p/${tenantSlug}/${projectSlug}/${phaseSlug}?map=1&feature=${staffPreview.selectedFeatureId}`),
-        "Admin application map link did not resolve to the scoped shared-platform phase route.");
+      assert(mapPopup.url().includes(`/p/${tenantSlug}/${projectSlug}/map?phase=${phaseSlug}&feature=${syn001.map_feature_ref}`),
+        "Admin application map link did not resolve to the scoped shared-platform route and selected outline.");
       await mapPopup.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
-      assert((await mapPopup.getByRole("option", { name: new RegExp(escapeRegex(firstPublicLabel)) }).getAttribute("aria-selected")) === "true",
-        "Admin map link did not select the submitted outline.");
+      assert((await mapPopup.getByRole("option", { name: /SYN-001/ }).getAttribute("aria-selected")) === "true",
+        "Admin map link did not select SYN-001.");
       const finalStaffPackages = await scope.staff.from("project_map_packages").select("id")
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.otherPhaseId);
       const finalStaffFeatures = await scope.staff.from("map_features").select("identity_id")
@@ -719,37 +804,72 @@ async function main() {
       });
       assert(reviewerAfterRevoke.status === 410 && reviewerAssetAfterRevoke.status === 410,
         "The primary reviewer link remained usable after Admin revocation.");
-      await adminPage.getByRole("link", { name: "Sign out", exact: true }).click();
-      await adminPage.waitForURL(/\/login$/, { timeout: 15000 });
+      await settingsPage.goto(`${webOrigin}/settings`, { waitUntil: "domcontentloaded" });
+      await saveProjectApplicationControls(settingsPage, false);
+      await setTenantApplicationGate(settingsPage, false);
+      await settingsPage.getByRole("button", { name: "Project Applications", exact: true }).click();
+      const finalEffective = await effectiveIntakeRows(settingsPage);
+      assert(/Closed/.test(finalEffective.initial) && /Closed/.test(finalEffective.later),
+        `Final Admin effective intake must be closed for every phase: ${JSON.stringify(finalEffective)}`);
+      const finalProjectSetting = checked(await service.from("project_settings").select("value")
+        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("key", "public_application").single(), "Verify final project intake closure");
+      const finalTenantSetting = checked(await service.from("business_settings").select("value")
+        .eq("tenant_id", scope.tenantId).eq("key", "public_application").single(), "Verify final tenant intake closure");
+      assert(finalProjectSetting.value?.applications_open === false && finalTenantSetting.value?.applications_open === false,
+        "Final Admin saves did not close both intake gates.");
+      await settingsPage.getByRole("link", { name: "Sign out", exact: true }).click();
+      await settingsPage.waitForURL(/\/login$/, { timeout: 15000 });
 
       const result = {
         application_id: applicationId,
         lead_id: leadId,
         same_id_on_retry: true,
         retry_deduplicated: true,
-        selected_outline_id: staffPreview.selectedFeatureId,
-        application_count_for_reference: applicationCounts,
+        selected_outline_label: "SYN-001",
+        selected_outline_id: syn001.map_feature_ref,
+        applications_in_initial: applicationsInInitial,
+        application_count_for_reference: applicationCountForReference,
+        leads_in_initial: leadsInInitial,
         linked_lead_count: linkedLeads.length,
         outbound_email_rows: emailNotifications,
         payment_transaction_rows: transactions,
+        payment_allocation_rows: paymentAllocations,
+        fee_charge_rows: feeCharges,
         reservation_rows: reservations,
+        final_effective_intake_by_phase: finalEffective,
       };
       report.stages[4].evidence = {
+        admin_click_path: ["Maps", "Select a Map Studio package", `Target phase: Initial Review Phase; package revision: ${imported.packageData.revision}`, "Review publish details", "Confirm publication", "Publish map", "Shared project links", "Settings > Project Applications", "Save project application settings", "Settings > Company Profile > Public Application Settings > Applications open > Save section"],
+        published_phase: "Initial Review Phase", published_package_revision: imported.packageData.revision,
         published_phase_id: scope.phaseId, published_snapshot_id: imported.snapshotId,
+        publication_kept_intake_closed: true,
         other_phase_public_map_status: otherMap.response.status,
         other_phase_site_status: otherSite.response.status,
         other_phase_intake_status: otherSubmission.status,
-        shared_route: `/p/${tenantSlug}/${projectSlug}/${phaseSlug}`,
+        shared_application_link: applicationLink,
+        shared_map_link: mapLink,
+        shared_links_opened_signed_out: true,
+        public_cookie_count: publicCookies.length,
+        public_local_storage_key_count: publicStorageKeys.length,
+        hostname_resolution_requests: publicFunctionRequests.filter((url) => url.includes("resolve_public_hostname")).length,
+        host_selector_requests: publicFunctionRequests.filter((url) => /[?&]host=/.test(url)).length,
+        expired_background_request_status: expiredBackgroundStatus,
+        hostname_binding_count: hostnameBindingCount,
         public_template_id: pageSettings.body.siteExperience.templateId,
         public_application_type: pageSettings.body.siteExperience.applicationType,
         application_form_seen: true, actual_form_handler: "submit-hopkins-project-application",
+        effective_intake_before_submission: effectiveBeforeSubmit,
         first_real_submit_status: routeState.responses[0].status,
         retry_status: routeState.responses[1].status,
         retry_deduplicated: routeState.responses[1].body.deduplicated,
+        submission_reference_reused: routeState.payloads[0].submission_reference === routeState.payloads[1].submission_reference,
+        submitted_outline_label: "SYN-001",
         submitted_outline_ids: routeState.payloads[0].preferred_map_feature_refs,
         admin_workspace: { project: "Synthetic Studio Review Project", phase: "Initial Review Phase" },
-        admin_application_id: applicationId, linked_lead_id: leadId,
-        admin_map_link_opened: true, admin_map_link_selected_outline: true,
+        admin_application_id: applicationId, applications_in_initial: applicationsInInitial,
+        application_count_for_reference: applicationCountForReference,
+        linked_lead_id: leadId, leads_in_initial: leadsInInitial, linked_lead_count: linkedLeads.length,
+        admin_map_link_opened: true, admin_map_link_selected_SYN_001: true,
         reviewer_link_after_publication: {
           remained_on_reviewed_snapshot: reviewerAfterPublication.body.revision.snapshot_id === imported.snapshotId,
           frozen_intake_setting: reviewerAfterPublication.body.scope.public_application.applications_open,
@@ -760,10 +880,15 @@ async function main() {
         phase_restricted_staff_other_phase_package_rows: finalStaffPackages.data?.length ?? null,
         phase_restricted_staff_other_phase_outline_rows: finalStaffFeatures.data?.length ?? null,
         outbound_email_rows: emailNotifications, payment_transaction_rows: transactions, reservation_rows: reservations,
+        payment_allocation_rows: paymentAllocations, fee_charge_rows: feeCharges,
         captured_mailpit_messages_before: mailpitStartCount, captured_mailpit_messages_after: mailpitEndCount,
-        browser_session_signed_out: true,
+        final_effective_intake_by_phase: finalEffective,
+        tenant_intake_closed_at_end: finalTenantSetting.value.applications_open === false,
+        project_intake_closed_at_end: finalProjectSetting.value.applications_open === false,
+        browser_session_signed_out: publicCookies.length === 0 && publicStorageKeys.length === 0,
       };
       await publicPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-public-map.png"), fullPage: false });
+      await publicMapPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-shared-map-link.png"), fullPage: false });
       report.synthetic_submission = result;
       return result;
     });
@@ -781,8 +906,10 @@ async function main() {
     process.exitCode = 1;
   } finally {
     const closeResources = async () => {
-      await withTimeout(() => context?.close(), 10000, "Browser context cleanup").catch(() => {});
-      await withTimeout(() => browser?.close(), 10000, "Browser cleanup").catch(() => {});
+      await withTimeout(() => context?.close(), 10000, "Public browser context cleanup").catch(() => {});
+      await withTimeout(() => browser?.close(), 10000, "Public browser cleanup").catch(() => {});
+      await withTimeout(() => adminContext?.close(), 10000, "Admin browser context cleanup").catch(() => {});
+      await withTimeout(() => adminBrowser?.close(), 10000, "Admin browser cleanup").catch(() => {});
       await Promise.all(signedInClients.map((client) =>
         withTimeout(() => client.auth.signOut(), 10000, "Local Auth cleanup").catch(() => {})));
     };
@@ -823,6 +950,71 @@ async function timedStage(name, operation) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function ensureAdminPage(scope) {
+  if (!adminPage) {
+    adminBrowser = await chromium.launch({ headless: true });
+    adminContext = await adminBrowser.newContext({ viewport: { width: 1365, height: 900 } });
+    adminPage = await adminContext.newPage();
+    await adminPage.goto(`${webOrigin}/login`, { waitUntil: "domcontentloaded" });
+    await adminPage.getByLabel("Email", { exact: true }).fill(adminEmail);
+    await adminPage.getByLabel("Password", { exact: true }).fill(password);
+    await adminPage.getByRole("button", { name: /Sign in/ }).click();
+    await adminPage.waitForURL(/\/dashboard$/, { timeout: 30000 });
+  }
+  await selectAdminWorkspace(adminPage, scope);
+  return adminPage;
+}
+
+async function selectAdminWorkspace(page, scope) {
+  const project = page.getByLabel("Workspace project");
+  const phase = page.getByLabel("Workspace phase");
+  await project.waitFor({ state: "visible", timeout: 30000 });
+  await project.selectOption(scope.projectId);
+  await phase.selectOption(scope.phaseId);
+  assert(await project.inputValue() === scope.projectId && await phase.inputValue() === scope.phaseId,
+    "The Admin workspace selector did not retain the synthetic project and Initial phase.");
+}
+
+async function setTenantApplicationGate(page, open) {
+  await page.getByRole("button", { name: "Company Profile", exact: true }).click();
+  const toggle = page.getByLabel("Applications open", { exact: true });
+  await toggle.waitFor({ state: "visible", timeout: 15000 });
+  if (open && !(await toggle.isChecked())) await toggle.check();
+  if (!open && await toggle.isChecked()) await toggle.uncheck();
+  const card = page.getByRole("heading", { name: "Public Application Settings", exact: true }).locator("xpath=../..");
+  await card.getByRole("button", { name: "Save section", exact: true }).click();
+  await page.getByText("Application settings saved.", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
+}
+
+async function saveProjectApplicationControls(page, open) {
+  await page.getByRole("button", { name: "Project Applications", exact: true }).click();
+  await page.getByLabel("Application type", { exact: true }).selectOption("project_application");
+  const gate = page.getByLabel(/Open this project/);
+  if (open && !(await gate.isChecked())) await gate.check();
+  if (!open && await gate.isChecked()) await gate.uncheck();
+  const phases = page.getByRole("group", { name: "Allowed phases" });
+  const initial = phases.getByLabel(/Initial Review Phase/);
+  const later = phases.getByLabel(/Later Review Phase/);
+  if (!(await initial.isChecked())) await initial.check();
+  if (await later.isChecked()) await later.uncheck();
+  await page.getByLabel("Required notice version", { exact: true }).fill("synthetic-ci-v1");
+  await page.getByLabel("Public notice", { exact: true }).fill("Synthetic CI notice only. Applications are reviewed for testing and do not allocate land.");
+  await page.getByLabel("Applicant acknowledgment", { exact: true }).fill("I understand this synthetic application is for CI testing only and does not reserve or allocate land.");
+  await page.getByLabel("Allowed intended uses (one per line)", { exact: true }).fill("Residential");
+  await page.getByLabel("Application confirmation message", { exact: true }).fill("Synthetic CI application received for review.");
+  await page.getByRole("button", { name: "Save project application settings", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Project application settings saved." }).waitFor({ state: "visible", timeout: 15000 });
+}
+
+async function effectiveIntakeRows(page) {
+  const heading = page.getByRole("heading", { name: "Effective intake by phase", exact: true });
+  await heading.waitFor({ state: "visible", timeout: 15000 });
+  const list = heading.locator("xpath=../ul");
+  const initial = await list.getByRole("listitem").filter({ hasText: "Initial Review Phase" }).innerText();
+  const later = await list.getByRole("listitem").filter({ hasText: "Later Review Phase" }).innerText();
+  return { initial, later };
 }
 
 async function bootstrapSuperAdmin() {

@@ -27,7 +27,7 @@ export function buildHopkinsProjectApplicationPayload(input) {
   };
 }
 
-export function validateHopkinsProjectApplicationPayload(body, maxMapPreferences = 5) {
+export function validateHopkinsProjectApplicationPayload(body, maxMapPreferences = 5, allowedIntendedUses = USES) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid project application." };
   const allowed = new Set([
     "tenant", "project", "phase", "hostname", "submission_reference", "applicant_full_name", "applicant_address",
@@ -40,11 +40,10 @@ export function validateHopkinsProjectApplicationPayload(body, maxMapPreferences
   const project = cleanText(body.project, 160).toLowerCase();
   const phase = cleanText(body.phase, 160).toLowerCase();
   const hostname = cleanText(body.hostname, 253).toLowerCase().replace(/\.$/, "");
-  const validHostname = !hostname || /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname);
   if (!/^[a-z0-9][a-z0-9-]{0,78}$/.test(tenant) || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(project)
     || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(phase)
-    || !validHostname) {
-    return { error: "This application link does not match a verified project or platform path." };
+    || (hostname !== "" && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname))) {
+    return { error: "This application link does not match a verified project address." };
   }
   const submission_reference = cleanText(body.submission_reference, 36).toLowerCase();
   if (!UUID_PATTERN.test(submission_reference)) return { error: "Refresh the form and try submitting again." };
@@ -67,7 +66,9 @@ export function validateHopkinsProjectApplicationPayload(body, maxMapPreferences
   if (!occupation) return { error: "Occupation is required." };
   if (phone.replace(/\D/g, "").length < 7) return { error: "Enter a valid phone number." };
   if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email)) return { error: "Enter a valid email address." };
-  if (!USES.includes(intended_use)) return { error: "Select a valid intended use." };
+  if (allowedIntendedUses !== null && (!Array.isArray(allowedIntendedUses) || !allowedIntendedUses.includes(intended_use))) {
+    return { error: "Select one of the project’s allowed intended uses." };
+  }
   if (intended_use === "Other" && !intended_use_other) return { error: "Describe the intended project use." };
   if (!Array.isArray(refs) || refs.length > maxMapPreferences) return { error: `Choose no more than ${maxMapPreferences} map outlines.` };
   if (refs.some((ref) => typeof ref !== "string" || !UUID_PATTERN.test(ref))) return { error: "Choose map outlines from the Hopkins project map." };

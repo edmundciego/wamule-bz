@@ -145,7 +145,7 @@ export function HopkinsPublicPage({
   const [mapPreferenceError, setMapPreferenceError] = useState<string | null>(null);
   const mapUrl = hostname
     ? `/embed/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`
-    : `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}/${encodeURIComponent(scope.phaseSlug)}?map=1&view=tier`;
+    : `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}/map?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`;
 
   function changePhase(phaseSlug: string) {
     const params = new URLSearchParams(location.search);
@@ -268,7 +268,9 @@ export function HopkinsPublicPage({
           </a>
           <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-3 text-sm font-semibold">
             {modules.map ? <a href="#map" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Explore map</a> : null}
-            {modules.application ? <Link to={`/hopkins/application?phase=${encodeURIComponent(scope.phaseSlug)}`} className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link> : null}
+            {modules.application ? (hostname
+              ? <Link to={`/hopkins/application?phase=${encodeURIComponent(scope.phaseSlug)}`} className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link>
+              : <a href="#application" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</a>) : null}
             {modules.inquiry ? <a href="#interest" className="inline-flex min-h-10 items-center rounded-full bg-[#173f2d] px-4 text-white hover:bg-[#245a40]">Get in touch</a> : null}
             {phases.length > 1 ? <select aria-label="Project phase" className="h-10 rounded-md border border-[#173f2d]/20 bg-white px-2" value={scope.phaseSlug} onChange={(event) => changePhase(event.target.value)}>
               {phases.map((phase) => <option key={phase.slug} value={phase.slug}>{phase.name}</option>)}
