@@ -656,8 +656,11 @@ async function main() {
       const otherMap = await publicGet("get-public-lots", { tenant: tenantSlug, project: projectSlug, phase: otherPhaseSlug });
       const otherSite = await publicGet("get-public-site-experience", { tenant: tenantSlug, project: projectSlug, phase: otherPhaseSlug });
       const otherSubmission = await postPublic("submit-hopkins-project-application", submissionBody(tenantSlug, projectSlug, otherPhaseSlug, randomUUID(), []));
-      assert(otherMap.response.status === 404 && otherSite.response.status === 404 && otherSubmission.status === 403,
-        "The other phase gained a public map or intake path.");
+      assert(otherMap.response.status === 404
+        && otherSite.response.status === 200
+        && otherSite.body.publicApplication?.applications_open === false
+        && otherSubmission.status === 403,
+      "The other phase gained a public map or application path, or its Admin-derived intake gate opened.");
       const mapped = await publicGet("get-public-lots", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       assert(mapped.response.ok && mapped.body.map_experience_mode === "demo" && mapped.body.features?.length === 2,
         "Published shared-platform map did not return the two synthetic outlines.");
@@ -854,6 +857,7 @@ async function main() {
         publication_kept_intake_closed: true,
         other_phase_public_map_status: otherMap.response.status,
         other_phase_site_status: otherSite.response.status,
+        other_phase_site_application_open: otherSite.body.publicApplication?.applications_open ?? null,
         other_phase_intake_status: otherSubmission.status,
         shared_application_link: applicationLink,
         shared_map_link: mapLink,
