@@ -170,7 +170,7 @@ export function ProjectApplicationSettings({ workspace, canManage }: { workspace
             </Select>
           </Field>
           <label className="flex min-h-10 items-center gap-3 rounded-md border border-border px-3 text-sm font-medium">
-            <input type="checkbox" checked={draft.applications_open} disabled={!canManage || saving} onChange={(event) => update("applications_open", event.target.checked)} />
+            <input aria-label="Open this project’s intake gate" type="checkbox" checked={draft.applications_open} disabled={!canManage || saving} onChange={(event) => update("applications_open", event.target.checked)} />
             Open this project’s intake gate
           </label>
         </div>
@@ -179,7 +179,7 @@ export function ProjectApplicationSettings({ workspace, canManage }: { workspace
           <legend className="mb-2 text-sm font-semibold">Allowed phases</legend>
           {settingsQuery.data.phases.map((phase) => (
             <label key={phase.id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-sm">
-              <input type="checkbox" checked={draft.allowed_phase_ids.includes(phase.id)} onChange={() => togglePhase(phase.id)} />
+              <input aria-label={`Allowed phase ${phase.name} (${phase.slug})`} type="checkbox" checked={draft.allowed_phase_ids.includes(phase.id)} onChange={() => togglePhase(phase.id)} />
               <span>{phase.name}</span><span className="text-xs text-muted-foreground">{phase.slug}</span>
             </label>
           ))}
@@ -187,13 +187,13 @@ export function ProjectApplicationSettings({ workspace, canManage }: { workspace
         </fieldset>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Required notice version"><Input value={draft.notice_version} maxLength={80} disabled={!canManage || saving} onChange={(event) => update("notice_version", event.target.value)} /></Field>
+          <Field label="Required notice version"><Input aria-label="Required notice version" value={draft.notice_version} maxLength={80} disabled={!canManage || saving} onChange={(event) => update("notice_version", event.target.value)} /></Field>
           <Field label="Maximum map outline preferences"><Input type="number" min={0} max={10} step={1} value={draft.max_map_preferences} disabled={!canManage || saving} onChange={(event) => update("max_map_preferences", Number(event.target.value))} /></Field>
         </div>
-        <Field label="Public notice"><Textarea value={draft.public_notice_text} maxLength={5000} disabled={!canManage || saving} onChange={(event) => update("public_notice_text", event.target.value)} /></Field>
-        <Field label="Applicant acknowledgment"><Textarea value={draft.application_acknowledgment_text} maxLength={2000} disabled={!canManage || saving} onChange={(event) => update("application_acknowledgment_text", event.target.value)} /></Field>
-        <Field label="Allowed intended uses (one per line)"><Textarea value={draft.allowed_intended_uses.join("\n")} disabled={!canManage || saving} onChange={(event) => update("allowed_intended_uses", event.target.value.split(/\r?\n/))} /></Field>
-        <Field label="Application confirmation message"><Textarea value={draft.default_confirmation_message} maxLength={500} disabled={!canManage || saving} onChange={(event) => update("default_confirmation_message", event.target.value)} /></Field>
+        <Field label="Public notice"><Textarea aria-label="Public notice" value={draft.public_notice_text} maxLength={5000} disabled={!canManage || saving} onChange={(event) => update("public_notice_text", event.target.value)} /></Field>
+        <Field label="Applicant acknowledgment"><Textarea aria-label="Applicant acknowledgment" value={draft.application_acknowledgment_text} maxLength={2000} disabled={!canManage || saving} onChange={(event) => update("application_acknowledgment_text", event.target.value)} /></Field>
+        <Field label="Allowed intended uses (one per line)"><Textarea aria-label="Allowed intended uses (one per line)" value={draft.allowed_intended_uses.join("\n")} disabled={!canManage || saving} onChange={(event) => update("allowed_intended_uses", event.target.value.split(/\r?\n/))} /></Field>
+        <Field label="Application confirmation message"><Textarea aria-label="Application confirmation message" value={draft.default_confirmation_message} maxLength={500} disabled={!canManage || saving} onChange={(event) => update("default_confirmation_message", event.target.value)} /></Field>
 
         <section aria-labelledby="effective-project-intake" className="grid gap-3 rounded-lg border border-border p-4">
           <h3 id="effective-project-intake" className="font-semibold">Effective intake by phase</h3>
