@@ -360,8 +360,16 @@ async function main() {
       const anonMap = await publicGet("get-public-lots", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       const anonSite = await publicGet("get-public-site-experience", { tenant: tenantSlug, project: projectSlug, phase: phaseSlug });
       const anonAsset = await anonymous.storage.from("project-map-packages").download(imported.backgroundPath);
-      assert(anonMap.response.status === 404 && anonSite.response.status === 404 && anonAsset.data === null,
-        "Anonymous caller loaded private map data before sign-off.");
+      assert(anonMap.response.status === 404 && anonAsset.data === null,
+        "Anonymous caller accessed unpublished map data or its private background before sign-off.");
+      const anonSiteHasPrivateMapData = ["features", "parcels", "package_data", "background_path", "snapshot_id"]
+        .some((key) => Object.hasOwn(anonSite.body, key));
+      assert(anonSite.response.status === 200
+        && anonSite.body.scope?.tenantSlug === tenantSlug
+        && anonSite.body.scope?.projectSlug === projectSlug
+        && anonSite.body.scope?.phaseSlug === phaseSlug
+        && !anonSiteHasPrivateMapData,
+      "The signed-out project link did not return only its public site projection before map publication.");
       const signoff = checked(await scope.admin.rpc("review_project_map_package", { p_package_id: imported.packageId }), "Admin sign off reviewed package");
       const reviewedFeatures = checked(await scope.admin.from("map_features").select("identity_id,provenance")
         .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
@@ -551,6 +559,7 @@ async function main() {
         staff_other_phase_outline_rows: otherStaffFeatures.data?.length ?? 0,
         private_background_loaded_from_storage: true, anonymous_map_status: anonMap.response.status,
         anonymous_site_experience_status: anonSite.response.status, anonymous_storage_access: anonAsset.error ? "denied" : "no object",
+        anonymous_site_experience_public_projection_only: !anonSiteHasPrivateMapData,
         admin_signoff: signoff,
         reviewer_link: {
           created_in_admin_ui_before_publication: true,
