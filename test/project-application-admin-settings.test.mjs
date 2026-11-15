@@ -18,6 +18,7 @@ test("project application Admin controls use scoped authorized RPCs and preserve
   assert.match(settings, /Effective intake by phase/);
   assert.match(settings, /Open this project’s intake gate/);
   assert.match(settings, /Allowed phases/);
+  assert.match(settings, /<Select aria-label="Application type"/);
 });
 
 test("map publishing displays phase and package revision before the existing guarded RPC", async () => {

@@ -164,7 +164,7 @@ export function ProjectApplicationSettings({ workspace, canManage }: { workspace
         {message ? <p role="status" className="text-sm text-primary">{message}</p> : null}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Application type">
-            <Select value={draft.application_type} disabled={!canManage || saving} onChange={(event) => update("application_type", event.target.value as ProjectApplicationDraft["application_type"])}>
+            <Select aria-label="Application type" value={draft.application_type} disabled={!canManage || saving} onChange={(event) => update("application_type", event.target.value as ProjectApplicationDraft["application_type"])}>
               <option value="land_purchase">Land purchase</option>
               <option value="project_application">Project application</option>
             </Select>

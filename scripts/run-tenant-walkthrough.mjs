@@ -990,6 +990,7 @@ async function setTenantApplicationGate(page, open) {
 
 async function saveProjectApplicationControls(page, open) {
   await page.getByRole("button", { name: "Project Applications", exact: true }).click();
+  await page.getByRole("heading", { name: "Project application settings", exact: true }).waitFor({ state: "visible", timeout: 20000 });
   await page.getByLabel("Application type", { exact: true }).selectOption("project_application");
   const gate = page.getByLabel(/Open this project/);
   if (open && !(await gate.isChecked())) await gate.check();
