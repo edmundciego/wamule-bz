@@ -839,8 +839,8 @@ async function main() {
       await inquiryLeadCard.click();
       const plotReasonNote = settingsPage.getByText(/Specific mapped plot interest: SYN-001/);
       const otherReasonNote = settingsPage.getByText(/Inquiry reason: Other/);
-      await plotReasonNote.waitFor({ state: "visible", timeout: 15000 });
-      await otherReasonNote.waitFor({ state: "visible", timeout: 15000 });
+      await plotReasonNote.first().waitFor({ state: "visible", timeout: 15000 });
+      await otherReasonNote.first().waitFor({ state: "visible", timeout: 15000 });
       const mapInquiryPlotVisibleInLeads = await plotReasonNote.count() > 0;
       const mapInquiryReasonVisibleInLeads = await otherReasonNote.count() > 0
         && await settingsPage.getByText(new RegExp(otherReasonText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).count() > 0;
