@@ -10,6 +10,7 @@ import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import type { PublicExperienceScope, PublicSiteModuleId, PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
 import type { PublicPhaseOption } from "../../lib/publicSiteExperience";
+import { applyPublicPageMetadata, publicCanonicalUrl } from "../../lib/publicPageMetadata";
 import { hasSupabaseConfig } from "../../lib/supabase";
 import { submitPublicFunction } from "../../lib/publicSubmission";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
@@ -121,6 +122,9 @@ export function HopkinsPublicPage({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const routeParams = new URLSearchParams(location.search);
+  const applyFeatureRef = routeParams.get("apply_feature");
+  const openApplicationFromMap = routeParams.get("apply") === "1";
   const templateId = selectedTemplate ?? "hopkins-project";
   const modules = selectedModules ?? { map: true, inquiry: true, application: true, pricing: true };
   const outlineSelectionKey = selectionStorageKey(hostname, scope);
@@ -142,6 +146,7 @@ export function HopkinsPublicPage({
   const [outlineSelection, setOutlineSelection] = useState(() => ({ key: outlineSelectionKey, ...readSavedSelection(outlineSelectionKey) }));
   const selectedMapFeatureRefs = outlineSelection.key === outlineSelectionKey ? outlineSelection.refs : [];
   const mapFeatureLabels = outlineSelection.key === outlineSelectionKey ? outlineSelection.labels : [];
+  const applyFeatureExists = Boolean(applyFeatureRef && mapFeatureLabels.some((feature) => feature.ref === applyFeatureRef));
   const [mapPreferenceError, setMapPreferenceError] = useState<string | null>(null);
   const mapUrl = hostname
     ? `/embed/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`
@@ -170,28 +175,45 @@ export function HopkinsPublicPage({
   }, [outlineSelection, outlineSelectionKey]);
 
   useEffect(() => {
-    const priorTitle = document.title;
-    const descriptionMeta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!page || !applyFeatureRef || !applyFeatureExists) return;
+    setOutlineSelection((current) => {
+      const existing = current.key === outlineSelectionKey
+        ? current
+        : { key: outlineSelectionKey, ...readSavedSelection(outlineSelectionKey) };
+      if (existing.refs.includes(applyFeatureRef)) return existing;
+      const maxPreferences = Math.max(1, page.applicationSettings.maxMapPreferences);
+      const refs = [...existing.refs.filter((ref) => ref !== applyFeatureRef).slice(0, maxPreferences - 1), applyFeatureRef];
+      return { ...existing, refs };
+    });
+  }, [applyFeatureExists, applyFeatureRef, outlineSelectionKey, page]);
+
+  useEffect(() => {
+    if (!page || !openApplicationFromMap || (applyFeatureRef && !applyFeatureExists)) return;
+    window.requestAnimationFrame(() => document.getElementById("application")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [applyFeatureExists, applyFeatureRef, openApplicationFromMap, page]);
+
+  useEffect(() => {
+    const restorePublicMetadata = applyPublicPageMetadata({
+      title: `${page?.project?.name ?? "Project"} | ${page?.company?.name ?? "Development"}`,
+      description: `Explore the ${page?.project?.name ?? "project"} map and contact the project team for current information.`,
+      url: publicCanonicalUrl(window.location.href),
+    });
     const applicationMeta = document.querySelector<HTMLMetaElement>('meta[name="application-name"]');
     const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    const priorDescription = descriptionMeta?.content;
     const priorApplicationName = applicationMeta?.content;
     const priorTheme = themeMeta?.content;
     const iconLinks = [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')];
     const priorIcons = iconLinks.map((link) => link.href);
-    document.title = `${page?.project?.name ?? "Project"} | ${page?.company?.name ?? "Development"}`;
-    if (descriptionMeta) descriptionMeta.content = `Explore the ${page?.project?.name ?? "project"} map and contact the project team for current information.`;
     if (applicationMeta) applicationMeta.content = page?.project?.name ?? "Project";
     if (themeMeta) themeMeta.content = "#173f2d";
     iconLinks.forEach((link) => { link.href = "/favicon/hopkins-grove.svg"; });
     return () => {
-      document.title = priorTitle;
-      if (descriptionMeta && priorDescription !== undefined) descriptionMeta.content = priorDescription;
+      restorePublicMetadata();
       if (applicationMeta && priorApplicationName !== undefined) applicationMeta.content = priorApplicationName;
       if (themeMeta && priorTheme !== undefined) themeMeta.content = priorTheme;
       iconLinks.forEach((link, index) => { link.href = priorIcons[index] ?? link.href; });
     };
-  }, [page]);
+  }, [location.pathname, location.search, page]);
 
   useEffect(() => {
     if (!page) return;

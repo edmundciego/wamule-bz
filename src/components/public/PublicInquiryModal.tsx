@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { resolveInquirySubmitError } from "../../lib/functions";
-import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
+import { ALLOWED_INQUIRY_INTERESTS, buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
 import { Button } from "../ui/Button";
-import { Field, Input, Textarea } from "../ui/Field";
+import { Field, Input, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
 
 interface PublicInquiryModalProps {
@@ -35,6 +35,8 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [reason, setReason] = useState(mapFeatureRef ? "Map outline question" : "A specific lot");
+  const [otherReason, setOtherReason] = useState("");
   const [message, setMessage] = useState(
     mapFeatureRef
       ? `I have a question about mapped outline ${lotNumber}`
@@ -110,17 +112,26 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
       setError("Enter your name and email so the team can follow up.");
       return;
     }
+    if (reason === "Other" && !otherReason.trim()) {
+      setError("Tell the team what you would like help with.");
+      return;
+    }
     setSubmitting(true);
     try {
+      const inquiryMessage = [
+        `Inquiry reason: ${reason}`,
+        reason === "Other" ? `Other reason: ${otherReason.trim()}` : null,
+        message.trim() ? `Additional details: ${message.trim()}` : null,
+      ].filter((part): part is string => Boolean(part)).join("\n").slice(0, 1000);
       const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
         body: buildInquiryPayload({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
-          interests: mapFeatureRef ? ["Map outline question"] : ["Available lots", "A specific lot"],
+          interests: [reason],
           specificLotRef: lotRef,
           specificMapFeatureRef: mapFeatureRef,
-          message: message.trim() || undefined,
+          message: inquiryMessage,
           pageUrl: window.location.href,
           tenant: tenantSlug,
           project: projectSlug,
@@ -185,7 +196,17 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
             <Field label="Phone / WhatsApp (optional)">
               <Input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" maxLength={40} />
             </Field>
-            <Field label="Note / Message">
+            <Field label="Reason for inquiry">
+              <Select value={reason} onChange={(event) => setReason(event.target.value)}>
+                {ALLOWED_INQUIRY_INTERESTS.map((interest) => <option key={interest} value={interest}>{interest}</option>)}
+              </Select>
+            </Field>
+            {reason === "Other" ? (
+              <Field label="What would you like the team to help with?">
+                <Textarea value={otherReason} onChange={(event) => setOtherReason(event.target.value)} maxLength={500} required />
+              </Field>
+            ) : null}
+            <Field label="Additional details (optional)">
               <Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={1000} />
             </Field>
             <div className="flex justify-end gap-2">

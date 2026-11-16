@@ -22,6 +22,7 @@ export const ALLOWED_INQUIRY_INTERESTS = [
   "A specific lot",
   "Map outline question",
   "General project interest",
+  "Other",
 ] as const;
 
 export type InquiryInterest = (typeof ALLOWED_INQUIRY_INTERESTS)[number];

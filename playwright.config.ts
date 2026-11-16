@@ -31,6 +31,10 @@ export default defineConfig({
     // Fixture served at /demo-map by the serve-only vite plugin. Default is
     // the committed synthetic fixture; local-only runs against real
     // pipeline output: E2E_FIXTURE_DIR=e2e/fixtures/hopkins.
-    env: { E2E_FIXTURE_DIR: process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic" },
+    env: {
+      E2E_FIXTURE_DIR: process.env.E2E_FIXTURE_DIR ?? "e2e/fixtures/synthetic",
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? "http://127.0.0.1:54321",
+      VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? "e2e-public-anon-key",
+    },
   },
 });

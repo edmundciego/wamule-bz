@@ -1,16 +1,24 @@
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PublicLotMap, type PublicLotColourView, type PublicLotFilter } from "../../components/public/PublicLotMap";
 import type { PublicExperienceScope } from "../../lib/publicExperience.mjs";
 import type { PublicPhaseOption } from "../../lib/publicSiteExperience";
+import { applyPublicPageMetadata, publicCanonicalUrl } from "../../lib/publicPageMetadata";
+
+function displaySlug(slug: string): string {
+  return slug.split("-").filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
+}
 
 export function EmbeddableMapPage({
   hostname,
   scope,
   phases,
+  applicationAvailable = false,
 }: {
   hostname?: string;
   scope: PublicExperienceScope;
   phases: PublicPhaseOption[];
+  applicationAvailable?: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -20,11 +28,35 @@ export function EmbeddableMapPage({
   const initialLot = searchParams.get("lot") ?? undefined;
   const initialFeatureRef = searchParams.get("feature") ?? undefined;
   const requestedPhase = searchParams.get("phase") ?? scope.phaseSlug;
+  const [projectContext, setProjectContext] = useState(() => ({
+    projectName: displaySlug(scope.projectSlug),
+    companyName: displaySlug(scope.tenantSlug),
+  }));
+
+  const updateProjectContext = useCallback((next: { projectName: string; companyName: string }) => {
+    setProjectContext((current) => current.projectName === next.projectName && current.companyName === next.companyName ? current : next);
+  }, []);
+
+  useEffect(() => applyPublicPageMetadata({
+    title: `${projectContext.projectName} Map | ${projectContext.companyName}`,
+    description: `Explore the ${projectContext.projectName} map and contact ${projectContext.companyName} for current project information.`,
+    url: publicCanonicalUrl(window.location.href),
+  }), [location.pathname, location.search, projectContext]);
 
   function changePhase(phaseSlug: string) {
     const params = new URLSearchParams(location.search);
     params.set("phase", phaseSlug);
     navigate(`${location.pathname}?${params.toString()}`);
+  }
+
+  function applyWithPlot(mapFeatureRef: string) {
+    const projectPath = `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}`;
+    const params = new URLSearchParams({
+      phase: scope.phaseSlug,
+      apply_feature: mapFeatureRef,
+      apply: "1",
+    });
+    navigate(`${projectPath}?${params.toString()}#application`);
   }
 
   return (
@@ -45,6 +77,11 @@ export function EmbeddableMapPage({
         initialView={initialView}
         initialLotNumber={initialLot}
         initialFeatureRef={initialFeatureRef}
+        enableInquiry
+        onProjectContext={updateProjectContext}
+        onApplyWithPlot={applicationAvailable ? (parcel) => {
+          if (parcel.map_feature_ref) applyWithPlot(parcel.map_feature_ref);
+        } : undefined}
         onClearSelection={() => {
           const params = Object.fromEntries(searchParams.entries());
           delete params.lot;

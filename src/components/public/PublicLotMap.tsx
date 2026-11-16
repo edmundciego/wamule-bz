@@ -136,6 +136,8 @@ interface PublicLotMapProps {
   /** Deep link: select a stable map identity after the published map loads. */
   initialFeatureRef?: string;
   onSelectLot?: (parcel: PublicLotParcel) => void;
+  onApplyWithPlot?: (parcel: PublicLotParcel) => void;
+  onProjectContext?: (context: { projectName: string; companyName: string }) => void;
   onClearSelection?: () => void;
   onParcelsLoaded?: (parcels: PublicLotParcel[]) => void;
   /**
@@ -414,6 +416,8 @@ export function PublicLotMap({
   initialLotNumber,
   initialFeatureRef,
   onSelectLot,
+  onApplyWithPlot,
+  onProjectContext,
   onClearSelection,
   onParcelsLoaded,
   demoDataUrl,
@@ -848,6 +852,14 @@ export function PublicLotMap({
   const payload: MapPayload | null = useMemo(() => basePayload
     ? { ...basePayload, parcels: localPreviewResult.parcels }
     : null, [basePayload, localPreviewResult]);
+
+  useEffect(() => {
+    if (!basePayload) return;
+    onProjectContext?.({
+      projectName: basePayload.project?.name ?? projectSlug ?? "Project",
+      companyName: basePayload.branding.company_name || basePayload.tenant.name || tenantSlug,
+    });
+  }, [basePayload, onProjectContext, projectSlug, tenantSlug]);
   const localPreviewWarnings = [localPreviewStoreError, hopkinsDemoCorrectionError, ...localPreviewResult.warnings]
     .filter((warning): warning is string => Boolean(warning));
   const reviewPending = reviewPendingDemo || localPreviewMode;
@@ -2655,7 +2667,11 @@ export function PublicLotMap({
                 ) : null}
                 {enableInquiry && focusLot.map_feature_ref ? (
                   <button type="button" onClick={() => { setInquiryWaitlist(false); setInquiryLot(focusLot); }}
-                    className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">Ask the team about this plot</button>
+                    className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">Get more info about this plot</button>
+                ) : null}
+                {onApplyWithPlot && focusLot.map_feature_ref ? (
+                  <button type="button" onClick={() => onApplyWithPlot(focusLot)}
+                    className="focus-ring min-h-11 w-full rounded-md border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-muted">Apply with this plot</button>
                 ) : null}
               </section>
             ) : reviewPending ? (

@@ -175,7 +175,7 @@ jobs:
           local_functions_env="$RUNNER_TEMP/local-functions.env"
           umask 077
           reviewer_signing_secret="$(openssl rand -hex 32)"
-          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\nMAP_REVIEW_LINK_SIGNING_SECRET=%s\n' \
+          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\nMAP_REVIEW_LINK_SIGNING_SECRET=%s\nSUPPRESS_OUTBOUND_EMAILS=true\n' \
             "$SUPABASE_SERVICE_ROLE_KEY" "$reviewer_signing_secret" > "$local_functions_env"
           unset reviewer_signing_secret
           ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
@@ -218,7 +218,14 @@ jobs:
           assert db.get("numbered_migration_count") == 73 and db.get("m1_5_overlay_separate") is True
           assert db.get("excluded_compatibility_migration") == "20261112040000"
           assert submission.get("applications_in_initial") == 1 and submission.get("application_count_for_reference") == 1
-          assert submission.get("leads_in_initial") == 1 and submission.get("linked_lead_count") == 1
+          assert submission.get("leads_in_initial") == 2 and submission.get("linked_lead_count") == 1
+          assert submission.get("map_inquiry_lead_count") == 1 and submission.get("map_inquiry_record_count") == 1
+          assert submission.get("map_inquiry_reason_visible_in_leads") is True
+          assert submission.get("map_inquiry_plot_visible_in_leads") is True
+          assert submission.get("standalone_map_apply_selected_SYN_001") is True
+          assert walkthrough.get("shared_project_refresh_ok") is True and walkthrough.get("shared_map_refresh_ok") is True
+          assert walkthrough.get("project_link_preview_metadata", {}).get("og_title", "").startswith("Synthetic Studio Review Project")
+          assert walkthrough.get("map_link_preview_metadata", {}).get("og_title", "").startswith("Synthetic Studio Review Project Map")
           assert submission.get("selected_outline_label") == "SYN-001" and submission.get("same_id_on_retry") is True
           assert submission.get("outbound_email_rows") == 0 and submission.get("payment_transaction_rows") == 0
           assert submission.get("payment_allocation_rows") == 0 and submission.get("fee_charge_rows") == 0
@@ -237,6 +244,9 @@ jobs:
               "- Map publication: `Maps → select Map Studio package → confirm target phase and revision → Review publish details → Confirm publication`.",
               f"- Signed-out links opened: `{walkthrough.get('shared_application_link')}` and `{walkthrough.get('shared_map_link')}`.",
               f"- Initial: {submission.get('applications_in_initial')} application, {submission.get('linked_lead_count')} linked lead; retry reused ID: `{submission.get('same_id_on_retry')}`; selected outline: `{submission.get('selected_outline_label')}`.",
+              f"- Map inquiry: {submission.get('map_inquiry_lead_count')} lead with reason and SYN-001 shown in Admin Leads; standalone Apply selected SYN-001: `{submission.get('standalone_map_apply_selected_SYN_001')}`.",
+              f"- Fresh shared links refreshed: project `{walkthrough.get('shared_project_refresh_ok')}`, map `{walkthrough.get('shared_map_refresh_ok')}`; hydrated Open Graph titles: `{walkthrough.get('project_link_preview_metadata', {}).get('og_title')}` / `{walkthrough.get('map_link_preview_metadata', {}).get('og_title')}`.",
+              f"- Static HTML preview fallback is public and route-generic: `{walkthrough.get('static_html_link_preview_metadata', {}).get('route_specific')}`; browser Open Graph tags carry the project/map title after hydration.",
               f"- Later effective intake: `{walkthrough.get('final_effective_intake_by_phase', {}).get('later')}`; Staff other-phase package/outline rows: {walkthrough.get('phase_restricted_staff_other_phase_package_rows')} / {walkthrough.get('phase_restricted_staff_other_phase_outline_rows')}.",
               f"- Hostname bindings: {walkthrough.get('hostname_binding_count')}; email/payment allocations/fee charges/reservations: {submission.get('outbound_email_rows')} / {submission.get('payment_allocation_rows')} / {submission.get('fee_charge_rows')} / {submission.get('reservation_rows')}.",
               f"- Expired-link background request HTTP status: {walkthrough.get('expired_background_request_status')}; link/token omitted from evidence.",

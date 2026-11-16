@@ -45,7 +45,11 @@ export function PublicExperienceRoute({
   const scope: PublicExperienceScope = data.scope;
   const phases = phaseLocked ? data.phases.filter((phase) => phase.slug === binding.phaseSlug) : data.phases;
   if (mapRoute) {
-    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={phases} />;
+    const applicationAvailable = !hostname
+      && data.siteExperience.applicationType === "project_application"
+      && data.siteExperience.enabledModules.application
+      && data.publicApplication.applications_open;
+    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={phases} applicationAvailable={applicationAvailable} />;
   }
 
   const templateId: PublicSiteTemplateId = data.siteExperience.templateId;

@@ -56,6 +56,32 @@ test("application inquiry payload validates without tenant", () => {
   assert.equal(result.specificLotRef, null);
 });
 
+test("map inquiry preserves project, phase, selected outline, and the Other reason", () => {
+  const body = buildInquiryPayload({
+    name: "Amara Test",
+    email: "amara@example.com",
+    interests: ["Other"],
+    specificMapFeatureRef: UUID,
+    message: "Inquiry reason: Other Other reason: Please send the plan notes.",
+    tenant: "wamule",
+    project: "synthetic-review",
+    phase: "initial",
+    clientReferenceId: UUID,
+  });
+  assert.equal(ALLOWED_INQUIRY_INTERESTS.includes("Other"), true);
+  assert.equal(body.specific_map_feature_ref, UUID);
+  assert.equal(body.tenant, "wamule");
+  assert.equal(body.project, "synthetic-review");
+  assert.equal(body.phase, "initial");
+  const result = validateInquiryPayload(body);
+  assert.ok(!("error" in result));
+  assert.equal(result.specificMapFeatureRef, UUID);
+  assert.equal(result.projectSlug, "synthetic-review");
+  assert.equal(result.phaseSlug, "initial");
+  assert.deepEqual(result.interests, ["Other"]);
+  assert.match(result.message, /Inquiry reason: Other Other reason: Please send the plan notes\./);
+});
+
 test("lot-authoritative tenant decision covers every case", () => {
   const T = "tenant-1";
   // Lot with tenant + matching slug -> lot tenant wins.
@@ -172,8 +198,10 @@ test("frontend forms share the contract (no drift)", async () => {
     assert.match(source, /supabase\/functions\/_shared\/inquiry-contract/, `${file} must import the shared contract`);
   }
   assert.match(modal, /specificLotRef: lotRef/);
+  assert.match(modal, /reason === "Other"/);
+  assert.match(modal, /What would you like the team to help with\?/);
   assert.match(page, /specificLotRef: specificLotSelected && specificLotRef/);
-  assert.match(page, /tenant: tenantSlug/);
+  assert.match(page, /tenant: applicationTenantSlug/);
   assert.doesNotMatch(page, /specificLotId|specific_lot_id/);
   const arrayBlock = (source, anchor) => {
     const start = source.indexOf(anchor);

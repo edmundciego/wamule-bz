@@ -705,14 +705,78 @@ async function main() {
       await publicPage.goto(applicationLink, { waitUntil: "domcontentloaded" });
       await publicPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
       await publicPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
+      await publicPage.waitForFunction(() => document.title.startsWith("Synthetic Studio Review Project |")
+        && document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.startsWith("Synthetic Studio Review Project |"));
       assert(await publicPage.locator('main[data-site-template="wamule-classic"]').count() === 1,
         "Generated signed-out project link did not render the selected project template.");
       await publicPage.getByText("Synthetic CI notice only. Applications are reviewed for testing and do not allocate land.", { exact: true })
         .waitFor({ state: "visible", timeout: 10000 });
+      const projectLinkPreviewMetadata = await publicPage.evaluate(() => ({
+        title: document.title,
+        og_title: document.querySelector('meta[property="og:title"]')?.getAttribute("content") ?? null,
+        og_description: document.querySelector('meta[property="og:description"]')?.getAttribute("content") ?? null,
+        og_url: document.querySelector('meta[property="og:url"]')?.getAttribute("content") ?? null,
+        canonical: document.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? null,
+      }));
+      assert(projectLinkPreviewMetadata.og_description?.includes("project team")
+        && projectLinkPreviewMetadata.og_url?.includes(`/p/${tenantSlug}/${projectSlug}?phase=${phaseSlug}`),
+      "Shared project link did not set project-specific preview metadata.");
+      await publicPage.reload({ waitUntil: "domcontentloaded" });
+      await publicPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      await publicPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
+      await publicPage.waitForFunction(() => document.title.startsWith("Synthetic Studio Review Project |")
+        && document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.startsWith("Synthetic Studio Review Project |"));
+      const sharedProjectRefreshOk = true;
       const publicMapPage = await context.newPage();
+      publicMapPage.on("pageerror", (error) => pageErrors.push(error.message));
+      const mapInquiryState = { payloads: [], responses: [] };
+      await publicMapPage.route("**/functions/v1/submit-public-inquiry", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const posted = route.request().postDataJSON();
+        mapInquiryState.payloads.push(posted);
+        const response = await route.fetch();
+        const text = await response.text();
+        mapInquiryState.responses.push({ status: response.status(), body: JSON.parse(text || "{}") });
+        return route.fulfill({ status: response.status(), headers: response.headers(), body: text });
+      });
       await publicMapPage.goto(mapLink, { waitUntil: "domcontentloaded" });
       await publicMapPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
       await publicMapPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).waitFor({ state: "visible", timeout: 15000 });
+      await publicMapPage.waitForFunction(() => document.title.startsWith("Synthetic Studio Review Project Map |")
+        && document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.startsWith("Synthetic Studio Review Project Map |"));
+      const mapLinkPreviewMetadata = await publicMapPage.evaluate(() => ({
+        title: document.title,
+        og_title: document.querySelector('meta[property="og:title"]')?.getAttribute("content") ?? null,
+        og_description: document.querySelector('meta[property="og:description"]')?.getAttribute("content") ?? null,
+        og_url: document.querySelector('meta[property="og:url"]')?.getAttribute("content") ?? null,
+        canonical: document.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? null,
+      }));
+      assert(mapLinkPreviewMetadata.og_description?.includes("map")
+        && mapLinkPreviewMetadata.og_url?.includes(`/p/${tenantSlug}/${projectSlug}/map?phase=${phaseSlug}`),
+      "Shared map link did not set map-specific preview metadata.");
+      const [staticProjectHtml, staticMapHtml] = await Promise.all([
+        fetch(applicationLink).then((response) => response.text()),
+        fetch(mapLink).then((response) => response.text()),
+      ]);
+      const readStaticPreviewMetadata = (html) => ({
+        title: html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? null,
+        og_title: html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i)?.[1] ?? null,
+        og_description: html.match(/<meta\s+property="og:description"\s+content="([^"]*)"/i)?.[1] ?? null,
+      });
+      const staticLinkPreviewMetadata = {
+        project: readStaticPreviewMetadata(staticProjectHtml),
+        map: readStaticPreviewMetadata(staticMapHtml),
+        route_specific: false,
+      };
+      assert(staticLinkPreviewMetadata.project.og_title === "Wamule Development Projects and Maps"
+        && staticLinkPreviewMetadata.map.og_title === "Wamule Development Projects and Maps",
+      "Static link-preview fallback unexpectedly changed from the public Wamule site metadata.");
+      await publicMapPage.reload({ waitUntil: "domcontentloaded" });
+      await publicMapPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
+      await publicMapPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).waitFor({ state: "visible", timeout: 15000 });
+      await publicMapPage.waitForFunction(() => document.title.startsWith("Synthetic Studio Review Project Map |")
+        && document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.startsWith("Synthetic Studio Review Project Map |"));
+      const sharedMapRefreshOk = true;
       const expiredBackgroundStatus = await publicPage.evaluate(async ({ baseUrl, apiKey, token }) => {
         const response = await fetch(`${baseUrl}/functions/v1/project-map-review-link`, {
           method: "POST",
@@ -731,6 +795,66 @@ async function main() {
       assert(publicFunctionRequests.some((url) => url.includes("get-public-site-experience"))
         && publicFunctionRequests.every((url) => !url.includes("resolve_public_hostname") && !/[?&]host=/.test(url)),
       "Shared slug routes attempted hostname resolution or sent a host selector.");
+
+      await publicMapPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).click();
+      await publicMapPage.getByRole("button", { name: "Get more info about this plot", exact: true }).click();
+      const inquiryDialog = publicMapPage.getByRole("dialog");
+      await inquiryDialog.getByRole("combobox", { name: "Reason for inquiry", exact: true }).selectOption("Other");
+      const mapInquiryName = "Wamule CI Synthetic Map Inquiry";
+      const mapInquiryEmail = `map-inquiry-${runToken.slice(0, 12)}@example.invalid`;
+      const otherReasonText = "Please send the current survey and utility notes.";
+      await inquiryDialog.getByRole("textbox", { name: "Full Name", exact: true }).fill(mapInquiryName);
+      await inquiryDialog.getByRole("textbox", { name: "Email Address", exact: true }).fill(mapInquiryEmail);
+      await inquiryDialog.getByRole("textbox", { name: "What would you like the team to help with?", exact: true }).fill(otherReasonText);
+      await inquiryDialog.getByRole("button", { name: "Send Inquiry", exact: true }).click();
+      await inquiryDialog.getByRole("heading", { name: "Inquiry Sent!", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      assert(mapInquiryState.payloads.length === 1 && mapInquiryState.responses.length === 1
+        && mapInquiryState.responses[0].status === 200 && mapInquiryState.responses[0].body.ok === true
+        && mapInquiryState.responses[0].body.emailSent === false && mapInquiryState.responses[0].body.emailSuppressed === true,
+      "The map inquiry did not submit once through the existing information-request function with outbound email suppressed.");
+      const mapInquiryPayload = mapInquiryState.payloads[0];
+      assert(mapInquiryPayload.tenant === tenantSlug && mapInquiryPayload.project === projectSlug
+        && mapInquiryPayload.phase === phaseSlug && mapInquiryPayload.specific_map_feature_ref === syn001.map_feature_ref
+        && JSON.stringify(mapInquiryPayload.interests) === JSON.stringify(["Other"])
+        && mapInquiryPayload.message.includes("Inquiry reason: Other")
+        && mapInquiryPayload.message.includes(otherReasonText),
+      "The map inquiry did not carry its selected plot, project, phase, and Other reason.");
+      const mapInquiryRows = checked(await service.from("leads").select("id,source,project_id,phase_id,parcel_id,map_feature_id,notes,client_reference_id")
+        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
+        .eq("client_reference_id", mapInquiryPayload.client_reference_id), "Verify the map inquiry Lead");
+      assert(mapInquiryRows.length === 1 && mapInquiryRows[0].source === "public_inquiry"
+        && mapInquiryRows[0].parcel_id === null && mapInquiryRows[0].map_feature_id === syn001.map_feature_ref
+        && mapInquiryRows[0].notes?.includes("Specific mapped plot interest: SYN-001")
+        && mapInquiryRows[0].notes?.includes("Inquiry reason: Other")
+        && mapInquiryRows[0].notes?.includes(otherReasonText),
+      "The map inquiry Lead did not retain exactly one selected plot and its reason.");
+      const mapInquiryLeadId = mapInquiryRows[0].id;
+
+      await settingsPage.goto(`${webOrigin}/leads`, { waitUntil: "domcontentloaded" });
+      const leadSearch = settingsPage.getByLabel("Search leads", { exact: true });
+      await leadSearch.waitFor({ state: "visible", timeout: 30000 });
+      await leadSearch.fill(mapInquiryEmail);
+      const inquiryLeadCard = settingsPage.getByRole("button").filter({ hasText: mapInquiryName }).first();
+      await inquiryLeadCard.waitFor({ state: "visible", timeout: 20000 });
+      await inquiryLeadCard.click();
+      const plotReasonNote = settingsPage.getByText(/Specific mapped plot interest: SYN-001/);
+      const otherReasonNote = settingsPage.getByText(/Inquiry reason: Other/);
+      await plotReasonNote.waitFor({ state: "visible", timeout: 15000 });
+      await otherReasonNote.waitFor({ state: "visible", timeout: 15000 });
+      const mapInquiryPlotVisibleInLeads = await plotReasonNote.count() > 0;
+      const mapInquiryReasonVisibleInLeads = await otherReasonNote.count() > 0
+        && await settingsPage.getByText(new RegExp(otherReasonText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).count() > 0;
+      assert(mapInquiryPlotVisibleInLeads && mapInquiryReasonVisibleInLeads,
+        "Admin Leads did not show both the selected plot and inquiry reason.");
+
+      await inquiryDialog.getByRole("button", { name: "Done", exact: true }).click();
+      await publicMapPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-shared-map-link.png"), fullPage: false });
+      await publicMapPage.getByRole("button", { name: "Apply with this plot", exact: true }).click();
+      await publicMapPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+      const selectedOutlineInApplication = publicMapPage.locator("#application").getByText("SYN-001", { exact: true });
+      await selectedOutlineInApplication.waitFor({ state: "visible", timeout: 15000 });
+      const standaloneMapApplySelected = new URL(publicMapPage.url()).searchParams.get("apply_feature") === syn001.map_feature_ref;
+
       await publicPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).click();
       const removeOutline = publicPage.getByRole("button", { name: "Remove outline from application" });
       await removeOutline.waitFor({ state: "visible", timeout: 10000 });
@@ -768,8 +892,9 @@ async function main() {
       const linkedLeads = checked(await service.from("leads").select("id,application_id").eq("tenant_id", scope.tenantId)
         .eq("project_id", scope.projectId).eq("phase_id", scope.phaseId).eq("application_id", applicationId), "Count linked synthetic lead");
       const leadsInInitial = await countRows(service, "leads", { tenant_id: scope.tenantId, project_id: scope.projectId, phase_id: scope.phaseId });
-      assert(applicationsInInitial === 1 && applicationCountForReference === 1 && leadsInInitial === 1 && linkedLeads.length === 1,
-        "Expected exactly one Initial application and one Initial lead linked to it.");
+      assert(applicationsInInitial === 1 && applicationCountForReference === 1 && leadsInInitial === 2
+        && linkedLeads.length === 1 && mapInquiryRows.length === 1,
+      "Expected one Initial application, its single linked lead, and one separate map inquiry lead.");
       const leadId = linkedLeads[0].id;
       const reservations = await countRows(service, "lot_reservations", { tenant_id: scope.tenantId, application_id: applicationId });
       const transactions = await countRows(scope.admin, "transactions", { tenant_id: scope.tenantId });
@@ -843,6 +968,13 @@ async function main() {
         application_count_for_reference: applicationCountForReference,
         leads_in_initial: leadsInInitial,
         linked_lead_count: linkedLeads.length,
+        map_inquiry_lead_id: mapInquiryLeadId,
+        map_inquiry_lead_count: mapInquiryRows.length,
+        map_inquiry_record_count: mapInquiryRows.length,
+        map_inquiry_reason_visible_in_leads: mapInquiryReasonVisibleInLeads,
+        map_inquiry_plot_visible_in_leads: mapInquiryPlotVisibleInLeads,
+        map_inquiry_email_suppressed: mapInquiryState.responses[0].body.emailSuppressed === true,
+        standalone_map_apply_selected_SYN_001: standaloneMapApplySelected,
         outbound_email_rows: emailNotifications,
         payment_transaction_rows: transactions,
         payment_allocation_rows: paymentAllocations,
@@ -862,6 +994,18 @@ async function main() {
         shared_application_link: applicationLink,
         shared_map_link: mapLink,
         shared_links_opened_signed_out: true,
+        shared_project_refresh_ok: sharedProjectRefreshOk,
+        shared_map_refresh_ok: sharedMapRefreshOk,
+        project_link_preview_metadata: projectLinkPreviewMetadata,
+        map_link_preview_metadata: mapLinkPreviewMetadata,
+        static_html_link_preview_metadata: staticLinkPreviewMetadata,
+        standalone_map_apply_selected_SYN_001: standaloneMapApplySelected,
+        map_inquiry_existing_widget_used: mapInquiryState.responses.length === 1,
+        map_inquiry_project: mapInquiryPayload.project,
+        map_inquiry_phase: mapInquiryPayload.phase,
+        map_inquiry_selected_plot_id: mapInquiryPayload.specific_map_feature_ref,
+        map_inquiry_reason: mapInquiryPayload.interests[0],
+        admin_map_inquiry_lead_context_verified: mapInquiryReasonVisibleInLeads && mapInquiryPlotVisibleInLeads,
         public_cookie_count: publicCookies.length,
         public_local_storage_key_count: publicStorageKeys.length,
         hostname_resolution_requests: publicFunctionRequests.filter((url) => url.includes("resolve_public_hostname")).length,
@@ -901,7 +1045,6 @@ async function main() {
         browser_session_signed_out: publicCookies.length === 0 && publicStorageKeys.length === 0,
       };
       await publicPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-public-map.png"), fullPage: false });
-      await publicMapPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-shared-map-link.png"), fullPage: false });
       report.synthetic_submission = result;
       return result;
     });
