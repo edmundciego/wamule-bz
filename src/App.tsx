@@ -68,13 +68,14 @@ export default function App() {
     <Suspense fallback={<div role="status" aria-live="polite">Loading…</div>}>
       <Routes>
         <Route path="/" element={<PublicHostRoute />} />
-        <Route path="/apply" element={<PublicHostRoute />} />
+        <Route path="/apply" element={<PublicHostRoute applicationOnly />} />
         <Route path="/hopkins" element={<PublicHostRoute />} />
-        <Route path="/hopkins/apply" element={<PublicHostRoute />} />
-        <Route path="/hopkins/application" element={<PublicHostRoute />} />
+        <Route path="/hopkins/apply" element={<PublicHostRoute applicationOnly />} />
+        <Route path="/hopkins/application" element={<PublicHostRoute applicationOnly />} />
         <Route path="/review" element={<MapReviewerLinkPage />} />
         <Route path="/p/:tenant_slug/:project_slug/:phase_slug" element={<PublicPlatformRoute />} />
         <Route path="/p/:tenant_slug/:project_slug" element={<SharedProjectRoute />} />
+        <Route path="/p/:tenant_slug/:project_slug/apply" element={<SharedProjectRoute applicationOnly />} />
         <Route path="/p/:tenant_slug/:project_slug/map" element={<SharedProjectRoute mapRoute />} />
         <Route path="/embed/:tenant_slug" element={<PublicHostRoute mapRoute />} />
         <Route path="/embed/:tenant_slug/:project_slug" element={<PublicHostRoute mapRoute />} />

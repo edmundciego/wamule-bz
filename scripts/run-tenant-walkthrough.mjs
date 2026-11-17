@@ -688,20 +688,6 @@ async function main() {
       });
       publicPage.on("pageerror", (error) => pageErrors.push(error.message));
       const routeState = { first: true, payloads: [], responses: [] };
-      await publicPage.route("**/functions/v1/submit-hopkins-project-application", async (route) => {
-        if (route.request().method() !== "POST") return route.continue();
-        const posted = route.request().postDataJSON();
-        routeState.payloads.push(posted);
-        const response = await route.fetch();
-        const text = await response.text();
-        routeState.responses.push({ status: response.status(), body: JSON.parse(text || "{}") });
-        if (routeState.first) {
-          routeState.first = false;
-          // Simulate a lost response after the real Edge Function committed.
-          return route.abort("failed");
-        }
-        return route.fulfill({ status: response.status(), headers: response.headers(), body: text });
-      });
       await publicPage.goto(applicationLink, { waitUntil: "domcontentloaded" });
       await publicPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
       await publicPage.getByRole("listbox", { name: /Lots on the map/ }).waitFor({ state: "visible", timeout: 30000 });
@@ -729,6 +715,20 @@ async function main() {
       const sharedProjectRefreshOk = true;
       const publicMapPage = await context.newPage();
       publicMapPage.on("pageerror", (error) => pageErrors.push(error.message));
+      await publicMapPage.route("**/functions/v1/submit-hopkins-project-application", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const posted = route.request().postDataJSON();
+        routeState.payloads.push(posted);
+        const response = await route.fetch();
+        const text = await response.text();
+        routeState.responses.push({ status: response.status(), body: JSON.parse(text || "{}") });
+        if (routeState.first) {
+          routeState.first = false;
+          // Simulate a lost response after the real Edge Function committed.
+          return route.abort("failed");
+        }
+        return route.fulfill({ status: response.status(), headers: response.headers(), body: text });
+      });
       const mapInquiryState = { payloads: [], responses: [] };
       await publicMapPage.route("**/functions/v1/submit-public-inquiry", async (route) => {
         if (route.request().method() !== "POST") return route.continue();
@@ -851,30 +851,39 @@ async function main() {
       await publicMapPage.screenshot({ path: resolve(dirname(evidencePath), "tenant-walkthrough-shared-map-link.png"), fullPage: false });
       await publicMapPage.getByRole("button", { name: "Apply with this plot", exact: true }).click();
       await publicMapPage.getByRole("heading", { name: "Project application", exact: true }).waitFor({ state: "visible", timeout: 30000 });
-      const selectedOutlineInApplication = publicMapPage.locator("#application").getByText("SYN-001", { exact: true });
-      await selectedOutlineInApplication.waitFor({ state: "visible", timeout: 15000 });
-      const standaloneMapApplySelected = new URL(publicMapPage.url()).searchParams.get("apply_feature") === syn001.map_feature_ref;
+      const dedicatedForm = publicMapPage.getByRole("form", { name: "Project application", exact: true });
+      const selectedOutlineInApplication = dedicatedForm.getByRole("status", { name: "Selected map outlines" });
+      await selectedOutlineInApplication.filter({ hasText: "SYN-001" }).waitFor({ state: "visible", timeout: 15000 });
+      const applicationUrl = new URL(publicMapPage.url());
+      const standaloneMapApplySelected = applicationUrl.pathname === `/p/${tenantSlug}/${projectSlug}/apply`
+        && applicationUrl.searchParams.get("phase") === phaseSlug
+        && applicationUrl.searchParams.get("apply_feature") === syn001.map_feature_ref;
+      assert(standaloneMapApplySelected && await dedicatedForm.count() === 1
+        && await publicPage.getByRole("form", { name: "Project application", exact: true }).count() === 1,
+      "The map did not open the dedicated application with its scoped outline, or a placement rendered more than one form.");
 
-      await publicPage.getByRole("option", { name: /Select generated map reference SYN-001/ }).click();
-      const removeOutline = publicPage.getByRole("button", { name: "Remove outline from application" });
-      await removeOutline.waitFor({ state: "visible", timeout: 10000 });
-      await publicPage.getByLabel("Full legal name").fill("Wamule CI Synthetic Applicant");
-      await publicPage.getByLabel("Nationality").fill("Synthetic");
-      await publicPage.getByLabel("Occupation").fill("CI walkthrough fixture");
-      await publicPage.getByLabel("Phone / WhatsApp").fill("+5010000000");
-      await publicPage.getByLabel("Email address").fill(`applicant-${runToken.slice(0, 12)}@example.invalid`);
-      await publicPage.getByLabel("Intended project use").selectOption("Residential");
-      await publicPage.getByLabel("Mailing address").fill("Synthetic CI fixture only");
-      await publicPage.getByLabel("I have read and acknowledge the Hopkins project notice and application terms shown above.").check();
-      await publicPage.getByLabel("Type your full name to sign").fill("Wamule CI Synthetic Applicant");
-      const formButton = publicPage.getByRole("button", { name: "Submit project application" });
+      await dedicatedForm.getByLabel("Applicant Full Name").fill("Wamule CI Synthetic Applicant");
+      await dedicatedForm.getByLabel("Nationality").fill("Synthetic");
+      await dedicatedForm.getByLabel("Occupation").fill("CI walkthrough fixture");
+      await dedicatedForm.getByLabel("Telephone Contact").fill("+5010000000");
+      await dedicatedForm.getByLabel("Email Address").fill(`applicant-${runToken.slice(0, 12)}@example.invalid`);
+      await dedicatedForm.getByLabel("Applicant Address").fill("Synthetic CI fixture only");
+      const continueForm = dedicatedForm.getByRole("button", { name: "Continue", exact: true });
+      await continueForm.click();
+      await dedicatedForm.getByRole("radio", { name: "Residential", exact: true }).check();
+      await continueForm.click();
+      await dedicatedForm.getByRole("button", { name: "Remove SYN-001", exact: true }).waitFor({ state: "visible", timeout: 10000 });
+      await continueForm.click();
+      await dedicatedForm.getByRole("checkbox", { name: /acknowledge the project notice/ }).check();
+      await dedicatedForm.getByLabel("Type your full name as acknowledgement").fill("Wamule CI Synthetic Applicant");
+      const formButton = dedicatedForm.getByRole("button", { name: "Submit project application" });
       await formButton.click();
-      await publicPage.getByRole("alert").first().waitFor({ state: "visible", timeout: 20000 });
+      await dedicatedForm.getByRole("alert").first().waitFor({ state: "visible", timeout: 20000 });
       assert(routeState.responses.length === 1 && routeState.responses[0].status === 201
         && routeState.responses[0].body.ok === true && routeState.responses[0].body.deduplicated === false,
       "First actual form request did not commit a new application before its response was dropped.");
       await formButton.click();
-      await publicPage.getByRole("heading", { name: "Application received for review" }).waitFor({ state: "visible", timeout: 30000 });
+      await publicMapPage.getByRole("heading", { name: "Application received for review" }).waitFor({ state: "visible", timeout: 30000 });
       assert(routeState.responses.length === 2 && routeState.responses[1].status === 200
         && routeState.responses[1].body.deduplicated === true
         && routeState.responses[1].body.application_id === routeState.responses[0].body.application_id,

@@ -14,6 +14,7 @@ export type PublicResolvedScope = PublicExperienceScope & { hostname: string };
 export type PublicPhaseOption = { slug: string; name: string };
 export type PublicSiteData = {
   scope: PublicExperienceScope;
+  projectName: string;
   siteExperience: PublicExperienceConfig;
   phases: PublicPhaseOption[];
   company: {
@@ -28,6 +29,8 @@ export type PublicSiteData = {
   publicApplication: {
     applications_open: boolean;
     notices_complete: boolean;
+    allowed_intended_uses?: string[];
+    max_map_preferences?: number;
     public_notice_text: string;
     application_acknowledgment_text: string;
     default_confirmation_message: string;
@@ -55,6 +58,7 @@ async function loadPublicSiteExperience(
   });
   const body = await response.json().catch(() => ({})) as {
     scope?: PublicExperienceScope;
+    projectName?: unknown;
     siteExperience?: unknown;
     phases?: unknown;
     company?: unknown;
@@ -74,6 +78,7 @@ async function loadPublicSiteExperience(
   }
   return {
     scope: body.scope,
+    projectName: typeof body.projectName === "string" ? body.projectName : binding.projectSlug,
     siteExperience: normalizePublicExperience(body.scope, body.siteExperience),
     phases: body.phases.filter(isPhaseOption),
     company: body.company as PublicSiteData["company"],

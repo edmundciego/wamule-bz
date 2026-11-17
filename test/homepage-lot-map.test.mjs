@@ -43,40 +43,26 @@ test("shared lot map supports pick mode alongside inquiry mode", async () => {
   assert.match(map, /PublicInquiryModal/);
 });
 
-test("application preferred-lot step embeds the visual map picker", async () => {
-  const page = await read("src/pages/ApplicationPage.tsx");
-  assert.match(page, /PublicLotMap/);
-  assert.match(page, /lot_map_tenant_slug/);
-  assert.match(page, /onToggleLot=\{toggleMapLot\}/);
-  assert.match(page, /selectedLocalKeys=\{selectedLocalKeys\}/);
-  assert.match(page, /h-\[560px\] overflow-hidden rounded-xl border border-border lg:h-\[640px\]/);
-  // Dev preview renders local build artifacts until a slug is configured;
-  // production stays cards-only with an empty slug (back-compat).
-  assert.match(page, /demoDataUrl/);
-  assert.match(page, /"\/demo-map"/);
-  assert.match(page, /import\.meta\.env\.DEV/);
-  // Reference-backed checkbox cards stay as the always-on fallback list.
-  assert.match(page, /type="checkbox" value=\{parcel\.public_ref\}/);
+test("the shared preferred-lot section connects map and list selections", async () => {
+  const form = await read("src/components/public/PublicApplicationForm.tsx");
+  assert.match(form, /<PublicLotMap/);
+  assert.match(form, /onToggleLot=\{projectApplication \? undefined/);
+  assert.match(form, /phaseSlug=\{scope\.phaseSlug\}/);
+  assert.match(form, /selectedLocalKeys=\{projectApplication \? undefined : selectedLots/);
+  assert.match(form, /type="checkbox" checked=\{selected\}/);
+  assert.match(form, /setValue\("preferred_lot_refs", refs/);
 });
 
-test("map-picked lots resolve in review and summary like card-picked lots", async () => {
-  const page = await read("src/pages/ApplicationPage.tsx");
-  assert.match(page, /selectedLotRefs/);
-  assert.match(page, /parcels=\{parcels\}/);
-  // Form validation still requires at least one preferred lot.
-  const schemas = await read("src/lib/schemas.ts");
-  assert.match(schemas, /preferred_lot_refs: z\.array\(z\.string\(\)\.min\(1\)\)\.min\(1/);
-});
-
-test("application settings expose the homepage map tenant slug", async () => {
-  const [settings, page] = await Promise.all([
-    read("src/pages/SettingsPage.tsx"),
-    read("src/pages/ApplicationPage.tsx"),
+test("purchase lot preferences use scoped public references and remain required", async () => {
+  const [form, plots, schemas] = await Promise.all([
+    read("src/components/public/PublicApplicationForm.tsx"),
+    read("src/lib/publicApplicationPlots.ts"),
+    read("src/lib/schemas.ts"),
   ]);
-  assert.match(settings, /lot_map_tenant_slug: string/);
-  assert.match(settings, /lot_map_tenant_slug: ""/);
-  assert.match(settings, /Homepage lot map tenant slug/);
-  assert.match(settings, /placeholder="hopkins-grove"/);
-  // Map renders when a slug is configured, or as a local preview in dev.
-  assert.match(page, /applicationSettings\.lot_map_tenant_slug \|\| import\.meta\.env\.DEV/);
+  assert.match(form, /selectedRefs\.includes\(parcel\.public_ref\)/);
+  assert.match(form, /parcels=\{parcels\}/);
+  assert.match(plots, /get-public-lots/);
+  assert.match(plots, /body\.project\?\.slug !== scope\.projectSlug/);
+  assert.match(plots, /parcel\.sales_selectable === true/);
+  assert.match(schemas, /requireField\("preferred_lot_refs", values\.preferred_lot_refs\.length > 0/);
 });

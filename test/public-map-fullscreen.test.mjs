@@ -96,7 +96,7 @@ test("selection, search, filters, zoom, and view mode survive toggling", async (
 test("add-to-preferences works inside fullscreen with confirmation", async () => {
   const [map, page] = await Promise.all([
     read("src/components/public/PublicLotMap.tsx"),
-    read("src/pages/ApplicationPage.tsx"),
+    read("src/components/public/PublicApplicationForm.tsx"),
   ]);
 
   // Detail panel + toast live inside the fullscreen container.

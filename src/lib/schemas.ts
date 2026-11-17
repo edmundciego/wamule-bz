@@ -1,28 +1,56 @@
 import { z } from "zod";
 
-export const applicationSchema = z.object({
-  applicant_full_name: z.string().min(2, "Applicant full name is required"),
-  applicant_address: z.string().min(1, "Applicant address is required"),
-  nationality: z.string().min(1, "Nationality is required"),
-  occupation: z.string().min(1, "Occupation is required"),
-  phone: z.string().min(7, "Phone number is required"),
-  email: z.string().email("Enter a valid email"),
-  intended_use: z.enum(["Residential", "Commercial", "Agriculture", "Investment", "Rental Property", "Other"]),
-  intended_use_other: z.string().optional(),
-  parcel_count: z.coerce.number().int().min(1, "Enter the number of parcels"),
-  preferred_lot_refs: z.array(z.string().min(1)).min(1, "Select at least one preferred lot"),
-  alternate_lot_preference: z.string().min(1, "Alternative lot option is required"),
-  payment_option: z.string().min(1, "Select a payment option"),
-  applicant_acknowledgement_signature: z.string().min(1, "Type your name to acknowledge"),
-  legal_notice_acknowledged: z.boolean().refine((value) => value, "Important Notice acknowledgement is required"),
-  notes: z.string().optional(),
-  sustainability_terms_verified: z
-    .boolean()
-    .refine((value) => value, "Community and sustainability terms must be acknowledged"),
-}).refine((data) => data.intended_use !== "Other" || Boolean(data.intended_use_other?.trim()), {
-  message: "Describe the intended use",
-  path: ["intended_use_other"],
-});
+export const applicationIntendedUses = [
+  "Residential",
+  "Commercial",
+  "Agriculture",
+  "Investment",
+  "Rental Property",
+  "Other",
+] as const;
+
+export function createApplicationSchema(projectApplication: boolean, intendedUses: readonly string[]) {
+  return z.object({
+    applicant_full_name: z.string().trim().min(2, "Applicant full name is required"),
+    applicant_address: z.string().trim().min(1, "Applicant address is required"),
+    nationality: z.string().trim().min(1, "Nationality is required"),
+    occupation: z.string().trim().min(1, "Occupation is required"),
+    phone: z.string().trim().refine(
+      (value) => (projectApplication ? value.replace(/\D/g, "").length : value.length) >= 7,
+      "Enter a valid phone number",
+    ),
+    email: z.string().trim().email("Enter a valid email"),
+    intended_use: z.string().refine((value) => intendedUses.includes(value), "Select an intended use"),
+    intended_use_other: z.string().trim().optional(),
+    parcel_count: z.coerce.number().int().optional(),
+    preferred_lot_refs: z.array(z.string().min(1)),
+    alternate_lot_preference: z.string().trim().optional(),
+    payment_option: z.string().trim().optional(),
+    applicant_acknowledgement_signature: z.string().trim().min(1, "Type your name to acknowledge"),
+    legal_notice_acknowledged: z.boolean().refine((value) => value, "Important Notice acknowledgement is required"),
+    notes: z.string().trim().optional(),
+    sustainability_terms_verified: z.boolean().refine((value) => value, "Community and sustainability terms must be acknowledged"),
+  }).superRefine((values, context) => {
+    function requireField(field: keyof typeof values, valid: boolean, message: string) {
+      if (!valid) context.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
+    }
+
+    if (values.intended_use === "Other") {
+      requireField("intended_use_other", Boolean(values.intended_use_other), "Describe the intended use");
+    }
+    if (projectApplication) {
+      const normalizedName = (name: string) => name.replace(/[<>]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      requireField("applicant_acknowledgement_signature",
+        normalizedName(values.applicant_acknowledgement_signature) === normalizedName(values.applicant_full_name),
+        "Type the full name you entered on the first step");
+    } else {
+      requireField("parcel_count", (values.parcel_count ?? 0) >= 1, "Enter the number of parcels");
+      requireField("preferred_lot_refs", values.preferred_lot_refs.length > 0, "Select at least one preferred lot");
+      requireField("alternate_lot_preference", Boolean(values.alternate_lot_preference), "Alternative lot option is required");
+      requireField("payment_option", Boolean(values.payment_option), "Select a payment option");
+    }
+  });
+}
 
 export const contractSchema = z
   .object({

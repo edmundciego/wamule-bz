@@ -13,12 +13,12 @@ export function EmbeddableMapPage({
   hostname,
   scope,
   phases,
-  applicationAvailable = false,
+  applyWithOutline,
 }: {
   hostname?: string;
   scope: PublicExperienceScope;
   phases: PublicPhaseOption[];
-  applicationAvailable?: boolean;
+  applyWithOutline?: (ref: string) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -49,16 +49,6 @@ export function EmbeddableMapPage({
     navigate(`${location.pathname}?${params.toString()}`);
   }
 
-  function applyWithPlot(mapFeatureRef: string) {
-    const projectPath = `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}`;
-    const params = new URLSearchParams({
-      phase: scope.phaseSlug,
-      apply_feature: mapFeatureRef,
-      apply: "1",
-    });
-    navigate(`${projectPath}?${params.toString()}#application`);
-  }
-
   return (
     <main className="relative flex h-screen w-screen flex-col overflow-hidden bg-background" style={{ width: "100vw", height: "100vh" }}>
       {phases.length > 1 ? <label className="absolute left-4 top-4 z-50 flex items-center gap-2 rounded-md border bg-card/95 px-3 py-2 text-sm shadow-sm">
@@ -79,8 +69,8 @@ export function EmbeddableMapPage({
         initialFeatureRef={initialFeatureRef}
         enableInquiry
         onProjectContext={updateProjectContext}
-        onApplyWithPlot={applicationAvailable ? (parcel) => {
-          if (parcel.map_feature_ref) applyWithPlot(parcel.map_feature_ref);
+        onApplyWithPlot={applyWithOutline ? (parcel) => {
+          if (parcel.map_feature_ref) applyWithOutline(parcel.map_feature_ref);
         } : undefined}
         onClearSelection={() => {
           const params = Object.fromEntries(searchParams.entries());

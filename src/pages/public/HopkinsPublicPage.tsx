@@ -1,52 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUpRight, CheckCircle2, MapPin, Send } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { PublicLotMap, type PublicLotParcel } from "../../components/public/PublicLotMap";
+import { PublicLotMap } from "../../components/public/PublicLotMap";
 import { Button } from "../../components/ui/Button";
-import { Field, Input, Select, Textarea } from "../../components/ui/Field";
+import { Field, Input, Textarea } from "../../components/ui/Field";
 import { ErrorState, LoadingState } from "../../components/ui/State";
 import { buildInquiryPayload } from "../../../supabase/functions/_shared/inquiry-contract";
-import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import type { PublicExperienceScope, PublicSiteModuleId, PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
 import type { PublicPhaseOption } from "../../lib/publicSiteExperience";
 import { applyPublicPageMetadata, publicCanonicalUrl } from "../../lib/publicPageMetadata";
 import { hasSupabaseConfig } from "../../lib/supabase";
 import { submitPublicFunction } from "../../lib/publicSubmission";
-import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice } from "../../lib/hopkinsReferencePricing.mjs";
-
-type HopkinsFeatureReference = {
-  ref: string;
-  label: string;
-  tierKey: string | null;
-  sourceTierStatus: string | null;
-  printedNumber: string | null;
-  printedNumberStatus: string | null;
-};
-
-function selectionStorageKey(hostname: string, scope: PublicExperienceScope): string {
-  return `wamule:hopkins-application-outlines:${hostname.toLowerCase()}:${scope.tenantSlug}:${scope.projectSlug}:${scope.phaseSlug}`;
-}
-
-function readSavedSelection(key: string): { refs: string[]; labels: HopkinsFeatureReference[] } {
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return { refs: [], labels: [] };
-    const parsed = JSON.parse(raw) as { refs?: unknown; labels?: unknown };
-    const refs = Array.isArray(parsed.refs) ? parsed.refs.filter((value): value is string => typeof value === "string") : [];
-    const labels = Array.isArray(parsed.labels) ? parsed.labels.filter((value): value is HopkinsFeatureReference =>
-      value && typeof value === "object"
-      && typeof value.ref === "string" && typeof value.label === "string"
-      && (value.tierKey === null || typeof value.tierKey === "string")
-      && (value.sourceTierStatus === null || typeof value.sourceTierStatus === "string")
-      && (value.printedNumber === null || typeof value.printedNumber === "string")
-      && (value.printedNumberStatus === null || typeof value.printedNumberStatus === "string")) : [];
-    return { refs: [...new Set(refs)], labels };
-  } catch {
-    return { refs: [], labels: [] };
-  }
-}
 
 type PublicProjectPage = {
   tenant: { name: string; slug: string };
@@ -113,21 +78,23 @@ export function HopkinsPublicPage({
   phases,
   templateId: selectedTemplate,
   enabledModules: selectedModules,
+  application,
+  applicationHref,
+  applyWithOutline,
 }: {
   hostname: string;
   scope: PublicExperienceScope;
   phases: PublicPhaseOption[];
   templateId?: PublicSiteTemplateId;
   enabledModules?: Record<PublicSiteModuleId, boolean>;
+  application: ReactNode;
+  applicationHref: string;
+  applyWithOutline?: (ref: string) => void;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const routeParams = new URLSearchParams(location.search);
-  const applyFeatureRef = routeParams.get("apply_feature");
-  const openApplicationFromMap = routeParams.get("apply") === "1";
   const templateId = selectedTemplate ?? "hopkins-project";
   const modules = selectedModules ?? { map: true, inquiry: true, application: true, pricing: true };
-  const outlineSelectionKey = selectionStorageKey(hostname, scope);
   const { data: page, isLoading, isError, error } = useQuery({
     queryKey: ["public-project-page", hostname, scope.tenantSlug, scope.projectSlug, scope.phaseSlug],
     queryFn: () => loadPublicProjectPage(hostname, scope),
@@ -143,11 +110,6 @@ export function HopkinsPublicPage({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [outlineSelection, setOutlineSelection] = useState(() => ({ key: outlineSelectionKey, ...readSavedSelection(outlineSelectionKey) }));
-  const selectedMapFeatureRefs = outlineSelection.key === outlineSelectionKey ? outlineSelection.refs : [];
-  const mapFeatureLabels = outlineSelection.key === outlineSelectionKey ? outlineSelection.labels : [];
-  const applyFeatureExists = Boolean(applyFeatureRef && mapFeatureLabels.some((feature) => feature.ref === applyFeatureRef));
-  const [mapPreferenceError, setMapPreferenceError] = useState<string | null>(null);
   const mapUrl = hostname
     ? `/embed/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`
     : `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}/map?phase=${encodeURIComponent(scope.phaseSlug)}&view=tier`;
@@ -157,40 +119,6 @@ export function HopkinsPublicPage({
     params.set("phase", phaseSlug);
     navigate(`${location.pathname}?${params.toString()}`);
   }
-
-  useEffect(() => {
-    if (outlineSelection.key !== outlineSelectionKey) {
-      setOutlineSelection({ key: outlineSelectionKey, ...readSavedSelection(outlineSelectionKey) });
-    }
-  }, [outlineSelection.key, outlineSelectionKey]);
-
-  useEffect(() => {
-    if (outlineSelection.key !== outlineSelectionKey) return;
-    try {
-      if (outlineSelection.refs.length === 0) window.sessionStorage.removeItem(outlineSelectionKey);
-      else window.sessionStorage.setItem(outlineSelectionKey, JSON.stringify({ refs: outlineSelection.refs, labels: outlineSelection.labels }));
-    } catch {
-      // Selection still works in memory if this browser blocks session storage.
-    }
-  }, [outlineSelection, outlineSelectionKey]);
-
-  useEffect(() => {
-    if (!page || !applyFeatureRef || !applyFeatureExists) return;
-    setOutlineSelection((current) => {
-      const existing = current.key === outlineSelectionKey
-        ? current
-        : { key: outlineSelectionKey, ...readSavedSelection(outlineSelectionKey) };
-      if (existing.refs.includes(applyFeatureRef)) return existing;
-      const maxPreferences = Math.max(1, page.applicationSettings.maxMapPreferences);
-      const refs = [...existing.refs.filter((ref) => ref !== applyFeatureRef).slice(0, maxPreferences - 1), applyFeatureRef];
-      return { ...existing, refs };
-    });
-  }, [applyFeatureExists, applyFeatureRef, outlineSelectionKey, page]);
-
-  useEffect(() => {
-    if (!page || !openApplicationFromMap || (applyFeatureRef && !applyFeatureExists)) return;
-    window.requestAnimationFrame(() => document.getElementById("application")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, [applyFeatureExists, applyFeatureRef, openApplicationFromMap, page]);
 
   useEffect(() => {
     const restorePublicMetadata = applyPublicPageMetadata({
@@ -214,43 +142,6 @@ export function HopkinsPublicPage({
       iconLinks.forEach((link, index) => { link.href = priorIcons[index] ?? link.href; });
     };
   }, [location.pathname, location.search, page]);
-
-  useEffect(() => {
-    if (!page) return;
-    if (location.pathname === "/hopkins/application") {
-      window.requestAnimationFrame(() => document.getElementById("application")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-      return;
-    }
-    if (location.pathname !== "/hopkins/apply" && location.pathname !== "/apply") return;
-    window.requestAnimationFrame(() => document.getElementById("interest")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, [location.pathname, page]);
-
-  function toggleMapFeature(parcel: PublicLotParcel) {
-    const ref = parcel.map_feature_ref;
-    if (!ref) return;
-    setMapPreferenceError(null);
-    if (selectedMapFeatureRefs.includes(ref)) {
-      setOutlineSelection((current) => ({
-        key: outlineSelectionKey,
-        refs: (current.key === outlineSelectionKey ? current.refs : selectedMapFeatureRefs).filter((item) => item !== ref),
-        labels: current.key === outlineSelectionKey ? current.labels : mapFeatureLabels,
-      }));
-      return;
-    }
-    const limit = page?.applicationSettings.maxMapPreferences ?? 5;
-    if (selectedMapFeatureRefs.length >= limit) {
-      setMapPreferenceError(`Choose no more than ${limit} map outlines.`);
-      return;
-    }
-    setOutlineSelection((current) => {
-      const refs = current.key === outlineSelectionKey ? current.refs : selectedMapFeatureRefs;
-      return {
-        key: outlineSelectionKey,
-        refs: refs.includes(ref) ? refs : [...refs, ref],
-        labels: current.key === outlineSelectionKey ? current.labels : mapFeatureLabels,
-      };
-    });
-  }
 
   async function submitInterest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -290,9 +181,7 @@ export function HopkinsPublicPage({
           </a>
           <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-3 text-sm font-semibold">
             {modules.map ? <a href="#map" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Explore map</a> : null}
-            {modules.application ? (hostname
-              ? <Link to={`/hopkins/application?phase=${encodeURIComponent(scope.phaseSlug)}`} className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link>
-              : <a href="#application" className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</a>) : null}
+            {modules.application ? <Link to={applicationHref} className="hidden text-[#52635a] hover:text-[#173f2d] sm:inline">Project application</Link> : null}
             {modules.inquiry ? <a href="#interest" className="inline-flex min-h-10 items-center rounded-full bg-[#173f2d] px-4 text-white hover:bg-[#245a40]">Get in touch</a> : null}
             {phases.length > 1 ? <select aria-label="Project phase" className="h-10 rounded-md border border-[#173f2d]/20 bg-white px-2" value={scope.phaseSlug} onChange={(event) => changePhase(event.target.value)}>
               {phases.map((phase) => <option key={phase.slug} value={phase.slug}>{phase.name}</option>)}
@@ -311,7 +200,7 @@ export function HopkinsPublicPage({
             <div className="mt-8 flex flex-wrap gap-3">
               {modules.map ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full bg-[#173f2d] px-6 font-semibold text-white shadow-sm hover:bg-[#245a40]" href="#map">Explore the plan <ArrowDown className="h-4 w-4" /></a> : null}
               {modules.inquiry ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#interest">Register your interest <ArrowUpRight className="h-4 w-4" /></a> : null}
-              {modules.application ? <a className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" href="#application">Start a project application <ArrowUpRight className="h-4 w-4" /></a> : null}
+              {modules.application ? <Link className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#173f2d]/20 bg-white/70 px-6 font-semibold text-[#173f2d] hover:bg-white" to={applicationHref}>Start a project application <ArrowUpRight className="h-4 w-4" /></Link> : null}
             </div>
             <p className="mt-5 max-w-2xl text-xs leading-5 text-[#68736c]">Map outlines are project references. They do not indicate verified saleable inventory, current availability, or an allocated lot.</p>
           </div>
@@ -349,22 +238,9 @@ export function HopkinsPublicPage({
             showPrices={modules.pricing}
             enableInquiry
             initialView="tier"
-            selectedMapFeatureRefs={selectedMapFeatureRefs}
-            onToggleMapFeature={toggleMapFeature}
-            onParcelsLoaded={(features) => setOutlineSelection((current) => ({
-              key: outlineSelectionKey,
-              refs: current.key === outlineSelectionKey ? current.refs : selectedMapFeatureRefs,
-              labels: features.flatMap((feature) => feature.map_feature_ref ? [{
-                ref: feature.map_feature_ref,
-                label: feature.demo_label ?? `Map outline ${feature.map_feature_ref.slice(0, 8)}`,
-                tierKey: feature.source_tier_status === "source-tier-ambiguous-multiple-colors" ? null : feature.tier_key,
-                sourceTierStatus: feature.source_tier_status ?? null,
-                printedNumber: feature.source_printed_lot_number_status === "source-image-cross-checked"
-                  ? feature.source_printed_lot_number_candidate ?? null
-                  : null,
-                printedNumberStatus: feature.source_printed_lot_number_status ?? null,
-              }] : []),
-            }))}
+            onApplyWithPlot={applyWithOutline ? (parcel) => {
+              if (parcel.map_feature_ref) applyWithOutline(parcel.map_feature_ref);
+            } : undefined}
           />
         </div>
         <p className="mt-3 text-xs leading-5 text-[#68736c]">Generated map references, printed plan labels, source-tier matches, and saleable inventory are distinct records. A displayed source match is not an availability statement.</p>
@@ -417,22 +293,7 @@ export function HopkinsPublicPage({
         </div>
       </section> : null}
 
-      {modules.application ? <HopkinsProjectApplication
-        hostname={hostname}
-        scope={scope}
-        page={page}
-        selectedMapFeatureRefs={selectedMapFeatureRefs}
-        mapFeatureLabels={mapFeatureLabels}
-        mapPreferenceError={mapPreferenceError}
-        onRemoveMapFeature={(ref) => {
-          setOutlineSelection((current) => ({
-            key: outlineSelectionKey,
-            refs: (current.key === outlineSelectionKey ? current.refs : selectedMapFeatureRefs).filter((item) => item !== ref),
-            labels: current.key === outlineSelectionKey ? current.labels : mapFeatureLabels,
-          }));
-          setMapPreferenceError(null);
-        }}
-      /> : null}
+      {application}
 
       <footer className="border-t border-[#173f2d]/10 bg-[#fffdf8] px-4 py-7 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs leading-5 text-[#68736c] sm:flex-row sm:items-center sm:justify-between">
@@ -441,165 +302,5 @@ export function HopkinsPublicPage({
         </div>
       </footer>
     </main>
-  );
-}
-
-function HopkinsProjectApplication({
-  hostname,
-  scope,
-  page,
-  selectedMapFeatureRefs,
-  mapFeatureLabels,
-  mapPreferenceError,
-  onRemoveMapFeature,
-}: {
-  hostname: string;
-  scope: PublicExperienceScope;
-  page: PublicProjectPage;
-  selectedMapFeatureRefs: string[];
-  mapFeatureLabels: HopkinsFeatureReference[];
-  mapPreferenceError: string | null;
-  onRemoveMapFeature: (ref: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [nationality, setNationality] = useState("");
-  const [occupation, setOccupation] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [intendedUse, setIntendedUse] = useState("");
-  const [otherUse, setOtherUse] = useState("");
-  const [notes, setNotes] = useState("");
-  const [signature, setSignature] = useState("");
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [submissionReference, setSubmissionReference] = useState(fallbackUuid);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ message: string; id?: number } | null>(null);
-
-  async function submitApplication(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      const data = await submitPublicFunction<{ ok?: boolean; message?: string; application_id?: number }>("submit-hopkins-project-application", buildHopkinsProjectApplicationPayload({
-          tenant: scope.tenantSlug,
-          project: scope.projectSlug,
-          phase: scope.phaseSlug,
-          hostname,
-          submission_reference: submissionReference,
-          applicant_full_name: name,
-          applicant_address: address,
-          nationality,
-          occupation,
-          phone,
-          email,
-          intended_use: intendedUse,
-          intended_use_other: otherUse,
-          preferred_map_feature_refs: selectedMapFeatureRefs,
-          notes,
-          legal_notice_acknowledged: acknowledged,
-          applicant_acknowledgement_signature: signature,
-        }));
-      if (data?.ok !== true) throw new Error("Your project application could not be confirmed. Please retry.");
-      setReceipt({ message: String(data.message || page.applicationSettings.confirmationMessage), id: Number(data.application_id) || undefined });
-    } catch (failure) {
-      setSubmitError(failure instanceof Error ? failure.message : "Your application could not be sent. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function resetApplication() {
-    setName(""); setAddress(""); setNationality(""); setOccupation(""); setPhone(""); setEmail("");
-    setIntendedUse(""); setOtherUse(""); setNotes(""); setSignature(""); setAcknowledged(false);
-    setSubmissionReference(fallbackUuid()); setReceipt(null); setSubmitError(null);
-    selectedMapFeatureRefs.forEach(onRemoveMapFeature);
-  }
-
-  return (
-    <section id="application" className="scroll-mt-20 bg-[#fffdf8] px-4 py-12 sm:px-6 sm:py-16">
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.72fr_1.28fr]">
-        <div className="max-w-xl">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8a5a35]">Hopkins Grove · staff review</p>
-          <h2 className="mt-2 font-display text-3xl font-semibold text-[#173f2d] sm:text-4xl">Project application</h2>
-          <p className="mt-4 text-sm leading-6 text-[#52635a]">Share your project interest and contact details for the Hopkins team to review. This application does not select or allocate a parcel.</p>
-          <div className="mt-6 rounded-xl border border-[#173f2d]/10 bg-[#edf1e9] p-4 text-sm leading-6 text-[#52635a]">
-            <p className="font-semibold text-[#173f2d]">Hopkins project notice</p>
-            <p className="mt-2">{page.applicationSettings.publicNotice}</p>
-            <p className="mt-3 border-t border-[#173f2d]/10 pt-3">{page.applicationSettings.acknowledgmentText}</p>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[#173f2d]/10 bg-white p-5 shadow-sm sm:p-7">
-          {receipt ? (
-            <div role="status" className="grid justify-items-start gap-3 py-6">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-[#e6f0e7] text-[#24613e]"><CheckCircle2 className="h-6 w-6" /></span>
-              <h3 className="font-display text-2xl font-semibold text-[#173f2d]">Application received for review</h3>
-              <p className="max-w-lg text-sm leading-6 text-[#52635a]">{receipt.message} No parcel or map outline has been assigned.</p>
-              {receipt.id ? <p className="text-xs text-[#68736c]">Application reference {receipt.id}</p> : null}
-              <Button type="button" variant="outline" onClick={resetApplication}>Start another application</Button>
-            </div>
-          ) : (
-            <form className="grid gap-5" onSubmit={(event) => void submitApplication(event)}>
-              <div>
-                <h3 className="font-display text-2xl font-semibold text-[#173f2d]">Applicant information</h3>
-                <p className="mt-1 text-sm leading-6 text-[#68736c]">No lot selection, payment choice, or purchase availability is required.</p>
-              </div>
-              {!page.applicationSettings.applicationsOpen ? <p role="status" className="rounded-lg bg-[#f5f0e9] p-3 text-sm text-[#52635a]">Hopkins project applications are currently closed.</p> : null}
-              {submitError ? <ErrorState message={submitError} /> : null}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Full legal name"><Input name="applicant_full_name" autoComplete="name" maxLength={160} required value={name} onChange={(event) => setName(event.target.value)} /></Field>
-                <Field label="Nationality"><Input name="nationality" autoComplete="country-name" maxLength={100} required value={nationality} onChange={(event) => setNationality(event.target.value)} /></Field>
-                <Field label="Occupation"><Input name="occupation" autoComplete="organization-title" maxLength={160} required value={occupation} onChange={(event) => setOccupation(event.target.value)} /></Field>
-                <Field label="Phone / WhatsApp"><Input name="phone" type="tel" autoComplete="tel" maxLength={40} required value={phone} onChange={(event) => setPhone(event.target.value)} /></Field>
-                <Field label="Email address"><Input name="email" type="email" autoComplete="email" maxLength={254} required value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
-                <Field label="Intended project use"><Select name="intended_use" required value={intendedUse} onChange={(event) => setIntendedUse(event.target.value)}><option value="">Choose a use</option>{page.applicationSettings.intendedUses.map((use) => <option key={use} value={use}>{use}</option>)}</Select></Field>
-                <div className="sm:col-span-2"><Field label="Mailing address"><Textarea name="applicant_address" autoComplete="street-address" maxLength={500} rows={2} required value={address} onChange={(event) => setAddress(event.target.value)} /></Field></div>
-                {intendedUse === "Other" ? <div className="sm:col-span-2"><Field label="Describe your intended use"><Input name="intended_use_other" maxLength={500} required value={otherUse} onChange={(event) => setOtherUse(event.target.value)} /></Field></div> : null}
-              </div>
-
-              <fieldset className="grid gap-3 rounded-xl border border-[#173f2d]/10 bg-[#fffdf8] p-4">
-                <legend className="px-1 text-sm font-semibold text-[#173f2d]">Optional map-outline interests</legend>
-                <p className="text-sm leading-5 text-[#68736c]">Select outlines on the map above, up to {page.applicationSettings.maxMapPreferences}. These are stable map identity references saved as preferences only; they do not reserve land or identify saleable inventory.</p>
-                {selectedMapFeatureRefs.length === 0 ? <p className="text-sm text-[#52635a]">No outline preference selected. You can still submit a general Hopkins project application.</p> : (
-                  <ul className="grid gap-2 sm:grid-cols-2">{selectedMapFeatureRefs.map((ref) => {
-                    const feature = mapFeatureLabels.find((item) => item.ref === ref);
-                    const label = feature?.label ?? `Map outline ${ref.slice(0, 8)}`;
-                    const reference = resolveHopkinsReferencePrice(
-                      feature?.sourceTierStatus === "source-tier-ambiguous-multiple-colors" ? null : feature?.tierKey,
-                      hopkinsTierSource,
-                    );
-                    return <li key={ref} className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-[#173f2d]/10 bg-white px-3 py-2 text-sm text-[#385448]">
-                      <span className="min-w-0">
-                        <span className="block font-semibold">{label}</span>
-                        {feature?.printedNumberStatus === "source-image-cross-checked" && feature.printedNumber
-                          ? <span className="block text-xs">Verified printed plan number: {feature.printedNumber}</span>
-                          : <span className="block text-xs">No verified printed-number match</span>}
-                        <span className="block text-xs">Category: {reference.categoryLabel}</span>
-                        <span className="block text-xs">Reference price: {reference.display}{reference.basis ? ` · ${reference.basis}` : ""}</span>
-                      </span>
-                      <button type="button" className="min-h-9 shrink-0 px-2 font-semibold text-[#8a5a35] underline underline-offset-2" onClick={() => onRemoveMapFeature(ref)}>Remove</button>
-                    </li>;
-                  })}</ul>
-                )}
-                {mapPreferenceError ? <p role="alert" className="text-sm text-red-700">{mapPreferenceError}</p> : null}
-              </fieldset>
-
-              <Field label="Anything else the Hopkins team should know? (optional)"><Textarea name="notes" maxLength={2000} rows={4} value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
-              <label className="flex items-start gap-3 rounded-lg border border-[#173f2d]/10 bg-[#edf1e9]/60 p-3 text-sm leading-5 text-[#52635a]">
-                <input className="mt-1 h-4 w-4 shrink-0 accent-[#173f2d]" type="checkbox" required checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
-                <span>I have read and acknowledge the Hopkins project notice and application terms shown above.</span>
-              </label>
-              <Field label="Type your full name to sign"><Input name="applicant_acknowledgement_signature" autoComplete="name" maxLength={160} required value={signature} onChange={(event) => setSignature(event.target.value)} /></Field>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" disabled={submitting || !page.applicationSettings.applicationsOpen}>{submitting ? "Submitting…" : "Submit project application"}<Send className="ml-2 h-4 w-4" /></Button>
-                <span className="text-xs leading-5 text-[#68736c]">Stored for Hopkins staff review. No messages are sent by this form.</span>
-              </div>
-            </form>
-          )}
-        </div>
-      </div>
-    </section>
   );
 }

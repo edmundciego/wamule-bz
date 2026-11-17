@@ -11,6 +11,9 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 const validInput = {
   tenant: "wamule",
+  project: "main",
+  phase: "initial",
+  hostname: "wamule.example.test",
   applicant_full_name: "Amara Test",
   applicant_address: "Hopkins, Belize",
   nationality: "Belizean",
@@ -65,13 +68,13 @@ test("application validation rejects raw ids, unknown fields, stale references, 
 });
 
 test("application browser uses public map and server submission, never the legacy id view or direct insert", async () => {
-  const page = await read("src/pages/ApplicationPage.tsx");
-  assert.match(page, /functions\.invoke\("submit-public-application"/);
-  assert.match(page, /get-public-lots\?tenant=/);
-  assert.doesNotMatch(page, /public_parcel_options/);
-  assert.doesNotMatch(page, /\.from\("applications"\)\.insert/);
-  assert.doesNotMatch(page, /preferred_parcel_ids/);
-  assert.doesNotMatch(page, /parcel\.id/);
+  const form = await read("src/components/public/PublicApplicationForm.tsx");
+  const plots = await read("src/lib/publicApplicationPlots.ts");
+  assert.match(form, /submitPublicFunction\("submit-public-application"/);
+  assert.match(plots, /get-public-lots\?\$\{params\}/);
+  assert.match(plots, /phase: scope\.phaseSlug/);
+  assert.doesNotMatch(form + plots, /public_parcel_options|\.from\("applications"\)\.insert|preferred_parcel_ids|parcel\.id/);
+
 });
 
 test("application Edge Function resolves lot refs and derives database ids and tenant server-side", async () => {
@@ -80,7 +83,7 @@ test("application Edge Function resolves lot refs and derives database ids and t
   assert.match(fn, /eq\("tenant_id", tenant\.id\)/);
   assert.match(fn, /eq\("status", "Available"\)/);
   assert.match(fn, /preferred_parcel_ids: lotResolution\.lots\.map\(\(lot\) => lot\.id\)/);
-  assert.match(fn, /settings\.applications_open !== true/);
+  assert.match(fn, /!effectiveSettings\.applicationsOpen \|\| !effectiveSettings\.noticesComplete/);
   assert.match(fn, /return json\(\{ ok: true, message:/);
   assert.doesNotMatch(fn, /select\("id"\)[\s\S]{0,40}return json\(\{[^}]*id:/);
 });

@@ -98,10 +98,19 @@ Deno.serve(async (request) => {
   const applicationType = projectApplication.application_type === "project_application"
     ? "project_application"
     : "land_purchase";
+  const applicationPreferences = { ...companyApplication, ...projectApplication };
+  const preferenceLimit = applicationPreferences.max_map_preferences;
+  const maxMapPreferences = typeof preferenceLimit === "number" && Number.isInteger(preferenceLimit)
+    ? Math.min(10, Math.max(0, preferenceLimit))
+    : 5;
   const publicApplication = {
     applications_open: effectiveApplication.applicationsOpen && effectiveApplication.noticesComplete,
     notices_complete: effectiveApplication.noticesComplete,
     public_notice_text: effectiveApplication.publicNoticeText,
+    allowed_intended_uses: applicationType === "project_application" && Array.isArray(applicationPreferences.allowed_intended_uses)
+      ? applicationPreferences.allowed_intended_uses.map((value) => cleanText(value).slice(0, 40)).filter(Boolean).slice(0, 20)
+      : [],
+    max_map_preferences: applicationType === "project_application" ? maxMapPreferences : 0,
     application_acknowledgment_text: effectiveApplication.acknowledgmentText,
     default_confirmation_message: cleanText(projectApplication.default_confirmation_message)
       || cleanText(companyApplication.default_confirmation_message),
@@ -128,6 +137,7 @@ Deno.serve(async (request) => {
 
   return json({
     scope: { tenantSlug: tenant.slug, projectSlug: project.slug, phaseSlug: phase.slug },
+    projectName: cleanText(project.name).slice(0, 120),
     phases: activePhases.map((item) => ({ slug: item.slug, name: item.name })),
     siteExperience: { templateId, applicationType, enabledModules },
     company: companyProfile,

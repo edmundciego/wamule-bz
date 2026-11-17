@@ -201,7 +201,7 @@ test("frontend forms share the contract (no drift)", async () => {
   assert.match(modal, /reason === "Other"/);
   assert.match(modal, /What would you like the team to help with\?/);
   assert.match(page, /specificLotRef: specificLotSelected && specificLotRef/);
-  assert.match(page, /tenant: applicationTenantSlug/);
+  assert.match(page, /tenant: scope\.tenantSlug/);
   assert.doesNotMatch(page, /specificLotId|specific_lot_id/);
   const arrayBlock = (source, anchor) => {
     const start = source.indexOf(anchor);

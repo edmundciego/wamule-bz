@@ -5,12 +5,15 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 test("Hopkins public application retains scoped stable outline IDs across route navigation", () => {
-  const page = read("../src/pages/public/HopkinsPublicPage.tsx");
+  const form = read("../src/components/public/PublicApplicationForm.tsx");
+  const plots = read("../src/lib/publicApplicationPlots.ts");
   const map = read("../src/components/public/PublicLotMap.tsx");
-  assert.match(page, /wamule:hopkins-application-outlines:/);
-  assert.match(page, /sessionStorage\.setItem/);
-  assert.match(page, /preferred_map_feature_refs:\s*selectedMapFeatureRefs/);
-  assert.match(page, /feature\.map_feature_ref/);
+  assert.match(form, /wamule:hopkins-application-outlines:/);
+  assert.match(form, /sessionStorage\.setItem/);
+  assert.match(form, /if \(unverifiedSelection\)/);
+  assert.match(form, /preferred_map_feature_refs:\s*input\.preferred_lot_refs/);
+  assert.match(plots, /feature\.map_feature_ref/);
+  assert.match(plots, /body\.phase\?\.slug !== scope\.phaseSlug/);
   assert.match(map, /map_feature_ref:\s*feature\.map_feature_ref/);
 });
 

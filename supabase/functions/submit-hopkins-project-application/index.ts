@@ -26,7 +26,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   const body = await request.json().catch(() => null);
-  const preliminary = validateHopkinsProjectApplicationPayload(body, 5, null);
+  const preliminary = validateHopkinsProjectApplicationPayload(body, 10, null);
   if ("error" in preliminary) return json({ error: preliminary.error }, 400);
   const input = preliminary as {
     tenant: string; project: string; phase: string; hostname: string; submission_reference: string;
