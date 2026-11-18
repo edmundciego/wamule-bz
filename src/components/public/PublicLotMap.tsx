@@ -11,7 +11,7 @@ import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 import { MapPolygon, MapRasterLayer } from "../map/MapPolygon";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice } from "../../lib/hopkinsReferencePricing.mjs";
+import { resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
 import type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 export type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 import {

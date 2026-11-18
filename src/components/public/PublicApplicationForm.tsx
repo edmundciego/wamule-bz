@@ -6,7 +6,7 @@ import type { z } from "zod";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import { buildPublicApplicationPayload } from "../../../supabase/functions/_shared/public-application-contract";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice } from "../../lib/hopkinsReferencePricing.mjs";
+import { resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
 import { usePublicApplicationPlots, type PublicOutlineOption, type PublicParcelOption } from "../../lib/publicApplicationPlots";
 import { getPublicApplicationAccess, type PublicSiteData } from "../../lib/publicSiteExperience";
 import { submitPublicFunction } from "../../lib/publicSubmission";

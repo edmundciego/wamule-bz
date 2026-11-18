@@ -18,7 +18,7 @@ import { formatDate } from "../lib/utils";
 import { isAvailableForSalesSelection, isInventoryRecordReadyForReservation } from "../../supabase/functions/_shared/parcel-provenance.mjs";
 import type { Application, ApplicationAiReview, ApplicationStatus, AppRole, Lead, LotReservation, PostSalesChecklist } from "../types/database";
 import hopkinsTierSource from "../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice, verifiedHopkinsPrintedNumber } from "../lib/hopkinsReferencePricing.mjs";
+import { resolveHopkinsReferencePrice, verifiedHopkinsPrintedNumber } from "../lib/referencePlotPricing.mjs";
 
 const statuses: ApplicationStatus[] = ["Pending Review", "Approved", "Declined"];
 type ReviewFilter = ApplicationStatus | "All";

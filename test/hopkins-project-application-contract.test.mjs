@@ -103,7 +103,7 @@ test("the dedicated page and shared homepage reuse one form with separate scoped
     readFile(new URL("../src/components/public/PublicApplicationForm.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/public/PublicExperienceRoute.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(homepage, /\{application\}/);
+  assert.match(homepage, /<Layout[\s\S]*?application=\{application\}/);
   assert.doesNotMatch(homepage, /submit-hopkins-project-application|submit-public-application/);
   assert.match(form, /submit-hopkins-project-application/);
   assert.match(form, /preferred_map_feature_refs: input\.preferred_lot_refs/);

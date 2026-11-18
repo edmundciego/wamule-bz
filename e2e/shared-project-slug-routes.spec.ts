@@ -5,6 +5,7 @@ const requests: URL[] = [];
 let hostnameResolutionCalls = 0;
 let applicationsOpen = true;
 let mapPublished = true;
+let templateId = "wamule-classic";
 let enabledModules = { map: true, inquiry: false, application: true, pricing: false };
 const applicationPayloads: Array<Record<string, unknown>> = [];
 const inquiryPayloads: Array<Record<string, unknown>> = [];
@@ -14,6 +15,7 @@ test.beforeEach(async ({ page }) => {
   hostnameResolutionCalls = 0;
   applicationsOpen = true;
   mapPublished = true;
+  templateId = "wamule-classic";
   enabledModules = { map: true, inquiry: false, application: true, pricing: false };
   applicationPayloads.length = 0;
   inquiryPayloads.length = 0;
@@ -34,7 +36,7 @@ test.beforeEach(async ({ page }) => {
       scope: { tenantSlug: "wamule", projectSlug: "synthetic-review", phaseSlug: "initial" },
       projectName: "Synthetic Review Project",
       phases: [{ slug: "initial", name: "Initial" }, { slug: "later", name: "Later" }],
-      siteExperience: { templateId: "hopkins-project", applicationType: "project_application", enabledModules },
+      siteExperience: { templateId, applicationType: "project_application", enabledModules },
       company: { company_name: "Wamule", logo_url: "", short_description: "Synthetic review workspace.", contact_email: "review@example.test", phone_number: "+501 600 0000", location_address: "Test site", website: "https://example.test" },
       publicApplication: { applications_open: applicationsOpen, notices_complete: true, allowed_intended_uses: ["Residential", "Other"], max_map_preferences: 2, public_notice_text: "Synthetic notice.", application_acknowledgment_text: "Synthetic acknowledgment.", default_confirmation_message: "Received for review.", show_lot_prices_publicly: false, show_available_lot_count_publicly: false },
       installmentPlans: [], paymentMethods: [],
@@ -226,6 +228,30 @@ test("the Regular homepage hides unpublished widgets and follows project switche
   await expect(page.getByRole("heading", { level: 1, name: "Synthetic Review Project" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Explore the project map|Request project information|Project application/ })).toHaveCount(0);
   expect(requests.some((url) => url.pathname.endsWith("/get-public-lots"))).toBe(false);
+});
+
+test("Showcase uses the same scoped widgets and application as Regular", async ({ page }) => {
+  const path = "/p/wamule/synthetic-review?phase=initial";
+  enabledModules.inquiry = true;
+  templateId = "hopkins-project";
+  await page.goto(path);
+  await expect(page.getByRole("main")).toHaveAttribute("data-site-template", "hopkins-project");
+  await expect(page.getByRole("main")).toHaveAttribute("data-public-phase", "initial");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Synthetic Review Project");
+  await expect(page.getByRole("region", { name: "Explore the project map" })).toBeVisible();
+  await expect(page.getByRole("form", { name: "Request project information" })).toBeVisible();
+  await expect(page.getByRole("form", { name: "Project application" })).toHaveCount(1);
+  await expect(page.getByRole("combobox", { name: "Project phase" })).toHaveValue("initial");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+  await page.getByRole("link", { name: "Start application", exact: true }).click();
+  await expect(page).toHaveURL(/\/p\/wamule\/synthetic-review\/apply\?phase=initial$/);
+  await expect(page.getByRole("form", { name: "Project application" }).getByLabel("Applicant Full Name")).toBeVisible();
+
+  templateId = "unknown-template";
+  await page.goto(path);
+  await expect(page.getByRole("main")).toHaveAttribute("data-site-template", "wamule-classic");
+  await expect(page.getByRole("form", { name: "Project application" })).toHaveCount(1);
+  expect(hostnameResolutionCalls).toBe(0);
 });
 
 test("the original verified /apply page keeps lot selection, payment preference, and review", async ({ page, baseURL }) => {

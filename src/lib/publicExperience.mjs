@@ -1,5 +1,13 @@
-// Retain the saved identifier so existing project settings remain usable.
-export const PUBLIC_SITE_TEMPLATE_ID = "wamule-classic";
+import {
+  DEFAULT_PUBLIC_SITE_TEMPLATE_ID,
+  resolvePublicSiteTemplateId,
+  SHOWCASE_PUBLIC_SITE_TEMPLATE_ID,
+} from "../../supabase/functions/_shared/public-site-template.mjs";
+
+export const PUBLIC_SITE_TEMPLATES = [
+  { id: DEFAULT_PUBLIC_SITE_TEMPLATE_ID, name: "Regular", description: "A compact project overview with key facts and direct links to the map and forms." },
+  { id: SHOWCASE_PUBLIC_SITE_TEMPLATE_ID, name: "Showcase", description: "A larger introduction, highlighted project facts, and a dedicated section for inquiries." },
+];
 
 export const PUBLIC_SITE_MODULES = [
   { id: "map", name: "Interactive map", description: "Show the selected phase’s published map." },
@@ -10,7 +18,7 @@ export const PUBLIC_SITE_MODULES = [
 
 export function defaultPublicExperience() {
   return {
-    templateId: PUBLIC_SITE_TEMPLATE_ID,
+    templateId: DEFAULT_PUBLIC_SITE_TEMPLATE_ID,
     applicationType: "land_purchase",
     enabledModules: {
       map: true,
@@ -28,7 +36,7 @@ export function normalizePublicExperience(value) {
     ? raw.enabledModules
     : {};
   return {
-    templateId: defaults.templateId,
+    templateId: resolvePublicSiteTemplateId(raw.templateId),
     applicationType: raw.applicationType === "project_application"
       ? "project_application"
       : "land_purchase",
