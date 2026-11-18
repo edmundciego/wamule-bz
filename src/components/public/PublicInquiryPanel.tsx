@@ -155,7 +155,16 @@ export function PublicInquiryPanel({
               </Select>
             </Field>
           ) : null}
-          <Field label="Message (optional)"><Textarea name="message" value={message} onChange={(event) => setMessage(event.target.value)} maxLength={INQUIRY_LIMITS.message} rows={3} /></Field>
+          <Field label="Message (optional)">
+            <Textarea
+              name="message"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={salesInquiry && parcels.length === 0 ? "Mention a lot number if you have one in mind." : undefined}
+              maxLength={INQUIRY_LIMITS.message}
+              rows={3}
+            />
+          </Field>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">Your details are used to respond to this inquiry.</p>
             <Button type="submit" disabled={submitting}>{submitting ? "Sending…" : "Send inquiry"}<Send aria-hidden="true" className="h-4 w-4" /></Button>
