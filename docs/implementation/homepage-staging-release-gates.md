@@ -29,6 +29,8 @@ The branch replay builds an empty PostgreSQL 17 database from the repository's f
 
 Local verification used PostgreSQL 17.11 and local Auth, Storage, and Vault fixtures. Regular and Showcase saved and reloaded for two projects in separate authenticated sessions. The forward migration passed against the reconciled staging snapshot, the original five-argument October function, and both old overloads together. All 43 source RPC calls resolved to a single signature after the fresh replay.
 
+The [GitHub Actions RPC contract run](https://github.com/edmundciego/wamule-bz/actions/runs/44359033532) passed for `fc7872decf962c5b643e8ec5ec0510acd0310b9f`.
+
 The [recorded 73-version baseline](../../evidence/admin-launch-controls-staging-inventory-73-reconciled.json) ends at `20261114054243` and omits `20261017090000`. It describes prior replay evidence. The live staging ledger and signatures are pending because Supabase denied the read-only requests for `kvocwmrcuhiaezlcgzjf`.
 
 Run the following read-only check on staging before a migration push, and retain the output with the deploy record.
@@ -48,7 +50,25 @@ WHERE n.nspname = 'public'
 ORDER BY p.proname, p.pronargs;
 ```
 
-Use the verified live ledger to prepare the staging migration directory, including its historical versions and aliases. Confirm the pending migrations with the CLI dry run before applying them. The two November 18 migrations are designed as forward upgrades.
+## Staging migration dry run and apply
+
+Run the release script with Python 3.10 or later and the repository's Supabase CLI from `npm ci`. Use an authenticated Supabase CLI session with access to `kvocwmrcuhiaezlcgzjf`.
+
+```sh
+python3 scripts/release-homepage-staging-db.py --record-dir /path/to/deploy-record/db-dry-run
+```
+
+The script reads the live ledger and function signatures, records them, and generates a temporary CLI work directory that matches the recorded staging versions. The known Map Studio version alias comes from the 73-version inventory. The script copies the two November 18 migrations from `fc7872decf962c5b643e8ec5ec0510acd0310b9f`, and includes the November 15 project application settings migration if staging still needs it. Keep `live-ledger-before.json` and `cli-dry-run.log` with the deploy record.
+
+The disposable PostgreSQL rehearsal used the recorded 73 versions plus the October 17 legacy save function. The CLI dry run listed the three candidate files and left the ledger unchanged. The apply succeeded, a retry found no pending files, and the database assertions for homepage settings, Vault lookup, and inventory approval passed.
+
+After reviewing that dry run, apply from the same script with a new record directory. The apply step repeats the live checks and the CLI dry run, then records the applied history and the final homepage function signatures.
+
+```sh
+python3 scripts/release-homepage-staging-db.py --apply --record-dir /path/to/deploy-record/db-apply
+```
+
+Staging uses its existing migration ledger for this release. The production baseline and migration history consolidation follow staging acceptance.
 
 ## Staging acceptance
 
@@ -59,6 +79,6 @@ Use the verified live ledger to prepare the staging migration directory, includi
 | Wamule Development | [Staging homepage](https://wamule-staging.netlify.app/p/wamule/wamule?phase=default) | Verify Regular on desktop and phone |
 | Hopkins Grove | [Staging homepage](https://ceiba-test.wamuledevelopment.com/hopkins?phase=initial) | Verify Showcase on desktop and phone |
 
-After the reviewed schema upgrade, publish the frontend and `get-public-site-experience` together. On Hopkins Grove, the Super Admin selects **Showcase** and enters **A place to put down roots.** under **Settings → Company Profile → Public homepage**. Save both values together and reload to verify persistence. The headline falls back to the project name on any project with an empty field.
+After the reviewed schema upgrade, publish the frontend and `get-public-site-experience` together from a clean checkout of `fc7872decf962c5b643e8ec5ec0510acd0310b9f`. Include the full commit SHA in the Netlify deploy message. On Hopkins Grove, the Super Admin selects **Showcase** and enters **A place to put down roots.** under **Settings → Company Profile → Public homepage**. Save both values together and reload to verify persistence. The headline falls back to the project name on any project with an empty field.
 
 Open the signed-out Hopkins homepage and select outline 559. Confirm **BZD 30,000 per quarter acre** appears on the map and carries through **Apply with this plot** into the application. Capture the desktop and phone comparison after these checks pass.
