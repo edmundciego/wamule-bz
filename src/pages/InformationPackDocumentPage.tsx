@@ -5,6 +5,8 @@ import { ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
 import type { InstallmentPlan, Parcel } from "../types/database";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 
 type Snapshot = {
   company: {
@@ -57,19 +59,24 @@ type Pack = {
 };
 
 export function InformationPackDocumentPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const { id } = useParams();
   const { data: pack, isLoading, error } = useQuery({
-    queryKey: ["information-pack-document", id],
+    queryKey: ["information-pack-document", scopeKey, id],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("information_packs")
-        .select("id, document_number, title, status, version, introduction, content_snapshot, generated_at, approved_at")
+        .select("id, tenant_id, project_id, phase_id, document_number, title, status, version, introduction, content_snapshot, generated_at, approved_at")
         .eq("id", id)
+        .eq("tenant_id", workspace!.tenantId)
+        .eq("project_id", workspace!.projectId)
+        .eq("phase_id", workspace!.phaseId)
         .single();
       if (queryError) throw queryError;
       return data as Pack;
     },
-    enabled: Boolean(id),
+    enabled: Boolean(id && workspace),
   });
 
   return (
@@ -83,6 +90,8 @@ export function InformationPackDocumentPage() {
         </Button>
       </div>
       {isLoading ? <LoadingState /> : null}
+      {workspaceLoading ? <LoadingState label="Loading selected workspace" /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to open this document."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {pack ? <InformationPackDocument pack={pack} /> : null}
     </main>

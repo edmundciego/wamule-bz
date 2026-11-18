@@ -6,15 +6,20 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Field";
 import { ErrorState, LoadingState } from "../components/ui/State";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { useCompanyProfile } from "../lib/brand";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { isOperationalAttentionCurrent } from "../lib/operationalAttention";
+import { resolveDailyBriefSourceTable } from "../lib/dailyBriefSourceTable.mjs";
 import { cn, formatDate } from "../lib/utils";
 import type { AiDailyBrief, AppRole, BriefActionItem, BriefActionItemStatus } from "../types/database";
 
 export function DailyBriefsPage() {
   const queryClient = useQueryClient();
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [selectedBriefId, setSelectedBriefId] = useState<number | null>(null);
   const [periodStart, setPeriodStart] = useState(todayInputValue());
   const [periodEnd, setPeriodEnd] = useState(todayInputValue());
@@ -23,7 +28,10 @@ export function DailyBriefsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkedActions, setCheckedActions] = useState<Record<string, boolean>>({});
   const [showAllPriorities, setShowAllPriorities] = useState(false);
-  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [briefEmail, setBriefEmail] = useState("badmanshalker@gmail.com");
+  const [emailSending, setEmailSending] = useState(false);
+  const { companyName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile(workspace?.tenantId ?? null);
 
   const { data: sessionProfile } = useQuery({
     queryKey: ["session-profile"],
@@ -31,35 +39,39 @@ export function DailyBriefsPage() {
   });
 
   const { data: briefs, isLoading, error } = useQuery({
-    queryKey: ["daily-briefs"],
+    queryKey: ["daily-briefs", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("ai_daily_briefs")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("created_at", { ascending: false })
         .limit(25);
       if (queryError) throw queryError;
       return data as AiDailyBrief[];
     },
+    enabled: Boolean(workspace),
   });
 
   const { data: actionItems } = useQuery({
-    queryKey: ["brief-action-items"],
+    queryKey: ["brief-action-items", scopeKey],
     queryFn: async () => {
       const { data, error: queryError } = await supabase
         .from("brief_action_items")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .order("last_seen_on", { ascending: false })
         .order("created_at", { ascending: false });
       if (queryError) throw queryError;
       return data as BriefActionItem[];
     },
+    enabled: Boolean(workspace),
   });
 
   const { data: revalidation = {}, isError: revalidationError } = useQuery({
-    queryKey: ["brief-action-revalidation", (actionItems ?? []).map((item) => `${item.id}:${item.updated_at}`).join(",")],
-    enabled: Boolean(actionItems?.length),
-    queryFn: () => revalidateBriefItems(actionItems ?? []),
+    queryKey: ["brief-action-revalidation", scopeKey, (actionItems ?? []).map((item) => `${item.id}:${item.updated_at}`).join(",")],
+    enabled: Boolean(workspace && actionItems?.length),
+    queryFn: () => revalidateBriefItems(actionItems ?? [], workspace!.tenantId),
     staleTime: 30_000,
   });
 
@@ -71,10 +83,11 @@ export function DailyBriefsPage() {
   );
 
   async function generateBrief(body: { period_start?: string; period_end?: string }) {
+    if (!workspace) return setActionError("Choose a workspace before generating its brief.");
     setActionError(null);
     setActionMessage(null);
     setGenerating(true);
-    const { data, error: functionError } = await supabase.functions.invoke("generate-daily-brief", { body });
+    const { data, error: functionError } = await supabase.functions.invoke("generate-daily-brief", { body: { ...body, tenant_id: workspace.tenantId } });
     setGenerating(false);
     if (functionError) {
       setActionError(functionError.message);
@@ -91,12 +104,13 @@ export function DailyBriefsPage() {
   }
 
   async function updateActionItem(id: number, status: Extract<BriefActionItemStatus, "Done" | "Dismissed">) {
+    if (!workspace) return setActionError("Choose a workspace before updating its action items.");
     setActionError(null);
     setActionMessage(null);
     const patch = status === "Done"
       ? { status, resolved_at: new Date().toISOString(), dismissed_at: null }
       : { status, dismissed_at: new Date().toISOString(), resolved_at: null };
-    const { error: updateError } = await supabase.from("brief_action_items").update(patch).eq("id", id);
+    const { error: updateError } = await supabase.from("brief_action_items").update(patch).eq("id", id).eq("tenant_id", workspace.tenantId);
     if (updateError) {
       setActionError(updateError.message);
       return;
@@ -114,6 +128,48 @@ export function DailyBriefsPage() {
       setActionMessage("Brief copied to clipboard.");
     } catch {
       setActionError("Clipboard copy failed in this browser.");
+    }
+  }
+
+  async function emailBrief() {
+    if (!selectedBrief) return;
+    if (!workspace || selectedBrief.tenant_id !== workspace.tenantId) return setActionError("Choose the workspace that owns this brief before sending it.");
+    const recipient = briefEmail.trim();
+    if (!recipient) {
+      setActionError("Enter a recipient email for the brief.");
+      return;
+    }
+    setActionError(null);
+    setActionMessage(null);
+    setEmailSending(true);
+    try {
+      const { data: queued, error: queueError } = await supabase
+        .from("email_notifications")
+        .insert({
+          tenant_id: workspace.tenantId,
+          recipient_email: recipient,
+          recipient_name: "Daily Brief Recipient",
+          subject: `Daily Brief — ${selectedBrief.brief_date}`,
+          body: formatBriefForClipboard(selectedBrief),
+          notification_type: "Daily Brief",
+          related_table: "ai_daily_briefs",
+          related_record_id: String(selectedBrief.id),
+          status: "Pending",
+        })
+        .select("id")
+        .single();
+      if (queueError || !queued) throw new Error(queueError?.message ?? "Could not queue the brief email.");
+      const { data, error: functionError } = await supabase.functions.invoke("send-notification-email", {
+        body: { email_notification_id: (queued as { id: number }).id, tenant_id: workspace.tenantId },
+      });
+      if (functionError) throw new Error(functionError.message);
+      if (data?.error) throw new Error(String(data.error));
+      setActionMessage(`Brief email processing complete. Sent: ${data?.sent ?? 0}. Failed: ${data?.failed ?? 0}.`);
+      setShowEmailForm(false);
+    } catch (emailError) {
+      setActionError(emailError instanceof Error ? emailError.message : "Brief email failed.");
+    } finally {
+      setEmailSending(false);
     }
   }
 
@@ -136,15 +192,18 @@ export function DailyBriefsPage() {
               <Clipboard className="h-4 w-4" />
               Copy Brief
             </Button>
-            <Button type="button" variant="outline" disabled>
-              <Mail className="h-4 w-4" />
-              Email Brief
-            </Button>
+            {canGenerateBrief ? (
+              <Button type="button" variant="outline" disabled={!selectedBrief} onClick={() => setShowEmailForm((current) => !current)}>
+                <Mail className="h-4 w-4" />
+                Email Brief
+              </Button>
+            ) : null}
           </div>
       </div>
 
       <div className="grid gap-6">
-        {isLoading ? <LoadingState label="Loading daily briefs" /> : null}
+        {workspaceLoading || isLoading ? <LoadingState label="Loading daily briefs" /> : null}
+        {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its daily briefs."} /> : null}
         {error ? <ErrorState message={(error as Error).message} /> : null}
         {actionError ? <ErrorState message={actionError} /> : null}
         {actionMessage ? <div className="crm-success-panel p-3 text-sm">{actionMessage}</div> : null}
@@ -156,6 +215,28 @@ export function DailyBriefsPage() {
         <div className="v2-advisor-panel p-4 text-sm text-primary">
           The Daily Operations Brief summarizes sales, reservations, applications, post-sales, payments, and recommended priorities for staff review.
         </div>
+        {showEmailForm && canGenerateBrief ? (
+          <Card className="v2-workflow-panel">
+            <CardHeader>
+              <CardTitle>Email This Brief</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <Field label="Recipient email">
+                <Input
+                  type="email"
+                  value={briefEmail}
+                  onChange={(event) => setBriefEmail(event.target.value)}
+                  placeholder="testing@example.com"
+                  maxLength={254}
+                />
+              </Field>
+              <Button type="button" disabled={emailSending || !selectedBrief} onClick={() => void emailBrief()}>
+                <Mail className="h-4 w-4" />
+                {emailSending ? "Sending…" : "Send Brief Email"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {canGenerateBrief ? (
           <Card className="v2-workflow-panel">
@@ -806,17 +887,21 @@ type DynamicSourceQuery = {
 };
 type DynamicSourceClient = { from: (table: string) => DynamicSourceQuery };
 
-async function revalidateBriefItems(items: BriefActionItem[]) {
+async function revalidateBriefItems(items: BriefActionItem[], tenantId: string) {
   const result: Record<number, BriefRevalidationState> = {};
   await Promise.all(items.map(async (item) => {
-    const table = item.source_entity_type ? sourceTable(item.source_entity_type) : item.related_table;
+    const table = resolveDailyBriefSourceTable(item.source_entity_type, item.related_table);
     const recordId = item.source_entity_id ?? item.related_record_id;
-    if (!table || !recordId || !item.attention_kind) {
+    if (!table) {
+      result[item.id] = item.source_entity_type || item.related_table ? "Source unavailable" : "Current";
+      return;
+    }
+    if (!recordId || !item.attention_kind) {
       result[item.id] = "Current";
       return;
     }
     const select = table === "transactions" ? "*, payment_documents(id)" : table === "follow_up_tasks" ? "*, leads(id, pipeline_stage)" : "*";
-    const { data, error } = await (supabase as unknown as DynamicSourceClient).from(table).select(select).eq("id", recordId).maybeSingle();
+    const { data, error } = await (supabase as unknown as DynamicSourceClient).from(table).select(select).eq("id", recordId).eq("tenant_id", tenantId).maybeSingle();
     if (error || !data) {
       result[item.id] = "Source unavailable";
       return;
@@ -834,22 +919,6 @@ async function revalidateBriefItems(items: BriefActionItem[]) {
     result[item.id] = generatedAt && currentUpdatedAt > generatedAt ? "Updated since brief" : "Current";
   }));
   return result;
-}
-
-function sourceTable(entityType: string) {
-  const tableByType: Record<string, string> = {
-    lead: "leads",
-    follow_up_task: "follow_up_tasks",
-    site_visit: "site_visits",
-    application: "applications",
-    reservation: "lot_reservations",
-    payment: "transactions",
-    payment_request: "payment_requests",
-    customer: "customers",
-    post_sales_task: "post_sales_tasks",
-    post_sales_checklist: "post_sales_checklists",
-  };
-  return tableByType[entityType] ?? null;
 }
 
 function revalidationTone(state: BriefRevalidationState) {

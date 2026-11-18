@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "project_id": "",
+  "scope_id": "",
+  "links": [
+    {
+      "detection_id": "",
+      "legal_lot_id": "",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewed_at": "",
+      "source": "",
+      "note": ""
+    }
+  ],
+  "dispositions": [
+    {
+      "detection_id": "",
+      "disposition": "pending",
+      "feature_type": "",
+      "reviewer": "",
+      "reviewed_at": "",
+      "source": "",
+      "note": ""
+    }
+  ]
+}

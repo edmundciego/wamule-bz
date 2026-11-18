@@ -1,0 +1,2602 @@
+[
+ {
+  "lot_number": "01",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 3.0
+   },
+   {
+    "x": 9.167,
+    "y": 3.0
+   },
+   {
+    "x": 9.167,
+    "y": 10.6
+   },
+   {
+    "x": 2.5,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "02",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 3.0
+   },
+   {
+    "x": 16.25,
+    "y": 3.0
+   },
+   {
+    "x": 16.25,
+    "y": 10.6
+   },
+   {
+    "x": 9.583,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "03",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 3.0
+   },
+   {
+    "x": 23.333,
+    "y": 3.0
+   },
+   {
+    "x": 23.333,
+    "y": 10.6
+   },
+   {
+    "x": 16.667,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "04",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 3.0
+   },
+   {
+    "x": 30.417,
+    "y": 3.0
+   },
+   {
+    "x": 30.417,
+    "y": 10.6
+   },
+   {
+    "x": 23.75,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "05",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 3.0
+   },
+   {
+    "x": 37.5,
+    "y": 3.0
+   },
+   {
+    "x": 37.5,
+    "y": 10.6
+   },
+   {
+    "x": 30.833,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "06",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 3.0
+   },
+   {
+    "x": 44.583,
+    "y": 3.0
+   },
+   {
+    "x": 44.583,
+    "y": 10.6
+   },
+   {
+    "x": 37.917,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "07",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 11.1
+   },
+   {
+    "x": 9.167,
+    "y": 11.1
+   },
+   {
+    "x": 9.167,
+    "y": 18.7
+   },
+   {
+    "x": 2.5,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "08",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 11.1
+   },
+   {
+    "x": 16.25,
+    "y": 11.1
+   },
+   {
+    "x": 16.25,
+    "y": 18.7
+   },
+   {
+    "x": 9.583,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "09",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 11.1
+   },
+   {
+    "x": 23.333,
+    "y": 11.1
+   },
+   {
+    "x": 23.333,
+    "y": 18.7
+   },
+   {
+    "x": 16.667,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "10",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 11.1
+   },
+   {
+    "x": 30.417,
+    "y": 11.1
+   },
+   {
+    "x": 30.417,
+    "y": 18.7
+   },
+   {
+    "x": 23.75,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "11",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 11.1
+   },
+   {
+    "x": 37.5,
+    "y": 11.1
+   },
+   {
+    "x": 37.5,
+    "y": 18.7
+   },
+   {
+    "x": 30.833,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "12",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 11.1
+   },
+   {
+    "x": 44.583,
+    "y": 11.1
+   },
+   {
+    "x": 44.583,
+    "y": 18.7
+   },
+   {
+    "x": 37.917,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "13",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 19.2
+   },
+   {
+    "x": 9.167,
+    "y": 19.2
+   },
+   {
+    "x": 9.167,
+    "y": 26.8
+   },
+   {
+    "x": 2.5,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "14",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 19.2
+   },
+   {
+    "x": 16.25,
+    "y": 19.2
+   },
+   {
+    "x": 16.25,
+    "y": 26.8
+   },
+   {
+    "x": 9.583,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "15",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 19.2
+   },
+   {
+    "x": 23.333,
+    "y": 19.2
+   },
+   {
+    "x": 23.333,
+    "y": 26.8
+   },
+   {
+    "x": 16.667,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "16",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 19.2
+   },
+   {
+    "x": 30.417,
+    "y": 19.2
+   },
+   {
+    "x": 30.417,
+    "y": 26.8
+   },
+   {
+    "x": 23.75,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "17",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 19.2
+   },
+   {
+    "x": 37.5,
+    "y": 19.2
+   },
+   {
+    "x": 37.5,
+    "y": 26.8
+   },
+   {
+    "x": 30.833,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "18",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 19.2
+   },
+   {
+    "x": 44.583,
+    "y": 19.2
+   },
+   {
+    "x": 44.583,
+    "y": 26.8
+   },
+   {
+    "x": 37.917,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "19",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 27.3
+   },
+   {
+    "x": 9.167,
+    "y": 27.3
+   },
+   {
+    "x": 9.167,
+    "y": 34.9
+   },
+   {
+    "x": 2.5,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "20",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 27.3
+   },
+   {
+    "x": 16.25,
+    "y": 27.3
+   },
+   {
+    "x": 16.25,
+    "y": 34.9
+   },
+   {
+    "x": 9.583,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "21",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 27.3
+   },
+   {
+    "x": 23.333,
+    "y": 27.3
+   },
+   {
+    "x": 23.333,
+    "y": 34.9
+   },
+   {
+    "x": 16.667,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "22",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 27.3
+   },
+   {
+    "x": 30.417,
+    "y": 27.3
+   },
+   {
+    "x": 30.417,
+    "y": 34.9
+   },
+   {
+    "x": 23.75,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "23",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 27.3
+   },
+   {
+    "x": 37.5,
+    "y": 27.3
+   },
+   {
+    "x": 37.5,
+    "y": 34.9
+   },
+   {
+    "x": 30.833,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "24",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 27.3
+   },
+   {
+    "x": 44.583,
+    "y": 27.3
+   },
+   {
+    "x": 44.583,
+    "y": 34.9
+   },
+   {
+    "x": 37.917,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "25",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 35.4
+   },
+   {
+    "x": 9.167,
+    "y": 35.4
+   },
+   {
+    "x": 9.167,
+    "y": 43.0
+   },
+   {
+    "x": 2.5,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "26",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 35.4
+   },
+   {
+    "x": 16.25,
+    "y": 35.4
+   },
+   {
+    "x": 16.25,
+    "y": 43.0
+   },
+   {
+    "x": 9.583,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "27",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 35.4
+   },
+   {
+    "x": 23.333,
+    "y": 35.4
+   },
+   {
+    "x": 23.333,
+    "y": 43.0
+   },
+   {
+    "x": 16.667,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "28",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 35.4
+   },
+   {
+    "x": 30.417,
+    "y": 35.4
+   },
+   {
+    "x": 30.417,
+    "y": 43.0
+   },
+   {
+    "x": 23.75,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "29",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 35.4
+   },
+   {
+    "x": 37.5,
+    "y": 35.4
+   },
+   {
+    "x": 37.5,
+    "y": 43.0
+   },
+   {
+    "x": 30.833,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "30",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 35.4
+   },
+   {
+    "x": 44.583,
+    "y": 35.4
+   },
+   {
+    "x": 44.583,
+    "y": 43.0
+   },
+   {
+    "x": 37.917,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "31",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 3.0
+   },
+   {
+    "x": 61.667,
+    "y": 3.0
+   },
+   {
+    "x": 61.667,
+    "y": 10.6
+   },
+   {
+    "x": 55.0,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "32",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 62.083,
+    "y": 3.0
+   },
+   {
+    "x": 68.75,
+    "y": 3.0
+   },
+   {
+    "x": 68.75,
+    "y": 10.6
+   },
+   {
+    "x": 62.083,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "33",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 69.167,
+    "y": 3.0
+   },
+   {
+    "x": 75.833,
+    "y": 3.0
+   },
+   {
+    "x": 75.833,
+    "y": 10.6
+   },
+   {
+    "x": 69.167,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "34",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 76.25,
+    "y": 3.0
+   },
+   {
+    "x": 82.917,
+    "y": 3.0
+   },
+   {
+    "x": 82.917,
+    "y": 10.6
+   },
+   {
+    "x": 76.25,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "35",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 83.333,
+    "y": 3.0
+   },
+   {
+    "x": 90.0,
+    "y": 3.0
+   },
+   {
+    "x": 90.0,
+    "y": 10.6
+   },
+   {
+    "x": 83.333,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "36",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 90.417,
+    "y": 3.0
+   },
+   {
+    "x": 97.083,
+    "y": 3.0
+   },
+   {
+    "x": 97.083,
+    "y": 10.6
+   },
+   {
+    "x": 90.417,
+    "y": 10.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "37",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 11.1
+   },
+   {
+    "x": 61.667,
+    "y": 11.1
+   },
+   {
+    "x": 61.667,
+    "y": 18.7
+   },
+   {
+    "x": 55.0,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "38",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 62.083,
+    "y": 11.1
+   },
+   {
+    "x": 68.75,
+    "y": 11.1
+   },
+   {
+    "x": 68.75,
+    "y": 18.7
+   },
+   {
+    "x": 62.083,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "39",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 69.167,
+    "y": 11.1
+   },
+   {
+    "x": 75.833,
+    "y": 11.1
+   },
+   {
+    "x": 75.833,
+    "y": 18.7
+   },
+   {
+    "x": 69.167,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "40",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 76.25,
+    "y": 11.1
+   },
+   {
+    "x": 82.917,
+    "y": 11.1
+   },
+   {
+    "x": 82.917,
+    "y": 18.7
+   },
+   {
+    "x": 76.25,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "41",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 83.333,
+    "y": 11.1
+   },
+   {
+    "x": 90.0,
+    "y": 11.1
+   },
+   {
+    "x": 90.0,
+    "y": 18.7
+   },
+   {
+    "x": 83.333,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "42",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 90.417,
+    "y": 11.1
+   },
+   {
+    "x": 97.083,
+    "y": 11.1
+   },
+   {
+    "x": 97.083,
+    "y": 18.7
+   },
+   {
+    "x": 90.417,
+    "y": 18.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "43",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 19.2
+   },
+   {
+    "x": 61.667,
+    "y": 19.2
+   },
+   {
+    "x": 61.667,
+    "y": 26.8
+   },
+   {
+    "x": 55.0,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "44",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 62.083,
+    "y": 19.2
+   },
+   {
+    "x": 68.75,
+    "y": 19.2
+   },
+   {
+    "x": 68.75,
+    "y": 26.8
+   },
+   {
+    "x": 62.083,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "45",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 69.167,
+    "y": 19.2
+   },
+   {
+    "x": 75.833,
+    "y": 19.2
+   },
+   {
+    "x": 75.833,
+    "y": 26.8
+   },
+   {
+    "x": 69.167,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "46",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 76.25,
+    "y": 19.2
+   },
+   {
+    "x": 82.917,
+    "y": 19.2
+   },
+   {
+    "x": 82.917,
+    "y": 26.8
+   },
+   {
+    "x": 76.25,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "47",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 83.333,
+    "y": 19.2
+   },
+   {
+    "x": 90.0,
+    "y": 19.2
+   },
+   {
+    "x": 90.0,
+    "y": 26.8
+   },
+   {
+    "x": 83.333,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "48",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 90.417,
+    "y": 19.2
+   },
+   {
+    "x": 97.083,
+    "y": 19.2
+   },
+   {
+    "x": 97.083,
+    "y": 26.8
+   },
+   {
+    "x": 90.417,
+    "y": 26.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "49",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 27.3
+   },
+   {
+    "x": 61.667,
+    "y": 27.3
+   },
+   {
+    "x": 61.667,
+    "y": 34.9
+   },
+   {
+    "x": 55.0,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "50",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 62.083,
+    "y": 27.3
+   },
+   {
+    "x": 68.75,
+    "y": 27.3
+   },
+   {
+    "x": 68.75,
+    "y": 34.9
+   },
+   {
+    "x": 62.083,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "51",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 69.167,
+    "y": 27.3
+   },
+   {
+    "x": 75.833,
+    "y": 27.3
+   },
+   {
+    "x": 75.833,
+    "y": 34.9
+   },
+   {
+    "x": 69.167,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "52",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 76.25,
+    "y": 27.3
+   },
+   {
+    "x": 82.917,
+    "y": 27.3
+   },
+   {
+    "x": 82.917,
+    "y": 34.9
+   },
+   {
+    "x": 76.25,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "53",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 83.333,
+    "y": 27.3
+   },
+   {
+    "x": 90.0,
+    "y": 27.3
+   },
+   {
+    "x": 90.0,
+    "y": 34.9
+   },
+   {
+    "x": 83.333,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "54",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 90.417,
+    "y": 27.3
+   },
+   {
+    "x": 97.083,
+    "y": 27.3
+   },
+   {
+    "x": 97.083,
+    "y": 34.9
+   },
+   {
+    "x": 90.417,
+    "y": 34.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "55",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 35.4
+   },
+   {
+    "x": 61.667,
+    "y": 35.4
+   },
+   {
+    "x": 61.667,
+    "y": 43.0
+   },
+   {
+    "x": 55.0,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "56",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 62.083,
+    "y": 35.4
+   },
+   {
+    "x": 68.75,
+    "y": 35.4
+   },
+   {
+    "x": 68.75,
+    "y": 43.0
+   },
+   {
+    "x": 62.083,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "57",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 69.167,
+    "y": 35.4
+   },
+   {
+    "x": 75.833,
+    "y": 35.4
+   },
+   {
+    "x": 75.833,
+    "y": 43.0
+   },
+   {
+    "x": 69.167,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "58",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 76.25,
+    "y": 35.4
+   },
+   {
+    "x": 82.917,
+    "y": 35.4
+   },
+   {
+    "x": 82.917,
+    "y": 43.0
+   },
+   {
+    "x": 76.25,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "59",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 83.333,
+    "y": 35.4
+   },
+   {
+    "x": 90.0,
+    "y": 35.4
+   },
+   {
+    "x": 90.0,
+    "y": 43.0
+   },
+   {
+    "x": 83.333,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "60",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 90.417,
+    "y": 35.4
+   },
+   {
+    "x": 97.083,
+    "y": 35.4
+   },
+   {
+    "x": 97.083,
+    "y": 43.0
+   },
+   {
+    "x": 90.417,
+    "y": 43.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "61",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 56.0
+   },
+   {
+    "x": 9.167,
+    "y": 56.0
+   },
+   {
+    "x": 9.167,
+    "y": 63.6
+   },
+   {
+    "x": 2.5,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "62",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 56.0
+   },
+   {
+    "x": 16.25,
+    "y": 56.0
+   },
+   {
+    "x": 16.25,
+    "y": 63.6
+   },
+   {
+    "x": 9.583,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "63",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 56.0
+   },
+   {
+    "x": 23.333,
+    "y": 56.0
+   },
+   {
+    "x": 23.333,
+    "y": 63.6
+   },
+   {
+    "x": 16.667,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "64",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 56.0
+   },
+   {
+    "x": 30.417,
+    "y": 56.0
+   },
+   {
+    "x": 30.417,
+    "y": 63.6
+   },
+   {
+    "x": 23.75,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "65",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 56.0
+   },
+   {
+    "x": 37.5,
+    "y": 56.0
+   },
+   {
+    "x": 37.5,
+    "y": 63.6
+   },
+   {
+    "x": 30.833,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "66",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 56.0
+   },
+   {
+    "x": 44.583,
+    "y": 56.0
+   },
+   {
+    "x": 44.583,
+    "y": 63.6
+   },
+   {
+    "x": 37.917,
+    "y": 63.6
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "67",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 64.1
+   },
+   {
+    "x": 9.167,
+    "y": 64.1
+   },
+   {
+    "x": 9.167,
+    "y": 71.7
+   },
+   {
+    "x": 2.5,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "68",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 64.1
+   },
+   {
+    "x": 16.25,
+    "y": 64.1
+   },
+   {
+    "x": 16.25,
+    "y": 71.7
+   },
+   {
+    "x": 9.583,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "69",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 64.1
+   },
+   {
+    "x": 23.333,
+    "y": 64.1
+   },
+   {
+    "x": 23.333,
+    "y": 71.7
+   },
+   {
+    "x": 16.667,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "70",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 64.1
+   },
+   {
+    "x": 30.417,
+    "y": 64.1
+   },
+   {
+    "x": 30.417,
+    "y": 71.7
+   },
+   {
+    "x": 23.75,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "71",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 64.1
+   },
+   {
+    "x": 37.5,
+    "y": 64.1
+   },
+   {
+    "x": 37.5,
+    "y": 71.7
+   },
+   {
+    "x": 30.833,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "72",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 64.1
+   },
+   {
+    "x": 44.583,
+    "y": 64.1
+   },
+   {
+    "x": 44.583,
+    "y": 71.7
+   },
+   {
+    "x": 37.917,
+    "y": 71.7
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "73",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 72.2
+   },
+   {
+    "x": 9.167,
+    "y": 72.2
+   },
+   {
+    "x": 9.167,
+    "y": 79.8
+   },
+   {
+    "x": 2.5,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "74",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 72.2
+   },
+   {
+    "x": 16.25,
+    "y": 72.2
+   },
+   {
+    "x": 16.25,
+    "y": 79.8
+   },
+   {
+    "x": 9.583,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "75",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 72.2
+   },
+   {
+    "x": 23.333,
+    "y": 72.2
+   },
+   {
+    "x": 23.333,
+    "y": 79.8
+   },
+   {
+    "x": 16.667,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "76",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 72.2
+   },
+   {
+    "x": 30.417,
+    "y": 72.2
+   },
+   {
+    "x": 30.417,
+    "y": 79.8
+   },
+   {
+    "x": 23.75,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "77",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 72.2
+   },
+   {
+    "x": 37.5,
+    "y": 72.2
+   },
+   {
+    "x": 37.5,
+    "y": 79.8
+   },
+   {
+    "x": 30.833,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "78",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 72.2
+   },
+   {
+    "x": 44.583,
+    "y": 72.2
+   },
+   {
+    "x": 44.583,
+    "y": 79.8
+   },
+   {
+    "x": 37.917,
+    "y": 79.8
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "79",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 80.3
+   },
+   {
+    "x": 9.167,
+    "y": 80.3
+   },
+   {
+    "x": 9.167,
+    "y": 87.9
+   },
+   {
+    "x": 2.5,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "80",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 80.3
+   },
+   {
+    "x": 16.25,
+    "y": 80.3
+   },
+   {
+    "x": 16.25,
+    "y": 87.9
+   },
+   {
+    "x": 9.583,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "81",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 80.3
+   },
+   {
+    "x": 23.333,
+    "y": 80.3
+   },
+   {
+    "x": 23.333,
+    "y": 87.9
+   },
+   {
+    "x": 16.667,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "82",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 80.3
+   },
+   {
+    "x": 30.417,
+    "y": 80.3
+   },
+   {
+    "x": 30.417,
+    "y": 87.9
+   },
+   {
+    "x": 23.75,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "83",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 80.3
+   },
+   {
+    "x": 37.5,
+    "y": 80.3
+   },
+   {
+    "x": 37.5,
+    "y": 87.9
+   },
+   {
+    "x": 30.833,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "84",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 80.3
+   },
+   {
+    "x": 44.583,
+    "y": 80.3
+   },
+   {
+    "x": 44.583,
+    "y": 87.9
+   },
+   {
+    "x": 37.917,
+    "y": 87.9
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "85",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 2.5,
+    "y": 88.4
+   },
+   {
+    "x": 9.167,
+    "y": 88.4
+   },
+   {
+    "x": 9.167,
+    "y": 96.0
+   },
+   {
+    "x": 2.5,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "86",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 9.583,
+    "y": 88.4
+   },
+   {
+    "x": 16.25,
+    "y": 88.4
+   },
+   {
+    "x": 16.25,
+    "y": 96.0
+   },
+   {
+    "x": 9.583,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "87",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 16.667,
+    "y": 88.4
+   },
+   {
+    "x": 23.333,
+    "y": 88.4
+   },
+   {
+    "x": 23.333,
+    "y": 96.0
+   },
+   {
+    "x": 16.667,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "88",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 23.75,
+    "y": 88.4
+   },
+   {
+    "x": 30.417,
+    "y": 88.4
+   },
+   {
+    "x": 30.417,
+    "y": 96.0
+   },
+   {
+    "x": 23.75,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "89",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 30.833,
+    "y": 88.4
+   },
+   {
+    "x": 37.5,
+    "y": 88.4
+   },
+   {
+    "x": 37.5,
+    "y": 96.0
+   },
+   {
+    "x": 30.833,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "90",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 37.917,
+    "y": 88.4
+   },
+   {
+    "x": 44.583,
+    "y": 88.4
+   },
+   {
+    "x": 44.583,
+    "y": 96.0
+   },
+   {
+    "x": 37.917,
+    "y": 96.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "91",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 56.0
+   },
+   {
+    "x": 58.333,
+    "y": 56.0
+   },
+   {
+    "x": 58.333,
+    "y": 64.5
+   },
+   {
+    "x": 55.0,
+    "y": 64.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "92",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 58.75,
+    "y": 56.0
+   },
+   {
+    "x": 62.083,
+    "y": 56.0
+   },
+   {
+    "x": 62.083,
+    "y": 64.5
+   },
+   {
+    "x": 58.75,
+    "y": 64.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "93",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 65.0
+   },
+   {
+    "x": 58.333,
+    "y": 65.0
+   },
+   {
+    "x": 58.333,
+    "y": 73.5
+   },
+   {
+    "x": 55.0,
+    "y": 73.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "94",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 58.75,
+    "y": 65.0
+   },
+   {
+    "x": 62.083,
+    "y": 65.0
+   },
+   {
+    "x": 62.083,
+    "y": 73.5
+   },
+   {
+    "x": 58.75,
+    "y": 73.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "95",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 74.0
+   },
+   {
+    "x": 58.333,
+    "y": 74.0
+   },
+   {
+    "x": 58.333,
+    "y": 82.5
+   },
+   {
+    "x": 55.0,
+    "y": 82.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "96",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 58.75,
+    "y": 74.0
+   },
+   {
+    "x": 62.083,
+    "y": 74.0
+   },
+   {
+    "x": 62.083,
+    "y": 82.5
+   },
+   {
+    "x": 58.75,
+    "y": 82.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "97",
+  "tier_key": "standard",
+  "price": 20000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 83.0
+   },
+   {
+    "x": 58.333,
+    "y": 83.0
+   },
+   {
+    "x": 58.333,
+    "y": 91.5
+   },
+   {
+    "x": 55.0,
+    "y": 91.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "98",
+  "tier_key": "premium",
+  "price": 30000,
+  "polygon_pct": [
+   {
+    "x": 58.75,
+    "y": 83.0
+   },
+   {
+    "x": 62.083,
+    "y": 83.0
+   },
+   {
+    "x": 62.083,
+    "y": 91.5
+   },
+   {
+    "x": 58.75,
+    "y": 91.5
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "99",
+  "tier_key": "estate",
+  "price": 45000,
+  "polygon_pct": [
+   {
+    "x": 55.0,
+    "y": 92.0
+   },
+   {
+    "x": 58.333,
+    "y": 92.0
+   },
+   {
+    "x": 58.333,
+    "y": 100.0
+   },
+   {
+    "x": 55.0,
+    "y": 100.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ },
+ {
+  "lot_number": "100",
+  "tier_key": "reserve",
+  "price": 60000,
+  "polygon_pct": [
+   {
+    "x": 58.75,
+    "y": 92.0
+   },
+   {
+    "x": 62.083,
+    "y": 92.0
+   },
+   {
+    "x": 62.083,
+    "y": 100.0
+   },
+   {
+    "x": 58.75,
+    "y": 100.0
+   }
+  ],
+  "confidence": 1.0,
+  "needs_review": false,
+  "source": "synthetic"
+ }
+]

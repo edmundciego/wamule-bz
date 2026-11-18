@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { mapPolygonToSvgPoints } from "../lib/mapGeometry";
 
 /**
  * Parcel boundary map model.
@@ -76,7 +77,7 @@ export function sanitizePolygon(input: MapPoint[] | null | undefined): MapPoint[
 
 /** "x1,y1 x2,y2 ..." attribute value for SVG <polygon>/<polyline>. */
 export function pointsToSvgPoints(points: MapPoint[]): string {
-  return points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  return mapPolygonToSvgPoints(points, {}, 2);
 }
 
 export function distancePct(a: MapPoint, b: MapPoint): number {

@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ErrorState, LoadingState } from "../components/ui/State";
 import { useCompanyProfile } from "../lib/brand";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { activeContract as canonicalActiveContract, remainingLandBalance, totalPostedLandPayments } from "../lib/financial";
 import { supabase } from "../lib/supabase";
 import { formatDate, money } from "../lib/utils";
@@ -12,19 +14,22 @@ type DocumentKind = "receipt" | "balance" | "ledger";
 const communityTypes = ["Garbage Fee", "Road Maintenance"];
 
 export function DocumentPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const { kind, id } = useParams();
   const documentKind = kind as DocumentKind;
   const numericId = Number(id);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["document", documentKind, numericId],
+    queryKey: ["document", scopeKey, documentKind, numericId],
     queryFn: async () => {
-      if (documentKind === "receipt") return getReceiptDocument(numericId);
-      if (documentKind === "balance") return getCustomerDocument(numericId);
-      if (documentKind === "ledger") return getCustomerDocument(numericId);
+      if (!workspace) throw new Error("Choose a workspace before opening this document.");
+      if (documentKind === "receipt") return getReceiptDocument(numericId, workspace.tenantId);
+      if (documentKind === "balance") return getCustomerDocument(numericId, workspace.tenantId);
+      if (documentKind === "ledger") return getCustomerDocument(numericId, workspace.tenantId);
       throw new Error("Unknown document type.");
     },
-    enabled: ["receipt", "balance", "ledger"].includes(documentKind) && Number.isFinite(numericId),
+    enabled: Boolean(workspace) && ["receipt", "balance", "ledger"].includes(documentKind) && Number.isFinite(numericId),
   });
 
   return (
@@ -38,6 +43,8 @@ export function DocumentPage() {
         </Button>
       </div>
       {isLoading ? <LoadingState /> : null}
+      {workspaceLoading ? <LoadingState label="Loading selected workspace" /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to open this document."} /> : null}
       {error ? <ErrorState message={(error as Error).message} /> : null}
       {data && documentKind === "receipt" ? <ReceiptDocument data={data as ReceiptDocumentData} /> : null}
       {data && documentKind === "balance" ? <BalanceStatement data={data as CustomerDocumentData} /> : null}
@@ -46,10 +53,11 @@ export function DocumentPage() {
   );
 }
 
-async function getReceiptDocument(transactionId: number) {
+async function getReceiptDocument(transactionId: number, tenantId: string) {
   const { data: transaction, error } = await supabase
     .from("transactions")
     .select("*, customers(*), contracts(*, parcels(*))")
+    .eq("tenant_id", tenantId)
     .eq("id", transactionId)
     .single();
   if (error) throw error;
@@ -58,11 +66,13 @@ async function getReceiptDocument(transactionId: number) {
     .from("admin_profiles")
     .select("full_name")
     .eq("user_id", transaction.authorized_by)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   const { data: allTransactions, error: transactionError } = await supabase
     .from("transactions")
     .select("*")
+    .eq("tenant_id", tenantId)
     .eq("customer_id", transaction.customer_id)
     .order("created_at", { ascending: true });
   if (transactionError) throw transactionError;
@@ -71,6 +81,7 @@ async function getReceiptDocument(transactionId: number) {
     .from("contracts")
     .select("*, parcels(*)")
     .eq("customer_id", transaction.customer_id)
+    .eq("tenant_id", tenantId)
     .order("is_active", { ascending: false });
 
   return {
@@ -81,11 +92,12 @@ async function getReceiptDocument(transactionId: number) {
   };
 }
 
-async function getCustomerDocument(customerId: number) {
+async function getCustomerDocument(customerId: number, tenantId: string) {
   const { data: customer, error } = await supabase
     .from("customers")
     .select("*, applications(*, parcels(*)), contracts(*, parcels(*)), transactions(*)")
     .eq("id", customerId)
+    .eq("tenant_id", tenantId)
     .single();
   if (error) throw error;
 
@@ -93,6 +105,7 @@ async function getCustomerDocument(customerId: number) {
     .from("community_fee_account_status")
     .select("*")
     .eq("customer_id", customerId)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   return { customer, communityStatus };
@@ -195,7 +208,8 @@ function DocumentShell({
   documentNumber: string;
   children: React.ReactNode;
 }) {
-  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile();
+  const { workspace } = useWorkspaceScope();
+  const { company, companyName, shortName, isLoading: companyLoading, isUnavailable: companyUnavailable } = useCompanyProfile(workspace?.tenantId ?? null);
 
   if (companyLoading) {
     return (

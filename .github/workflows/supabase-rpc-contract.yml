@@ -1,0 +1,56 @@
+name: Supabase RPC contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/homepage-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+
+      - name: Start a fresh Supabase PostgreSQL 17 database
+        shell: bash
+        run: |
+          workdir="$RUNNER_TEMP/wamule-rpc-contract"
+          mkdir -p "$workdir/supabase"
+          printf 'project_id = "wamule-rpc-contract"\n[db]\nmajor_version = 17\n' > "$workdir/supabase/config.toml"
+          ./node_modules/.bin/supabase start --workdir "$workdir" -x studio,imgproxy,edge-runtime,analytics,vector > "$RUNNER_TEMP/rpc-supabase-start.log" 2>&1 || {
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/rpc-supabase-start.log" | tail -n 60 >&2
+            exit 1
+          }
+
+      - name: Replay branch migrations and check every RPC call
+        shell: bash
+        run: |
+          workdir="$RUNNER_TEMP/wamule-rpc-contract"
+          ./node_modules/.bin/supabase status --workdir "$workdir" --output env > "$RUNNER_TEMP/rpc-supabase-status.env"
+          export SCHEMA_QUERY_DATABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/rpc-supabase-status.env" DB_URL)"
+          bash scripts/replay-branch-schema.sh
+          node scripts/schema-query-contract.mjs --rpc-only > "$RUNNER_TEMP/rpc-contract.json" || {
+            cat "$RUNNER_TEMP/rpc-contract.json"
+            exit 1
+          }
+          psql "$SCHEMA_QUERY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f scripts/assert-project-site-experience.sql
+          psql "$SCHEMA_QUERY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f scripts/assert-inbound-inventory-contract.sql
+
+      - name: Stop disposable stack
+        if: always()
+        run: ./node_modules/.bin/supabase stop --workdir "$RUNNER_TEMP/wamule-rpc-contract" --no-backup

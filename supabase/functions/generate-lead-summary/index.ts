@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeWorkspaceActivePhase, authorizeWorkspaceTenant } from "../_shared/workspace-auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -46,7 +47,6 @@ type LeadContext = {
   customer: Record<string, unknown> | null;
   parcel: Record<string, unknown> | null;
   applicationReview: Record<string, unknown> | null;
-  customerSummary: Record<string, unknown> | null;
 };
 
 Deno.serve(async (request) => {
@@ -72,67 +72,133 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid authorization token." }, 401);
   }
 
-  const { data: currentProfile, error: profileError } = await supabase
-    .from("admin_profiles")
-    .select("role")
-    .eq("user_id", currentUserData.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return json({ error: profileError.message }, 500);
-  }
-
-  if (!["Super Admin", "Admin", "Staff"].includes(String(currentProfile?.role ?? ""))) {
-    return json({ error: "Only Super Admin, Admin, or Staff users can generate lead summaries." }, 403);
-  }
-
-  const body = await request.json().catch(() => null) as { lead_id?: string } | null;
+  const body = await request.json().catch(() => null) as { lead_id?: string; tenant_id?: string; generationId?: string } | null;
+  const workspaceAuth = await authorizeWorkspaceTenant(supabase, currentUserData.user.id, body?.tenant_id, ["Super Admin", "Admin", "Staff"]);
+  if (!workspaceAuth.ok) return json({ error: workspaceAuth.error }, workspaceAuth.status);
+  const tenantId = workspaceAuth.tenantId;
   const leadId = String(body?.lead_id ?? "").trim();
+  const generationId = String(body?.generationId ?? "").trim();
   if (!leadId) {
     return json({ error: "lead_id is required." }, 400);
   }
   if (!uuidPattern.test(leadId)) {
     return json({ error: "lead_id must be a valid UUID." }, 400);
   }
+  if (!uuidPattern.test(generationId)) {
+    return json({ error: "generationId must be a valid UUID and remain unchanged when retrying this generation." }, 400);
+  }
 
-  const [leadResult, activitiesResult, followUpsResult, siteVisitsResult, reservationsResult, settingsResult] = await Promise.all([
-    supabase
-      .from("leads")
-      .select("*, parcels(id, lot_number, status, dimensions, base_price), applications(*, application_ai_reviews(*)), customers(*, customer_ai_summaries(*))")
-      .eq("id", leadId)
-      .maybeSingle(),
+  const { data: leadRecord, error: leadError } = await supabase
+    .from("leads")
+    .select("*, parcels(id, lot_number, status, dimensions), customers(id, first_name, last_name)")
+    .eq("id", leadId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (leadError) return json({ error: leadError.message }, 500);
+  if (!leadRecord) return json({ error: "Lead not found." }, 404);
+
+  const scopeAuth = await authorizeWorkspaceActivePhase(
+    supabase, currentUserData.user.id, tenantId, leadRecord.project_id, leadRecord.phase_id,
+    ["Super Admin", "Admin", "Staff"],
+  );
+  if (!scopeAuth.ok) return json({ error: scopeAuth.error }, scopeAuth.status);
+
+  const claimArgs = {
+    p_summary_kind: "lead",
+    p_tenant_id: tenantId,
+    p_parent_id: leadId,
+    p_generation_id: generationId,
+    p_actor_id: currentUserData.user.id,
+  };
+  const { data: claimData, error: claimError } = await supabase.rpc("claim_ai_summary_generation_v1", claimArgs);
+  if (claimError) return json({ error: claimError.message }, 500);
+  const claim = (Array.isArray(claimData) ? claimData[0] : claimData) as {
+    status?: string;
+    claim_token?: string | null;
+    summary_id?: string | null;
+  } | null;
+  if (claim?.status === "in_progress") {
+    return json({
+      status: "in_progress",
+      generation_id: generationId,
+      message: "This lead summary is already being generated. Retry shortly with the same generationId.",
+    }, 202);
+  }
+  if (claim?.status === "completed") {
+    const completedResult = claim.summary_id
+      ? await supabase.from("lead_ai_summaries").select("*")
+        .eq("id", claim.summary_id).eq("tenant_id", tenantId).eq("lead_id", leadId).eq("generation_id", generationId).maybeSingle()
+      : { data: null, error: null };
+    if (completedResult.error) return json({ error: completedResult.error.message }, 500);
+    if (!completedResult.data) return json({ error: "The completed lead summary generation could not be found." }, 500);
+    return json({
+      summary: completedResult.data,
+      fallback: String(completedResult.data.model ?? "") === "deterministic-fallback",
+      message: "Lead Smart Summary generation recovered from its saved result.",
+    });
+  }
+  if (claim?.status !== "claimed" || !claim.claim_token) {
+    return json({ error: "A valid lead summary generation claim could not be established." }, 500);
+  }
+  let generationCompleted = false;
+  try {
+
+  const applicationId = numberOrNull(leadRecord.application_id);
+  const applicationResult = applicationId
+    ? await supabase.from("applications")
+      .select("id,tenant_id,project_id,phase_id,applicant_full_name,first_name,last_name,status,intended_use,created_at,updated_at,application_ai_reviews(*)")
+      .eq("id", applicationId).eq("tenant_id", tenantId)
+      .eq("project_id", leadRecord.project_id).eq("phase_id", leadRecord.phase_id).maybeSingle()
+    : { data: null, error: null };
+  if (applicationResult.error) return json({ error: applicationResult.error.message }, 500);
+  if (applicationId && !applicationResult.data) {
+    return json({ error: "The linked application is outside the lead's verified project and phase." }, 403);
+  }
+
+  const [activitiesResult, followUpsResult, siteVisitsResult, reservationsResult, settingsResult] = await Promise.all([
     supabase
       .from("lead_activities")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", leadRecord.project_id)
+      .eq("phase_id", leadRecord.phase_id)
       .order("created_at", { ascending: false })
       .limit(20),
     supabase
       .from("follow_up_tasks")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", leadRecord.project_id)
+      .eq("phase_id", leadRecord.phase_id)
       .order("due_at", { ascending: true, nullsFirst: false }),
     supabase
       .from("site_visits")
       .select("*")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", leadRecord.project_id)
+      .eq("phase_id", leadRecord.phase_id)
       .order("scheduled_at", { ascending: true }),
     supabase
       .from("lot_reservations")
       .select("*, parcels(id, lot_number, status, dimensions, base_price)")
       .eq("lead_id", leadId)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", leadRecord.project_id)
+      .eq("phase_id", leadRecord.phase_id)
       .order("updated_at", { ascending: false }),
     supabase
       .from("ai_settings")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("id", { ascending: true })
       .limit(1)
       .maybeSingle(),
   ]);
 
-  const firstError = leadResult.error ??
-    activitiesResult.error ??
-    followUpsResult.error ??
+  const firstError = activitiesResult.error ?? followUpsResult.error ??
     siteVisitsResult.error ??
     reservationsResult.error ??
     settingsResult.error;
@@ -140,12 +206,8 @@ Deno.serve(async (request) => {
     return json({ error: firstError.message }, 500);
   }
 
-  if (!leadResult.data) {
-    return json({ error: "Lead not found." }, 404);
-  }
-
-  const lead = leadResult.data as Record<string, unknown>;
-  const application = (lead.applications as Record<string, unknown> | null | undefined) ?? null;
+  const lead = leadRecord as Record<string, unknown>;
+  const application = (applicationResult.data as Record<string, unknown> | null | undefined) ?? null;
   const customer = (lead.customers as Record<string, unknown> | null | undefined) ?? null;
   const context: LeadContext = {
     lead,
@@ -157,7 +219,6 @@ Deno.serve(async (request) => {
     customer,
     parcel: (lead.parcels as Record<string, unknown> | null | undefined) ?? null,
     applicationReview: relationArray(application?.application_ai_reviews)[0] ?? null,
-    customerSummary: relationArray(customer?.customer_ai_summaries)[0] ?? null,
   };
 
   const deterministic = buildDeterministicSummary(context);
@@ -181,20 +242,19 @@ Deno.serve(async (request) => {
       apiKey,
       model,
     });
-    if (geminiSummary) {
-      summary = geminiSummary;
-      usedModel = model;
-      usedProvider = "Gemini";
-    } else {
-      usedProvider = "deterministic";
+    if (!geminiSummary) {
+      return json({ error: "Gemini did not return a valid summary. Retry with the same generationId." }, 502);
     }
+    summary = geminiSummary;
+    usedModel = model;
+    usedProvider = "Gemini";
   }
 
   const sourceSnapshot = buildSourceSnapshot(context);
-  const { data: savedSummary, error: saveError } = await supabase
-    .from("lead_ai_summaries")
-    .insert({
+  const summaryPayload = {
+      tenant_id: tenantId,
       lead_id: leadId,
+      generation_id: generationId,
       summary: summary.summary,
       readiness_status: summary.readiness_status,
       key_risks: summary.key_risks,
@@ -207,13 +267,33 @@ Deno.serve(async (request) => {
       provider: usedProvider,
       generated_by: currentUserData.user.id,
       generated_at: new Date().toISOString(),
-    })
-    .select("*")
-    .single();
+  };
+  const savedResult = await supabase.from("lead_ai_summaries")
+    .upsert(summaryPayload, { onConflict: "tenant_id,lead_id,generation_id", ignoreDuplicates: true })
+    .select("*").maybeSingle();
+  let savedSummary = savedResult.data;
+  let saveError = savedResult.error?.message ?? null;
+  if (!saveError && !savedSummary) {
+    const recovered = await supabase.from("lead_ai_summaries").select("*")
+      .eq("tenant_id", tenantId).eq("lead_id", leadId).eq("generation_id", generationId).maybeSingle();
+    savedSummary = recovered.data;
+    saveError = recovered.error?.message ?? (recovered.data ? null : "The concurrent lead summary generation could not be recovered.");
+  }
 
   if (saveError) {
-    return json({ error: saveError.message }, 500);
+    return json({ error: saveError }, 500);
   }
+
+  const { error: completeError } = await supabase.rpc("complete_ai_summary_generation_v1", {
+    p_summary_kind: claimArgs.p_summary_kind,
+    p_tenant_id: claimArgs.p_tenant_id,
+    p_parent_id: claimArgs.p_parent_id,
+    p_generation_id: claimArgs.p_generation_id,
+    p_claim_token: claim.claim_token,
+    p_summary_id: String(savedSummary.id),
+  });
+  if (completeError) return json({ error: completeError.message }, 500);
+  generationCompleted = true;
 
   return json({
     summary: savedSummary,
@@ -222,6 +302,22 @@ Deno.serve(async (request) => {
       ? "Lead Smart Summary generated with deterministic fallback."
       : "Lead Smart Summary generated with Gemini.",
   });
+  } finally {
+    if (!generationCompleted) {
+      try {
+        const { error: releaseError } = await supabase.rpc("release_ai_summary_generation_v1", {
+          p_summary_kind: claimArgs.p_summary_kind,
+          p_tenant_id: claimArgs.p_tenant_id,
+          p_parent_id: claimArgs.p_parent_id,
+          p_generation_id: claimArgs.p_generation_id,
+          p_claim_token: claim.claim_token,
+        });
+        if (releaseError) console.error("Lead summary claim release failed", releaseError.message);
+      } catch (releaseError) {
+        console.error("Lead summary claim release failed", releaseError);
+      }
+    }
+  }
 });
 
 function buildDeterministicSummary(context: LeadContext): LeadSummaryOutput {
@@ -396,15 +492,14 @@ function summarizeForPrompt(context: LeadContext) {
   const lead = context.lead;
   return {
     lead: pick(lead, ["id", "full_name", "email", "phone", "whatsapp", "source", "pipeline_stage", "buyer_journey_stage", "decision_blocker", "budget_min", "budget_max", "preferred_contact_method", "assigned_to", "next_action", "next_action_due_at", "notes", "lost_reason", "created_at", "updated_at"]),
-    parcel: context.parcel ? pick(context.parcel, ["id", "lot_number", "status", "dimensions", "base_price"]) : null,
-    application: context.application ? pick(context.application, ["id", "applicant_full_name", "first_name", "last_name", "status", "intended_use", "payment_option", "created_at", "updated_at"]) : null,
+    parcel: context.parcel ? pick(context.parcel, ["id", "lot_number", "status", "dimensions"]) : null,
+    application: context.application ? pick(context.application, ["id", "applicant_full_name", "first_name", "last_name", "status", "intended_use", "created_at", "updated_at"]) : null,
     application_review: context.applicationReview ? pick(context.applicationReview, ["summary", "completeness_status", "missing_fields", "risk_flags", "recommended_admin_actions", "updated_at"]) : null,
     customer: context.customer ? pick(context.customer, ["id", "first_name", "last_name", "created_at", "updated_at"]) : null,
-    customer_summary: context.customerSummary ? pick(context.customerSummary, ["summary", "account_status", "collections_flags", "missing_items", "recommended_actions", "updated_at"]) : null,
     activities: context.activities.map((row) => pick(row, ["activity_type", "title", "description", "created_at"])),
     follow_ups: context.followUps.map((row) => pick(row, ["title", "description", "due_at", "status", "priority", "completed_at", "updated_at"])),
     site_visits: context.siteVisits.map((row) => pick(row, ["scheduled_at", "status", "visit_type", "location", "notes", "completed_at", "updated_at"])),
-    reservations: context.reservations.map((row) => pick(row, ["reservation_code", "status", "deposit_status", "expected_deposit_amount", "deposit_due_at", "reserved_at", "expires_at", "converted_application_id", "converted_contract_id", "updated_at"])),
+    reservations: context.reservations.map((row) => pick(row, ["reservation_code", "status", "deposit_status", "deposit_due_at", "reserved_at", "expires_at", "converted_application_id", "converted_contract_id", "updated_at"])),
   };
 }
 
@@ -487,6 +582,11 @@ function parseDate(value: unknown) {
 
 function relationArray(value: unknown) {
   return Array.isArray(value) ? value as Record<string, unknown>[] : [];
+}
+
+function numberOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function pick(row: Record<string, unknown>, keys: string[]) {

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Plat Digitizer"
+  short_description: "Extract reviewable lot drafts from subdivision plats"

@@ -1,0 +1,311 @@
+name: Admin launch controls replay
+
+on:
+  push:
+    branches:
+      - review/admin-launch-controls-73
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-admin-launch-replay:
+    name: 73 migrations, Admin controls, and signed-out rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      WAMULE_SCHEMA_BASE_COMMIT: d26e3de510d0668bae0f8b616eed7dddc7b5fdd7
+      REPLAY_DIR: /tmp/wamule-admin-launch-replay
+      SUPABASE_HOME: /tmp/wamule-supabase-home
+      SUPABASE_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Check out the isolated review commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify Admin controls, shared routes, and replay contracts
+        run: >-
+          node --test
+          test/local-supabase-replay.test.mjs
+          test/schema-query-contract.test.mjs
+          test/daily-brief-source-table.test.mjs
+          test/redact-supabase-ci-log.test.mjs
+          test/schema-repair-candidate-contract.test.mjs
+          test/generate-receipts-postgres17-candidate.test.mjs
+          test/tenant-provisioning-target.test.mjs
+          test/project-map-review-link.test.mjs
+          test/project-application-admin-settings.test.mjs
+          test/shared-project-links.test.mjs
+          test/public-application-settings.test.mjs
+          test/hopkins-project-application-contract.test.mjs
+          test/hopkins-application-admin-contract.test.mjs
+          test/m73-phase-map-controls.test.mjs
+
+      - name: Check patch formatting
+        run: git diff --check "${GITHUB_SHA}^" "${GITHUB_SHA}"
+
+      - name: Build the frontend and check lint
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Confirm the reviewed Supabase CLI version
+        run: |
+          version="$(./node_modules/.bin/supabase --version)"
+          test "$version" = "2.105.0" || { echo "Expected Supabase CLI 2.105.0; found $version." >&2; exit 1; }
+
+      - name: Prepare the exact ordered 73-entry replay
+        run: python3 scripts/prepare-local-supabase-replay.py --out "$REPLAY_DIR"
+
+      - name: Start the disposable Ubuntu Supabase stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SUPABASE_HOME"
+          mv "$REPLAY_DIR/supabase/migrations" "$REPLAY_DIR/supabase/replay-migrations"
+          mkdir "$REPLAY_DIR/supabase/migrations"
+          if ! ./node_modules/.bin/supabase start --workdir "$REPLAY_DIR" > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            echo 'Failing command: supabase start --workdir "$REPLAY_DIR"' >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/supabase-start.log" | tail -n 60 >&2
+            exit 1
+          fi
+
+      - name: Replay each inventory row and apply M1.5 separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          if [ -n "$(find "$REPLAY_DIR/supabase/migrations" -mindepth 1 -print -quit)" ]; then
+            echo "Unexpected migration files appeared during stack startup." >&2
+            exit 1
+          fi
+          rmdir "$REPLAY_DIR/supabase/migrations"
+          mv "$REPLAY_DIR/supabase/replay-migrations" "$REPLAY_DIR/supabase/migrations"
+          if ! SCHEMA_QUERY_DATABASE_URL="$db_url" python3 scripts/replay-local-supabase-baseline.py --manifest "$REPLAY_DIR/replay-manifest.json" > "$RUNNER_TEMP/replay-run-summary.json" 2> "$RUNNER_TEMP/replay-run-error.log"; then
+            echo "Failing command: replay-local-supabase-baseline.py against the disposable local database" >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/replay-run-error.log" | tail -n 90 >&2
+            exit 1
+          fi
+          python3 - "$REPLAY_DIR/applied-migrations.json" "$REPLAY_DIR/numbered-migrations.json" <<'PY'
+          import json, sys
+          applied, numbered = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+          assert applied.get("applied_migration_count") == 73
+          assert applied.get("ordered_manifest_match") is True
+          assert applied.get("m1_5_view_security_overlay", {}).get("applied") is True
+          assert numbered.get("numbered_migration_count") == 73
+          assert numbered.get("ordered_manifest_match") is True
+          assert "20261112040000" not in [str(row["version"]) for row in numbered["migrations"]]
+          print("All 73 version, filename, and SHA-256 rows replayed in order; M1.5 is separate; 20261112040000 is excluded.")
+          PY
+          printf '73 numbered migrations matched the ordered inventory; M1.5 was applied separately after 20261112033403; 20261112040000 was excluded.\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify Map Studio publication and M1.5 catalog state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/verify-admin-launch-baseline.mjs > "$RUNNER_TEMP/admin-launch-baseline.stdout.json"
+          cat "$REPLAY_DIR/admin-launch-baseline.json"
+
+      - name: Apply the separate Admin project-application RPC overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" REPLAY_DIR="$REPLAY_DIR" node scripts/apply-admin-application-overlay.mjs > "$RUNNER_TEMP/admin-overlay.stdout.json"
+          cat "$REPLAY_DIR/project-application-admin-settings-overlay.json"
+
+      - name: Confirm every source query fits the repaired catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          SCHEMA_QUERY_DATABASE_URL="$db_url" node scripts/schema-query-contract.mjs > "$REPLAY_DIR/schema-query-contract.json"
+          python3 - "$REPLAY_DIR/schema-query-contract.json" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report.get("mode") == "local-replayed-schema", report.get("mode")
+          assert report.get("mismatch_count") == 0, report.get("mismatches")
+          assert report.get("dynamic_or_unresolved_count") == 0, report.get("dynamic_or_unresolved")
+          print(f"Source query chains: {report.get('query_chains')}; mismatches: 0; unresolved checks: 0.")
+          PY
+
+      - name: Install Chromium for signed-out browser checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the Admin and shared-link walkthrough
+        id: admin-walkthrough
+        shell: bash
+        env:
+          WALKTHROUGH_EVIDENCE_PATH: ${{ runner.temp }}/tenant-walkthrough.json
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase status --workdir "$REPLAY_DIR" --output env > "$RUNNER_TEMP/supabase-status.env"
+          export SUPABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" API_URL)"
+          export SUPABASE_ANON_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" ANON_KEY)"
+          export SUPABASE_SERVICE_ROLE_KEY="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" SERVICE_ROLE_KEY)"
+          export SCHEMA_QUERY_DATABASE_URL="$(python3 scripts/read-supabase-status-env.py "$RUNNER_TEMP/supabase-status.env" DB_URL)"
+          export VITE_SUPABASE_URL="$SUPABASE_URL"
+          export VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          local_functions_env="$RUNNER_TEMP/local-functions.env"
+          umask 077
+          reviewer_signing_secret="$(openssl rand -hex 32)"
+          printf 'WAMULE_LOCAL_SERVICE_ROLE_KEY=%s\nWAMULE_EXPECTED_SUPABASE_PROJECT_REF=local\nMAP_REVIEW_LINK_SIGNING_SECRET=%s\nSUPPRESS_OUTBOUND_EMAILS=true\n' \
+            "$SUPABASE_SERVICE_ROLE_KEY" "$reviewer_signing_secret" > "$local_functions_env"
+          unset reviewer_signing_secret
+          ./node_modules/.bin/supabase functions serve --workdir "$REPLAY_DIR" --env-file "$local_functions_env" --no-verify-jwt > "$RUNNER_TEMP/local-functions.log" 2>&1 &
+          functions_pid=$!
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite-walkthrough.log" 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid" "$functions_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 90); do
+            function_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --request POST --header "apikey: $SUPABASE_ANON_KEY" --header 'Content-Type: application/json' \
+              --data '{}' "$SUPABASE_URL/functions/v1/super-admin-console" || true)"
+            if [ "$function_status" = "401" ] && curl --fail --silent --output /dev/null http://127.0.0.1:5173/; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local Edge Functions or Vite did not become ready." >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 80 >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 50 >&2
+            exit 1
+          fi
+          export WALKTHROUGH_WEB_ORIGIN="http://127.0.0.1:5173"
+          if ! node scripts/run-tenant-walkthrough.mjs; then
+            echo "The synthetic Admin walkthrough failed. Redacted local logs follow." >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/local-functions.log" | tail -n 120 >&2
+            python3 scripts/redact-supabase-ci-log.py "$RUNNER_TEMP/vite-walkthrough.log" | tail -n 60 >&2
+            exit 1
+          fi
+          python3 - "$WALKTHROUGH_EVIDENCE_PATH" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report.get("result") == "passed", report.get("failure")
+          assert len(report.get("stages", [])) == 5 and all(stage.get("status") == "passed" for stage in report["stages"]), report.get("stages")
+          db = report.get("database", {})
+          submission = report.get("synthetic_submission", {})
+          walkthrough = report["stages"][4].get("evidence", {})
+          assert db.get("numbered_migration_count") == 73 and db.get("m1_5_overlay_separate") is True
+          assert db.get("excluded_compatibility_migration") == "20261112040000"
+          assert submission.get("applications_in_initial") == 1 and submission.get("application_count_for_reference") == 1
+          assert submission.get("leads_in_initial") == 2 and submission.get("linked_lead_count") == 1
+          assert submission.get("map_inquiry_lead_count") == 1 and submission.get("map_inquiry_record_count") == 1
+          assert submission.get("map_inquiry_reason_visible_in_leads") is True
+          assert submission.get("map_inquiry_plot_visible_in_leads") is True
+          assert submission.get("standalone_map_apply_selected_SYN_001") is True
+          assert walkthrough.get("shared_project_refresh_ok") is True and walkthrough.get("shared_map_refresh_ok") is True
+          assert walkthrough.get("project_link_preview_metadata", {}).get("og_title", "").startswith("Synthetic Studio Review Project")
+          assert walkthrough.get("map_link_preview_metadata", {}).get("og_title", "").startswith("Synthetic Studio Review Project Map")
+          assert submission.get("selected_outline_label") == "SYN-001" and submission.get("same_id_on_retry") is True
+          assert submission.get("outbound_email_rows") == 0 and submission.get("payment_transaction_rows") == 0
+          assert submission.get("payment_allocation_rows") == 0 and submission.get("fee_charge_rows") == 0
+          assert submission.get("reservation_rows") == 0
+          assert walkthrough.get("hostname_binding_count") == 0 and walkthrough.get("shared_links_opened_signed_out") is True
+          assert walkthrough.get("application_form_seen") is True and walkthrough.get("admin_map_link_selected_SYN_001") is True
+          assert walkthrough.get("phase_restricted_staff_other_phase_package_rows") == 0
+          assert walkthrough.get("phase_restricted_staff_other_phase_outline_rows") == 0
+          assert walkthrough.get("tenant_intake_closed_at_end") is True and walkthrough.get("project_intake_closed_at_end") is True
+          assert walkthrough.get("final_effective_intake_by_phase", {}).get("initial") and "Closed" in walkthrough["final_effective_intake_by_phase"]["initial"]
+          assert walkthrough.get("final_effective_intake_by_phase", {}).get("later") and "Closed" in walkthrough["final_effective_intake_by_phase"]["later"]
+          lines = [
+              "\n#### Admin controls and shared-link walkthrough\n",
+              f"- Tested commit: `{report.get('tested_commit')}`; schema baseline: `{report.get('schema_baseline_commit')}`.",
+              "- Admin settings: `Settings → Company Profile → Public Application Settings` (tenant gate), then `Settings → Project Applications` (project type, Initial-only phase allowlist, required notice, acknowledgment, and intended use).",
+              "- Map publication: `Maps → select Map Studio package → confirm target phase and revision → Review publish details → Confirm publication`.",
+              f"- Signed-out links opened: `{walkthrough.get('shared_application_link')}` and `{walkthrough.get('shared_map_link')}`.",
+              f"- Initial: {submission.get('applications_in_initial')} application, {submission.get('linked_lead_count')} linked lead; retry reused ID: `{submission.get('same_id_on_retry')}`; selected outline: `{submission.get('selected_outline_label')}`.",
+              f"- Map inquiry: {submission.get('map_inquiry_lead_count')} lead with reason and SYN-001 shown in Admin Leads; standalone Apply selected SYN-001: `{submission.get('standalone_map_apply_selected_SYN_001')}`.",
+              f"- Fresh shared links refreshed: project `{walkthrough.get('shared_project_refresh_ok')}`, map `{walkthrough.get('shared_map_refresh_ok')}`; hydrated Open Graph titles: `{walkthrough.get('project_link_preview_metadata', {}).get('og_title')}` / `{walkthrough.get('map_link_preview_metadata', {}).get('og_title')}`.",
+              f"- Static HTML preview fallback is public and route-generic: `{walkthrough.get('static_html_link_preview_metadata', {}).get('route_specific')}`; browser Open Graph tags carry the project/map title after hydration.",
+              f"- Later effective intake: `{walkthrough.get('final_effective_intake_by_phase', {}).get('later')}`; Staff other-phase package/outline rows: {walkthrough.get('phase_restricted_staff_other_phase_package_rows')} / {walkthrough.get('phase_restricted_staff_other_phase_outline_rows')}.",
+              f"- Hostname bindings: {walkthrough.get('hostname_binding_count')}; email/payment allocations/fee charges/reservations: {submission.get('outbound_email_rows')} / {submission.get('payment_allocation_rows')} / {submission.get('fee_charge_rows')} / {submission.get('reservation_rows')}.",
+              f"- Expired-link background request HTTP status: {walkthrough.get('expired_background_request_status')}; link/token omitted from evidence.",
+              "- Final tenant and project intake gates: closed.",
+          ]
+          with open(sys.argv[2], "a", encoding="utf-8") as stream:
+              stream.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Stop and remove the disposable stack
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_status="passed"
+          if [ -d "$REPLAY_DIR" ]; then
+            ./node_modules/.bin/supabase stop --workdir "$REPLAY_DIR" --no-backup >/dev/null 2>&1 || true
+          fi
+          stack_label="com.supabase.cli.project=wamule-local-replay"
+          containers="$(docker ps -a -q --filter "label=$stack_label")"
+          if [ -n "$containers" ]; then docker rm --force $containers >/dev/null; fi
+          volumes="$(docker volume ls -q --filter "label=$stack_label")"
+          if [ -n "$volumes" ]; then docker volume rm $volumes >/dev/null; fi
+          remaining_containers="$(docker ps -a -q --filter "label=$stack_label")"
+          remaining_volumes="$(docker volume ls -q --filter "label=$stack_label")"
+          if [ -n "$remaining_containers" ] || [ -n "$remaining_volumes" ]; then cleanup_status="failed"; fi
+          printf '{"status":"%s","hosted_target_used":false,"volumes_removed":%s}\n' \
+            "$cleanup_status" "$([ "$cleanup_status" = passed ] && echo true || echo false)" > "$RUNNER_TEMP/admin-launch-cleanup.json"
+          test "$cleanup_status" = passed
+
+      - name: Stage replay evidence for artifact upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/wamule-admin-launch-replay"
+          mkdir -p "$evidence_dir"
+          for file in \
+            staging-inventory.json replay-manifest.json applied-migrations.json \
+            numbered-migrations.json admin-launch-baseline.json \
+            project-application-admin-settings-overlay.json schema-query-contract.json; do
+            if [ -s "$REPLAY_DIR/$file" ]; then cp "$REPLAY_DIR/$file" "$evidence_dir/$file"; fi
+          done
+
+      - name: Retain sanitized replay and walkthrough evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-launch-controls-replay-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/wamule-admin-launch-replay/staging-inventory.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/replay-manifest.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/applied-migrations.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/numbered-migrations.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/admin-launch-baseline.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/project-application-admin-settings-overlay.json
+            ${{ runner.temp }}/wamule-admin-launch-replay/schema-query-contract.json
+            ${{ runner.temp }}/tenant-walkthrough.json
+            ${{ runner.temp }}/tenant-walkthrough-public-map.png
+            ${{ runner.temp }}/tenant-walkthrough-shared-map-link.png
+            ${{ runner.temp }}/admin-launch-cleanup.json

@@ -1,0 +1,225 @@
+{
+  "scope": {
+    "tenantSlug": "hopkins-grove",
+    "projectSlug": "map-review",
+    "phaseSlug": "default"
+  },
+  "source_image_sha256": "d82e5880371e8de7821650cf0d1c1e70e5dfac6091cca2db73a8de085f3241be",
+  "detection_source_sha256": "f70084a8e7c9ba0ea2b0203bfbf4af678d3f09b60a712ec5b469f45ff08aafa0",
+  "review_date": "2026-10-15T01:03:06.953Z",
+  "applied": [
+    {
+      "detection_id": "L-365",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-365-hue-all/proposal.json",
+      "proposal_fingerprint": "80d63327b12f5bd6bbc747cf5694c78f73650ae71f5fd658b07894876667a6d5",
+      "child_count": 4,
+      "parent_coverage_percent": 94.926,
+      "unassigned_parent_area_percent": 5.074,
+      "outside_parent_area_percent": 0.103,
+      "boundary_ink_alignment_percent": [
+        100,
+        100,
+        100,
+        96.88
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "5.074% of the original L-365 detection remains unassigned.",
+        "0.103% of proposed child union lies outside the original L-365 detection."
+      ]
+    },
+    {
+      "detection_id": "L-338",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-338-hue-all/proposal.json",
+      "proposal_fingerprint": "eba80374ac3698e9587b46c4a35da5e184bb5d80e98d826475f1d6bdfba58988",
+      "child_count": 4,
+      "parent_coverage_percent": 94.977,
+      "unassigned_parent_area_percent": 5.023,
+      "outside_parent_area_percent": 0.14,
+      "boundary_ink_alignment_percent": [
+        100,
+        84.71,
+        100,
+        87.04
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "5.023% of the original L-338 detection remains unassigned.",
+        "0.140% of proposed child union lies outside the original L-338 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 84.71%; this image metric is not survey accuracy.",
+        "Child 4 boundary-on-dark-ink heuristic is 87.04%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-337",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-337-hue-all/proposal.json",
+      "proposal_fingerprint": "5b11387173335ebb397e46201819b37ecc83293e80c3cdecb8406c55e5231cea",
+      "child_count": 4,
+      "parent_coverage_percent": 95.329,
+      "unassigned_parent_area_percent": 4.671,
+      "outside_parent_area_percent": 0.433,
+      "boundary_ink_alignment_percent": [
+        100,
+        99.09,
+        100,
+        89.05
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "4.671% of the original L-337 detection remains unassigned.",
+        "0.433% of proposed child union lies outside the original L-337 detection.",
+        "Child 4 boundary-on-dark-ink heuristic is 89.05%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-505",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-505/proposal.json",
+      "proposal_fingerprint": "c0a25e302e303705dbb0e263a5767b67f0d4ced954b9d6ea9b55e1e3e884d986",
+      "child_count": 6,
+      "parent_coverage_percent": 93.844,
+      "unassigned_parent_area_percent": 6.156,
+      "outside_parent_area_percent": 0.347,
+      "boundary_ink_alignment_percent": [
+        84.81,
+        72.14,
+        99.69,
+        99.38,
+        99.69,
+        97.78
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "6.156% of the original L-505 detection remains unassigned.",
+        "0.347% of proposed child union lies outside the original L-505 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 84.81%; this image metric is not survey accuracy.",
+        "Child 2 boundary-on-dark-ink heuristic is 72.14%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-504",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-504/proposal.json",
+      "proposal_fingerprint": "7e359de97efca81ac47e616922e235b08cc7d2cc027f314870746ca8b4dd60b0",
+      "child_count": 6,
+      "parent_coverage_percent": 94.35,
+      "unassigned_parent_area_percent": 5.65,
+      "outside_parent_area_percent": 0.1,
+      "boundary_ink_alignment_percent": [
+        85.13,
+        99.37,
+        99.07,
+        100,
+        98.12,
+        100
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "5.650% of the original L-504 detection remains unassigned.",
+        "0.100% of proposed child union lies outside the original L-504 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 85.13%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-444",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-444/proposal.json",
+      "proposal_fingerprint": "0a3ce9276169bc011df65a334ca5fe2723c1ad6fa47632f4bd5fcba02ec4bc8c",
+      "child_count": 3,
+      "parent_coverage_percent": 95.444,
+      "unassigned_parent_area_percent": 4.556,
+      "outside_parent_area_percent": 0.069,
+      "boundary_ink_alignment_percent": [
+        98.87,
+        80.77,
+        100
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "4.556% of the original L-444 detection remains unassigned.",
+        "0.069% of proposed child union lies outside the original L-444 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 80.77%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-506",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-506/proposal.json",
+      "proposal_fingerprint": "25b0cd3eac647b5a9b95bd996a9cb56b54703a511d75d3f482bd5d517d3f8233",
+      "child_count": 5,
+      "parent_coverage_percent": 95.14,
+      "unassigned_parent_area_percent": 4.86,
+      "outside_parent_area_percent": 0.108,
+      "boundary_ink_alignment_percent": [
+        100,
+        87.47,
+        100,
+        100,
+        96.53
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "4.860% of the original L-506 detection remains unassigned.",
+        "0.108% of proposed child union lies outside the original L-506 detection.",
+        "Child 2 boundary-on-dark-ink heuristic is 87.47%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-020",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-020/proposal.json",
+      "proposal_fingerprint": "ddc59cc3e5b159f4f119bfdd6a22e41a13d5e6446b14fccd247d1fa7921ab3c0",
+      "child_count": 3,
+      "parent_coverage_percent": 89.858,
+      "unassigned_parent_area_percent": 10.142,
+      "outside_parent_area_percent": 0.167,
+      "boundary_ink_alignment_percent": [
+        95.69,
+        100,
+        87.62
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "10.142% of the original L-020 detection remains unassigned.",
+        "0.167% of proposed child union lies outside the original L-020 detection.",
+        "Child 3 boundary-on-dark-ink heuristic is 87.62%; this image metric is not survey accuracy."
+      ]
+    },
+    {
+      "detection_id": "L-011",
+      "status": "applied-local-demo-geometry",
+      "proposal_path": "out/plat-digitizer/font-finetune-review-20261014/L-011/proposal.json",
+      "proposal_fingerprint": "d5f0720cc24532b77b567b0f77e58768c6131f7b4d673389f2aeadff39691acb",
+      "child_count": 2,
+      "parent_coverage_percent": 95.516,
+      "unassigned_parent_area_percent": 4.484,
+      "outside_parent_area_percent": 0.344,
+      "boundary_ink_alignment_percent": [
+        84.68,
+        70.28
+      ],
+      "printed_number_status": "blank-pending",
+      "exceptions": [
+        "4.484% of the original L-011 detection remains unassigned.",
+        "0.344% of proposed child union lies outside the original L-011 detection.",
+        "Child 1 boundary-on-dark-ink heuristic is 84.68%; this image metric is not survey accuracy.",
+        "Child 2 boundary-on-dark-ink heuristic is 70.28%; this image metric is not survey accuracy."
+      ]
+    }
+  ],
+  "pending": [
+    {
+      "detection_id": "L-258",
+      "reason": "The broad-hue CV proposal includes a partial contour over printed plot 896 and does not provide a source-faithful child boundary set; leave the existing map detection active for manual tracing.",
+      "status": "pending-not-applied"
+    },
+    {
+      "detection_id": "L-363",
+      "reason": "Its proposal overlaps the already-active L-362 replacement children: candidate children 1 and 4 overlap active L-362 children 2 and 3 by about 40.23% and 89.58% respectively. Keep the current map geometry until the shared boundary is reconciled.",
+      "status": "pending-not-applied"
+    }
+  ]
+}

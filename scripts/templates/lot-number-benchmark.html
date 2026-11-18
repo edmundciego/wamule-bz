@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Hopkins Grove · Lot-number review</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #20312b;
+    --muted: #52635c;
+    --line: #d7ddd8;
+    --surface: #fff;
+    --canvas: #f4f6f3;
+    --green: #1f6b45;
+    --green-deep: #185437;
+    --green-soft: #e8f3ec;
+    --amber: #8b5a14;
+    --amber-soft: #fff4dd;
+    --red: #9c332d;
+    --shadow: 0 2px 8px rgb(25 45 34 / 8%);
+    font: 15px/1.45 Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { min-width: 320px; margin: 0; color: var(--ink); background: var(--canvas); }
+  button, input { font: inherit; }
+  button { min-height: 44px; border: 1px solid var(--line); border-radius: 7px; padding: 0 14px; color: var(--ink); background: var(--surface); cursor: pointer; }
+  button:hover { border-color: #9eb5a6; background: #f9fbf9; }
+  button:focus-visible, input:focus-visible { outline: 3px solid #397d58; outline-offset: 2px; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
+  .primary { color: #fff; background: var(--green); border-color: var(--green); font-weight: 650; }
+  .primary:hover { color: #fff; background: var(--green-deep); border-color: var(--green-deep); }
+  .decision { display: grid; gap: 9px; grid-template-columns: 1fr 1fr; }
+  .decision .primary { grid-column: 1 / -1; }
+  .danger { color: var(--red); border-color: #dfb9b5; }
+  .topbar { padding: 20px clamp(16px, 3vw, 42px) 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .topbar-inner { max-width: 1600px; margin: 0 auto; }
+  .title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+  h1 { margin: 0; font-size: 25px; line-height: 1.2; letter-spacing: -.025em; font-weight: 680; text-wrap: balance; }
+  .subtitle { max-width: 72ch; margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+  .privacy { flex: 0 0 auto; border: 1px solid #c8dfd0; border-radius: 999px; padding: 6px 10px; color: var(--green-deep); background: var(--green-soft); font-size: 12px; font-weight: 650; white-space: nowrap; }
+  .progress-wrap { margin-top: 18px; }
+  .progress-labels { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 7px; color: var(--muted); font-size: 13px; }
+  .progress-track { height: 8px; overflow: hidden; border-radius: 99px; background: #e4e9e5; }
+  .progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--green); transition: width 160ms ease-out; }
+  main { max-width: 1600px; margin: 0 auto; padding: 20px clamp(16px, 3vw, 42px) 34px; }
+  .notice { margin: 0 0 16px; padding: 11px 14px; border: 1px solid #e2d3b5; border-radius: 8px; color: #624813; background: var(--amber-soft); font-size: 13px; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(330px, .75fr); gap: 16px; align-items: start; }
+  .image-panel, .review-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  .image-panel { min-width: 0; overflow: hidden; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 54px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .panel-title { font-size: 14px; font-weight: 670; }
+  .case-count { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .zoom-controls { display: flex; align-items: center; gap: 6px; }
+  .zoom-controls button { min-height: 36px; padding: 0 10px; font-size: 13px; }
+  .image-stage { height: min(70vh, 820px); min-height: 360px; overflow: auto; padding: 14px; background: #e8ece9; }
+  .source-crop { display: block; width: 100%; height: auto; margin: 0 auto; background: #fff; }
+  .image-caption { padding: 10px 14px 12px; color: var(--muted); font-size: 12px; }
+  .review-panel { padding: 18px; }
+  .target-instruction { margin: 0 0 15px; padding: 12px; border-radius: 7px; color: #183f2c; background: var(--green-soft); font-size: 14px; }
+  .target-swatch { display: inline-block; width: 18px; height: 12px; margin: 0 4px 0 0; vertical-align: -1px; border: 3px solid #d00070; outline: 1px solid #fff; }
+  .field { margin: 0 0 14px; }
+  label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 650; }
+  input { width: 100%; min-height: 45px; padding: 9px 11px; border: 1px solid #9eaaa3; border-radius: 6px; color: var(--ink); background: #fff; }
+  input::placeholder { color: #63736c; opacity: 1; }
+  .help { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+  .reviewer-field { margin-bottom: 16px; }
+  .reviewer-name { max-width: 48ch; }
+  .decision { margin-top: 17px; }
+  .skip-row { display: flex; justify-content: space-between; gap: 9px; margin-top: 10px; }
+  .skip-row button { flex: 1; }
+  .review-status { min-height: 23px; margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+  .review-status.error { color: #8d2621; font-weight: 650; }
+  .export-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .export-row button { min-height: 42px; padding: 7px 9px; font-size: 12px; font-weight: 620; }
+  .saved-note { margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+  .keyboard-hint { margin-top: 14px; color: var(--muted); font-size: 11px; }
+  kbd { border: 1px solid #b9c2bc; border-radius: 4px; padding: 1px 5px; color: #34473d; background: #f8faf8; font-size: 11px; }
+  .loading { max-width: 40rem; margin: 3rem auto; padding: 1.25rem; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); }
+  @media (max-width: 900px) {
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .image-stage { height: min(54vh, 580px); min-height: 280px; }
+    .review-panel { padding: 16px; }
+  }
+  @media (max-width: 560px) {
+    .topbar { padding-top: 15px; }
+    .title-row { display: block; }
+    h1 { font-size: 22px; }
+    .privacy { display: inline-block; margin-top: 10px; }
+    .progress-wrap { margin-top: 14px; }
+    main { padding-top: 12px; }
+    .workspace { gap: 11px; }
+    .panel-head { align-items: flex-start; flex-direction: column; gap: 8px; }
+    .zoom-controls { align-self: stretch; }
+    .zoom-controls button { flex: 1; }
+    .image-stage { min-height: 220px; height: 44vh; padding: 8px; }
+    .review-panel { padding: 14px; }
+    .decision { grid-template-columns: 1fr; }
+    .decision .primary { grid-column: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="title-row">
+      <div>
+        <h1>Confirm the number inside the outlined lot</h1>
+        <p class="subtitle">Read the printed lot number within the highlighted boundary. Nearby numbers are context only; do not infer a missing number from sequence.</p>
+      </div>
+      <div class="privacy">Local review · OCR hidden</div>
+    </div>
+    <div class="progress-wrap" aria-label="Review progress">
+      <div class="progress-labels"><span id="progressSummary" aria-live="polite">Loading 60 review cases…</span><span id="casePosition">—</span></div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+  </div>
+</header>
+<main>
+  <div class="notice" role="note">Progress autosaves in this browser only. Export the review JSON and scorer CSV periodically; a skipped case stays unresolved until you return to it.</div>
+  <div id="loading" class="loading" role="status">Checking the source-bound benchmark and loading the first crop…</div>
+  <div id="app" class="workspace" hidden>
+    <section class="image-panel" aria-label="Source map evidence">
+      <div class="panel-head">
+        <div><div class="panel-title">Original drawing · target boundary outlined</div><div class="case-count" id="caseLabel">Case —</div></div>
+        <div class="zoom-controls" aria-label="Image zoom controls">
+          <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+          <button id="zoomFit" type="button">Fit</button>
+          <button id="zoomOne" type="button">1:1</button>
+          <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div class="image-stage" id="imageStage" tabindex="0" aria-label="Scrollable map crop">
+        <img class="source-crop" id="sourceCrop" alt="High-resolution crop from the subdivision drawing; the target lot boundary is outlined in white and magenta.">
+      </div>
+      <div class="image-caption"><span class="target-swatch" aria-hidden="true"></span>Target lot. Crop is from the source image; the outline is added only to identify the polygon for review.</div>
+    </section>
+    <section class="review-panel" aria-label="Human review decision">
+      <p class="target-instruction"><strong>Review only the outlined parcel.</strong> The polygon ID and OCR suggestions are intentionally hidden. If the outline crosses lot boundaries or contains multiple printed lot numbers, mark it ambiguous—do not choose a nearby number.</p>
+      <div class="field reviewer-field">
+        <label for="reviewer">Reviewer name</label>
+        <input class="reviewer-name" id="reviewer" type="text" autocomplete="name" placeholder="Enter your name to record a decision">
+      </div>
+      <div class="field">
+        <label for="printedNumber">Printed lot number</label>
+        <input id="printedNumber" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="numberHelp" placeholder="Digits exactly as printed">
+        <p class="help" id="numberHelp">Enter only digits inside the outlined polygon. Leave sequence-based guesses blank; if the outline does not match one lot, mark ambiguous.</p>
+      </div>
+      <div class="field">
+        <label for="printedArea">Printed area (optional)</label>
+        <input id="printedArea" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="For example, 1011.876">
+        <p class="help">Capture the area only if it is clearly printed with this target lot.</p>
+      </div>
+      <div class="decision" aria-label="Record a review decision">
+        <button id="saveNumber" class="primary" type="button">Save number &amp; next</button>
+        <button id="markAmbiguous" type="button">Mark ambiguous</button>
+        <button id="markUnreadable" class="danger" type="button">Mark unreadable</button>
+      </div>
+      <div class="skip-row">
+        <button id="previousCase" type="button">← Previous</button>
+        <button id="skipCase" type="button">Skip for now →</button>
+      </div>
+      <div class="skip-row"><button id="nextCase" type="button">Next case →</button><button id="reviewSkipped" type="button">Review skipped</button></div>
+      <p class="review-status" id="reviewStatus" role="status" aria-live="polite"></p>
+      <div class="export-row">
+        <button id="exportJson" type="button">Export versioned review JSON</button>
+        <button id="exportCsv" type="button">Export scorer CSV</button>
+      </div>
+      <p class="saved-note">JSON preserves source, polygon, crop, reviewer, decision, and timestamp evidence. CSV uses the existing scoring-tool fields.</p>
+      <p class="keyboard-hint">Keyboard: <kbd>Enter</kbd> save number · <kbd>←</kbd>/<kbd>→</kbd> navigate. Navigation keys are ignored while editing text.</p>
+    </section>
+  </div>
+</main>
+<script>
+const BENCHMARK_ID = "{{BENCHMARK_ID}}";
+const CASE_COUNT = {{CASE_COUNT}};
+const EXPECTED_MANIFEST_SHA256 = "{{MANIFEST_SHA256}}";
+const STORAGE_KEY = "wamule-lot-number-benchmark-v1:" + EXPECTED_MANIFEST_SHA256;
+const $ = (id) => document.getElementById(id);
+let manifest;
+let state = {
+  benchmark_id: BENCHMARK_ID,
+  manifest_sha256: EXPECTED_MANIFEST_SHA256,
+  current: 0,
+  reviewer: "",
+  reviews: {},
+};
+let zoom = "fit";
+let activeImageUrl = null;
+let cropRequest = 0;
+
+function setStatus(message, error = false) {
+  $("reviewStatus").textContent = message;
+  $("reviewStatus").classList.toggle("error", error);
+}
+
+function persist() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    setStatus("Could not save in browser storage. Export your review before continuing. " + error.message, true);
+  }
+}
+
+function currentCase() { return manifest.cases[state.current]; }
+function currentReview() { return state.reviews[currentCase().id] || {}; }
+function isComplete(review) { return ["confirmed", "ambiguous", "unreadable"].includes(review?.status); }
+
+function updateProgress() {
+  const cases = manifest.cases;
+  const reviewed = cases.filter((item) => isComplete(state.reviews[item.id])).length;
+  const skipped = cases.filter((item) => state.reviews[item.id]?.status === "skipped").length;
+  const remaining = cases.length - reviewed - skipped;
+  $("progressSummary").textContent = `${reviewed} of ${cases.length} decisions recorded · ${skipped} skipped · ${remaining} unresolved`;
+  $("progressFill").style.width = `${Math.round(reviewed / cases.length * 100)}%`;
+  $("casePosition").textContent = `${state.current + 1} / ${cases.length}`;
+  $("reviewSkipped").disabled = skipped === 0;
+}
+
+function applyZoom() {
+  const image = $("sourceCrop");
+  const stage = $("imageStage");
+  if (!image.naturalWidth) return;
+  if (zoom === "fit") image.style.width = "100%";
+  else if (zoom === "one") image.style.width = `${image.naturalWidth}px`;
+  else image.style.width = `${Math.max(55, Math.min(250, Number(zoom)))}%`;
+}
+
+function showCase(index) {
+  state.current = Math.max(0, Math.min(manifest.cases.length - 1, index));
+  const item = currentCase();
+  const review = currentReview();
+  $("caseLabel").textContent = `Review case ${state.current + 1} of ${manifest.cases.length}`;
+  $("sourceCrop").removeAttribute("src");
+  loadCrop(item);
+  $("printedNumber").value = review.printed_number || "";
+  $("printedArea").value = review.printed_area_sqm || "";
+  $("previousCase").disabled = state.current === 0;
+  $("nextCase").disabled = state.current === manifest.cases.length - 1;
+  $("reviewStatus").classList.remove("error");
+  $("reviewStatus").textContent = review.status === "skipped" ? "This case is skipped and still needs a decision." :
+    review.status === "ambiguous" ? "Previously marked ambiguous." :
+    review.status === "unreadable" ? "Previously marked unreadable." :
+    review.status === "confirmed" ? `Number recorded by ${review.reviewer || "reviewer"}.` : "No final decision recorded for this case.";
+  zoom = "fit";
+  persist();
+  updateProgress();
+}
+
+async function loadCrop(item) {
+  const request = ++cropRequest;
+  try {
+    const response = await fetch("/" + item.crop_file, { cache: "no-store" });
+    if (!response.ok) throw new Error("The source crop could not be loaded.");
+    const blob = await response.blob();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())))
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (digest !== item.crop_sha256) throw new Error("The crop fingerprint does not match the benchmark manifest.");
+    if (request !== cropRequest) return;
+    if (activeImageUrl) URL.revokeObjectURL(activeImageUrl);
+    activeImageUrl = URL.createObjectURL(blob);
+    $("sourceCrop").src = activeImageUrl;
+  } catch (error) {
+    if (request === cropRequest) setStatus(error.message, true);
+  }
+}
+
+function saveDraft() {
+  const number = $("printedNumber").value.trim();
+  const area = $("printedArea").value.trim();
+  const previous = currentReview();
+  if (!number && !area && !previous.status) return;
+  state.reviews[currentCase().id] = {
+    ...previous,
+    printed_number: number,
+    printed_area_sqm: area,
+    status: "draft",
+    reviewer: $("reviewer").value.trim(),
+  };
+  persist();
+  updateProgress();
+}
+
+function requireReviewer() {
+  const name = $("reviewer").value.trim();
+  if (!name) {
+    setStatus("Enter your name before recording a decision.", true);
+    $("reviewer").focus();
+    return null;
+  }
+  state.reviewer = name;
+  return name;
+}
+
+function nextUnresolved(from = state.current) {
+  for (let offset = 1; offset <= manifest.cases.length; offset += 1) {
+    const index = (from + offset) % manifest.cases.length;
+    const review = state.reviews[manifest.cases[index].id];
+    if (!isComplete(review) && review?.status !== "skipped") return index;
+  }
+  const skippedIndex = manifest.cases.findIndex((item) => state.reviews[item.id]?.status === "skipped");
+  return skippedIndex >= 0 ? skippedIndex : from;
+}
+
+function recordDecision(status) {
+  const reviewer = requireReviewer();
+  if (!reviewer) return;
+  let number = $("printedNumber").value.trim();
+  let area = $("printedArea").value.trim();
+  if (status === "confirmed" && !/^\d+$/.test(number)) {
+    setStatus("Enter the exact printed digits, or mark ambiguous/unreadable/skip.", true);
+    $("printedNumber").focus();
+    return;
+  }
+  if (area && (!/^\d+(?:\.\d+)?$/.test(area) || Number(area) <= 0)) {
+    setStatus("Area must be a positive number such as 1011.876, or leave it blank.", true);
+    $("printedArea").focus();
+    return;
+  }
+  if (status !== "confirmed") { number = ""; area = ""; }
+  state.reviews[currentCase().id] = {
+    printed_number: number,
+    printed_area_sqm: area,
+    status,
+    reviewer,
+    reviewed_at: new Date().toISOString(),
+  };
+  const priorIndex = state.current;
+  persist();
+  if (status === "confirmed") setStatus("Number decision saved.");
+  else if (status === "ambiguous") setStatus("Marked ambiguous; it remains excluded from numeric scoring.");
+  else setStatus("Marked unreadable; it remains excluded from numeric scoring.");
+  showCase(nextUnresolved(priorIndex));
+}
+
+function skipCurrent() {
+  const reviewer = requireReviewer();
+  if (!reviewer) return;
+  state.reviews[currentCase().id] = {
+    printed_number: "", printed_area_sqm: "", status: "skipped", reviewer,
+    reviewed_at: new Date().toISOString(),
+  };
+  const previous = state.current;
+  persist();
+  setStatus("Skipped for now. This case remains unresolved and can be revisited.");
+  showCase(nextUnresolved(previous));
+}
+
+function moveTo(index) {
+  saveDraft();
+  showCase(index);
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? '"' + text.replaceAll('"', '""') + '"' : text;
+}
+
+function buildCsv() {
+  const rows = [["id", "printed_number", "printed_area_sqm", "ambiguous", "unreadable", "skipped", "reviewer", "reviewed_at"]];
+  for (const item of manifest.cases) {
+    const review = state.reviews[item.id] || {};
+    rows.push([
+      item.id,
+      review.status === "confirmed" ? (review.printed_number || "") : "",
+      review.status === "confirmed" ? (review.printed_area_sqm || "") : "",
+      review.status === "ambiguous" ? "1" : "",
+      review.status === "unreadable" ? "1" : "",
+      review.status === "skipped" ? "1" : "",
+      review.reviewer || "",
+      review.reviewed_at || "",
+    ]);
+  }
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n") + "\n";
+}
+
+function buildGroundTruth() {
+  const cases = manifest.cases.map((item) => ({
+    ...item,
+    ...(state.reviews[item.id] || { status: "pending", printed_number: "", printed_area_sqm: "", reviewer: "", reviewed_at: null }),
+  }));
+  const reviewed = cases.filter((item) => isComplete(item)).length;
+  const skipped = cases.filter((item) => item.status === "skipped").length;
+  return {
+    schema_version: 1,
+    artifact_type: "wamule-lot-number-ground-truth",
+    benchmark_id: manifest.benchmark_id,
+    export_status: reviewed === manifest.cases.length ? "complete" : "partial",
+    exported_at_utc: new Date().toISOString(),
+    reviewer_name: state.reviewer,
+    review_summary: { expected_cases: manifest.cases.length, decisions_recorded: reviewed, skipped, unresolved: manifest.cases.length - reviewed - skipped },
+    source_image: manifest.source_image,
+    lot_geometry_sha256: manifest.lot_geometry_sha256,
+    benchmark_manifest_sha256: EXPECTED_MANIFEST_SHA256,
+    cases,
+  };
+}
+
+function download(name, contents, type) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJson() {
+  saveDraft();
+  download("hopkins-grove-lot-number-ground-truth-v1.json", JSON.stringify(buildGroundTruth(), null, 2) + "\n", "application/json");
+  setStatus("Versioned review JSON exported. It records partial/complete status and source evidence.");
+}
+
+function exportCsv() {
+  saveDraft();
+  download("hopkins-grove-labels.csv", buildCsv(), "text/csv;charset=utf-8");
+  setStatus("Scorer CSV exported. Skipped and unresolved rows stay blank and are not scored.");
+}
+
+async function loadBenchmark() {
+  try {
+    const response = await fetch("/benchmark-manifest.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("Benchmark manifest could not be loaded.");
+    const raw = await response.text();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw))))
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (digest !== EXPECTED_MANIFEST_SHA256) throw new Error("Benchmark manifest fingerprint does not match the review page.");
+    manifest = JSON.parse(raw);
+    if (manifest.schema_version !== 1 || manifest.benchmark_id !== BENCHMARK_ID || manifest.cases.length !== CASE_COUNT) {
+      throw new Error("Benchmark manifest has an unexpected version, ID, or case count.");
+    }
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (saved?.benchmark_id === BENCHMARK_ID && saved?.manifest_sha256 === EXPECTED_MANIFEST_SHA256) {
+      state = { ...state, ...saved, reviews: saved.reviews || {} };
+    }
+    $("reviewer").value = state.reviewer || "";
+    $("loading").hidden = true;
+    $("app").hidden = false;
+    $("sourceCrop").addEventListener("load", applyZoom);
+    showCase(state.current || 0);
+  } catch (error) {
+    $("loading").textContent = `Review pack unavailable: ${error.message}`;
+    $("loading").setAttribute("role", "alert");
+  }
+}
+
+$("reviewer").addEventListener("input", () => { state.reviewer = $("reviewer").value; persist(); });
+$("printedNumber").addEventListener("input", saveDraft);
+$("printedArea").addEventListener("input", saveDraft);
+$("saveNumber").addEventListener("click", () => recordDecision("confirmed"));
+$("markAmbiguous").addEventListener("click", () => recordDecision("ambiguous"));
+$("markUnreadable").addEventListener("click", () => recordDecision("unreadable"));
+$("skipCase").addEventListener("click", skipCurrent);
+$("previousCase").addEventListener("click", () => moveTo(state.current - 1));
+$("nextCase").addEventListener("click", () => moveTo(state.current + 1));
+$("reviewSkipped").addEventListener("click", () => {
+  const index = manifest.cases.findIndex((item) => state.reviews[item.id]?.status === "skipped");
+  if (index >= 0) moveTo(index);
+});
+$("exportJson").addEventListener("click", exportJson);
+$("exportCsv").addEventListener("click", exportCsv);
+$("zoomOut").addEventListener("click", () => { zoom = zoom === "fit" ? 90 : Math.max(55, Number(zoom) - 15); applyZoom(); });
+$("zoomIn").addEventListener("click", () => { zoom = zoom === "fit" ? 115 : Math.min(250, Number(zoom) + 15); applyZoom(); });
+$("zoomFit").addEventListener("click", () => { zoom = "fit"; applyZoom(); });
+$("zoomOne").addEventListener("click", () => { zoom = "one"; applyZoom(); });
+document.addEventListener("keydown", (event) => {
+  const tag = event.target?.tagName?.toLowerCase();
+  const editing = ["input", "textarea", "select"].includes(tag) || event.target?.isContentEditable;
+  if (editing) return;
+  if (event.key === "ArrowLeft" && state.current > 0) moveTo(state.current - 1);
+  if (event.key === "ArrowRight" && state.current < manifest.cases.length - 1) moveTo(state.current + 1);
+  if (event.key === "Enter") { event.preventDefault(); recordDecision("confirmed"); }
+});
+
+loadBenchmark();
+</script>
+</body>
+</html>

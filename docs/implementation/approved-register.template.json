@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "project": {
+    "id": "",
+    "name": ""
+  },
+  "scope": {
+    "id": "",
+    "name": ""
+  },
+  "revision": "",
+  "approval": {
+    "status": "pending",
+    "approved_by": "",
+    "approved_at": "",
+    "source": ""
+  },
+  "sources": {
+    "legal_identity": { "document": "", "revision": "", "locator": "" },
+    "area_unit": { "document": "", "revision": "", "locator": "" },
+    "tier": { "document": "", "revision": "", "locator": "" },
+    "price": { "document": "", "revision": "", "locator": "" },
+    "status": { "document": "", "revision": "", "locator": "" }
+  },
+  "lots": [
+    {
+      "legal_lot_id": "",
+      "display_lot_number": "",
+      "area_value": null,
+      "area_unit": "",
+      "tier_key": "",
+      "price_amount": null,
+      "price_currency": "",
+      "status": "",
+      "in_scope": null
+    }
+  ]
+}

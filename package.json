@@ -9,9 +9,20 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright install chromium && playwright test --project=chromium --project=mobile",
     "check:brand": "node scripts/check-brand.mjs",
+    "map:build": "node scripts/build-interactive-map.mjs",
+    "tenant:init": "node scripts/tenant-init.mjs",
+    "tenant:build": "node scripts/tenant-build.mjs",
+    "tenant:verify": "node scripts/verify-tenant-build.mjs",
+    "probe:production-map": "node scripts/probe-production-map.mjs",
+    "verify:public-build": "node scripts/verify-public-build.mjs",
+    "tenant:publish": "node scripts/tenant-publish.mjs",
+    "map:publish": "node scripts/publish-lots.mjs",
+    "map:audit": "node scripts/audit-plot-counts.mjs",
     "typecheck": "tsc -b",
-    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run build"
+    "verify": "npm run check:brand && npm run typecheck && npm run lint && npm test && npm run test:e2e:smoke && npm run build && npm run verify:public-build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
@@ -29,6 +40,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
+    "@playwright/test": "^1.64.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",

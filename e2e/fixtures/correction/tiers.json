@@ -1,0 +1,9 @@
+{
+  "tenant": "demo-correction",
+  "project": "block-a",
+  "tiers": {
+    "standard": { "label": "Standard Interior", "color": "#f4e27a", "price": 25000, "sellable": true },
+    "premium": { "label": "Premium Interior", "color": "#f0c9bd", "price": 30000, "sellable": true },
+    "boulevard": { "label": "Premium Boulevard", "color": "#2fd32f", "price": 35000, "sellable": true }
+  }
+}

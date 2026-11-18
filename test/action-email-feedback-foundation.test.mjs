@@ -56,7 +56,8 @@ describe("Action, email, and feedback foundation", () => {
     assert.match(senderFunction, /Deno\.env\.get\("RESEND_API_KEY"\)/);
     assert.match(senderFunction, /Deno\.env\.get\("EMAIL_FROM_ADDRESS"\)/);
     assert.match(senderFunction, /https:\/\/api\.resend\.com\/emails/);
-    assert.match(senderFunction, /html: renderEmailHtml/);
+    assert.match(senderFunction, /renderEmailHtmlForNotification/);
+    assert.match(senderFunction, /function renderEmailHtml\(email/);
     assert.match(senderFunction, /\.from\("business_settings"\)/);
     assert.match(senderFunction, /logoUrl/);
     assert.doesNotMatch(sourceFiles, /RESEND_API_KEY/);

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "../../../lib/utils";
+import { money } from "../../../lib/utils";
 import { supabase } from "../../../lib/supabase";
 import { sanitizePolygon, useParcelMap, type MapPoint } from "../../../hooks/useParcelMap";
-import type { Parcel, ParcelStatus } from "../../../types/database";
+import type { LotTier, Parcel, ParcelStatus } from "../../../types/database";
 import { Button } from "../../ui/Button";
 import { Field, Input, Select } from "../../ui/Field";
 import { ErrorState } from "../../ui/State";
@@ -13,6 +14,8 @@ interface ParcelDrawerProps {
   parcel: Parcel | null;
   parcels: CanvasParcel[];
   tenantId?: string | null;
+  projectId?: string | null;
+  phaseId?: string | null;
   /** Aerial/site-map photo URL. Falls back to community-fee masterplan or site map when wired. */
   masterplanImageUrl?: string | null;
   open: boolean;
@@ -28,6 +31,8 @@ export function ParcelDrawer({
   parcel,
   parcels,
   tenantId = null,
+  projectId = null,
+  phaseId = null,
   masterplanImageUrl = null,
   open,
   onClose,
@@ -38,6 +43,10 @@ export function ParcelDrawer({
   const [status, setStatus] = useState<ParcelStatus>("Available");
   const [basePrice, setBasePrice] = useState("");
   const [dimensions, setDimensions] = useState("");
+  const [tierKey, setTierKey] = useState("");
+  const [isCorner, setIsCorner] = useState(false);
+  const [priceOverride, setPriceOverride] = useState("");
+  const [needsReview, setNeedsReview] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailSaving, setDetailSaving] = useState(false);
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
@@ -45,6 +54,22 @@ export function ParcelDrawer({
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const map = useParcelMap({ initialPoints: parcel?.map_polygon ?? [], initialMode: "view" });
+
+  const { data: tiers } = useQuery({
+    queryKey: ["parcel-drawer-tiers", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [] as LotTier[];
+      const { data, error } = await supabase
+        .from("lot_tiers")
+        .select("tier_key, label")
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .order("tier_key");
+      if (error) throw error;
+      return (data ?? []) as LotTier[];
+    },
+    enabled: open && tenantId !== null,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +80,10 @@ export function ParcelDrawer({
     setStatus(parcel?.status ?? "Available");
     setBasePrice(parcel ? String(parcel.base_price ?? "") : "");
     setDimensions(parcel?.dimensions ?? "");
+    setTierKey(parcel?.tier_key ?? "");
+    setIsCorner(parcel?.is_corner === true);
+    setPriceOverride(parcel?.price_override_cents != null ? String(Number(parcel.price_override_cents) / 100) : "");
+    setNeedsReview(parcel?.needs_review === true);
     map.loadPolygon(parcel?.map_polygon ?? []);
     map.setMode("view");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,23 +96,45 @@ export function ParcelDrawer({
     if (!activeParcel) return;
     setDetailError(null);
     setSavedMessage(null);
+    if (!tenantId || !projectId || !phaseId) {
+      setDetailError("Choose a complete workspace before saving parcel details.");
+      return;
+    }
     const price = Number(basePrice);
     if (!Number.isFinite(price) || price < 0) {
       setDetailError("Enter a valid non-negative price.");
       return;
     }
+    const override = priceOverride.trim() === "" ? null : Number(priceOverride);
+    if (override !== null && (!Number.isFinite(override) || override < 0)) {
+      setDetailError("Price override must be empty or a non-negative amount.");
+      return;
+    }
     setDetailSaving(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("parcels")
       .update({
         status,
         base_price: price,
         dimensions: dimensions.trim() || activeParcel.dimensions,
+        tier_key: tierKey || null,
+        is_corner: isCorner,
+        price_override_cents: override === null ? null : Math.round(override * 100),
+        needs_review: needsReview,
       })
-      .eq("id", activeParcel.id);
+      .eq("id", activeParcel.id)
+      .eq("tenant_id", tenantId)
+      .eq("project_id", projectId)
+      .eq("phase_id", phaseId)
+      .select("id")
+      .maybeSingle();
     setDetailSaving(false);
     if (error) {
       setDetailError(error.message);
+      return;
+    }
+    if (!data) {
+      setDetailError("This parcel is no longer in the selected workspace. Reload before saving.");
       return;
     }
     setSavedMessage("Lot details saved.");
@@ -99,20 +150,28 @@ export function ParcelDrawer({
       setBoundaryError("Draw at least 3 vertices before saving.");
       return;
     }
-    setBoundarySaving(true);
     // supabase-js serializes the JS array to jsonb; SQL equivalent is
-    // jsonb_build_array(...) / to_jsonb(...). RLS tenant isolation applies;
-    // tenantId is sent explicitly when the caller provides it.
-    const payload: { map_polygon: MapPoint[]; tenant_id?: string } = {
+    // jsonb_build_array(...) / to_jsonb(...). The selected workspace keys are
+    // required before this write is allowed.
+    if (!tenantId || !projectId || !phaseId) {
+      setBoundaryError("Choose a complete workspace before editing parcel geometry.");
+      return;
+    }
+    setBoundarySaving(true);
+    const payload: { map_polygon: MapPoint[]; tenant_id: string } = {
       map_polygon: sanitizePolygon(map.points),
+      tenant_id: tenantId,
     };
-    if (tenantId) payload.tenant_id = tenantId;
-    let query = supabase.from("parcels").update(payload).eq("id", activeParcel.id);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    const { error } = await query;
+    const { data, error } = await supabase.from("parcels").update(payload)
+      .eq("id", activeParcel.id).eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+      .select("id").maybeSingle();
     setBoundarySaving(false);
     if (error) {
       setBoundaryError(error.message);
+      return;
+    }
+    if (!data) {
+      setBoundaryError("This parcel is no longer in the selected workspace. Reload before saving.");
       return;
     }
     setSavedMessage(`Boundary saved (${map.points.length} vertices).`);
@@ -124,16 +183,24 @@ export function ParcelDrawer({
     if (!activeParcel) return;
     setBoundaryError(null);
     setSavedMessage(null);
-    map.clearPolygon();
+    if (!tenantId || !projectId || !phaseId) {
+      setBoundaryError("Choose a complete workspace before editing parcel geometry.");
+      return;
+    }
     setBoundarySaving(true);
-    let query = supabase.from("parcels").update({ map_polygon: [] }).eq("id", activeParcel.id);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    const { error } = await query;
+    const { data, error } = await supabase.from("parcels").update({ map_polygon: [] })
+      .eq("id", activeParcel.id).eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+      .select("id").maybeSingle();
     setBoundarySaving(false);
     if (error) {
       setBoundaryError(error.message);
       return;
     }
+    if (!data) {
+      setBoundaryError("This parcel is no longer in the selected workspace. Reload before clearing.");
+      return;
+    }
+    map.clearPolygon();
     setSavedMessage("Boundary cleared.");
     await queryClient.invalidateQueries({ queryKey: ["lot-board"] });
     onSaved?.(activeParcel.id);
@@ -204,6 +271,45 @@ export function ParcelDrawer({
               <Field label="Dimensions">
                 <Input value={dimensions} onChange={(event) => setDimensions(event.target.value)} placeholder="75 x 100 ft" />
               </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Tier">
+                  <Select value={tierKey} onChange={(event) => setTierKey(event.target.value)}>
+                    <option value="">Unclassified</option>
+                    {(tiers ?? []).map((tier) => (
+                      <option key={tier.tier_key} value={tier.tier_key}>
+                        {tier.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Price override (BZD, empty = tier price)">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={priceOverride}
+                    onChange={(event) => setPriceOverride(event.target.value)}
+                    placeholder="Tier price"
+                  />
+                </Field>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2 text-muted-foreground">
+                  <input type="checkbox" checked={isCorner} onChange={(event) => setIsCorner(event.target.checked)} />
+                  Corner lot (adds tier corner premium)
+                </label>
+                <label className="flex items-center gap-2 text-muted-foreground">
+                  <input type="checkbox" checked={needsReview} onChange={(event) => setNeedsReview(event.target.checked)} />
+                  Needs review
+                </label>
+              </div>
+              {activeParcel.confidence != null || activeParcel.geometry_source ? (
+                <p className="text-xs text-muted-foreground">
+                  Ingest: {activeParcel.geometry_source ?? "manual"}
+                  {activeParcel.confidence != null ? ` · confidence ${Number(activeParcel.confidence).toFixed(3)}` : ""}
+                  {activeParcel.effective_price_cents != null ? ` · effective ${money(Number(activeParcel.effective_price_cents) / 100)}` : ""}
+                </p>
+              ) : null}
               <div>
                 <Button type="button" onClick={handleDetailsSave} disabled={detailSaving}>
                   {detailSaving ? "Saving…" : "Save details"}
@@ -222,6 +328,7 @@ export function ParcelDrawer({
                 snapEnabled={map.snapEnabled}
                 selectedVertex={map.selectedVertex}
                 saving={boundarySaving}
+                reviewMode={activeParcel.needs_review === true}
                 onModeChange={map.setMode}
                 onSnapChange={map.setSnapEnabled}
                 onAddPoint={map.addPoint}

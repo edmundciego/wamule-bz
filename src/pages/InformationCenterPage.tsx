@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { Badge, type BadgeTone } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -22,7 +23,9 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { useCompanyProfile } from "../lib/brand";
 import { getSessionAndProfile } from "../lib/data";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { formatDate, money } from "../lib/utils";
+import { isAvailableForSalesSelection } from "../../supabase/functions/_shared/parcel-provenance.mjs";
 import type { AppRole, InstallmentPlan, Lead, Parcel } from "../types/database";
 
 type InformationRequestStatus =
@@ -57,7 +60,7 @@ type LeadOption = Pick<
   "id" | "full_name" | "email" | "phone" | "assigned_to" | "pipeline_stage" | "updated_at"
 >;
 
-type ParcelOption = Pick<Parcel, "id" | "lot_number" | "base_price" | "status" | "dimensions">;
+type ParcelOption = Pick<Parcel, "id" | "lot_number" | "base_price" | "status" | "dimensions" | "geometry_source" | "needs_review">;
 
 type InformationPackSnapshot = {
   company: {
@@ -117,6 +120,7 @@ type InformationPack = {
 
 type InformationRequest = {
   id: string;
+  tenant_id: string;
   lead_id: string;
   parcel_id: number | null;
   project_name: string;
@@ -175,7 +179,9 @@ const requestStatusTones: Record<InformationRequestStatus, BadgeTone> = {
 
 export function InformationCenterPage() {
   const queryClient = useQueryClient();
-  const { company, companyName } = useCompanyProfile();
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
+  const { company, companyName } = useCompanyProfile(workspace?.tenantId ?? null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [leadId, setLeadId] = useState("");
@@ -195,54 +201,62 @@ export function InformationCenterPage() {
   });
 
   const { data: topics, isLoading: topicsLoading } = useQuery({
-    queryKey: ["information-topics"],
+    queryKey: ["information-topics", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("information_topics")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
       if (error) throw error;
       return data as InformationTopic[];
     },
+    enabled: Boolean(workspace),
   });
 
   const { data: leads, isLoading: leadsLoading } = useQuery({
-    queryKey: ["information-centre-leads"],
+    queryKey: ["information-centre-leads", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
         .select("id, full_name, email, phone, assigned_to, pipeline_stage, updated_at")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as LeadOption[];
     },
+    enabled: Boolean(workspace),
   });
 
   const { data: parcels } = useQuery({
-    queryKey: ["information-centre-parcels"],
+    queryKey: ["information-centre-parcels", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("parcels")
-        .select("id, lot_number, base_price, status, dimensions")
+        .select("id, lot_number, base_price, status, dimensions, geometry_source, needs_review")
+        .eq("tenant_id", workspace!.tenantId).eq("project_id", workspace!.projectId).eq("phase_id", workspace!.phaseId)
         .order("lot_number", { ascending: true });
       if (error) throw error;
       return data as ParcelOption[];
     },
+    enabled: Boolean(workspace),
   });
 
   const { data: plans } = useQuery({
-    queryKey: ["information-centre-plans"],
+    queryKey: ["information-centre-plans", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("installment_plans")
         .select("*")
+        .eq("tenant_id", workspace!.tenantId)
         .eq("is_active", true)
         .order("sort_order", { ascending: true });
       if (error) throw error;
       return data as InstallmentPlan[];
     },
+    enabled: Boolean(workspace),
   });
 
   const {
@@ -250,17 +264,19 @@ export function InformationCenterPage() {
     isLoading: requestsLoading,
     error: requestsError,
   } = useQuery({
-    queryKey: ["information-requests"],
+    queryKey: ["information-requests", scopeKey],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("information_requests")
         .select(
           "*, leads(id, full_name, email, phone, assigned_to, pipeline_stage, updated_at), parcels(id, lot_number, base_price, status, dimensions), information_request_topics(topic_id, information_topics(*)), information_packs(*)",
         )
+        .eq("tenant_id", workspace!.tenantId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as InformationRequest[];
     },
+    enabled: Boolean(workspace),
   });
 
   const currentRole = sessionProfile?.profile?.role as AppRole | undefined;
@@ -285,7 +301,8 @@ export function InformationCenterPage() {
     event.preventDefault();
     setActionError(null);
     setMessage(null);
-    if (!leadId) return setActionError("Select a lead.");
+    if (!workspace) return setActionError("Choose a workspace before creating an information request.");
+    if (!leadId || !leads?.some((lead) => lead.id === leadId)) return setActionError("Select a lead from the active workspace.");
     if (selectedTopicIds.length === 0 && !customRequest.trim()) {
       return setActionError("Select at least one information topic or enter a custom request.");
     }
@@ -295,6 +312,9 @@ export function InformationCenterPage() {
     const { data: insertedRequest, error: requestError } = await supabase
       .from("information_requests")
       .insert({
+        tenant_id: workspace.tenantId,
+        project_id: workspace.projectId,
+        phase_id: workspace.phaseId,
         lead_id: leadId,
         parcel_id: parcelId ? Number(parcelId) : null,
         project_name: projectName.trim() || companyName,
@@ -312,7 +332,7 @@ export function InformationCenterPage() {
 
     if (selectedTopicIds.length > 0) {
       const { error: topicError } = await supabase.from("information_request_topics").insert(
-        selectedTopicIds.map((topicId) => ({ request_id: insertedRequest.id, topic_id: topicId })),
+        selectedTopicIds.map((topicId) => ({ tenant_id: workspace.tenantId, request_id: insertedRequest.id, topic_id: topicId })),
       );
       if (topicError) {
         setSaving(null);
@@ -325,6 +345,9 @@ export function InformationCenterPage() {
       .map((topic) => topic.name)
       .join(", ");
     const { error: activityError } = await supabase.from("lead_activities").insert({
+      tenant_id: workspace.tenantId,
+      project_id: workspace.projectId,
+      phase_id: workspace.phaseId,
       lead_id: leadId,
       activity_type: "note",
       title: "Additional information requested",
@@ -346,6 +369,7 @@ export function InformationCenterPage() {
   }
 
   async function generateDraft(request: InformationRequest) {
+    if (!workspace || request.tenant_id !== workspace.tenantId) return setActionError("This information request is outside the active workspace.");
     setActionError(null);
     setMessage(null);
     setSaving(`generate-${request.id}`);
@@ -353,7 +377,7 @@ export function InformationCenterPage() {
     const lead = request.leads ?? leads?.find((row) => row.id === request.lead_id) ?? null;
     const selectedLot = request.parcels ?? parcels?.find((row) => row.id === request.parcel_id) ?? null;
     const requestTopicRows = requestTopics(request);
-    const availableLots = (parcels ?? []).filter((parcel) => parcel.status === "Available");
+    const availableLots = (parcels ?? []).filter(isAvailableForSalesSelection);
     const availablePrices = availableLots.map((parcel) => Number(parcel.base_price)).filter(Number.isFinite);
     const nextVersion = Math.max(0, ...(request.information_packs ?? []).map((pack) => pack.version)) + 1;
     const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -422,7 +446,10 @@ export function InformationCenterPage() {
         .in(
           "id",
           approvedPacks.map((pack) => pack.id),
-        );
+        )
+        .eq("tenant_id", workspace.tenantId)
+        .eq("project_id", workspace.projectId)
+        .eq("phase_id", workspace.phaseId);
       if (supersedeError) {
         setSaving(null);
         return setActionError(supersedeError.message);
@@ -432,6 +459,9 @@ export function InformationCenterPage() {
     const { data: pack, error: packError } = await supabase
       .from("information_packs")
       .insert({
+        tenant_id: workspace.tenantId,
+        project_id: workspace.projectId,
+        phase_id: workspace.phaseId,
         request_id: request.id,
         version: nextVersion,
         document_number: documentNumber,
@@ -450,13 +480,19 @@ export function InformationCenterPage() {
     const { error: requestError } = await supabase
       .from("information_requests")
       .update({ status: "draft_generated", communication_status: "action_required" })
-      .eq("id", request.id);
+      .eq("id", request.id)
+      .eq("tenant_id", workspace.tenantId)
+      .eq("project_id", workspace.projectId)
+      .eq("phase_id", workspace.phaseId);
     if (requestError) {
       setSaving(null);
       return setActionError(requestError.message);
     }
 
     await supabase.from("lead_activities").insert({
+      tenant_id: workspace.tenantId,
+      project_id: workspace.projectId,
+      phase_id: workspace.phaseId,
       lead_id: request.lead_id,
       activity_type: "note",
       title: "Information pack draft generated",
@@ -475,6 +511,7 @@ export function InformationCenterPage() {
   }
 
   async function approveRequest(request: InformationRequest) {
+    if (!workspace || request.tenant_id !== workspace.tenantId) return setActionError("This information request is outside the active workspace.");
     const pack = latestInformationPack(request.information_packs);
     if (!pack) return setActionError("Generate a draft before approval.");
     setActionError(null);
@@ -485,7 +522,10 @@ export function InformationCenterPage() {
     const { error: packError } = await supabase
       .from("information_packs")
       .update({ status: "approved", approved_by: userId, approved_at: approvedAt })
-      .eq("id", pack.id);
+      .eq("id", pack.id)
+      .eq("tenant_id", workspace.tenantId)
+      .eq("project_id", workspace.projectId)
+      .eq("phase_id", workspace.phaseId);
     if (packError) {
       setSaving(null);
       return setActionError(packError.message);
@@ -493,7 +533,10 @@ export function InformationCenterPage() {
     const { error: requestError } = await supabase
       .from("information_requests")
       .update({ status: "approved", approved_by: userId, approved_at: approvedAt })
-      .eq("id", request.id);
+      .eq("id", request.id)
+      .eq("tenant_id", workspace.tenantId)
+      .eq("project_id", workspace.projectId)
+      .eq("phase_id", workspace.phaseId);
     setSaving(null);
     if (requestError) return setActionError(requestError.message);
     setMessage("Information pack approved. It is ready to download and send manually.");
@@ -501,6 +544,7 @@ export function InformationCenterPage() {
   }
 
   async function markSent(request: InformationRequest) {
+    if (!workspace || request.tenant_id !== workspace.tenantId) return setActionError("This information request is outside the active workspace.");
     const pack = latestInformationPack(request.information_packs);
     if (!pack || pack.status !== "approved") return setActionError("Approve the latest pack before marking it sent.");
     setActionError(null);
@@ -512,6 +556,9 @@ export function InformationCenterPage() {
     const { data: task, error: taskError } = await supabase
       .from("follow_up_tasks")
       .insert({
+        tenant_id: workspace.tenantId,
+        project_id: workspace.projectId,
+        phase_id: workspace.phaseId,
         lead_id: request.lead_id,
         title: "Follow up after information pack",
         description: `Confirm receipt of ${pack.document_number}, answer questions, and propose the next action. Topics sent: ${topicNames || "Custom information"}.`,
@@ -539,7 +586,10 @@ export function InformationCenterPage() {
         sent_channel: sentChannel,
         follow_up_task_id: task.id,
       })
-      .eq("id", request.id);
+      .eq("id", request.id)
+      .eq("tenant_id", workspace.tenantId)
+      .eq("project_id", workspace.projectId)
+      .eq("phase_id", workspace.phaseId);
     if (requestError) {
       setSaving(null);
       return setActionError(requestError.message);
@@ -547,6 +597,9 @@ export function InformationCenterPage() {
 
     const activityType = sentChannel === "Email" ? "email" : sentChannel === "WhatsApp" ? "whatsapp" : "note";
     const { error: activityError } = await supabase.from("lead_activities").insert({
+      tenant_id: workspace.tenantId,
+      project_id: workspace.projectId,
+      phase_id: workspace.phaseId,
       lead_id: request.lead_id,
       activity_type: activityType,
       title: "Information pack sent",
@@ -571,10 +624,13 @@ export function InformationCenterPage() {
     updates: Partial<Pick<InformationRequest, "status" | "communication_status">>,
     successMessage: string,
   ) {
+    if (!workspace) return setActionError("Choose a workspace before updating information requests.");
     setActionError(null);
     setMessage(null);
     setSaving(`workflow-${requestId}`);
-    const { error } = await supabase.from("information_requests").update(updates).eq("id", requestId);
+    const { error } = await supabase.from("information_requests").update(updates)
+      .eq("id", requestId).eq("tenant_id", workspace.tenantId)
+      .eq("project_id", workspace.projectId).eq("phase_id", workspace.phaseId);
     setSaving(null);
     if (error) return setActionError(error.message);
     setMessage(successMessage);
@@ -601,7 +657,7 @@ export function InformationCenterPage() {
         title="Information Centre"
         description="Create, review, download, and record branded information packs without sending customer messages automatically."
         action={
-          canWrite ? (
+          canWrite && workspace ? (
             <Button type="button" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
               New Information Request
@@ -615,7 +671,8 @@ export function InformationCenterPage() {
       </div>
       {message ? <div className="crm-success-panel mb-4 p-3 text-sm">{message}</div> : null}
       {actionError ? <div className="mb-4"><ErrorState message={actionError} /></div> : null}
-      {requestsLoading || topicsLoading || leadsLoading ? <LoadingState /> : null}
+      {workspaceLoading || requestsLoading || topicsLoading || leadsLoading ? <LoadingState /> : null}
+      {!workspace && !workspaceLoading ? <ErrorState message={workspaceError ?? "Choose an accessible workspace to view its information requests."} /> : null}
       {requestsError ? <ErrorState message={(requestsError as Error).message} /> : null}
 
       {!requestsLoading && !requestsError ? (

@@ -1,40 +1,45 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useWorkspaceScope } from "../components/auth/workspaceScopeContext";
 import { Card, CardContent } from "../components/ui/Card";
 import { Input } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/State";
 import { supabase } from "../lib/supabase";
+import { workspaceScopeKey } from "../lib/workspaceScope";
 import { money } from "../lib/utils";
 
 export function CustomersPage() {
+  const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const scopeKey = workspaceScopeKey(workspace);
   const [search, setSearch] = useState("");
-  const [customersResult, balancesResult] = useQueries({
-    queries: [
-      {
-        queryKey: ["customers-list"],
-        queryFn: async () => {
+  const customersResult = useQuery({
+    queryKey: ["customers-list", scopeKey],
+    enabled: Boolean(workspace),
+    queryFn: async () => {
       const { data: customers, error: queryError } = await supabase
         .from("customers")
         .select("*, applications(parcel_id, parcels(lot_number)), contracts(id, is_active, status)")
+        .eq("tenant_id", workspace!.tenantId)
         .order("last_name");
       if (queryError) throw queryError;
       return customers;
-        },
-      },
-      {
-        queryKey: ["customer-balances"],
-        queryFn: async () => {
-          const { data: balances, error: queryError } = await supabase.from("contract_financial_summary").select("*");
-          if (queryError) throw queryError;
-          return balances;
-        },
-      },
-    ],
+    },
   });
   const data = customersResult.data;
+  const customerIds = (data ?? []).map((customer) => customer.id);
+  const balancesResult = useQuery({
+    queryKey: ["customer-balances", scopeKey, customerIds.join(",")],
+    enabled: Boolean(workspace && customersResult.isSuccess),
+    queryFn: async () => {
+      if (!customerIds.length) return [];
+      const { data: balances, error: queryError } = await supabase.from("contract_financial_summary").select("*").in("customer_id", customerIds);
+      if (queryError) throw queryError;
+      return balances;
+    },
+  });
   const balances = balancesResult.data ?? [];
-  const isLoading = customersResult.isLoading || balancesResult.isLoading;
+  const isLoading = workspaceLoading || customersResult.isLoading || balancesResult.isLoading;
   const error = customersResult.error ?? balancesResult.error;
   const filtered = useMemo(() => {
     const query = search.toLowerCase();
@@ -43,13 +48,17 @@ export function CustomersPage() {
     );
   }, [data, search]);
 
+  if (!workspace) {
+    return workspaceLoading ? <LoadingState label="Loading selected workspace" /> : <ErrorState message={workspaceError ?? "Choose an accessible workspace to view customers."} />;
+  }
+
   return (
     <section className="v2-page-shell">
       <div className="v2-page-header flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="v2-page-kicker">Customer Records</p>
           <h1 className="v2-page-title">Customers</h1>
-          <p className="v2-page-description">Approved customers and account standing.</p>
+          <p className="v2-page-description">{workspace.tenantName} · approved customers and account standing.</p>
         </div>
         <Input className="lg:max-w-sm" placeholder="Search customers" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>

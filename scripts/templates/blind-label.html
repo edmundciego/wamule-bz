@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blind Lot Label Review</title>
+<style>
+  body { font: 16px/1.45 system-ui, sans-serif; margin: 1.25rem; background: #fafafa; color: #222; }
+  h1 { margin: 0 0 .25rem; }
+  .status, .help, .crop-info { color: #555; }
+  .status { margin-bottom: 1rem; }
+  .warning { display: none; margin: 1rem 0; padding: .75rem; border: 1px solid #d49b00; background: #fff3cd; color: #654d00; }
+  .warning.show { display: block; }
+  .progress { height: 5px; margin: 1rem 0; overflow: hidden; background: #e5e5e5; }
+  .progress-bar { height: 100%; width: 0; background: #1769aa; transition: width .2s; }
+  .shortcuts { margin-bottom: 1rem; padding: .75rem; background: #eee; }
+  kbd { padding: .1rem .35rem; background: white; border: 1px solid #bbb; border-radius: 3px; }
+  .crop-container { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  .crop-img { display: block; max-width: min(72vw, 1100px); max-height: 76vh; object-fit: contain; border: 2px solid #ddd; background: white; }
+  .form { flex: 1 1 320px; max-width: 440px; }
+  .field { margin: 0 0 1rem; }
+  label { display: block; margin-bottom: .3rem; font-weight: 650; }
+  input[type="text"] { box-sizing: border-box; width: 100%; padding: .6rem; font-size: 1.1rem; border: 1px solid #aaa; border-radius: 4px; }
+  input:focus, button:focus-visible { outline: 3px solid #82b7ec; outline-offset: 2px; }
+  .help { display: block; margin-top: .25rem; font-size: .88rem; }
+  .buttons { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+  button { min-height: 2.6rem; padding: .5rem .8rem; border: 0; border-radius: 4px; color: white; background: #555; font: inherit; cursor: pointer; }
+  button.primary { background: #1769aa; }
+  button.danger { background: #a32626; }
+  button.download { background: #25743a; }
+  button:disabled { opacity: .5; cursor: default; }
+  .autosave { display: none; color: #25743a; }
+  .autosave.show { display: inline; }
+  @media (max-width: 700px) { body { margin: .75rem; } .crop-img { max-width: 100%; max-height: 60vh; } .form { flex-basis: 100%; max-width: none; } }
+</style>
+</head>
+<body>
+<h1>Blind Lot Label Review</h1>
+<div class="status" id="status" role="status" aria-live="polite">Loading review sheet…</div>
+<div class="warning show" id="unsavedWarning">Labels are saved in this browser only. Download progress periodically and download the final CSV before closing this tab.</div>
+<div class="progress" aria-label="Review progress"><div class="progress-bar" id="progressBar"></div></div>
+<div class="shortcuts"><strong>Shortcuts:</strong> <kbd>N</kbd> number · <kbd>A</kbd> area · <kbd>U</kbd> unreadable · <kbd>B</kbd> ambiguous · <kbd>Enter</kbd>/<kbd>→</kbd> next · <kbd>←</kbd> previous · <kbd>S</kbd> save</div>
+
+<div class="crop-container">
+  <img class="crop-img" id="cropImg" src="" alt="Blind map crop">
+  <section class="form" aria-label="Crop labels">
+    <div class="field">
+      <label for="numberInput">Printed lot number (digits only)</label>
+      <input type="text" id="numberInput" inputmode="numeric" autocomplete="off" spellcheck="false">
+      <span class="help">Enter the printed number exactly; leave blank if none is printed.</span>
+    </div>
+    <div class="field">
+      <label for="areaInput">Printed area in square metres</label>
+      <input type="text" id="areaInput" inputmode="decimal" autocomplete="off" spellcheck="false">
+      <span class="help">Digits and an optional decimal only; leave blank if no area is printed.</span>
+    </div>
+    <div class="field">
+      <button class="danger" id="unreadableBtn" type="button">Mark unreadable (U)</button>
+      <span class="help">No printed number or area can be read. This is distinct from an unreviewed blank.</span>
+    </div>
+    <div class="field">
+      <button id="ambiguousBtn" type="button">Mark ambiguous (B)</button>
+      <span class="help">The text is readable but the crop or polygon boundary is unclear.</span>
+    </div>
+    <div class="buttons">
+      <button id="prevBtn" type="button" disabled>← Previous</button>
+      <button class="primary" id="nextBtn" type="button">Next →</button>
+      <button class="primary" id="saveBtn" type="button">Save</button>
+      <button class="download" id="downloadBtn" type="button">Download progress</button>
+      <span class="autosave" id="autosaveIndicator" aria-live="polite">Saved</span>
+    </div>
+    <div class="crop-info" id="cropInfo"></div>
+  </section>
+</div>
+
+<script>
+const CROP_COUNT = {{CROP_COUNT}};
+const STORAGE_KEY = 'wamule-blind-labels-v1:{{REVIEW_KEY}}';
+const SHEET_DIR = 'sheet-crops/';
+const crops = Array.from({length: CROP_COUNT}, (_, i) => 'S' + String(i + 1).padStart(3, '0'));
+let currentIndex = 0;
+let data = {};
+let saveTimeout = null;
+let dirty = false;
+
+const byId = (id) => document.getElementById(id);
+const currentEntry = () => data[crops[currentIndex]] || {number: '', area: '', unreadable: false, ambiguous: false};
+
+function saveNow(showIndicator = true) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (showIndicator) {
+      byId('autosaveIndicator').classList.add('show');
+      setTimeout(() => byId('autosaveIndicator').classList.remove('show'), 1500);
+    }
+  } catch (error) {
+    byId('status').textContent = 'Could not save labels in browser storage: ' + error.message;
+  }
+}
+
+function autosave() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => saveNow(), 500);
+}
+
+function updateProgress() {
+  const reviewed = crops.filter((sid) => {
+    const d = data[sid];
+    return d && (d.number || d.area || d.unreadable || d.ambiguous);
+  }).length;
+  byId('progressBar').style.width = (CROP_COUNT ? reviewed / CROP_COUNT * 100 : 0) + '%';
+  byId('status').textContent = `${reviewed} of ${CROP_COUNT} crops have a label or review status.`;
+}
+
+function showCrop(index) {
+  if (index < 0 || index >= CROP_COUNT) return;
+  currentIndex = index;
+  const sid = crops[index];
+  byId('cropImg').src = SHEET_DIR + sid + '.png';
+  byId('cropInfo').textContent = `Crop ${index + 1} of ${CROP_COUNT} — ${sid}`;
+  const entry = currentEntry();
+  byId('numberInput').value = entry.number || '';
+  byId('areaInput').value = entry.area || '';
+  byId('unreadableBtn').setAttribute('aria-pressed', String(Boolean(entry.unreadable)));
+  byId('ambiguousBtn').setAttribute('aria-pressed', String(Boolean(entry.ambiguous)));
+  byId('unreadableBtn').textContent = entry.unreadable ? '✓ Unreadable (U)' : 'Mark unreadable (U)';
+  byId('ambiguousBtn').textContent = entry.ambiguous ? '✓ Ambiguous (B)' : 'Mark ambiguous (B)';
+  byId('prevBtn').disabled = index === 0;
+  byId('nextBtn').disabled = CROP_COUNT === 0;
+  byId('nextBtn').textContent = index === CROP_COUNT - 1 ? 'Finish' : 'Next →';
+  updateProgress();
+}
+
+function saveCurrent() {
+  const number = byId('numberInput').value.trim();
+  const area = byId('areaInput').value.trim();
+  const unreadable = byId('unreadableBtn').getAttribute('aria-pressed') === 'true';
+  const ambiguous = byId('ambiguousBtn').getAttribute('aria-pressed') === 'true';
+  data[crops[currentIndex]] = {
+    number: unreadable ? '' : number,
+    area: unreadable ? '' : area,
+    unreadable,
+    ambiguous: unreadable ? false : ambiguous,
+  };
+  dirty = true;
+  byId('unsavedWarning').classList.add('show');
+  updateProgress();
+  autosave();
+}
+
+function setStatus(name, enabled) {
+  const button = byId(name + 'Btn');
+  const otherName = name === 'unreadable' ? 'ambiguous' : 'unreadable';
+  const other = byId(otherName + 'Btn');
+  button.setAttribute('aria-pressed', String(enabled));
+  if (enabled) other.setAttribute('aria-pressed', 'false');
+  if (name === 'unreadable' && enabled) {
+    byId('numberInput').value = '';
+    byId('areaInput').value = '';
+  }
+  byId('unreadableBtn').textContent = byId('unreadableBtn').getAttribute('aria-pressed') === 'true' ? '✓ Unreadable (U)' : 'Mark unreadable (U)';
+  byId('ambiguousBtn').textContent = byId('ambiguousBtn').getAttribute('aria-pressed') === 'true' ? '✓ Ambiguous (B)' : 'Mark ambiguous (B)';
+  saveCurrent();
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? '"' + text.replaceAll('"', '""') + '"' : text;
+}
+
+function buildCsv() {
+  const lines = [['id', 'printed_number', 'printed_area_sqm', 'ambiguous', 'unreadable']];
+  for (const sid of crops) {
+    const d = data[sid] || {};
+    const unreadable = Boolean(d.unreadable);
+    lines.push([
+      sid,
+      unreadable ? '' : (d.number || ''),
+      unreadable ? '' : (d.area || ''),
+      !unreadable && d.ambiguous ? '1' : '',
+      unreadable ? '1' : '',
+    ]);
+  }
+  return lines.map((row) => row.map(csvCell).join(',')).join('\n') + '\n';
+}
+
+function downloadCsv(filename) {
+  saveCurrent();
+  saveNow(false);
+  const url = URL.createObjectURL(new Blob([buildCsv()], {type: 'text/csv'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+  dirty = false;
+  byId('unsavedWarning').classList.remove('show');
+  byId('autosaveIndicator').classList.add('show');
+  setTimeout(() => byId('autosaveIndicator').classList.remove('show'), 1500);
+}
+
+function nextCrop() {
+  saveCurrent();
+  if (currentIndex < CROP_COUNT - 1) showCrop(currentIndex + 1);
+  else downloadCsv('labels.csv');
+}
+
+function prevCrop() {
+  if (currentIndex > 0) {
+    saveCurrent();
+    showCrop(currentIndex - 1);
+  }
+}
+
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) data = JSON.parse(saved) || {};
+} catch (error) {
+  byId('status').textContent = 'Could not load saved labels: ' + error.message;
+}
+byId('prevBtn').addEventListener('click', prevCrop);
+byId('nextBtn').addEventListener('click', nextCrop);
+byId('saveBtn').addEventListener('click', () => { saveCurrent(); saveNow(); });
+byId('downloadBtn').addEventListener('click', () => downloadCsv('labels-progress.csv'));
+byId('unreadableBtn').addEventListener('click', () => setStatus('unreadable', byId('unreadableBtn').getAttribute('aria-pressed') !== 'true'));
+byId('ambiguousBtn').addEventListener('click', () => setStatus('ambiguous', byId('ambiguousBtn').getAttribute('aria-pressed') !== 'true'));
+for (const id of ['numberInput', 'areaInput']) {
+  byId(id).addEventListener('input', () => {
+    byId('unreadableBtn').setAttribute('aria-pressed', 'false');
+    byId('ambiguousBtn').setAttribute('aria-pressed', 'false');
+    byId('unreadableBtn').textContent = 'Mark unreadable (U)';
+    byId('ambiguousBtn').textContent = 'Mark ambiguous (B)';
+    saveCurrent();
+  });
+}
+document.addEventListener('keydown', (event) => {
+  if (event.target.tagName === 'INPUT') {
+    if (event.key === 'Enter') { event.preventDefault(); nextCrop(); }
+    return;
+  }
+  if (event.key === 'ArrowRight' || event.key === 'Enter') nextCrop();
+  else if (event.key === 'ArrowLeft') prevCrop();
+  else if (event.key.toLowerCase() === 'n') byId('numberInput').focus();
+  else if (event.key.toLowerCase() === 'a') byId('areaInput').focus();
+  else if (event.key.toLowerCase() === 'u') setStatus('unreadable', byId('unreadableBtn').getAttribute('aria-pressed') !== 'true');
+  else if (event.key.toLowerCase() === 'b') setStatus('ambiguous', byId('ambiguousBtn').getAttribute('aria-pressed') !== 'true');
+  else if (event.key.toLowerCase() === 's') { saveCurrent(); saveNow(); }
+});
+showCrop(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+{
+  "target_project_ref": "kvocwmrcuhiaezlcgzjf",
+  "baseline_count": 55,
+  "approved_r3_count": 13,
+  "new_migration": "20261111030739_initial_phase_application_allowlist.sql",
+  "files": [
+    {
+      "version": "20260610000100",
+      "name": "fix_lots_public_options.sql",
+      "sha256": "de43df5582d1ebe56013e1487e58cef1060dab75a6e849eec41108916a8ea188"
+    },
+    {
+      "version": "20260610000200",
+      "name": "application_form_parity.sql",
+      "sha256": "387755f73d299bc4c58bd864da7924a191f738a7a476a3af01bcf03714c09c38"
+    },
+    {
+      "version": "20260611000100",
+      "name": "allow_unassigned_pending_applications.sql",
+      "sha256": "b1b647b6bdb6ea9484dda02dcfa9326d43665f066254a7e1f93a9bb582af0c3e"
+    },
+    {
+      "version": "20260612000100",
+      "name": "manual_receipts_payment_documents.sql",
+      "sha256": "0dc63d4a30558fc24a842c06a59972dd4255b3fdf6116f1f52c875827f979a5f"
+    },
+    {
+      "version": "20260612000200",
+      "name": "admin_user_management.sql",
+      "sha256": "1f26150667e0e6bef4953c860cf118002bd47ed2fd89b91c2cd9d2ab0510cc00"
+    },
+    {
+      "version": "20260612000300",
+      "name": "payment_requests_collections.sql",
+      "sha256": "bc37777ab54c040ce2141ed2e6337f8b4a90b90a6e8be0711630350b51dfa37a"
+    },
+    {
+      "version": "20260613000100",
+      "name": "business_settings_installment_plans.sql",
+      "sha256": "22518c24d48028cc99fc17b9b6f277ac4c74e38044da972c2e8a6a021171551c"
+    },
+    {
+      "version": "20260614000100",
+      "name": "super_admin_config_ai_foundation.sql",
+      "sha256": "549923c6e7bc92f8220f22b15567bac8964d4399c083f6878cdda037f1fd8225"
+    },
+    {
+      "version": "20260614000200",
+      "name": "application_ai_reviews.sql",
+      "sha256": "3cb741705d2cd4f8fe5d2a5027eb1f6fc3c7ed9a216aca31ccd884f3fed8c521"
+    },
+    {
+      "version": "20260615000100",
+      "name": "ai_daily_briefs.sql",
+      "sha256": "d9f644f96234283c4db15def05ac8f12f884adfe1aa8fea544472fac453c0a24"
+    },
+    {
+      "version": "20260615000200",
+      "name": "customer_ai_summaries.sql",
+      "sha256": "fe76da5099d86eb8e02f3c6b84f6e7b843224d8e662c2050b941e417fa82376e"
+    },
+    {
+      "version": "20260617000100",
+      "name": "action_email_feedback_foundation.sql",
+      "sha256": "88b87121b08322f24aa1012d9325cec245962c53fe4eada1c3265edd639dc18f"
+    },
+    {
+      "version": "20260618000100",
+      "name": "sales_foundation_phase_1.sql",
+      "sha256": "07b1f0df896ed30d78a40f555309ad3294976174d2b872c2d43786ceff9a4c5b"
+    },
+    {
+      "version": "20260619000100",
+      "name": "reservation_deposit_workflow_phase_2.sql",
+      "sha256": "e1f4adbecbbaee576206be242efd99c1db3af523ee14fb971e71a0bb53540c4e"
+    },
+    {
+      "version": "20260620000100",
+      "name": "post_sales_automation_phase_3.sql",
+      "sha256": "2fe45bccba64098237536ec0d460e452e3a7e034e109191abbd5a1b8595f0b8d"
+    },
+    {
+      "version": "20260623000100",
+      "name": "lead_ai_summaries_phase_4d_1.sql",
+      "sha256": "47468588ca71499ccaccbd0c0f8c3a716a1987f45554c26550b6352ff1c49635"
+    },
+    {
+      "version": "20260623000200",
+      "name": "post_sales_ai_summaries_phase_4d_2.sql",
+      "sha256": "5854ce463377100e8e5c08cbb29408af228a5f3fb8e3d20a1fffc679ec741440"
+    },
+    {
+      "version": "20260624000100",
+      "name": "audit_events_phase_a.sql",
+      "sha256": "2f7bb8f75651bf2fe85ef9e097901b0b6954e73abce96c282564599d7e1b337a"
+    },
+    {
+      "version": "20260624000200",
+      "name": "contract_void_cancel_phase_b.sql",
+      "sha256": "bf67d1ec590751c85b07b556f2527834c0d3173cd7c3e4585760539c4b4ca044"
+    },
+    {
+      "version": "20260624000300",
+      "name": "reservation_release_alternates_phase_c.sql",
+      "sha256": "4d1a5d6f9e5579194f674c1023ec1f9d0b5de9d2c08dfbaf890c9fd631be4045"
+    },
+    {
+      "version": "20260624000400",
+      "name": "reservation_settings_phase_d.sql",
+      "sha256": "29c23d7f498625653141a7fd3006b0c11b44d88d83b5a0ab1bc42890208996eb"
+    },
+    {
+      "version": "20260624000500",
+      "name": "relax_application_payment_option_constraint.sql",
+      "sha256": "a35d607c55f54754a8d6ccdfd2c31d36e937760263185d59d616f4c7843eb2b6"
+    },
+    {
+      "version": "20260625000100",
+      "name": "auto_create_lead_from_application.sql",
+      "sha256": "12e6ebda4d21ca00a8da355a1bb093b192a17de5ff51b66a9fcfd4dc30cc46d1"
+    },
+    {
+      "version": "20260625000200",
+      "name": "lead_duplicate_detection.sql",
+      "sha256": "73347eb66ac8e32f14c734154a9207cb3ca42b2d90233c8f1379b7acbf9cae04"
+    },
+    {
+      "version": "20260714220603",
+      "name": "20260714074603_release_quality_data_management.sql",
+      "sha256": "c6f20efe665a702a6a7477a8ab64a0b9cee5b30c8b45a2808ef78b6007627c73"
+    },
+    {
+      "version": "20260714220611",
+      "name": "20260714203000_controlled_payment_removal.sql",
+      "sha256": "d7dc9ef96f47b7ddbd13f6812620951d86eb8ca3ba3451f5079094e8237e4e4f"
+    },
+    {
+      "version": "20260714223959",
+      "name": "20260714210447_critical_correctness_batch_1.sql",
+      "sha256": "e85ec18de7e7a908f6a717545e25c3e685c2aa7783020a78f5f0b32cb11b1c0b"
+    },
+    {
+      "version": "20260714231118",
+      "name": "operational_attention_source_metadata.sql",
+      "sha256": "16ccc8b14d724ca89e42973ee9d5ff114c2c561eb30b8b9be346ab1bdb424716"
+    },
+    {
+      "version": "20260715050000",
+      "name": "information_centre_foundation.sql",
+      "sha256": "75d5c142be4b4ca5d54e44d4a04639bd5e642ced2ba8d4dcf8ce9029ea652661"
+    },
+    {
+      "version": "20260915000000",
+      "name": "multi_tenant_foundation.sql",
+      "sha256": "91c0f8c1eaff88d9d51745f307dacce15f43ba3f35bf390ecd2510d1e5b6d7b5"
+    },
+    {
+      "version": "20260916000000",
+      "name": "tenant_default_trigger_and_vision.sql",
+      "sha256": "065a0b4855aee55918a59c48aa3ab59cb3b2f9ce514fd1b7bf2afd85692c9caa"
+    },
+    {
+      "version": "20260917000000",
+      "name": "seed_wamule_tenant.sql",
+      "sha256": "289517148d6c282a6cb34deb609957146b4d64b549f1a0994164b058b871658e"
+    },
+    {
+      "version": "20260918000000",
+      "name": "masterplan_image_storage.sql",
+      "sha256": "ba264008b317c7640f4a950086319f06a36591eed1421c7c035fa4696079ca0b"
+    },
+    {
+      "version": "20260919000000",
+      "name": "masterplan_versioning.sql",
+      "sha256": "495bb33ac1f8f286b72efcaf0b93d2c6d88756fb9a86ca78eac3d5bf66a4e5d8"
+    },
+    {
+      "version": "20260920000000",
+      "name": "security_hardening_audit.sql",
+      "sha256": "60bbfb5b9230393c6b0ca4c6b2e3eec7e951b96f70dc9c7ee78d0a7b1108925c"
+    },
+    {
+      "version": "20260921000000",
+      "name": "lot_tiers_and_parcel_extensions.sql",
+      "sha256": "5816229366e3e33308d9374b171f39e3cb8d5ca74e655fcce3328d265e649e2a"
+    },
+    {
+      "version": "20260922000000",
+      "name": "inquiry_idempotency.sql",
+      "sha256": "c0b3b3cf8f28545dc180191c029bd32c57bb1e449e4bee206bd2b95ee11a40ca"
+    },
+    {
+      "version": "20260923000000",
+      "name": "brand_spelling.sql",
+      "sha256": "38756ab2cf681400375f6bb446efac163c37f12f6faa77a798a11db8a86d1f3f"
+    },
+    {
+      "version": "20260924000000",
+      "name": "tenant_projects.sql",
+      "sha256": "4451c99507f4020ebe619c7d360fe301eedd88acac702a081d239e6b4ce8694f"
+    },
+    {
+      "version": "20260924010000",
+      "name": "wamule_default_project_backfill.sql",
+      "sha256": "019164dc3e05435483203ce943c340a2c882856c51b3a9fcb08635d02585cace"
+    },
+    {
+      "version": "20260925000000",
+      "name": "correction_slice15.sql",
+      "sha256": "596c81134f79a25c565243b575738bb2ac3ea175e6ba1070999fe1600d380c5e"
+    },
+    {
+      "version": "20261011000000",
+      "name": "public_lot_identity_lockdown.sql",
+      "sha256": "ae26f24e117a4ab75adca2a422017ee4675bb73743dcb7291697211830fbb65b"
+    },
+    {
+      "version": "20261012020651",
+      "name": "project_scoped_public_maps.sql",
+      "sha256": "f8d5f760cf09bc4839894f3db6eee7202a085fb31d6c30726080e94cf19e1b4b"
+    },
+    {
+      "version": "20261014000000",
+      "name": "project_phase_hosted_pilot.sql",
+      "sha256": "40fdd87c482ca705953d5a00394d01fd57432a4f1f2472f23d68a4f790930c81"
+    },
+    {
+      "version": "20261014005000",
+      "name": "wamule_default_phase_name.sql",
+      "sha256": "ff06a1f09cbe23c2ed4b80470129aef06eb7620af40383a4c866fdc8b8de14f8"
+    },
+    {
+      "version": "20261014010000",
+      "name": "scoped_public_inquiry_rpc.sql",
+      "sha256": "981d63dc6b092bc759a22748d3b4d2567e9206d21694c047c1a1a7465a13d244"
+    },
+    {
+      "version": "20261015022233",
+      "name": "tenant_rpc_secret_application_document_isolation.sql",
+      "sha256": "302533a8ab8f60987bc16407eface4e2f015cef18e2792af1d7427a2227f6bdb"
+    },
+    {
+      "version": "20261015100000",
+      "name": "hopkins_super_admin_workspace_onboarding.sql",
+      "sha256": "33b677c59c7c0148e0c21724992c9c2fdde845a20f3b90ef9084e675e29da25f"
+    },
+    {
+      "version": "20261015195458",
+      "name": "parcel_board_workspace_scope.sql",
+      "sha256": "a9153a40c8b08d13d781c570852672a034442a25d49ba87ed145d7090c708698"
+    },
+    {
+      "version": "20261016001216",
+      "name": "inventory_selection_provenance_guard.sql",
+      "sha256": "9661f4b54241e1310a1a809e8e585e4ab93a8af1894d688908dfa422c5d2e954"
+    },
+    {
+      "version": "20261016054341",
+      "name": "hopkins_project_application_workflow.sql",
+      "sha256": "205ac6a7c5aed2b8ec5b419e6b443a776c76453977433d1307f07360abb13b81"
+    },
+    {
+      "version": "20261016065252",
+      "name": "modular_public_site_experience.sql",
+      "sha256": "c504229ad89cd2bb2631e4d501b7641bb732be731ca939fe41b62753694ba3f1"
+    },
+    {
+      "version": "20261016070858",
+      "name": "tenant_scoped_ai_settings_singleton.sql",
+      "sha256": "f9228bfad5494b524d2ddeb171196a051ff13fe35da5d4ae7e0078d08e6b5c2f"
+    },
+    {
+      "version": "20261016185842",
+      "name": "public_template_default_independent_of_scope.sql",
+      "sha256": "2493e861ff82d818e297e6eb7348baa021686b3f5b2594d7cdd62e7656b66f37"
+    },
+    {
+      "version": "20261019225217",
+      "name": "map_studio_packages_and_project_plot_content.sql",
+      "sha256": "86766d43a0335a046e2224fdbb43c78f66ac02df91230f803b7959d56ec775f5"
+    },
+    {
+      "version": "20261106000100",
+      "name": "enforce_tenant_link_integrity.sql",
+      "sha256": "417ff48c59b58c9eaa6ebda976c709f73d17127c797a410af06fa072b666db9a"
+    },
+    {
+      "version": "20261107000100",
+      "name": "phase_scoped_application_approvals.sql",
+      "sha256": "e14ba3b5ce8e395b4c1a07fe8ad96a5503131d112948399f8d5e325e012923d1"
+    },
+    {
+      "version": "20261107000200",
+      "name": "atomic_role_membership_changes.sql",
+      "sha256": "a49cc9f13c38f1404474f20cbf996e0829030073bbc22cc9d571479d44ad53d7"
+    },
+    {
+      "version": "20261107000300",
+      "name": "verified_audit_attribution.sql",
+      "sha256": "74d9778500d54ea4b3aff3c48c1920f927ed5a6c488bdd1d01107d1211b4f16e"
+    },
+    {
+      "version": "20261107000400",
+      "name": "enforce_access_state_boundaries.sql",
+      "sha256": "a9885f9f085514489bd78d2f5130f32f664bf3f99a259c6c705ebef810391dc4"
+    },
+    {
+      "version": "20261107143932",
+      "name": "general_workspace_provisioning.sql",
+      "sha256": "affaa0bdfb8a8fa2125639fcbadf5c21d68be7257ab284f6d7672305d11c91a1"
+    },
+    {
+      "version": "20261107151154",
+      "name": "resumable_workspace_user_onboarding.sql",
+      "sha256": "13b1122703eecf55d709771544a5564d1b89a082cbbedcc75a2b8c84f74d416d"
+    },
+    {
+      "version": "20261107184011",
+      "name": "m44_serialize_workspace_member_assignment.sql",
+      "sha256": "2a1f78d2770a3b066608ab5d395ba5d24cadad5dcc73c12c7040f8b214e764d4"
+    },
+    {
+      "version": "20261108042610",
+      "name": "m61_public_hostname_registry.sql",
+      "sha256": "91ff63ae9f51f10198a6aa2a897ad6052fb887342d0ff8a308be76addb2ff043"
+    },
+    {
+      "version": "20261108110000",
+      "name": "super_admin_console_hierarchy.sql",
+      "sha256": "1541c282b26023851e85405dd494012dd73f34c452e744565edb7f324e0e17e7"
+    },
+    {
+      "version": "20261108120000",
+      "name": "m74_scope_reservations_contracts.sql",
+      "sha256": "de246c2f7468f77e33d8b4b24cfc1c025316d5d54c5bd27a3adc7972b69a7802"
+    },
+    {
+      "version": "20261108130000",
+      "name": "m75_payment_allocations_and_fee_charges.sql",
+      "sha256": "e6b1c7a05c080bf1adae7a6e214cd543276b8542465823f4ea4007d4a84d1b64"
+    },
+    {
+      "version": "20261108140000",
+      "name": "m77_job_idempotency_and_ai_scope.sql",
+      "sha256": "c6ffe09c0cc8af0e6e492fe5db46a4593a215482e3b419aad82d8e338750e462"
+    },
+    {
+      "version": "20261111030739",
+      "name": "initial_phase_application_allowlist.sql",
+      "sha256": "3faf71cd8ce96fef584998ba083f895024f7699a2edeedc8e59aa57aad468235"
+    }
+  ],
+  "new_migration_sha256": "3faf71cd8ce96fef584998ba083f895024f7699a2edeedc8e59aa57aad468235"
+}

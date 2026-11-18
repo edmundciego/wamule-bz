@@ -1,4 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  formatBriefDate,
+  formatBriefPeriod,
+  renderDailyBriefHtml,
+  type DailyBriefEmailData,
+  type DailyBriefPriority,
+} from "../_shared/daily-brief-template.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -11,11 +18,14 @@ const corsHeaders = {
 
 type EmailNotification = {
   id: number;
+  tenant_id: string;
   recipient_email: string;
   recipient_name: string | null;
   subject: string;
   body: string;
   notification_type: string;
+  related_table: string | null;
+  related_record_id: string | null;
   status: string;
 };
 
@@ -25,6 +35,9 @@ type EmailBranding = {
   contactEmail: string;
   locationAddress: string;
 };
+
+const EMAIL_LEASE_PREFIX = "m77-email-lease:";
+const EMAIL_LEASE_MS = 10 * 60 * 1000;
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -47,7 +60,7 @@ Deno.serve(async (request) => {
 
   const { data: currentProfile, error: profileError } = await supabase
     .from("admin_profiles")
-    .select("role")
+    .select("role, tenant_id")
     .eq("user_id", currentUserData.user.id)
     .maybeSingle();
 
@@ -60,7 +73,18 @@ Deno.serve(async (request) => {
     email_notification_id?: number;
     batch?: boolean;
     retry_failed?: boolean;
+    tenant_id?: string;
   };
+  const tenantId = body.tenant_id?.trim();
+  if (!tenantId) return json({ error: "Select a tenant workspace before processing notifications." }, 400);
+  if (currentProfile?.role !== "Super Admin" && currentProfile?.tenant_id !== tenantId) {
+    return json({ error: "The selected tenant is outside this account's workspace." }, 403);
+  }
+  const { data: tenant, error: tenantError } = await supabase.from("organizations")
+    .select("id,is_active,name").eq("id", tenantId).maybeSingle();
+  if (tenantError) return json({ error: tenantError.message }, 500);
+  if (!tenant) return json({ error: "The selected tenant does not exist." }, 404);
+  if (tenant.is_active !== true) return json({ error: "The selected tenant is inactive." }, 403);
 
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
@@ -71,7 +95,7 @@ Deno.serve(async (request) => {
     return json({ error: "Email sending is not configured. Set RESEND_API_KEY and EMAIL_FROM_ADDRESS Supabase secrets." }, 400);
   }
 
-  let query = supabase.from("email_notifications").select("*").order("created_at", { ascending: true });
+  let query = supabase.from("email_notifications").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true });
   if (body.email_notification_id) {
     query = query.eq("id", body.email_notification_id).in("status", body.retry_failed ? ["Pending", "Failed"] : ["Pending"]);
   } else if (body.batch) {
@@ -84,21 +108,51 @@ Deno.serve(async (request) => {
   if (emailError) return json({ error: emailError.message }, 500);
   if (!emails?.length) return json({ sent: 0, failed: 0, results: [] });
 
-  const branding = await loadEmailBranding(supabase, { fromName, fromAddress });
+  const branding = await loadEmailBranding(supabase, tenantId, { fromName, fromAddress });
+  const siteUrl = (Deno.env.get("PUBLIC_SITE_URL") ?? Deno.env.get("SITE_URL") ?? "https://wamule-staging.netlify.app").replace(/\/$/, "");
   const results = [];
   for (const email of emails as EmailNotification[]) {
-    const result = await sendEmail(email, { resendApiKey, fromAddress, fromName, replyTo, branding });
+    const priorStatus = email.status;
+    const priorError = (email as EmailNotification & { error_message?: string | null }).error_message ?? null;
+    const priorLease = parseEmailLease(priorError);
+    if (priorLease && Date.now() - priorLease.startedAt < EMAIL_LEASE_MS) {
+      results.push({ id: email.id, ok: false, skipped: true, error: "Notification is already claimed for sending." });
+      continue;
+    }
+    const leaseToken = makeEmailLeaseToken();
+    let claim = supabase.from("email_notifications")
+      .update({ status: "Failed", error_message: leaseToken })
+      .eq("id", email.id).eq("tenant_id", tenantId).eq("status", priorStatus);
+    claim = priorError === null ? claim.is("error_message", null) : claim.eq("error_message", priorError);
+    const { data: claimedEmail, error: claimError } = await claim.select("id").maybeSingle();
+    if (claimError || !claimedEmail) {
+      results.push({ id: email.id, ok: false, skipped: true, error: "Notification was claimed by another worker." });
+      continue;
+    }
+
+    const result = await sendEmail(email, {
+      resendApiKey,
+      fromAddress,
+      fromName,
+      replyTo,
+      branding,
+      dashboardUrl: `${siteUrl}/briefs`,
+      supabase,
+      idempotencyKey: `wamule-notification-${tenantId}-${email.id}`,
+    });
     results.push(result);
     if (result.ok) {
       await supabase
         .from("email_notifications")
         .update({ status: "Sent", error_message: null, sent_at: new Date().toISOString() })
-        .eq("id", email.id);
+        .eq("id", email.id)
+        .eq("tenant_id", tenantId).eq("status", "Failed").eq("error_message", leaseToken);
     } else {
       await supabase
         .from("email_notifications")
         .update({ status: "Failed", error_message: result.error })
-        .eq("id", email.id);
+        .eq("id", email.id)
+        .eq("tenant_id", tenantId).eq("status", "Failed").eq("error_message", leaseToken);
     }
   }
 
@@ -111,23 +165,34 @@ Deno.serve(async (request) => {
 
 async function sendEmail(
   email: EmailNotification,
-  config: { resendApiKey: string; fromAddress: string; fromName: string; replyTo: string; branding: EmailBranding },
+  config: {
+    resendApiKey: string;
+    fromAddress: string;
+    fromName: string;
+    replyTo: string;
+    branding: EmailBranding;
+    dashboardUrl: string;
+    supabase: ReturnType<typeof createClient>;
+    idempotencyKey: string;
+  },
 ) {
   try {
+    const html = await renderEmailHtmlForNotification(email, config);
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.resendApiKey}`,
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
-        from: `${config.fromName} <${config.fromAddress}>`,
+        from: `${config.branding.companyName || config.fromName} <${config.fromAddress}>`,
         to: [formatRecipient(email.recipient_name, email.recipient_email)],
         subject: email.subject,
         text: email.body,
-        html: renderEmailHtml(email, config.branding),
-        reply_to: config.replyTo || undefined,
+        html,
+        reply_to: config.branding.contactEmail || config.replyTo || undefined,
       }),
+      headers: {
+        Authorization: `Bearer ${config.resendApiKey}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": config.idempotencyKey,
+      },
     });
 
     if (!response.ok) {
@@ -143,20 +208,140 @@ async function sendEmail(
 
 async function loadEmailBranding(
   supabase: ReturnType<typeof createClient>,
+  tenantId: string,
   fallback: { fromName: string; fromAddress: string },
 ): Promise<EmailBranding> {
-  const { data } = await supabase
+  const [{ data }, { data: tenant }] = await Promise.all([supabase
     .from("business_settings")
     .select("value")
     .eq("key", "company_profile")
-    .maybeSingle();
+    .eq("tenant_id", tenantId)
+    .maybeSingle(), supabase.from("organizations").select("id,name").eq("id", tenantId).maybeSingle()]);
   const value = data?.value && typeof data.value === "object" ? data.value as Record<string, unknown> : {};
   return {
-    companyName: cleanText(value.company_name, fallback.fromName),
+    companyName: cleanText(value.company_name, cleanText(tenant?.name, fallback.fromName)),
     logoUrl: absoluteLogoUrl(cleanText(value.logo_url, "")),
     contactEmail: cleanText(value.contact_email, fallback.fromAddress),
     locationAddress: cleanText(value.location_address, "Dangriga Town, Belize"),
   };
+}
+
+function makeEmailLeaseToken() {
+  return `${EMAIL_LEASE_PREFIX}${Date.now()}:${crypto.randomUUID()}`;
+}
+
+function parseEmailLease(value: unknown) {
+  if (typeof value !== "string" || !value.startsWith(EMAIL_LEASE_PREFIX)) return null;
+  const startedAt = Number(value.slice(EMAIL_LEASE_PREFIX.length).split(":", 1)[0]);
+  return Number.isFinite(startedAt) ? { startedAt } : null;
+}
+
+type DailyBriefRow = {
+  tenant_id: string;
+  summary: string | null;
+  applications_summary: string | null;
+  lots_summary: string | null;
+  payments_summary: string | null;
+  contracts_summary: string | null;
+  collections_summary: string | null;
+  alerts: unknown;
+  recommended_actions: unknown;
+  brief_date: string | null;
+  period_start: string | null;
+  period_end: string | null;
+};
+
+async function renderEmailHtmlForNotification(
+  email: EmailNotification,
+  config: { branding: EmailBranding; dashboardUrl: string; supabase: ReturnType<typeof createClient> },
+): Promise<string> {
+  if (email.notification_type === "Daily Brief" && email.related_table === "ai_daily_briefs" && email.related_record_id) {
+    try {
+      const { data: brief } = await config.supabase
+        .from("ai_daily_briefs")
+        .select("tenant_id, summary, applications_summary, lots_summary, payments_summary, contracts_summary, collections_summary, alerts, recommended_actions, brief_date, period_start, period_end")
+        .eq("id", Number(email.related_record_id))
+        .eq("tenant_id", email.tenant_id)
+        .maybeSingle();
+      if (brief) {
+        const data = await buildDailyBriefEmailData(config.supabase, brief as DailyBriefRow, email.subject);
+        return renderDailyBriefHtml(data, {
+          companyName: config.branding.companyName,
+          locationAddress: config.branding.locationAddress,
+        }, config.dashboardUrl);
+      }
+    } catch (error) {
+      console.error("Daily Brief template failed, using generic wrapper", error instanceof Error ? error.message : error);
+    }
+  }
+  return renderEmailHtml(email, config.branding);
+}
+
+async function buildDailyBriefEmailData(
+  supabase: ReturnType<typeof createClient>,
+  brief: DailyBriefRow,
+  subject: string,
+): Promise<DailyBriefEmailData> {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const { data: items } = await supabase
+    .from("brief_action_items")
+    .select("title, details, severity, status")
+    .eq("tenant_id", brief.tenant_id)
+    .in("status", ["Open", "In Progress"])
+    .order("last_seen_on", { ascending: false })
+    .limit(10);
+  const { count: resolvedCount } = await supabase
+    .from("brief_action_items")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", brief.tenant_id)
+    .eq("status", "Done");
+
+  const openItems = ((items ?? []) as Array<{ title: string; details: string | null; severity: string | null; status: string }>)
+    .map((item) => ({
+      title: text(item.title) || "Action item",
+      detail: text(item.details),
+      severity: String(item.severity).toLowerCase().includes("red") ? "red" as const : "amber" as const,
+    }));
+
+  return {
+    subject,
+    periodCovered: formatBriefPeriod(brief.period_start, brief.period_end) || formatBriefDate(brief.brief_date) || "Latest period",
+    generatedAt: formatBriefDate(brief.brief_date) || "today",
+    summary: text(brief.summary),
+    metrics: {
+      newApplications: firstCount(brief.applications_summary, /(\d[\d,]*)\s+new applications/i),
+      paymentsLogged: firstDollar(brief.payments_summary) ?? firstCount(brief.payments_summary, /(\d[\d,]*)\s+payments? logged/i),
+      newContracts: firstCount(brief.contracts_summary, /(\d[\d,]*)\s+(new\s+)?contracts?/i),
+      openActionItems: String(openItems.length),
+      resolvedItems: String(resolvedCount ?? 0),
+      outstandingBalance: firstDollar(brief.collections_summary) ?? "—",
+    },
+    priorities: openItems as DailyBriefPriority[],
+    activity: {
+      applications: firstLine(brief.applications_summary),
+      lots: firstLine(brief.lots_summary),
+      contracts: firstLine(brief.contracts_summary),
+      payments: firstLine(brief.payments_summary),
+    },
+    collections: text(brief.collections_summary),
+  };
+}
+
+function firstDollar(text: unknown): string | null {
+  if (typeof text !== "string") return null;
+  const match = text.match(/\$[\d,]+(?:\.\d{2})?/);
+  return match ? match[0] : null;
+}
+
+function firstCount(text: unknown, pattern: RegExp): string {
+  if (typeof text !== "string") return "—";
+  const match = text.match(pattern);
+  return match?.[1] ? match[1] : "—";
+}
+
+function firstLine(text: unknown): string {
+  if (typeof text !== "string") return "";
+  return text.split(/\r?\n/).map((line) => line.trim()).find((line) => line) ?? "";
 }
 
 function renderEmailHtml(email: EmailNotification, branding: EmailBranding) {
