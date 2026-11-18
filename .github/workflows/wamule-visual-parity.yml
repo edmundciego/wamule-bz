@@ -1,0 +1,51 @@
+name: Wamule homepage visual parity
+
+on:
+  push:
+    branches: [codex/visual-parity-wamule]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: wamule-homepage-layout-refactor
+      - uses: actions/checkout@v4
+        with:
+          ref: fc7872decf962c5b643e8ec5ec0510acd0310b9f
+          path: wamule-homepage-ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wamule-homepage-layout-refactor/package-lock.json
+      - name: Build both revisions with the public staging configuration
+        shell: bash
+        run: |
+          mkdir -p homepage-parity
+          python3 wamule-homepage-layout-refactor/.parity-qa/snapshot-staging.py
+          source homepage-parity/staging-client.env
+          npm ci --prefix wamule-homepage-layout-refactor
+          ln -s ../wamule-homepage-layout-refactor/node_modules wamule-homepage-ci/node_modules
+          npm run build --prefix wamule-homepage-ci
+          npm run build --prefix wamule-homepage-layout-refactor
+      - name: Capture and compare desktop and phone-width views
+        env:
+          WAMULE_RENDER_BROWSER: /usr/bin/google-chrome
+        run: |
+          node wamule-homepage-layout-refactor/.parity-qa/capture.mjs
+          python3 -m venv homepage-parity/image-env
+          homepage-parity/image-env/bin/pip install Pillow
+          homepage-parity/image-env/bin/python wamule-homepage-layout-refactor/.parity-qa/compare.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wamule-homepage-parity
+          path: homepage-parity/captures/
+          if-no-files-found: warn
+          retention-days: 3
