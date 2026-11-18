@@ -194,6 +194,7 @@ export function PublicHomepage({
       <Layout
         companyName={companyName}
         projectName={projectName}
+        headline={siteExperience.headline || projectName}
         logoUrl={company.logo_url}
         description={description}
         facts={facts}

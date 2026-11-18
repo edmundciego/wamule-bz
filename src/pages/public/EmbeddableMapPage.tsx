@@ -13,11 +13,13 @@ export function EmbeddableMapPage({
   hostname,
   scope,
   phases,
+  showPrices,
   applyWithOutline,
 }: {
   hostname?: string;
   scope: PublicExperienceScope;
   phases: PublicPhaseOption[];
+  showPrices: boolean;
   applyWithOutline?: (ref: string) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -67,6 +69,7 @@ export function EmbeddableMapPage({
         initialView={initialView}
         initialLotNumber={initialLot}
         initialFeatureRef={initialFeatureRef}
+        showPrices={showPrices}
         enableInquiry
         onProjectContext={updateProjectContext}
         onApplyWithPlot={applyWithOutline ? (parcel) => {

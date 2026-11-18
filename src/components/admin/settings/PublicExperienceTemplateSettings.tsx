@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LayoutTemplate } from "lucide-react";
 import {
   normalizePublicExperience,
+  PUBLIC_SITE_HEADLINE_MAX_LENGTH,
   PUBLIC_SITE_MODULES,
   PUBLIC_SITE_TEMPLATES,
   type PublicExperienceConfig,
@@ -11,6 +12,7 @@ import { supabase } from "../../../lib/supabase";
 import type { WorkspaceChoice } from "../../auth/workspaceScopeContext";
 import { Button } from "../../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/Card";
+import { Field, Input } from "../../ui/Field";
 import { ErrorState, LoadingState } from "../../ui/State";
 
 export function PublicExperienceTemplateSettings({
@@ -41,7 +43,7 @@ function ProjectHomepageSettings({ workspace }: { workspace: WorkspaceChoice }) 
     },
     staleTime: 30_000,
   });
-  const [draft, setDraft] = useState<Pick<PublicExperienceConfig, "templateId" | "enabledModules"> | null>(null);
+  const [draft, setDraft] = useState<Pick<PublicExperienceConfig, "templateId" | "headline" | "enabledModules"> | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -49,6 +51,7 @@ function ProjectHomepageSettings({ workspace }: { workspace: WorkspaceChoice }) 
   const config = draft ?? savedConfig;
   const changed = Boolean(draft && (
     draft.templateId !== savedConfig?.templateId
+    || draft.headline !== savedConfig?.headline
     || PUBLIC_SITE_MODULES.some(({ id }) => draft.enabledModules[id] !== savedConfig?.enabledModules[id])
   ));
 
@@ -63,6 +66,7 @@ function ProjectHomepageSettings({ workspace }: { workspace: WorkspaceChoice }) 
         p_project_id: projectId,
         p_template_id: config.templateId,
         p_enabled_modules: config.enabledModules,
+        p_headline: config.headline,
       });
       if (error) throw error;
       queryClient.setQueryData(queryKey, normalizePublicExperience(data));
@@ -95,6 +99,18 @@ function ProjectHomepageSettings({ workspace }: { workspace: WorkspaceChoice }) 
 
         {config ? (
           <>
+            <Field label="Homepage headline">
+              <Input
+                value={config.headline}
+                placeholder={workspace.projectName}
+                maxLength={PUBLIC_SITE_HEADLINE_MAX_LENGTH}
+                disabled={configQuery.isError || saving}
+                onChange={(event) => {
+                  setSaved(false);
+                  setDraft({ ...config, headline: event.target.value });
+                }}
+              />
+            </Field>
             <fieldset className="grid gap-3 sm:grid-cols-2" disabled={configQuery.isError || saving}>
               <legend className="mb-2 text-sm font-semibold">Homepage layout</legend>
               {PUBLIC_SITE_TEMPLATES.map((template) => (

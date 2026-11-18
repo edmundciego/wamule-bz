@@ -6,7 +6,7 @@ import type { z } from "zod";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import { buildPublicApplicationPayload } from "../../../supabase/functions/_shared/public-application-contract";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
+import { hasHopkinsReferencePricing, resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
 import { usePublicApplicationPlots, type PublicOutlineOption, type PublicParcelOption } from "../../lib/publicApplicationPlots";
 import { getPublicApplicationAccess, type PublicSiteData } from "../../lib/publicSiteExperience";
 import { submitPublicFunction } from "../../lib/publicSubmission";
@@ -117,9 +117,13 @@ export function PublicApplicationForm({
   ));
   const parcels = plots.data?.parcels ?? [];
   const outlines = plots.data?.outlines ?? [];
+  const showReferencePrices = pricing && hasHopkinsReferencePricing(plots.data?.map);
   const selectedOutlines = selectedRefs.flatMap((ref) => {
     const outline = outlines.find((item) => item.ref === ref);
-    return outline ? [outline] : [];
+    if (!outline) return [];
+    const price = showReferencePrices ? resolveHopkinsReferencePrice(outline.tierKey, hopkinsTierSource) : null;
+    const referencePrice = price ? [price.display, price.basis].filter(Boolean).join(" · ") : "";
+    return [{ ...outline, referencePrice }];
   });
   const unverifiedSelection = projectApplication && selectedRefs.length > selectedOutlines.length;
   const invalidSelection = unverifiedSelection && !plots.isFetching;
@@ -205,7 +209,8 @@ export function PublicApplicationForm({
   const selectedLots = parcels.filter((parcel) => selectedRefs.includes(parcel.public_ref));
   const selectionLabel = projectApplication ? "Selected map outlines" : "Preferred lots";
   const selectedLabels = projectApplication
-    ? selectedOutlines.map((outline) => outline.label)
+    ? selectedOutlines.map(({ label, referencePrice }) =>
+      referencePrice ? label + " · Reference price: " + referencePrice : label)
     : selectedLots.map((lot) => `Lot ${lot.lot_number}`);
   const selectionSummary = selectedLabels.join(", ") || "None selected";
   const notice = projectApplication
@@ -328,12 +333,12 @@ export function PublicApplicationForm({
                               setSelectedRefs(selectedRefs.includes(ref) ? selectedRefs.filter((selected) => selected !== ref) : [...selectedRefs, ref]);
                             }}
                             initialFeatureRef={initialOutline}
-                            showPrices={showPrices}
+                            showPrices={showReferencePrices || showPrices}
                           />
                         </div>
                       ) : null}
                       {projectApplication ? (
-                        <OutlinePreferences outlines={selectedOutlines} showPrices={showPrices && scope.tenantSlug === "hopkins-grove" && scope.projectSlug === "hopkins-grove"}
+                        <OutlinePreferences outlines={selectedOutlines}
                           onRemove={(ref) => setSelectedRefs(selectedRefs.filter((selected) => selected !== ref))} />
                       ) : (
                         <PurchasePreferences form={form} parcels={parcels} selectedRefs={selectedRefs} showPrices={showPrices}
@@ -539,29 +544,25 @@ function PurchasePreferences({ form, parcels, selectedRefs, showPrices, loading,
   );
 }
 
-function OutlinePreferences({ outlines, onRemove, showPrices }: {
-  outlines: PublicOutlineOption[];
+function OutlinePreferences({ outlines, onRemove }: {
+  outlines: Array<PublicOutlineOption & { referencePrice: string }>;
   onRemove: (ref: string) => void;
-  showPrices: boolean;
 }) {
   return (
     <fieldset className="grid gap-3 rounded-xl border border-primary/15 bg-primary-soft/35 p-4">
       <legend className="px-1 text-sm font-semibold text-primary">Selected map outlines</legend>
       {outlines.length === 0 ? <p className="text-sm text-muted-foreground">No outline preference selected.</p> : (
         <ul className="grid gap-2 sm:grid-cols-2">
-          {outlines.map((outline) => {
-            const price = showPrices ? resolveHopkinsReferencePrice(outline.tierKey, hopkinsTierSource) : null;
-            return (
-              <li key={outline.ref} className="flex items-start justify-between gap-2 rounded-md border bg-card px-3 py-2 text-sm">
-                <div>
-                  <p className="font-semibold">{outline.label}</p>
-                  {outline.verifiedPrintedNumber ? <p className="text-xs">Verified printed plan number: {outline.verifiedPrintedNumber}</p> : null}
-                  {price ? <p className="text-xs">Reference price: {price.display}{price.basis ? ` · ${price.basis}` : ""}</p> : null}
-                </div>
-                <Button type="button" variant="ghost" className="shrink-0" aria-label={`Remove ${outline.label}`} onClick={() => onRemove(outline.ref)}>Remove</Button>
-              </li>
-            );
-          })}
+          {outlines.map((outline) => (
+            <li key={outline.ref} className="flex items-start justify-between gap-2 rounded-md border bg-card px-3 py-2 text-sm">
+              <div>
+                <p className="font-semibold">{outline.label}</p>
+                {outline.verifiedPrintedNumber ? <p className="text-xs">Verified printed plan number: {outline.verifiedPrintedNumber}</p> : null}
+                {outline.referencePrice ? <p className="text-xs">Reference price: {outline.referencePrice}</p> : null}
+              </div>
+              <Button type="button" variant="ghost" className="shrink-0" aria-label={`Remove ${outline.label}`} onClick={() => onRemove(outline.ref)}>Remove</Button>
+            </li>
+          ))}
         </ul>
       )}
     </fieldset>

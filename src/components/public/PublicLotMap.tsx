@@ -11,7 +11,7 @@ import type { ParcelStatus } from "../../types/database";
 import { PublicInquiryModal } from "./PublicInquiryModal";
 import { MapPolygon, MapRasterLayer } from "../map/MapPolygon";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
+import { hasHopkinsReferencePricing, resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
 import type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 export type { CorrectionMapLayer, CorrectionReviewStatus } from "../map/correctionMapLayer";
 import {
@@ -867,11 +867,7 @@ export function PublicLotMap({
     .filter((warning): warning is string => Boolean(warning));
   const reviewPending = reviewPendingDemo || localPreviewMode;
   const hostedDemoMap = basePayload?.map_experience_mode === "demo";
-  const isHopkinsHostedMap = Boolean(
-    hostedDemoMap
-    && basePayload?.tenant.slug === "hopkins-grove"
-    && basePayload.project?.slug === "hopkins-grove",
-  );
+  const isHopkinsHostedMap = hasHopkinsReferencePricing(basePayload);
 
   const correctionReviewTitle = correctionMapLayer?.title;
   const correctionReviewImageUrl = correctionMapLayer?.imageUrl;

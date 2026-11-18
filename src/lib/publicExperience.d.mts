@@ -4,9 +4,11 @@ export type PublicApplicationType = "land_purchase" | "project_application";
 export type PublicExperienceScope = { tenantSlug: string; projectSlug: string; phaseSlug: string };
 export type PublicExperienceConfig = {
   templateId: PublicSiteTemplateId;
+  headline: string;
   applicationType: PublicApplicationType;
   enabledModules: Record<PublicSiteModuleId, boolean>;
 };
+export const PUBLIC_SITE_HEADLINE_MAX_LENGTH: number;
 export const PUBLIC_SITE_MODULES: Array<{ id: PublicSiteModuleId; name: string; description: string }>;
 export const PUBLIC_SITE_TEMPLATES: Array<{ id: PublicSiteTemplateId; name: string; description: string }>;
 export function defaultPublicExperience(): PublicExperienceConfig;

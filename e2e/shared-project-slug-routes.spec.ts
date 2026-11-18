@@ -254,6 +254,60 @@ test("Showcase uses the same scoped widgets and application as Regular", async (
   expect(hostnameResolutionCalls).toBe(0);
 });
 
+test("a configured project headline and plot 559 reference price survive the map to application handoff", async ({ page }) => {
+  const projectSlug = "hopkins-grove";
+  const scope = { tenantSlug: projectSlug, projectSlug, phaseSlug: "initial" };
+  const projectName = "Hopkins Grove";
+  const projectHeadline = "A place to put down roots.";
+  let pricePublished = true;
+  await page.route("**/functions/v1/get-public-site-experience**", async (route) => {
+    await route.fulfill({ json: {
+      scope, projectName, phases: [{ slug: scope.phaseSlug, name: "Initial" }],
+      siteExperience: {
+        templateId: "hopkins-project", headline: projectHeadline, applicationType: "project_application",
+        enabledModules: { map: true, inquiry: false, application: true, pricing: pricePublished },
+      },
+      company: { company_name: "Ceiba", short_description: "Local map fixture." },
+      publicApplication: {
+        applications_open: true, notices_complete: true, max_map_preferences: 2,
+        allowed_intended_uses: ["Residential"], show_lot_prices_publicly: false,
+        public_notice_text: "Local project application notice.",
+      },
+    } });
+  });
+  await page.route("**/functions/v1/get-public-lots**", async (route) => {
+    await route.fulfill({ json: {
+      tenant: { slug: scope.tenantSlug, name: "Ceiba" },
+      project: { slug: scope.projectSlug, name: projectName },
+      phase: { slug: scope.phaseSlug, name: "Initial" },
+      map_experience_mode: "demo", branding: { company_name: "Ceiba" },
+      parcels: [],
+      features: [{
+        map_feature_ref: outlineId, demo_label: "PLAN-559", source_tier_key: "premium",
+        source_printed_lot_number_candidate: "559", source_printed_lot_number_status: "source-image-cross-checked",
+        map_polygon: [{ x: 15, y: 15 }, { x: 35, y: 15 }, { x: 35, y: 35 }, { x: 15, y: 35 }],
+      }],
+    } });
+  });
+
+  await page.goto("/p/hopkins-grove/hopkins-grove?phase=initial");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(projectHeadline);
+  const map = page.getByRole("region", { name: "Explore the project map" });
+  await map.getByRole("textbox", { name: "Search source number candidates or generated map references" }).fill("559");
+  await map.getByRole("button", { name: /Select generated map reference PLAN-559/ }).click();
+  const price = /BZD 30,000\s*·\s*per 1\/4 acre/i;
+  await expect(map.getByRole("complementary", { name: "Map details and source price guide" }).getByText(price).last()).toBeVisible();
+  await map.getByRole("button", { name: "Apply with this plot" }).click();
+  const selection = page.getByRole("status", { name: "Selected map outlines" });
+  await expect(selection).toContainText("PLAN-559");
+  await expect(selection).toContainText(price);
+
+  pricePublished = false;
+  await page.reload();
+  await expect(selection).toContainText("PLAN-559");
+  await expect(selection).not.toContainText("BZD 30,000");
+});
+
 test("the original verified /apply page keeps lot selection, payment preference, and review", async ({ page, baseURL }) => {
   const verifiedOrigin = "http://wamule.example.test";
   const lotRef = "plr2:synthetic-review:initial:LOT-1";

@@ -3,6 +3,7 @@ import type { HomepageLayoutProps } from "./HomepageLayoutProps";
 export function RegularHomepageLayout({
   companyName,
   projectName,
+  headline,
   logoUrl,
   description,
   facts,
@@ -33,7 +34,7 @@ export function RegularHomepageLayout({
       <section aria-labelledby="project-title" className="border-b border-primary/10 bg-gradient-to-br from-card via-background to-primary-soft/70">
         <div className={`mx-auto grid max-w-6xl items-end gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:py-20 ${facts.length ? "lg:grid-cols-[1.3fr_0.7fr]" : ""}`}>
           <div className="min-w-0">
-            <h1 id="project-title" className="break-words font-display text-4xl font-semibold leading-tight text-primary sm:text-5xl lg:text-6xl">{projectName}</h1>
+            <h1 id="project-title" className="break-words font-display text-4xl font-semibold leading-tight text-primary sm:text-5xl lg:text-6xl">{headline}</h1>
             {description ? <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">{description}</p> : null}
             {actions}
           </div>

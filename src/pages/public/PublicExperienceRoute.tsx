@@ -63,7 +63,7 @@ export function PublicExperienceRoute({
     : undefined;
 
   if (mapRoute) {
-    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={phases} applyWithOutline={applyWithOutline} />;
+    return <EmbeddableMapPage hostname={hostname} scope={scope} phases={phases} showPrices={enabledModules.pricing} applyWithOutline={applyWithOutline} />;
   }
 
   const initialOutline = searchParams.get("apply_feature") || undefined;

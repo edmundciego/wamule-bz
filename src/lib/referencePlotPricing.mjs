@@ -1,3 +1,9 @@
+export function hasHopkinsReferencePricing(map) {
+  return map?.map_experience_mode === "demo"
+    && map.tenant?.slug === "hopkins-grove"
+    && map.project?.slug === "hopkins-grove";
+}
+
 /** Resolve source-plan reference pricing without treating it as inventory pricing. */
 export function resolveHopkinsReferencePrice(tierKey, catalogue, { verifiedCorner = false } = {}) {
   const tiers = catalogue?.tiers && typeof catalogue.tiers === "object" ? catalogue.tiers : {};

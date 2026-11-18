@@ -15,6 +15,12 @@ verify_jwt = false
 [functions.get-public-lots]
 verify_jwt = false
 
+[functions.get-public-site-experience]
+verify_jwt = false
+
+[functions.submit-hopkins-project-application]
+verify_jwt = false
+
 # Shareable map-review tokens are validated by the function. They are read-only
 # capabilities, not Supabase Auth sessions; Admin create/revoke actions still
 # verify the current user inside the function.

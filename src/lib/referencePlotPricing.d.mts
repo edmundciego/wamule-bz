@@ -7,6 +7,12 @@ export type HopkinsReferencePrice = {
   cornerPremiumApplied: boolean;
 };
 
+export function hasHopkinsReferencePricing(map?: {
+  map_experience_mode?: string | null;
+  tenant?: { slug: string } | null;
+  project?: { slug: string } | null;
+} | null): boolean;
+
 export function resolveHopkinsReferencePrice(
   tierKey: string | null | undefined,
   catalogue: unknown,

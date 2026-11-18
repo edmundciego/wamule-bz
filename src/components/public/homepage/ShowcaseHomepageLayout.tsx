@@ -3,6 +3,7 @@ import type { HomepageLayoutProps } from "./HomepageLayoutProps";
 export function ShowcaseHomepageLayout({
   companyName,
   projectName,
+  headline,
   logoUrl,
   description,
   facts,
@@ -33,7 +34,7 @@ export function ShowcaseHomepageLayout({
       <section aria-labelledby="project-title" className="border-b border-[#173f2d]/10 bg-[radial-gradient(ellipse_at_78%_20%,rgba(194,130,86,0.20),transparent_38%),linear-gradient(115deg,#fffdf8_0%,#f6f4e8_54%,#edf1e9_100%)]">
         <div className={`mx-auto grid max-w-6xl items-end gap-8 px-4 py-16 sm:px-6 sm:py-24 ${facts.length ? "lg:grid-cols-[1.5fr_1fr] lg:gap-14" : ""}`}>
           <div className="min-w-0">
-            <h1 id="project-title" className="break-words font-display text-5xl font-semibold leading-[1.04] tracking-tight text-[#173f2d] sm:text-6xl lg:text-7xl">{projectName}</h1>
+            <h1 id="project-title" className="break-words font-display text-5xl font-semibold leading-[1.04] tracking-tight text-[#173f2d] sm:text-6xl lg:text-7xl">{headline}</h1>
             {description ? <p className="mt-5 max-w-xl text-base leading-7 text-[#52635a] sm:text-lg">{description}</p> : null}
             {actions}
           </div>

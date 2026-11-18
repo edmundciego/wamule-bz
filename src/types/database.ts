@@ -1611,7 +1611,7 @@ export type Database = {
       };
       get_project_site_experience: {
         Args: { p_tenant_id: string; p_project_id: string };
-        Returns: { templateId: string; enabledModules: Record<string, boolean> };
+        Returns: { templateId: string; headline: string | null; enabledModules: Record<string, boolean>; uiRestrictedAccess: boolean };
       };
       save_project_site_experience: {
         Args: {
@@ -1619,8 +1619,9 @@ export type Database = {
           p_project_id: string;
           p_template_id: string;
           p_enabled_modules: { map: boolean; inquiry: boolean; application: boolean; pricing: boolean };
+          p_headline?: string;
         };
-        Returns: { templateId: string; enabledModules: Record<string, boolean> };
+        Returns: { templateId: string; headline: string | null; enabledModules: Record<string, boolean>; uiRestrictedAccess: boolean };
       };
     };
   };

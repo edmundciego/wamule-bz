@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolvePublicApplicationSettings } from "../_shared/public-application-settings.mjs";
 import { normalizePublicHostname, parsePublicHostnameResolution } from "../_shared/public-hostname.mjs";
-import { resolvePublicSiteTemplateId } from "../_shared/public-site-template.mjs";
+import { normalizePublicSiteHeadline, resolvePublicSiteTemplateId } from "../_shared/public-site-template.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -133,7 +133,12 @@ Deno.serve(async (request) => {
     scope: { tenantSlug: tenant.slug, projectSlug: project.slug, phaseSlug: phase.slug },
     projectName: cleanText(project.name).slice(0, 120),
     phases: activePhases.map((item) => ({ slug: item.slug, name: item.name })),
-    siteExperience: { templateId: resolvePublicSiteTemplateId(rawExperience.templateId), applicationType, enabledModules },
+    siteExperience: {
+      templateId: resolvePublicSiteTemplateId(rawExperience.templateId),
+      headline: normalizePublicSiteHeadline(rawExperience.headline),
+      applicationType,
+      enabledModules,
+    },
     company: companyProfile,
     publicApplication,
     installmentPlans: plansResult.data ?? [],

@@ -1,8 +1,11 @@
 import {
   DEFAULT_PUBLIC_SITE_TEMPLATE_ID,
+  normalizePublicSiteHeadline,
   resolvePublicSiteTemplateId,
   SHOWCASE_PUBLIC_SITE_TEMPLATE_ID,
 } from "../../supabase/functions/_shared/public-site-template.mjs";
+
+export { PUBLIC_SITE_HEADLINE_MAX_LENGTH } from "../../supabase/functions/_shared/public-site-template.mjs";
 
 export const PUBLIC_SITE_TEMPLATES = [
   { id: DEFAULT_PUBLIC_SITE_TEMPLATE_ID, name: "Regular", description: "A compact project overview with key facts and direct links to the map and forms." },
@@ -19,6 +22,7 @@ export const PUBLIC_SITE_MODULES = [
 export function defaultPublicExperience() {
   return {
     templateId: DEFAULT_PUBLIC_SITE_TEMPLATE_ID,
+    headline: "",
     applicationType: "land_purchase",
     enabledModules: {
       map: true,
@@ -37,6 +41,7 @@ export function normalizePublicExperience(value) {
     : {};
   return {
     templateId: resolvePublicSiteTemplateId(raw.templateId),
+    headline: normalizePublicSiteHeadline(raw.headline),
     applicationType: raw.applicationType === "project_application"
       ? "project_application"
       : "land_purchase",

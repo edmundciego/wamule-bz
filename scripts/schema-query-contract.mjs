@@ -536,6 +536,7 @@ export function compareCatalog(contract, catalog) {
 function main() {
   const args = process.argv.slice(2);
   const sourceOnly = args.includes("--source-only");
+  const rpcOnly = args.includes("--rpc-only");
   const targetIndex = args.indexOf("--target-project");
   const targetProject = targetIndex >= 0 ? args[targetIndex + 1] : null;
   const roots = [resolve(ROOT, "src"), resolve(ROOT, "supabase/functions")];
@@ -551,8 +552,9 @@ function main() {
   if (!connectionString) throw new Error("Set SCHEMA_QUERY_DATABASE_URL to the local replay URL or the dedicated staging read-only URL.");
   const catalog = catalogWithPsql(connectionString, { targetProject });
   const catalogContract = {
-    queries: [...contract.queries, ...dynamic.queries],
+    queries: rpcOnly ? [] : [...contract.queries, ...dynamic.queries],
     remoteFunctions: dynamic.remoteFunctions,
+    unresolved: rpcOnly ? dynamic.unresolved.filter(({ reason }) => reason.startsWith("dynamic_rpc_")) : [],
   };
   const compared = compareCatalog(catalogContract, catalog);
   const mismatches = compared.mismatches;
@@ -572,10 +574,10 @@ function main() {
     dynamic_or_unresolved_count: compared.unresolved.length,
     dynamic_or_unresolved: compared.unresolved,
     mismatches,
-    rpc_signatures: compared.rpcSignatures,
   };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (mismatches.length || dynamic.unresolved.length) process.exitCode = 1;
+  const unresolved = rpcOnly ? compared.unresolved : dynamic.unresolved;
+  if (mismatches.length || unresolved.length) process.exitCode = 1;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {

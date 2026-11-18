@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -32,7 +32,8 @@ test("replay preparation matches every 73 staging migration version, filename, a
       "20261016185842_public_template_default_independent_of_scope.sql",
     ]) {
       const path = join("supabase", "migrations", filename);
-      assert.deepEqual(readFileSync(join(root, path)), readFileSync(join(output, path)), filename);
+      assert.equal(existsSync(join(root, path)), false, `${filename} must stay out of forward migrations`);
+      assert.equal(existsSync(join(output, path)), true, `${filename} must stay in the historical replay`);
     }
     assert.equal(manifest.migrations.some((row) => row.version === "20261112040000"), false);
     assert.deepEqual(manifest.foundation_schema_bootstrap, {
