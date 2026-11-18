@@ -141,7 +141,7 @@ async function capture(variant, build, label) {
       }
       await map.getByRole("button", { name: "Apply with this plot" }).click();
       await page.waitForURL((url) => url.pathname === "/apply" && url.searchParams.get("apply_feature") === plot.map_feature_ref);
-      const selected = page.getByRole("region", { name: "Selected map preferences" });
+      const selected = page.getByRole("status", { name: "Selected map outlines" });
       await selected.getByText(/BZD 30,000\s*·\s*per 1\/4 acre/i).waitFor();
       probe.plot559Passed = true;
     }
