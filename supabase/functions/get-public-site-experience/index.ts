@@ -10,7 +10,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 const moduleIds = ["map", "inquiry", "application", "pricing"] as const;
-type TemplateId = "wamule-classic" | "hopkins-project";
 type SettingRow = { key: string; value: unknown };
 
 Deno.serve(async (request) => {
@@ -50,7 +49,7 @@ Deno.serve(async (request) => {
   if (tenantError || !tenant) return json({ error: "Public project information is unavailable." }, 404);
 
   const { data: project, error: projectError } = await client.from("projects")
-    .select("id,name,slug,map_experience_mode").eq("tenant_id", tenant.id)
+    .select("id,name,slug").eq("tenant_id", tenant.id)
     .eq("slug", resolvedScope.projectSlug).maybeSingle();
   if (projectError || !project) return json({ error: "Public project information is unavailable." }, 404);
 
@@ -122,12 +121,6 @@ Deno.serve(async (request) => {
 
   const theme = objectValue(projectSettings.tenant_theme);
   const rawExperience = objectValue(theme.site_experience);
-  const fallbackTemplate: TemplateId = project.map_experience_mode === "demo" && resolvedScope.tenantSlug === "hopkins-grove"
-    ? "hopkins-project"
-    : "wamule-classic";
-  const templateId: TemplateId = rawExperience.templateId === "wamule-classic" || rawExperience.templateId === "hopkins-project"
-    ? rawExperience.templateId
-    : fallbackTemplate;
   const defaults = { map: true, inquiry: true, application: true, pricing: true };
   const inputModules = objectValue(rawExperience.enabledModules);
   const enabledModules = Object.fromEntries(moduleIds.map((key) => [
@@ -139,7 +132,7 @@ Deno.serve(async (request) => {
     scope: { tenantSlug: tenant.slug, projectSlug: project.slug, phaseSlug: phase.slug },
     projectName: cleanText(project.name).slice(0, 120),
     phases: activePhases.map((item) => ({ slug: item.slug, name: item.name })),
-    siteExperience: { templateId, applicationType, enabledModules },
+    siteExperience: { templateId: "wamule-classic", applicationType, enabledModules },
     company: companyProfile,
     publicApplication,
     installmentPlans: plansResult.data ?? [],
@@ -163,6 +156,7 @@ function safeCompanyProfile(companyInput: unknown, projectInput: unknown) {
     phone_number: field("phone_number", 40).slice(0, 40),
     location_address: field("location_address", 240).slice(0, 240),
     website: safeHttpsUrl(field("website", 500)),
+    public_notice_text: field("public_notice_text", 1000),
   };
 }
 

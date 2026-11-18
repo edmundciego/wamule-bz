@@ -95,25 +95,23 @@ test("application storage guard keeps the project workflow separate from invento
   assert.match(migration, /for each row when \(new\.application_kind is distinct from 'project_application'\)/);
 });
 
-test("the dedicated page and templates reuse one form with separate scoped submission contracts", async () => {
-  const [hopkinsPage, wamulePage, appRoutes, adminPage, form, experience] = await Promise.all([
-    readFile(new URL("../src/pages/public/HopkinsPublicPage.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/pages/ApplicationPage.tsx", import.meta.url), "utf8"),
+test("the dedicated page and shared homepage reuse one form with separate scoped submission contracts", async () => {
+  const [homepage, appRoutes, adminPage, form, experience] = await Promise.all([
+    readFile(new URL("../src/components/public/PublicHomepage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/ApplicationsPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/public/PublicApplicationForm.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/public/PublicExperienceRoute.tsx", import.meta.url), "utf8"),
   ]);
-  for (const template of [hopkinsPage, wamulePage]) {
-    assert.match(template, /\{application\}/);
-    assert.doesNotMatch(template, /submit-hopkins-project-application|submit-public-application/);
-  }
-  assert.match(hopkinsPage, /Register your interest/);
+  assert.match(homepage, /\{application\}/);
+  assert.doesNotMatch(homepage, /submit-hopkins-project-application|submit-public-application/);
   assert.match(form, /submit-hopkins-project-application/);
   assert.match(form, /preferred_map_feature_refs: input\.preferred_lot_refs/);
   assert.match(form, /submitPublicFunction\("submit-public-application", buildPublicApplicationPayload/);
   assert.equal(experience.match(/<PublicApplicationForm\b/g)?.length, 1);
   assert.match(experience, /<PublicApplicationPage[\s\S]*?\{application\}<\/PublicApplicationPage>/);
+  assert.match(experience, /<PublicHomepage[\s\S]*?application=\{application\}/);
+  assert.doesNotMatch(experience, /HopkinsPublicPage|import\("\.\.\/ApplicationPage"\)/);
   assert.match(appRoutes, /path="\/apply" element=\{<PublicHostRoute applicationOnly/);
   assert.match(appRoutes, /path="\/hopkins\/application" element=\{<PublicHostRoute applicationOnly/);
   assert.match(appRoutes, /path="\/p\/:tenant_slug\/:project_slug\/apply" element=\{<SharedProjectRoute applicationOnly/);

@@ -25,6 +25,7 @@ export type PublicSiteData = {
     phone_number: string;
     location_address: string;
     website: string;
+    public_notice_text?: string;
   };
   publicApplication: {
     applications_open: boolean;
@@ -40,6 +41,14 @@ export type PublicSiteData = {
   installmentPlans: Array<Record<string, unknown>>;
   paymentMethods: Array<Record<string, unknown>>;
 };
+
+export function getPublicApplicationAccess(data: PublicSiteData, hostname: string) {
+  const { publicApplication: settings, siteExperience } = data;
+  const projectApplication = siteExperience.applicationType === "project_application";
+  const accepting = siteExperience.enabledModules.application && settings.applications_open && settings.notices_complete
+    && (!projectApplication || Boolean(settings.allowed_intended_uses?.length));
+  return { accepting, canSubmit: accepting && (projectApplication || Boolean(hostname)) };
+}
 
 async function loadPublicSiteExperience(
   hostname: string,
@@ -78,8 +87,10 @@ async function loadPublicSiteExperience(
   }
   return {
     scope: body.scope,
-    projectName: typeof body.projectName === "string" ? body.projectName : binding.projectSlug,
-    siteExperience: normalizePublicExperience(body.scope, body.siteExperience),
+    projectName: typeof body.projectName === "string" && body.projectName.trim()
+      ? body.projectName
+      : binding.projectSlug.split("-").filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(" "),
+    siteExperience: normalizePublicExperience(body.siteExperience),
     phases: body.phases.filter(isPhaseOption),
     company: body.company as PublicSiteData["company"],
     publicApplication: body.publicApplication as PublicSiteData["publicApplication"],

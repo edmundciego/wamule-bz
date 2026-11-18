@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { MapPayload } from "../components/public/PublicLotMap";
 import type { PublicExperienceScope } from "./publicExperience.mjs";
 import { hasSupabaseConfig } from "./supabase";
 
@@ -33,15 +34,7 @@ export function usePublicApplicationPlots(hostname: string, scope: PublicExperie
         cache: "no-store",
         signal,
       });
-      const body = await response.json().catch(() => ({})) as {
-        tenant?: { slug: string };
-        project?: { slug: string };
-        phase?: { slug: string };
-        parcels?: Array<Record<string, unknown>>;
-        features?: Array<Record<string, unknown>>;
-        map_experience_mode?: string;
-        error?: string;
-      };
+      const body = await response.json().catch(() => ({})) as MapPayload & { error?: string };
       if (!response.ok || body?.tenant?.slug !== scope.tenantSlug || body.project?.slug !== scope.projectSlug
         || body.phase?.slug !== scope.phaseSlug || !Array.isArray(body.parcels)
         || (body.map_experience_mode === "demo" && !Array.isArray(body.features))) {
@@ -74,7 +67,7 @@ export function usePublicApplicationPlots(hostname: string, scope: PublicExperie
             }]
             : [])
         : [];
-      return { parcels, outlines };
+      return { parcels, outlines, map: body };
     },
     enabled: hasSupabaseConfig && enabled,
     retry: false,

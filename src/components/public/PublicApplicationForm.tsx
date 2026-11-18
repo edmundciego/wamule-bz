@@ -8,7 +8,7 @@ import { buildPublicApplicationPayload } from "../../../supabase/functions/_shar
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
 import { resolveHopkinsReferencePrice } from "../../lib/hopkinsReferencePricing.mjs";
 import { usePublicApplicationPlots, type PublicOutlineOption, type PublicParcelOption } from "../../lib/publicApplicationPlots";
-import type { PublicSiteData } from "../../lib/publicSiteExperience";
+import { getPublicApplicationAccess, type PublicSiteData } from "../../lib/publicSiteExperience";
 import { submitPublicFunction } from "../../lib/publicSubmission";
 import { applicationIntendedUses, createApplicationSchema } from "../../lib/schemas";
 import { cn, money } from "../../lib/utils";
@@ -96,8 +96,7 @@ export function PublicApplicationForm({
   const sectionRef = useRef<HTMLElement>(null);
   const selectionKey = `wamule:hopkins-application-outlines:${hostname.toLowerCase()}:${scope.tenantSlug}:${scope.projectSlug}:${scope.phaseSlug}`;
   const showPrices = pricing && settings.show_lot_prices_publicly;
-  const accepting = settings.applications_open && settings.notices_complete && allowedUses.length > 0;
-  const canSubmit = accepting && (projectApplication || Boolean(hostname));
+  const { accepting, canSubmit } = getPublicApplicationAccess(data, hostname);
   const selectedPhase = data.phases.find((phase) => phase.slug === scope.phaseSlug);
   const title = projectApplication ? "Project application" : "Apply for a lot";
   const Heading = standalone ? "h1" : "h2";

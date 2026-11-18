@@ -1,14 +1,13 @@
 import { lazy } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { PublicExperienceScope } from "../../lib/publicExperience.mjs";
-import { usePublicSiteExperience } from "../../lib/publicSiteExperience";
+import { getPublicApplicationAccess, usePublicSiteExperience } from "../../lib/publicSiteExperience";
 import type { PublicPhaseOption } from "../../lib/publicSiteExperience";
 import type { PublicHostnameResolution } from "../../lib/publicHostResolver";
 
 const PublicApplicationForm = lazy(() => import("../../components/public/PublicApplicationForm").then((module) => ({ default: module.PublicApplicationForm })));
 const PublicApplicationPage = lazy(() => import("./PublicApplicationPage").then((module) => ({ default: module.PublicApplicationPage })));
-const ApplicationPage = lazy(() => import("../ApplicationPage").then((module) => ({ default: module.ApplicationPage })));
-const HopkinsPublicPage = lazy(() => import("./HopkinsPublicPage").then((module) => ({ default: module.HopkinsPublicPage })));
+const PublicHomepage = lazy(() => import("../../components/public/PublicHomepage").then((module) => ({ default: module.PublicHomepage })));
 const EmbeddableMapPage = lazy(() => import("./EmbeddableMapPage").then((module) => ({ default: module.EmbeddableMapPage })));
 
 export function PublicExperienceRoute({
@@ -49,15 +48,16 @@ export function PublicExperienceRoute({
 
   const scope: PublicExperienceScope = data.scope;
   const phases = phaseLocked ? data.phases.filter((phase) => phase.slug === binding.phaseSlug) : data.phases;
-  const { applicationType, enabledModules, templateId } = data.siteExperience;
-  const projectPath = hostname ? "/" : `/p/${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}`;
-  const applicationPath = hostname
-    ? applicationType === "project_application" ? "/hopkins/application" : "/apply"
-    : `${projectPath}/apply`;
+  const { applicationType, enabledModules } = data.siteExperience;
+  const projectSlugs = `${encodeURIComponent(scope.tenantSlug)}/${encodeURIComponent(scope.projectSlug)}`;
+  const projectPath = hostname ? "/" : `/p/${projectSlugs}`;
+  const applicationPath = hostname ? "/apply" : `${projectPath}/apply`;
+  const mapPath = hostname ? `/embed/${projectSlugs}` : `${projectPath}/map`;
   const phaseQuery = `?phase=${encodeURIComponent(scope.phaseSlug)}`;
   const applicationHref = applicationPath + phaseQuery;
-  const applyWithOutline = applicationType === "project_application" && enabledModules.application && enabledModules.map
-    && data.publicApplication.applications_open && data.publicApplication.notices_complete
+  const scopeKey = `${hostname ?? ""}/${scope.tenantSlug}/${scope.projectSlug}/${scope.phaseSlug}/${applicationType}`;
+  const { canSubmit } = getPublicApplicationAccess(data, hostname ?? "");
+  const applyWithOutline = applicationType === "project_application" && enabledModules.map && canSubmit
     && (data.publicApplication.max_map_preferences ?? 0) > 0
     ? (ref: string) => navigate(`${applicationHref}&apply_feature=${encodeURIComponent(ref)}`)
     : undefined;
@@ -73,7 +73,7 @@ export function PublicExperienceRoute({
   }
 
   const application = enabledModules.application ? <PublicApplicationForm
-    key={`${hostname ?? ""}/${scope.tenantSlug}/${scope.projectSlug}/${scope.phaseSlug}/${applicationType}`}
+    key={scopeKey}
     hostname={hostname ?? ""}
     data={data}
     standalone={applicationOnly}
@@ -89,10 +89,18 @@ export function PublicExperienceRoute({
     return <PublicApplicationPage data={data} projectHref={projectPath + phaseQuery}>{application}</PublicApplicationPage>;
   }
 
-  return applicationType === "project_application"
-    ? <HopkinsPublicPage hostname={hostname ?? ""} scope={scope} phases={phases} templateId={templateId} enabledModules={enabledModules}
-      application={application} applicationHref={applicationHref} applyWithOutline={applyWithOutline} />
-    : <ApplicationPage hostname={hostname ?? ""} data={data} phases={phases} application={application} applicationHref={applicationHref} />;
+  return (
+    <PublicHomepage
+      key={scopeKey}
+      hostname={hostname ?? ""}
+      data={data}
+      phases={phases}
+      application={application}
+      applicationHref={applicationHref}
+      mapHref={mapPath + phaseQuery}
+      applyWithOutline={applyWithOutline}
+    />
+  );
 }
 
 function PublicUnavailable({ message }: { message: string }) {

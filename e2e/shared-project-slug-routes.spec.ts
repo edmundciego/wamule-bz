@@ -4,7 +4,8 @@ const outlineId = "50000000-0000-4000-8000-000000000031";
 const requests: URL[] = [];
 let hostnameResolutionCalls = 0;
 let applicationsOpen = true;
-let showProjectPage = true;
+let mapPublished = true;
+let enabledModules = { map: true, inquiry: false, application: true, pricing: false };
 const applicationPayloads: Array<Record<string, unknown>> = [];
 const inquiryPayloads: Array<Record<string, unknown>> = [];
 
@@ -12,7 +13,8 @@ test.beforeEach(async ({ page }) => {
   requests.length = 0;
   hostnameResolutionCalls = 0;
   applicationsOpen = true;
-  showProjectPage = true;
+  mapPublished = true;
+  enabledModules = { map: true, inquiry: false, application: true, pricing: false };
   applicationPayloads.length = 0;
   inquiryPayloads.length = 0;
   page.on("request", (request) => {
@@ -32,23 +34,14 @@ test.beforeEach(async ({ page }) => {
       scope: { tenantSlug: "wamule", projectSlug: "synthetic-review", phaseSlug: "initial" },
       projectName: "Synthetic Review Project",
       phases: [{ slug: "initial", name: "Initial" }, { slug: "later", name: "Later" }],
-      siteExperience: { templateId: "wamule-classic", applicationType: "project_application", enabledModules: { map: true, inquiry: false, application: true, pricing: false } },
+      siteExperience: { templateId: "hopkins-project", applicationType: "project_application", enabledModules },
       company: { company_name: "Wamule", logo_url: "", short_description: "Synthetic review workspace.", contact_email: "review@example.test", phone_number: "+501 600 0000", location_address: "Test site", website: "https://example.test" },
       publicApplication: { applications_open: applicationsOpen, notices_complete: true, allowed_intended_uses: ["Residential", "Other"], max_map_preferences: 2, public_notice_text: "Synthetic notice.", application_acknowledgment_text: "Synthetic acknowledgment.", default_confirmation_message: "Received for review.", show_lot_prices_publicly: false, show_available_lot_count_publicly: false },
       installmentPlans: [], paymentMethods: [],
     } });
   });
   await page.route("**/functions/v1/get-public-project-page**", async (route) => {
-    if (!showProjectPage) return route.fulfill({ status: 503, json: { error: "Public company information is incomplete." } });
-    const url = new URL(route.request().url());
-    expect(url.searchParams.has("host")).toBe(false);
-    await route.fulfill({ json: {
-      tenant: { name: "Wamule", slug: "wamule" },
-      project: { name: "Synthetic Review Project", slug: "synthetic-review", mapExperienceMode: "demo" },
-      phase: { name: "Initial", slug: "initial" },
-      company: { name: "Wamule", email: "review@example.test", phone: "+501 600 0000", website: "https://example.test", location: "Test site", description: "Synthetic review workspace.", publicNotice: "Company notice." },
-      applicationSettings: { applicationsOpen: true, noticeVersion: "review-v1", publicNotice: "Synthetic notice.", acknowledgmentText: "Synthetic acknowledgment.", intendedUses: ["Residential", "Other"], maxMapPreferences: 2, confirmationMessage: "Received for review." },
-    } });
+    await route.fulfill({ status: 503, json: { error: "Public company information is incomplete." } });
   });
   await page.route("**/functions/v1/get-public-lots**", async (route) => {
     const url = new URL(route.request().url());
@@ -56,6 +49,7 @@ test.beforeEach(async ({ page }) => {
     expect(url.searchParams.get("project")).toBe("synthetic-review");
     expect(url.searchParams.get("phase")).toBe("initial");
     expect(url.searchParams.has("host")).toBe(false);
+    if (!mapPublished) return route.fulfill({ status: 404, json: { error: "The selected phase has no published map." } });
     await route.fulfill({ json: {
       tenant: { name: "Wamule", slug: "wamule" },
       project: { slug: "synthetic-review", name: "Synthetic Review Project" },
@@ -81,7 +75,10 @@ test.beforeEach(async ({ page }) => {
 
 test("fresh signed-out shared links refresh, show map inquiry, apply with selected plot, and set preview metadata", async ({ page }) => {
   await page.goto("/p/wamule/synthetic-review?phase=initial");
-  await expect(page.getByText("Synthetic Review Project", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Synthetic Review Project" })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveAttribute("data-site-template", "wamule-classic");
+  await expect(page.getByRole("region", { name: "Explore the project map" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Request project information" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Project application" })).toBeVisible();
   await expect(page.getByText("Synthetic notice.", { exact: true })).toBeVisible();
   const inlineForm = page.getByRole("form", { name: "Project application" });
@@ -91,7 +88,7 @@ test("fresh signed-out shared links refresh, show map inquiry, apply with select
   await expect.poll(() => page.locator('meta[property="og:title"]').getAttribute("content"))
     .toBe("Synthetic Review Project | Wamule");
   await expect.poll(() => page.locator('meta[property="og:description"]').getAttribute("content"))
-    .toContain("project team");
+    .toBe("Synthetic review workspace.");
   await page.reload();
   await expect(page.getByRole("heading", { name: "Project application" })).toBeVisible();
   await expect(page).toHaveTitle(/Synthetic Review Project \| Wamule/);
@@ -168,7 +165,7 @@ test("fresh signed-out shared links refresh, show map inquiry, apply with select
   expect(applicationPayloads[0]).not.toHaveProperty("payment_option");
   expect(applicationPayloads[0]).not.toHaveProperty("preferred_lot_refs");
   expect(requests.filter((url) => url.pathname.endsWith("/get-public-site-experience")).every((url) => !url.searchParams.has("host"))).toBe(true);
-  expect(requests.filter((url) => url.pathname.endsWith("/get-public-project-page")).every((url) => !url.searchParams.has("host"))).toBe(true);
+  expect(requests.some((url) => url.pathname.endsWith("/get-public-project-page"))).toBe(false);
   expect(requests.filter((url) => url.pathname.endsWith("/get-public-lots")).every((url) => !url.searchParams.has("host"))).toBe(true);
   expect(hostnameResolutionCalls).toBe(0);
 });
@@ -182,7 +179,6 @@ test("standalone map keeps inquiry available while its phase application gate is
 });
 
 test("the dedicated application uses application settings with an incomplete marketing profile", async ({ page }) => {
-  showProjectPage = false;
   const originalLink = `/p/wamule/synthetic-review?phase=initial&apply=1&apply_feature=${outlineId}#application`;
   await page.goto(originalLink);
   await expect(page).toHaveURL(/\/synthetic-review\/apply\?phase=initial/);
@@ -196,6 +192,40 @@ test("the dedicated application uses application settings with an incomplete mar
   await page.reload();
   await expect(page.getByText("Applications are currently closed.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit project application" })).toHaveCount(0);
+});
+
+test("the Regular homepage hides unpublished widgets and follows project switches", async ({ page }) => {
+  applicationsOpen = false;
+  mapPublished = false;
+  enabledModules.inquiry = true;
+  await page.goto("/p/wamule/synthetic-review?phase=initial");
+  await expect(page.getByRole("heading", { level: 1, name: "Synthetic Review Project" })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveAttribute("data-public-phase", "initial");
+  await expect(page.getByText("Applications are currently closed.", { exact: true })).toBeVisible();
+  const inquiry = page.getByRole("form", { name: "Request project information" });
+  await expect(inquiry).toBeVisible();
+  await expect(page.getByRole("link", { name: /Explore map|Apply|Start application/ })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Explore the project map" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Available lots" })).toHaveCount(0);
+  await inquiry.getByLabel("Full name").fill("Homepage Tester");
+  await inquiry.getByLabel("Email address").fill("homepage@example.test");
+  await inquiry.getByRole("button", { name: "Send inquiry" }).click();
+  await expect(page.getByText("Your inquiry was received.")).toBeVisible();
+  expect(inquiryPayloads).toHaveLength(1);
+  expect(inquiryPayloads[0]).toMatchObject({
+    tenant: "wamule",
+    project: "synthetic-review",
+    phase: "initial",
+    interests: ["General project interest"],
+  });
+
+  mapPublished = true;
+  enabledModules = { map: false, inquiry: false, application: false, pricing: false };
+  requests.length = 0;
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "Synthetic Review Project" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Explore the project map|Request project information|Project application/ })).toHaveCount(0);
+  expect(requests.some((url) => url.pathname.endsWith("/get-public-lots"))).toBe(false);
 });
 
 test("the original verified /apply page keeps lot selection, payment preference, and review", async ({ page, baseURL }) => {
@@ -242,7 +272,13 @@ test("the original verified /apply page keeps lot selection, payment preference,
     await route.fulfill({ json: { ok: true } });
   });
 
-  await page.goto(`${verifiedOrigin}/apply?phase=initial`);
+  await page.goto(`${verifiedOrigin}/?phase=initial`);
+  await expect(page.getByRole("main")).toHaveAttribute("data-site-template", "wamule-classic");
+  await expect(page.getByRole("heading", { level: 1, name: "Synthetic Review Project" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Available lots", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Explore the project map" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Apply", exact: true }).click();
+  await expect(page).toHaveURL(/\/apply\?phase=initial$/);
   await expect(page.getByRole("heading", { level: 1, name: "Apply for a lot" })).toBeVisible();
   const form = page.getByRole("form", { name: "Apply for a lot" });
   await expect(form).toHaveCount(1);

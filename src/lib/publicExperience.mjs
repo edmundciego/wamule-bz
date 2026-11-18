@@ -1,27 +1,16 @@
-export const PUBLIC_SITE_TEMPLATES = [
-  {
-    id: "wamule-classic",
-    name: "Wamule Classic",
-    description: "The established Wamule application layout with compact project information and buyer workflow.",
-  },
-  {
-    id: "hopkins-project",
-    name: "Hopkins Project",
-    description: "The Hopkins project homepage with a prominent map, inquiry form, and project application.",
-  },
-];
+// Retain the saved identifier so existing project settings remain usable.
+export const PUBLIC_SITE_TEMPLATE_ID = "wamule-classic";
 
 export const PUBLIC_SITE_MODULES = [
-  { id: "map", name: "Project map", description: "Show the public map experience." },
-  { id: "inquiry", name: "General inquiries", description: "Show the general project inquiry form." },
-  { id: "application", name: "Applications", description: "Show the application experience configured for this project." },
-  { id: "pricing", name: "Public prices", description: "Allow the template to show prices when project settings also permit it." },
+  { id: "map", name: "Interactive map", description: "Show the selected phase’s published map." },
+  { id: "inquiry", name: "Inquiry form", description: "Let visitors request information from the project team." },
+  { id: "application", name: "Application", description: "Show the configured application and its current status." },
+  { id: "pricing", name: "Public pricing", description: "Show public lot prices and published plan reference prices where available." },
 ];
 
-export function defaultPublicExperience(scope) {
-  const isHopkins = scope?.tenantSlug === "hopkins-grove" || scope?.projectSlug === "hopkins-grove";
+export function defaultPublicExperience() {
   return {
-    templateId: isHopkins ? "hopkins-project" : "wamule-classic",
+    templateId: PUBLIC_SITE_TEMPLATE_ID,
     applicationType: "land_purchase",
     enabledModules: {
       map: true,
@@ -32,17 +21,14 @@ export function defaultPublicExperience(scope) {
   };
 }
 
-export function normalizePublicExperience(scope, value) {
-  const defaults = defaultPublicExperience(scope);
+export function normalizePublicExperience(value) {
+  const defaults = defaultPublicExperience();
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const templateId = PUBLIC_SITE_TEMPLATES.some((template) => template.id === raw.templateId)
-    ? raw.templateId
-    : defaults.templateId;
   const moduleInput = raw.enabledModules && typeof raw.enabledModules === "object" && !Array.isArray(raw.enabledModules)
     ? raw.enabledModules
     : {};
   return {
-    templateId,
+    templateId: defaults.templateId,
     applicationType: raw.applicationType === "project_application"
       ? "project_application"
       : "land_purchase",

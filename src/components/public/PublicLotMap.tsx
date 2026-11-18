@@ -84,7 +84,7 @@ export interface PublicLotParcel {
 
 type PublicLotStatus = ParcelStatus | "Review pending" | "Demo";
 
-interface MapPayload {
+export interface MapPayload {
   tenant: { name: string; slug: string };
   project: { slug: string; name: string } | null;
   masterplan_image_url: string | null;
@@ -119,6 +119,8 @@ interface PublicLotMapProps {
   projectSlug?: string;
   /** Optional named project phase. Omitted means the project's default phase. */
   phaseSlug?: string;
+  /** Public map response already fetched and scoped by its homepage. */
+  preloadedMap?: MapPayload;
   /** Controlled highlight in pick mode. Omit for unmanaged inquiry highlighting. */
   selectedLocalKeys?: number[];
   /** Pick mode: clicking an Available lot toggles it. Absent = inquiry mode. */
@@ -405,6 +407,7 @@ export function PublicLotMap({
   tenantSlug,
   projectSlug,
   phaseSlug,
+  preloadedMap,
   selectedLocalKeys,
   onToggleLot,
   selectedMapFeatureRefs,
@@ -669,30 +672,30 @@ export function PublicLotMap({
       }
     }
     async function load() {
-      const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-      if (!baseUrl || !anonKey) {
-        setLoading(false);
-        setError("Map service is not configured.");
-        return;
-      }
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ tenant: tenantSlug });
-        if (projectSlug) params.set("project", projectSlug);
-        if (phaseSlug) params.set("phase", phaseSlug);
-        if (hostname) params.set("host", hostname);
-        const response = await fetch(`${baseUrl}/functions/v1/get-public-lots?${params}`, {
-          headers: { apikey: anonKey },
-          cache: "no-store",
-        });
-        const body = (await response.json().catch(() => ({}))) as Partial<MapPayload> & { error?: string };
-        if (cancelled) return;
-        if (!response.ok || body.error || (!Array.isArray(body.parcels) && !(body.map_experience_mode === "demo" && Array.isArray(body.features)))) {
-          throw new Error(body.error || `Map request failed (${response.status}).`);
+        let responsePayload = preloadedMap;
+        if (!responsePayload || loadAttempt > 0) {
+          const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, "");
+          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+          if (!baseUrl || !anonKey) throw new Error("Map service is not configured.");
+
+          const params = new URLSearchParams({ tenant: tenantSlug });
+          if (projectSlug) params.set("project", projectSlug);
+          if (phaseSlug) params.set("phase", phaseSlug);
+          if (hostname) params.set("host", hostname);
+          const response = await fetch(`${baseUrl}/functions/v1/get-public-lots?${params}`, {
+            headers: { apikey: anonKey },
+            cache: "no-store",
+          });
+          const body = (await response.json().catch(() => ({}))) as Partial<MapPayload> & { error?: string };
+          if (!response.ok || body.error || (!Array.isArray(body.parcels) && !(body.map_experience_mode === "demo" && Array.isArray(body.features)))) {
+            throw new Error(body.error || `Map request failed (${response.status}).`);
+          }
+          responsePayload = body as MapPayload;
         }
-        const responsePayload = body as MapPayload;
+        if (cancelled) return;
         const hopkinsSourcePayload = responsePayload.tenant.slug === "hopkins-grove"
           && responsePayload.project?.slug === "hopkins-grove";
         const parcels: PublicLotParcel[] = responsePayload.map_experience_mode === "demo"
@@ -786,7 +789,7 @@ export function PublicLotMap({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hostname, tenantSlug, projectSlug, phaseSlug, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt]);
+    }, [hostname, tenantSlug, projectSlug, phaseSlug, preloadedMap, demoDataUrl, demoCorrectionManifestUrl, localMapPreviewScope, loadAttempt]);
 
   let localPreviewScopeKey: string | null = null;
   if (DEMO_PREVIEW && localMapPreviewScope) {
@@ -2572,7 +2575,7 @@ export function PublicLotMap({
         </div>
         {previewLayout && !loading && !error ? (
           <aside className="flex max-h-[30dvh] min-h-0 min-w-0 flex-col gap-2 overflow-y-auto border-t border-border bg-card px-3 py-2 md:max-h-none md:gap-3 md:rounded-xl md:border md:px-4 md:py-4" aria-label={isHopkinsHostedMap ? "Map details and source price guide" : "Lot details"}>
-            {isHopkinsHostedMap ? <HopkinsPricingLegend /> : null}
+            {isHopkinsHostedMap && showPrices ? <HopkinsPricingLegend /> : null}
             {focusLot ? (localPreviewMode ? (
               <section
                 ref={detailsPanelRef}
@@ -2633,7 +2636,7 @@ export function PublicLotMap({
                           : focusLot.tier_label ?? "No color match"}
                       </dd>
                     </div>
-                    <div className="col-span-2 min-w-0 border-t border-border pt-1.5">
+                    {showPrices ? <div className="col-span-2 min-w-0 border-t border-border pt-1.5">
                       <dt className="text-muted-foreground">Reference price · not saleable inventory pricing</dt>
                       <dd className="mt-0.5 font-semibold tabular-nums text-primary">
                         {focusLot.source_tier_status === "source-tier-ambiguous-multiple-colors"
@@ -2645,7 +2648,7 @@ export function PublicLotMap({
                               : "Unclassified · Price on request";
                           })()}
                       </dd>
-                    </div>
+                    </div> : null}
                   </dl>
                 ) : (
                   <p className="text-sm leading-5 text-muted-foreground">Map outline shown for demonstration. Official lot identity, price, area, and sale availability are not provided by this demo map.</p>

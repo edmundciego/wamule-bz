@@ -191,7 +191,7 @@ test("schema rejects bad interest, email, name, lot reference, legacy numeric id
 test("frontend forms share the contract (no drift)", async () => {
   const [modal, page] = await Promise.all([
     read("src/components/public/PublicInquiryModal.tsx"),
-    read("src/pages/ApplicationPage.tsx"),
+    read("src/components/public/PublicInquiryPanel.tsx"),
   ]);
   for (const [file, source] of [["modal", modal], ["page", page]]) {
     assert.match(source, /buildInquiryPayload\(/, `${file} must use the shared payload builder`);

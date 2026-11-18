@@ -6,7 +6,7 @@ import { parsePublicLotReference } from "./public-lot-reference.ts";
  *
  * Imported by BOTH the Deno edge function
  * (supabase/functions/submit-public-inquiry/index.ts) and the web app
- * (PublicInquiryModal, ApplicationPage) plus the node contract test, so the
+ * (PublicInquiryModal, PublicInquiryPanel) plus the node contract test, so the
  * modal payload always matches the function's validation schema.
  *
  * The reference parser is likewise runtime-neutral; no Node/Deno/browser
