@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   allowlistTheme,
   applyCardText,
+  buildShowcaseHomepageCssVars,
   buildThemeCssVars,
   DEFAULT_CARD_CONFIG,
   validateTenantCss,
@@ -126,6 +127,15 @@ test("contradictory light and dark surfaces fall back to one readable embed surf
   assert.equal(vars["--card"], vars["--background"]);
   assert.equal(vars["--foreground"], "0 0% 100%");
   assert.equal(vars["--card-foreground"], vars["--foreground"]);
+});
+
+test("Showcase uses the Hopkins palette only in the Hopkins Grove tenant", () => {
+  const hopkins = buildShowcaseHomepageCssVars("hopkins-grove");
+  const otherTenant = buildShowcaseHomepageCssVars("another-development");
+  assert.equal(hopkins["--showcase-primary"], "#173f2d");
+  assert.equal(hopkins["--showcase-hero-highlight"], "rgb(194 130 86 / 0.2)");
+  assert.equal(otherTenant["--showcase-primary"], "hsl(var(--primary))");
+  assert.equal(otherTenant["--showcase-background"], "hsl(var(--background))");
 });
 
 test("card text fills {lot} and leaves unknown tokens alone", () => {
