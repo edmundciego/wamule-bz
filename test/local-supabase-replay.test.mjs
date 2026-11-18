@@ -27,6 +27,13 @@ test("replay preparation matches every 73 staging migration version, filename, a
       name: row.path.split("/").at(-1).split("_").slice(1).join("_"),
       sha256: row.sha256,
     })), inventory.files);
+    for (const filename of [
+      "20261016065252_modular_public_site_experience.sql",
+      "20261016185842_public_template_default_independent_of_scope.sql",
+    ]) {
+      const path = join("supabase", "migrations", filename);
+      assert.deepEqual(readFileSync(join(root, path)), readFileSync(join(output, path)), filename);
+    }
     assert.equal(manifest.migrations.some((row) => row.version === "20261112040000"), false);
     assert.deepEqual(manifest.foundation_schema_bootstrap, {
       path: "supabase/foundation.sql",
