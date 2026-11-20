@@ -55,12 +55,11 @@ select public.create_scoped_public_inquiry(
 reset role;
 SQL
 
-cat > "$tmpdir/leader.sql" <<SQL
-begin;
-\i "$tmpdir/call.sql"
-select pg_sleep(8);
-commit;
-SQL
+{
+  printf 'begin;\n'
+  cat "$tmpdir/call.sql"
+  printf 'select pg_sleep(8);\ncommit;\n'
+} > "$tmpdir/leader.sql"
 
 PGAPPNAME=public-inquiry-retry-leader psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At \
   -f "$tmpdir/leader.sql" > "$tmpdir/leader.json" &
