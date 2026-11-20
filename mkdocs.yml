@@ -1,0 +1,41 @@
+site_name: Wamuale Development Client Guide
+site_description: Operations and workflow guide for the Wamuale Development housing project CRM.
+site_url: https://docs.ameladevelopment.com/
+repo_url: https://github.com/edmundciego/wamule-bz
+repo_name: edmundciego/wamule-bz
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: green
+      accent: amber
+
+nav:
+  - Client Handoff Guide: index.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+plugins:
+  - search
+
+extra:
+  generator: false
+
+copyright: Wamuale Development — Client Operations Guide
