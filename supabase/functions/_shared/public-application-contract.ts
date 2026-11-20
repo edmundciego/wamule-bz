@@ -27,6 +27,7 @@ export interface PublicApplicationPayload {
   project?: unknown;
   phase?: unknown;
   hostname?: unknown;
+  submission_reference?: unknown;
   applicant_full_name?: unknown;
   applicant_address?: unknown;
   nationality?: unknown;
@@ -50,6 +51,7 @@ export interface ValidPublicApplication {
   project: string;
   phase: string;
   hostname: string;
+  submission_reference: string | null;
   applicant_full_name: string;
   applicant_address: string;
   nationality: string;
@@ -73,6 +75,7 @@ export type PublicApplicationValidation = { error: string } | ValidPublicApplica
 /** Client builder: copies only the approved wire fields, never DB identity or status fields. */
 export function buildPublicApplicationPayload(input: Record<string, unknown> & { tenant: string; project: string; phase: string; hostname: string }): Record<string, unknown> {
   const output: Record<string, unknown> = { tenant: input.tenant, project: input.project, phase: input.phase, hostname: input.hostname };
+  if (typeof input.submission_reference === "string") output.submission_reference = input.submission_reference;
   for (const field of PUBLIC_APPLICATION_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(input, field)) output[field] = input[field];
   }
@@ -87,7 +90,7 @@ function text(value: unknown, maxLength: number): string | null {
 /** Public wire validation. Database ids, tenant ids, and staff-authored fields are never accepted. */
 export function validatePublicApplicationPayload(body: PublicApplicationPayload): PublicApplicationValidation {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid application." };
-  const allowed = new Set<string>(["tenant", "project", "phase", "hostname", ...PUBLIC_APPLICATION_FIELDS]);
+  const allowed = new Set<string>(["tenant", "project", "phase", "hostname", "submission_reference", ...PUBLIC_APPLICATION_FIELDS]);
   if (Object.keys(body).some((key) => !allowed.has(key))) return { error: "Reload the application form and try again." };
 
   const tenant = text(body.tenant, 160)?.toLowerCase() ?? "";
@@ -95,9 +98,13 @@ export function validatePublicApplicationPayload(body: PublicApplicationPayload)
   const project = text(body.project, 80)?.toLowerCase() ?? "";
   const phase = text(body.phase, 80)?.toLowerCase() ?? "";
   const hostname = text(body.hostname, 253)?.toLowerCase().replace(/\.$/, "") ?? "";
+  const submission_reference = body.submission_reference === undefined ? null : text(body.submission_reference, 36)?.toLowerCase() ?? "";
   if (!/^[a-z0-9][a-z0-9-]{0,78}$/.test(project) || !/^[a-z0-9][a-z0-9-]{0,78}$/.test(phase)
     || (hostname !== "" && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname))) {
     return { error: "Reload the public project link and try again." };
+  }
+  if (submission_reference !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(submission_reference)) {
+    return { error: "Refresh the form and try submitting again." };
   }
 
   const applicant_full_name = text(body.applicant_full_name, 160) ?? "";
@@ -152,6 +159,7 @@ export function validatePublicApplicationPayload(body: PublicApplicationPayload)
     project,
     phase,
     hostname,
+    submission_reference,
     applicant_full_name,
     applicant_address,
     nationality,

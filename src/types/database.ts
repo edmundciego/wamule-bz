@@ -1519,6 +1519,25 @@ export type Database = {
           phase_slug: string | null;
         }[];
       };
+      create_scoped_public_inquiry: {
+        Args: {
+          p_tenant_id: string;
+          p_project_id: string;
+          p_phase_id: string;
+          p_name: string;
+          p_email: string;
+          p_phone: string | null;
+          p_message: string | null;
+          p_page_url: string | null;
+          p_interests: Json;
+          p_client_reference_id: string;
+          p_submission_fingerprint: string;
+          p_parcel_id?: number | null;
+          p_map_feature_id?: string | null;
+          p_duplicate_reason?: string | null;
+        };
+        Returns: Json;
+      };
       record_payment_with_allocations_v1: {
         Args: {
           p_customer_id: number;

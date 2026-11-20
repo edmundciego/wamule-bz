@@ -5,6 +5,8 @@ import {
   type InquiryPayload,
 } from "../_shared/inquiry-contract.ts";
 import { parsePublicLotReference } from "../_shared/public-lot-reference.ts";
+import { resolvePublicSubmissionScope } from "../_shared/public-submission-scope.mjs";
+import { submissionFingerprint } from "../_shared/submission-fingerprint.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,7 +26,7 @@ type ParcelOption = {
   status: string | null;
 };
 
-type PublicProjectScope = { projectId: string; projectSlug: string; projectName: string; phaseId: string; phaseSlug: string; mapExperienceMode: "sales" | "demo" };
+type PublicProjectScope = { tenantId: string; tenantSlug: string; projectId: string; projectSlug: string; projectName: string; phaseId: string; phaseSlug: string; mapExperienceMode: "sales" | "demo" };
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -46,26 +48,48 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Scope slugs are selectors only. The service resolves them to tenant,
-  // project, and phase IDs, then the server-only RPC revalidates ownership.
-  const slugTenantId = await resolveTenantId(supabase, input.tenantSlug);
-  if (!slugTenantId) return json({ error: "Unknown development. Please check the listing link." }, 400);
   const lotReferenceProject = specificLotParts?.projectSlug ?? null;
   if (input.projectSlug && lotReferenceProject && input.projectSlug !== lotReferenceProject) {
     return json({ error: "The selected lot does not match the requested development." }, 400);
   }
-  const scopeResolution = await resolveProjectPhase(supabase, slugTenantId, input.projectSlug ?? lotReferenceProject, input.phaseSlug);
-  if (!scopeResolution.ok) return json({ error: scopeResolution.message }, scopeResolution.status);
+  // Slugs and hosts are selectors only. Resolve one owned active tenant/project/phase
+  // here, then the atomic RPC revalidates ownership at write time.
+  const scopeResolution = await resolvePublicSubmissionScope(supabase, {
+    tenantSlug: input.tenantSlug, projectSlug: input.projectSlug ?? lotReferenceProject,
+    phaseSlug: input.phaseSlug ?? specificLotParts?.phaseSlug ?? null,
+    hostname: input.hostname, allowTenantAlias: true,
+  });
+  if (!scopeResolution.ok) {
+    const status = scopeResolution.reason === "lookup_failed" ? 503 : 400;
+    return json({ error: scopeResolution.reason === "host_mismatch" || scopeResolution.reason === "unverified_hostname"
+      ? "This public project address does not match the requested inquiry scope."
+      : "The requested public project or phase could not be verified." }, status);
+  }
   const scope = scopeResolution.scope;
+  const slugTenantId = scope.tenantId;
   if (specificLotParts?.phaseSlug && specificLotParts.phaseSlug !== scope.phaseSlug) {
     return json({ error: "The selected lot does not match the requested phase." }, 400);
   }
   if (input.specificLotRef && scope.mapExperienceMode === "demo") {
     return json({ error: "This demonstration map does not provide sellable inventory. Please send a general project inquiry." }, 400);
   }
+  // General inquiries are available without a published map. A selected lot or
+  // outline must belong to the current published package before it can be saved.
+  let publishedSnapshotId: string | null = null;
   if (input.specificLotRef || input.specificMapFeatureRef) {
     const publication = await verifyPublishedPackage(supabase, slugTenantId, scope);
     if (!publication.ok) return json({ error: publication.message }, publication.status);
+    publishedSnapshotId = publication.snapshotId;
+  }
+  if (input.specificMapFeatureRef) {
+    const { data: selectedFeature, error: selectedFeatureError } = await supabase.from("map_features")
+      .select("identity_id").eq("tenant_id", slugTenantId).eq("project_id", scope.projectId)
+      .eq("phase_id", scope.phaseId).eq("snapshot_id", publishedSnapshotId)
+      .eq("identity_id", input.specificMapFeatureRef).eq("is_active", true).eq("public_visible", true).maybeSingle();
+    if (selectedFeatureError) {
+      return json({ error: "The selected map outline could not be verified. Please try again." }, 503);
+    }
+    if (!selectedFeature) return json({ error: "Select an outline from the current published map." }, 400);
   }
 
   // A public locator is resolved inside exactly the selected project/phase.
@@ -85,6 +109,15 @@ Deno.serve(async (request) => {
   }
   const waitlist = !!specificLot && lotDisposition(specificLot.status) === "waitlist";
   const requestRef = input.clientReferenceId ?? crypto.randomUUID();
+  const fingerprint = await submissionFingerprint({
+    kind: "public_inquiry",
+    scope: { tenantId: scope.tenantId, projectId: scope.projectId, phaseId: scope.phaseId },
+    contact: { name: input.name, email: input.email, phone: input.phone },
+    content: {
+      message: input.message, interests: [...input.interests].sort(),
+      parcelId: specificLotId, mapFeatureRef: input.specificMapFeatureRef,
+    },
+  });
   const duplicateReason = specificLot ? await duplicateReasonForInquiry(supabase, {
     name: input.name, email: input.email, phone: input.phone, parcelId: specificLotId,
   }, scope.projectId) : null;
@@ -99,6 +132,7 @@ Deno.serve(async (request) => {
     p_page_url: safePageUrl,
     p_interests: input.interests,
     p_client_reference_id: requestRef,
+    p_submission_fingerprint: fingerprint,
     p_parcel_id: specificLotId,
     p_map_feature_id: input.specificMapFeatureRef,
     p_duplicate_reason: duplicateReason,
@@ -140,46 +174,6 @@ Deno.serve(async (request) => {
       ? "Your request was received. The team will follow up using the contact information you provided."
       : emailResult.ok ? "Your request was received and a confirmation email was sent." : "Your request was received. The team will follow up using the contact information you provided." });
 });
-
-async function resolveTenantId(
-  supabase: ReturnType<typeof createClient>,
-  slug: string | null,
-): Promise<string | null> {
-  if (!slug) return null;
-  const bySlug = await supabase
-    .from("organizations")
-    .select("id")
-    .eq("slug", slug)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (bySlug.data) return String((bySlug.data as { id: string }).id);
-  const byAlias = await supabase
-    .from("organizations")
-    .select("id")
-    .eq("inbound_alias", slug)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (byAlias.error) console.error("Inquiry tenant alias lookup failed", safeError(byAlias.error));
-  return byAlias.data ? String((byAlias.data as { id: string }).id) : null;
-}
-
-async function resolveProjectPhase(
-  supabase: ReturnType<typeof createClient>, tenantId: string, projectSlug: string | null, phaseSlug: string | null,
-): Promise<{ ok: true; scope: PublicProjectScope } | { ok: false; status: number; message: string }> {
-  const projects = await supabase.from("projects").select("id,slug,name,is_default,map_experience_mode")
-    .eq("tenant_id", tenantId).order("created_at", { ascending: true });
-  if (projects.error) return { ok: false, status: 503, message: "Could not resolve the selected development." };
-  const rows = (projects.data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean; map_experience_mode: "sales" | "demo" }>;
-  const project = projectSlug ? rows.find((row) => row.slug.toLowerCase() === projectSlug) : rows.find((row) => row.is_default);
-  if (!project) return { ok: false, status: 404, message: "Development not found." };
-  const phases = await supabase.from("development_phases").select("id,slug,name,is_default,is_active")
-    .eq("tenant_id", tenantId).eq("project_id", project.id).eq("is_active", true);
-  if (phases.error) return { ok: false, status: 503, message: "Could not resolve the selected development phase." };
-  const phaseRows = (phases.data ?? []) as Array<{ id: string; slug: string; name: string; is_default: boolean }>;
-  const phase = phaseSlug ? phaseRows.find((row) => row.slug.toLowerCase() === phaseSlug) : phaseRows.find((row) => row.is_default);
-  if (!phase) return { ok: false, status: 404, message: "Development phase not found." };
-  return { ok: true, scope: { projectId: project.id, projectSlug: project.slug, projectName: project.name, phaseId: phase.id, phaseSlug: phase.slug, mapExperienceMode: project.map_experience_mode === "demo" ? "demo" : "sales" } };
-}
 
 async function loadLotByPublicReference(
   supabase: ReturnType<typeof createClient>, tenantId: string, reference: string, scope: PublicProjectScope,
@@ -298,6 +292,7 @@ async function loadCompanyContext(supabase: ReturnType<typeof createClient>, ten
 // Managed Edge Function ingress has no verified anti-spoofing guarantee for
 // client IP headers. Never infer trust from a client-supplied header.
 function trustedRequesterIp(_request: Request): string | null {
+  void _request;
   return null;
 }
 
@@ -445,6 +440,7 @@ function escapeHtml(value: string) {
 }
 
 function safeError(_error: unknown) {
+  void _error;
   return "Database operation failed.";
 }
 
