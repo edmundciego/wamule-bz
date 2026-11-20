@@ -1,0 +1,40 @@
+{
+  "staging": {
+    "url": "https://wamule-staging.netlify.app/p/wamule/wamule?phase=default",
+    "assets": [
+      {
+        "url": "https://wamule-staging.netlify.app/assets/index-BImafSQO.js",
+        "sha256": "d13a503f743fa0234803fc5952a3f79b8c250754579ed482c3656aac46095452",
+        "bytes": 552042,
+        "supabase_hosts": [
+          "kvocwmrcuhiaezlcgzjf.supabase.co"
+        ]
+      },
+      {
+        "url": "https://wamule-staging.netlify.app/assets/index-C8Z57Wl5.css",
+        "sha256": "150577af4b2618ddb9a1dc17b9cc1679326b5d0068428c1aa86b2a8f3d24e8ac",
+        "bytes": 64672,
+        "supabase_hosts": []
+      }
+    ]
+  },
+  "preview": {
+    "url": "https://deploy-preview-9--wamule-bz.netlify.app/p/wamule/wamule?phase=default",
+    "assets": [
+      {
+        "url": "https://deploy-preview-9--wamule-bz.netlify.app/assets/index-DYtUKEm-.js",
+        "sha256": "ed9bf534f251c4534a08be803bf963104dd03233ed7512cd710f048f107e221c",
+        "bytes": 552042,
+        "supabase_hosts": [
+          "kvocwmrcuhiaezlcgzjf.supabase.co"
+        ]
+      },
+      {
+        "url": "https://deploy-preview-9--wamule-bz.netlify.app/assets/index-BrIuQZQj.css",
+        "sha256": "ae67624951a71ad7e0849ab17b2cb7a2eb40d8afa012bdb37f2b7c47b37dc595",
+        "bytes": 65008,
+        "supabase_hosts": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+[
+  {
+    "same_deploy": "staging",
+    "changed_pixels_excluding_top_cursor": 0,
+    "max_channel_delta_excluding_top_cursor": 0,
+    "difference_box": null
+  },
+  {
+    "same_deploy": "preview",
+    "changed_pixels_excluding_top_cursor": 1065,
+    "max_channel_delta_excluding_top_cursor": 22,
+    "difference_box": [
+      96,
+      1519,
+      257,
+      1633
+    ]
+  }
+]

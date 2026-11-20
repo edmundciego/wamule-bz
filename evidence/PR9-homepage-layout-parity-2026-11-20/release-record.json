@@ -1,0 +1,32 @@
+{
+  "recorded_at_utc": "2026-11-20T21:28:37.244145+00:00",
+  "staging_site_id": "dcdae9fc-32a2-4290-82d4-e3d02466d36f",
+  "staging_deploy_id": "6afdf7e7f6aeaf149dd69e0c",
+  "staging_source_sha": "fc7872decf962c5b643e8ec5ec0510acd0310b9f",
+  "staging_source_evidence": "https://github.com/edmundciego/wamule-bz/pull/3",
+  "preview_site_id": "d4091452-ceb8-40a6-9d3d-4068e91a0d09",
+  "preview_deploy_id": "6b00b6d415fdb0b426a21cec",
+  "preview_source_sha": "20d502e8223f815695374435d52b5107460ff3d0",
+  "reviewed_implementation_sha": "28bf722ab6a30121c1f58089088d3ff96e5a2626",
+  "source_tree_sha": "48d8c10fa865eb13b7170484b56411c7f0bca7fc",
+  "source_tree_unchanged_in_rebuild": true,
+  "production_deploy_before_and_after": "6aa8c6f00bf61a0008fb7deb",
+  "preview_supabase_project_ref": "kvocwmrcuhiaezlcgzjf",
+  "env_context_changed": "deploy-preview",
+  "env_keys_changed": [
+    "VITE_SUPABASE_URL",
+    "VITE_SUPABASE_ANON_KEY"
+  ],
+  "required_build": "success",
+  "required_rpc_fresh_database": "success",
+  "full_suite": {
+    "tests": 331,
+    "passed": 293,
+    "failed": 34,
+    "skipped": 4,
+    "new_failure_names_vs_issue_4": []
+  },
+  "database_writes": false,
+  "form_submissions": false,
+  "pr9_merged": false
+}

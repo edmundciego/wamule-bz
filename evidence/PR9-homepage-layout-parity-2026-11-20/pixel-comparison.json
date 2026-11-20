@@ -1,0 +1,55 @@
+[
+  {
+    "case": "wamule-desktop",
+    "size": [
+      1363,
+      1437
+    ],
+    "changed_pixels": 0,
+    "changed_fraction": 0.0,
+    "difference_box": null,
+    "staging_sha256": "d42ad48033d8f3b09196726af5a66a1e68b3ee6bb2e2ee9b1f9fc0d1b95c886b",
+    "preview_sha256": "d42ad48033d8f3b09196726af5a66a1e68b3ee6bb2e2ee9b1f9fc0d1b95c886b"
+  },
+  {
+    "case": "wamule-phone",
+    "size": [
+      340,
+      2064
+    ],
+    "changed_pixels": 0,
+    "changed_fraction": 0.0,
+    "difference_box": null,
+    "staging_sha256": "04fd4fa0980b5c54a437fc644ee6e465eb7be62ab0663f03b11e924ff5860e72",
+    "preview_sha256": "04fd4fa0980b5c54a437fc644ee6e465eb7be62ab0663f03b11e924ff5860e72"
+  },
+  {
+    "case": "hopkins-desktop",
+    "size": [
+      1363,
+      3066
+    ],
+    "changed_pixels": 0,
+    "changed_fraction": 0.0,
+    "difference_box": null,
+    "staging_sha256": "1422de3e768afd498efc321c555b8e827f9751200db5e6dd7ca49f6e69c9fa86",
+    "preview_sha256": "1422de3e768afd498efc321c555b8e827f9751200db5e6dd7ca49f6e69c9fa86"
+  },
+  {
+    "case": "hopkins-phone",
+    "size": [
+      340,
+      4454
+    ],
+    "changed_pixels": 1065,
+    "changed_fraction": 0.0007032673868829076,
+    "difference_box": [
+      96,
+      1519,
+      257,
+      1633
+    ],
+    "staging_sha256": "de5936426da3df48462287f12fe2ac45d8c6f52e36962c81fd199f2a05dc3539",
+    "preview_sha256": "661ba90c17c1ccb3ab124ce1cfcf30c61429f36f918d8fb900c9b9648dd01148"
+  }
+]
