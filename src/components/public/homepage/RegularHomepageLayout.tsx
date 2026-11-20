@@ -1,23 +1,27 @@
-import type { HomepageLayoutProps } from "./HomepageLayoutProps";
+import type { HomepageLayoutProps } from "./HomepageModel";
+import {
+  HomepageActions,
+  HomepageApplication,
+  HomepageFooter,
+  HomepageFrame,
+  HomepageInquiry,
+  HomepageLots,
+  HomepageMap,
+  HomepageNavigation,
+  HomepageNotice,
+} from "./HomepageWidgets";
 
 export function RegularHomepageLayout({
-  companyName,
-  projectName,
-  headline,
-  logoUrl,
-  description,
-  facts,
-  navigation,
-  actions,
-  map,
-  lots,
-  inquiry,
-  notice,
-  application,
-  footer,
+  model,
+  onPhaseChange,
+  onApplyWithOutline,
+  onClearInitialOutline,
 }: HomepageLayoutProps) {
+  const { company, projectName, headline, facts, scope } = model;
+  const { company_name: companyName, logo_url: logoUrl, short_description: description } = company;
+
   return (
-    <>
+    <HomepageFrame scope={scope} templateId="wamule-classic">
       <header className="border-b border-primary/10 bg-card">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 sm:px-6">
           <a href="#home" className="flex min-w-0 items-center gap-3">
@@ -27,7 +31,7 @@ export function RegularHomepageLayout({
               {companyName !== projectName ? <span className="block text-sm text-muted-foreground">{companyName}</span> : null}
             </span>
           </a>
-          {navigation}
+          <HomepageNavigation model={model} onPhaseChange={onPhaseChange} />
         </div>
       </header>
 
@@ -36,7 +40,7 @@ export function RegularHomepageLayout({
           <div className="min-w-0">
             <h1 id="project-title" className="break-words font-display text-4xl font-semibold leading-tight text-primary sm:text-5xl lg:text-6xl">{headline}</h1>
             {description ? <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">{description}</p> : null}
-            {actions}
+            <HomepageActions model={model} />
           </div>
           {facts.length > 0 ? (
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -51,12 +55,12 @@ export function RegularHomepageLayout({
         </div>
       </section>
 
-      {map}
-      {lots}
-      {inquiry}
-      {notice}
-      {application}
-      {footer}
-    </>
+      <HomepageMap model={model} onApplyWithOutline={onApplyWithOutline} />
+      <HomepageLots model={model} />
+      <HomepageInquiry model={model} />
+      <HomepageNotice model={model} />
+      <HomepageApplication model={model} onClearInitialOutline={onClearInitialOutline} />
+      <HomepageFooter company={company} />
+    </HomepageFrame>
   );
 }

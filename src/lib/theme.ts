@@ -249,6 +249,60 @@ export function buildThemeCssVars(theme: LotMapTheme): Record<string, string> {
   return vars;
 }
 
+const showcaseHomepageChannels = {
+  background: "var(--background)",
+  card: "var(--card)",
+  primary: "var(--primary)",
+  accent: "var(--secondary)",
+  muted: "var(--muted-foreground)",
+  softBackground: "var(--primary-soft)",
+  heroMidpoint: "var(--muted)",
+  heroHighlight: "var(--accent)",
+};
+
+type ShowcaseHomepageColor = keyof typeof showcaseHomepageChannels;
+
+const showcaseHomepagePresets = new Map<string, Record<ShowcaseHomepageColor, string>>([
+  ["hopkins-grove", {
+    background: "#fffdf8",
+    card: "#ffffff",
+    primary: "#173f2d",
+    accent: "#78502e",
+    muted: "#52635a",
+    softBackground: "#edf1e9",
+    heroMidpoint: "#f6f4e8",
+    heroHighlight: "#c28256",
+  }],
+]);
+
+export function buildShowcaseHomepageCssVars(tenantSlug: string): Record<string, string> {
+  const preset = showcaseHomepagePresets.get(tenantSlug);
+
+  function color(name: ShowcaseHomepageColor, alpha?: number): string {
+    const hex = preset?.[name];
+    if (hex && alpha === undefined) return hex;
+    const opacity = alpha === undefined ? "" : ` / ${alpha}`;
+    return hex
+      ? `rgb(${hexToRgb(hex).join(" ")}${opacity})`
+      : `hsl(${showcaseHomepageChannels[name]}${opacity})`;
+  }
+
+  return {
+    "--showcase-background": color("background"),
+    "--showcase-header": color("background", 0.95),
+    "--showcase-card": color("card"),
+    "--showcase-facts-surface": color("card", 0.75),
+    "--showcase-primary": color("primary"),
+    "--showcase-divider": color("primary", 0.1),
+    "--showcase-logo-border": color("primary", 0.15),
+    "--showcase-accent": color("accent"),
+    "--showcase-muted": color("muted"),
+    "--showcase-soft-background": color("softBackground"),
+    "--showcase-hero-midpoint": color("heroMidpoint"),
+    "--showcase-hero-highlight": color("heroHighlight", 0.2),
+  };
+}
+
 /** Fill a card text template ({lot} supported, unknown tokens left alone). */
 export function applyCardText(template: string, lotNumber: string): string {
   return template.replace(/\{lot\}/g, lotNumber);
