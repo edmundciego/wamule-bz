@@ -19,6 +19,157 @@ async function submit(s, data = payload()) {
   return { status: response.status, body: await response.json() };
 }
 
+function legacyApplicationPagePayload(overrides = {}) {
+  return {
+    name: "Legacy Inquiry Buyer", email: "legacy-buyer@example.test", phone: "+501 555 0181",
+    interests: ["A specific lot"], specific_lot_id: 42,
+    message: "Please send details about this lot.", page_url: "https://wamuledevelopment.com/apply",
+    ...overrides,
+  };
+}
+
+async function submitLegacy(s, data = legacyApplicationPagePayload()) {
+  const response = await s.handler(new Request("https://edge.invalid/submit-public-inquiry", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://wamuledevelopment.com" },
+    body: JSON.stringify(data),
+  }));
+  return { status: response.status, body: await response.json() };
+}
+
+test("legacy ApplicationPage payload resolves configured scope, links a numeric lot and deduplicates retries", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture();
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const first = await submitLegacy(s);
+  const retry = await submitLegacy(s, legacyApplicationPagePayload({
+    page_url: "https://wamuledevelopment.com/apply?retry=1",
+  }));
+
+  assert.equal(first.status, 200);
+  assert.equal(first.body.leadCreated, true);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.deduplicated, true);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.leads[0].tenant_id, FIXTURE_IDS.tenant);
+  assert.equal(s.db.leads[0].project_id, FIXTURE_IDS.project);
+  assert.equal(s.db.leads[0].phase_id, FIXTURE_IDS.phase);
+  assert.equal(s.db.leads[0].parcel_id, 42);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.sends.length, 0);
+
+  const rpcCalls = s.calls.filter((call) => call.name === "create_scoped_public_inquiry");
+  assert.equal(rpcCalls.length, 2);
+  assert.ok(rpcCalls.every((call) => call.args.p_tenant_id === FIXTURE_IDS.tenant));
+  assert.ok(rpcCalls.every((call) => call.args.p_project_id === FIXTURE_IDS.project));
+  assert.ok(rpcCalls.every((call) => call.args.p_phase_id === FIXTURE_IDS.phase));
+  assert.ok(rpcCalls.every((call) => call.args.p_parcel_id === 42));
+  assert.equal(rpcCalls[0].args.p_client_reference_id, rpcCalls[1].args.p_client_reference_id);
+
+  assert.equal(s.logs.length, 2);
+  const events = s.logs.map((line) => JSON.parse(line));
+  assert.deepEqual(events.map((event) => event.event), ["legacy_public_inquiry_adapter", "legacy_public_inquiry_adapter"]);
+  assert.deepEqual(events.map((event) => event.outcome.result), ["created", "deduplicated"]);
+  assert.ok(events.every((event) => event.scope.tenantId === FIXTURE_IDS.tenant
+    && event.scope.projectId === FIXTURE_IDS.project && event.scope.phaseId === FIXTURE_IDS.phase));
+  assert.ok(events.every((event) => event.request.method === "POST"
+    && event.request.path === "/submit-public-inquiry" && event.request.origin === "https://wamuledevelopment.com"));
+  assert.ok(s.logs.every((line) => !/legacy-buyer@example\.test|Legacy Inquiry Buyer|555 0181|Please send details|page_url/i.test(line)));
+});
+
+test("legacy ApplicationPage general inquiries accept the historic null lot shape while applications are closed", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ companyOpen: false, projectOpen: false, unpublished: true });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submitLegacy(s, legacyApplicationPagePayload({
+    interests: ["General project interest"], specific_lot_id: null,
+  }));
+
+  assert.equal(result.status, 200);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.leads[0].tenant_id, FIXTURE_IDS.tenant);
+  assert.equal(s.db.leads[0].project_id, FIXTURE_IDS.project);
+  assert.equal(s.db.leads[0].phase_id, FIXTURE_IDS.phase);
+  assert.equal(s.db.leads[0].parcel_id, null);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.sends.length, 0);
+});
+
+test("legacy inquiry rejects numeric lots outside the configured scope without writes", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture();
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submitLegacy(s, legacyApplicationPagePayload({ specific_lot_id: 84 }));
+
+  assert.equal(result.status, 400);
+  assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 0);
+  assert.equal(s.db.leads.length, 0);
+  assert.equal(s.db.follow_up_tasks.length, 0);
+  assert.equal(s.sends.length, 0);
+  const event = JSON.parse(s.logs[0]);
+  assert.equal(event.outcome.result, "lot_not_public_in_scope");
+  assert.equal(s.logs.length, 1);
+});
+
+test("partially scoped legacy-shaped requests use the strict resolver and are never adapted", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture();
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submitLegacy(s, legacyApplicationPagePayload({ tenant: "example" }));
+
+  assert.equal(result.status, 400);
+  assert.ok(s.queries.includes("organizations"));
+  assert.ok(s.queries.includes("projects"));
+  assert.ok(s.queries.includes("development_phases"));
+  assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 0);
+  assert.equal(s.db.leads.length, 0);
+  assert.equal(s.logs.length, 0);
+});
+
+test("conflicting explicit scope aliases pass through resolution and are rejected without writes", async (t) => {
+  t.after(cleanupEdgeHandler);
+  for (const overrides of [
+    { tenant_id: FIXTURE_IDS.otherTenant },
+    { hostname: "example.test", host: "other.test" },
+    { address: "other.test" },
+  ]) {
+    const s = createPublicIntakeFixture();
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+    const result = await submit(s, payload(overrides));
+
+    assert.equal(result.status, 400, JSON.stringify(overrides));
+    assert.ok(s.queries.includes("organizations"), JSON.stringify(overrides));
+    assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 0);
+    assert.equal(s.db.leads.length, 0);
+    assert.equal(s.db.follow_up_tasks.length, 0);
+    cleanupEdgeHandler();
+  }
+});
+
+test("legacy inquiry fails closed and logs when default deployment scope is missing or inactive", async (t) => {
+  t.after(cleanupEdgeHandler);
+  for (const [envPatch, expectedOutcome] of [
+    [{ WAMULE_LEGACY_INQUIRY_PHASE_SLUG: undefined }, "configuration_missing"],
+    [{ WAMULE_LEGACY_INQUIRY_PHASE_SLUG: "inactive" }, "configured_scope_invalid"],
+  ]) {
+    const s = createPublicIntakeFixture();
+    Object.assign(s.env, envPatch);
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+    const result = await submitLegacy(s);
+    assert.equal(result.status, 503);
+    assert.equal(s.db.leads.length, 0);
+    assert.equal(s.sends.length, 0);
+    assert.equal(s.logs.length, 1);
+    assert.equal(JSON.parse(s.logs[0]).outcome.result, expectedOutcome);
+    cleanupEdgeHandler();
+  }
+});
+
 test("path and verified custom-domain inquiries save with confirmation suppressed", async (t) => {
   t.after(cleanupEdgeHandler);
   const s = createPublicIntakeFixture(); await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");

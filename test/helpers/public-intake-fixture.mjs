@@ -106,12 +106,18 @@ export function createPublicIntakeFixture(options = {}) {
     "other.test": { tenant_slug: "other", project_slug: "other-project", phase_slug: "other-initial" },
   };
   const s = {
-    env: { SUPABASE_URL: "https://supabase.invalid", SUPABASE_SERVICE_ROLE_KEY: "test-role", SUPPRESS_OUTBOUND_EMAILS: "true" },
-    db, calls: [], writes: [], sends: [], events: [], inquiries: new Map(), handler: null,
+    env: {
+      SUPABASE_URL: "https://supabase.invalid", SUPABASE_SERVICE_ROLE_KEY: "test-role",
+      SUPPRESS_OUTBOUND_EMAILS: "true",
+      WAMULE_LEGACY_INQUIRY_TENANT_SLUG: "example",
+      WAMULE_LEGACY_INQUIRY_PROJECT_SLUG: "project",
+      WAMULE_LEGACY_INQUIRY_PHASE_SLUG: "initial",
+    },
+    db, calls: [], writes: [], sends: [], events: [], queries: [], logs: [], inquiries: new Map(), handler: null,
   };
 
   class Query {
-    constructor(table) { this.table = table; this.filters = []; this.pendingInsert = null; this.limitValue = null; }
+    constructor(table) { this.table = table; this.filters = []; this.pendingInsert = null; this.limitValue = null; s.queries.push(table); }
     select() { return this; }
     eq(key, value) { this.filters.push((row) => row[key] === value); return this; }
     in(key, values) { this.filters.push((row) => values.includes(row[key])); return this; }
@@ -161,7 +167,7 @@ export function createPublicIntakeFixture(options = {}) {
         const leadId = uuid(100 + s.inquiries.size);
         const record = { ...args, lead_id: leadId };
         s.inquiries.set(args.p_client_reference_id, record);
-        db.leads.push({ id: leadId, tenant_id: args.p_tenant_id, project_id: args.p_project_id, phase_id: args.p_phase_id, client_reference_id: args.p_client_reference_id });
+        db.leads.push({ id: leadId, tenant_id: args.p_tenant_id, project_id: args.p_project_id, phase_id: args.p_phase_id, parcel_id: args.p_parcel_id, client_reference_id: args.p_client_reference_id });
         db.lead_activities.push({ lead_id: leadId, activity_type: "note", metadata: { source: "public_inquiry", submission_fingerprint: args.p_submission_fingerprint } });
         db.follow_up_tasks.push({ lead_id: leadId, status: "open" });
         s.writes.push({ table: "leads", row: record }, { table: "lead_activities", row: db.lead_activities.at(-1) }, { table: "follow_up_tasks", row: db.follow_up_tasks.at(-1) });
@@ -182,6 +188,7 @@ export async function installEdgeHandler(s, file) {
   if (!previousGlobals) previousGlobals = {
     Deno: globalThis.Deno,
     fetch: globalThis.fetch,
+    consoleInfo: console.info,
     crypto: Object.getOwnPropertyDescriptor(globalThis, "crypto"),
   };
   const sourceDirectory = dirname(absolutePath);
@@ -192,6 +199,7 @@ export async function installEdgeHandler(s, file) {
   globalThis.__publicIntakeTestClient = s.client;
   globalThis.Deno = { env: { get: (key) => s.env[key] }, serve: (handler) => { s.handler = handler; } };
   globalThis.fetch = async (...args) => { s.sends.push(args); return new Response("{}", { status: 200 }); };
+  console.info = (...args) => { s.logs.push(args.map(String).join(" ")); };
   if (!globalThis.crypto) {
     const { webcrypto } = await import("node:crypto");
     Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
@@ -205,6 +213,7 @@ export function cleanupEdgeHandler() {
     else globalThis.Deno = previousGlobals.Deno;
     if (previousGlobals.fetch === undefined) delete globalThis.fetch;
     else globalThis.fetch = previousGlobals.fetch;
+    console.info = previousGlobals.consoleInfo;
     if (previousGlobals.crypto) Object.defineProperty(globalThis, "crypto", previousGlobals.crypto);
     else delete globalThis.crypto;
     previousGlobals = undefined;
