@@ -42,7 +42,7 @@ try {
   started = true;
   const admin = await client();
   await admin.query('create role anon; create role authenticated; create role service_role bypassrls');
-  const migration = new URL('../supabase/migrations/20261120001916_inquiry_confirmation_email_quota.sql', import.meta.url);
+  const migration = new URL('../supabase/migrations/20261120002343_inquiry_confirmation_email_quota.sql', import.meta.url);
   await admin.query(await readFile(migration, 'utf8'));
   const s = await client('service_role');
   const migrationPrivileges = await admin.query(`select

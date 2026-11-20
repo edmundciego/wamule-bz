@@ -6,6 +6,10 @@ Production migration ledger was inspected through `20260715055626`; relevant inq
 
 The connected Supabase plugin has no secret-name listing operation; the CLI name-only lookup returned 403. The presence of `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` is unknown, not evidence that sending is disabled. No secret values were inspected.
 
+Production release: PR #7, deployed function source commit `bf98b0d` (the function file is unchanged by subsequent release-record commits), hosted migration `20261120002343`, and `submit-public-inquiry` version 2. The deployed function source was read back and matched the reviewed file byte for byte. The migration filename was aligned to the actual hosted ledger version after the plugin assigned it; no historical ledger records were repaired. Read-only verification confirmed the new signature, RLS, and role grants. The controlled production submission remains pending the owner's email address. Rollback target: captured version 1.
+
+The post-release security advisor reported no policy on the new RLS-protected table; that is intentional because only the server role has table privileges and bypasses RLS. It also reported other existing security findings outside this hotfix, including security-definer views and callable security-definer functions; see the project's Supabase security advisor before treating those as remediated.
+
 ## Behavior and limits
 
 The existing request and success response shape are preserved. A successfully saved lead and follow-up still return success if email is suppressed. The greeting is `Hello,` and the recipient is the plain normalized email address. Once a trustworthy requester IP is available, the database reserves at most one attempt per normalized recipient and ten attempts per IP in a rolling 24 hours before the provider request. A failed or timed-out provider request consumes its reservation. Quota failures suppress the email. Storage contains pseudonymous SHA-256 digests, accessible only to the server role; expired rows are removed on the next valid reservation.
