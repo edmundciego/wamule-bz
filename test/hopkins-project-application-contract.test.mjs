@@ -106,8 +106,8 @@ test("the dedicated page and shared homepage reuse one form with separate scoped
     readFile(new URL("../src/components/public/PublicApplicationForm.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/pages/public/PublicExperienceRoute.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(homepage, /application: modules\.application \? data : null/);
-  assert.match(widgets, /<PublicApplicationForm\b[^>]*data=\{model\.application\}/);
+  assert.match(homepage, /hasApplication: Boolean\(application\)/);
+  assert.match(widgets, /return application \?\? null/);
   assert.match(regular, /<HomepageApplication\b/);
   assert.match(showcase, /<HomepageApplication\b/);
   assert.doesNotMatch(homepage, /submit-hopkins-project-application|submit-public-application/);
@@ -116,7 +116,7 @@ test("the dedicated page and shared homepage reuse one form with separate scoped
   assert.match(form, /submitPublicFunction\("submit-public-application", buildPublicApplicationPayload/);
   assert.equal(experience.match(/<PublicApplicationForm\b/g)?.length, 1);
   assert.match(experience, /<PublicApplicationPage[\s\S]*?\{application\}<\/PublicApplicationPage>/);
-  assert.match(experience, /<PublicHomepage[\s\S]*?data=\{data\}/);
+  assert.match(experience, /<PublicHomepage[\s\S]*?data=\{data\}[\s\S]*?application=\{application\}/);
   assert.doesNotMatch(experience, /HopkinsPublicPage|import\("\.\.\/ApplicationPage"\)/);
   assert.match(appRoutes, /path="\/apply" element=\{<PublicHostRoute applicationOnly/);
   assert.match(appRoutes, /path="\/hopkins\/application" element=\{<PublicHostRoute applicationOnly/);

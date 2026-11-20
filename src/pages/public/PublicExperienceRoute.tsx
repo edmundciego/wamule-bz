@@ -72,23 +72,20 @@ export function PublicExperienceRoute({
     return <Navigate to={href} replace />;
   }
 
-  const clearInitialOutline = initialOutline ? () => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("apply_feature");
-    setSearchParams(next, { replace: true });
-  } : undefined;
+  const application = enabledModules.application ? <PublicApplicationForm
+    key={scopeKey}
+    hostname={hostname ?? ""}
+    data={data}
+    standalone={applicationOnly}
+    initialOutline={applicationOnly ? initialOutline : undefined}
+    onClearInitialOutline={initialOutline ? () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete("apply_feature");
+      setSearchParams(next, { replace: true });
+    } : undefined}
+  /> : null;
 
   if (applicationOnly) {
-    const application = enabledModules.application ? (
-      <PublicApplicationForm
-        key={scopeKey}
-        hostname={hostname ?? ""}
-        data={data}
-        standalone
-        initialOutline={initialOutline}
-        onClearInitialOutline={clearInitialOutline}
-      />
-    ) : null;
     return <PublicApplicationPage data={data} projectHref={projectPath + phaseQuery}>{application}</PublicApplicationPage>;
   }
 
@@ -98,10 +95,10 @@ export function PublicExperienceRoute({
       hostname={hostname ?? ""}
       data={data}
       phases={phases}
+      application={application}
       applicationHref={applicationHref}
       mapHref={mapPath + phaseQuery}
       applyWithOutline={applyWithOutline}
-      onClearInitialOutline={clearInitialOutline}
     />
   );
 }

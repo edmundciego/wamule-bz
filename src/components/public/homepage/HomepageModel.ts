@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { PublicParcelOption } from "../../../lib/publicApplicationPlots";
 import type { PublicExperienceScope } from "../../../lib/publicExperience.mjs";
 import type { PublicPhaseOption, PublicSiteData } from "../../../lib/publicSiteExperience";
@@ -30,12 +31,12 @@ export type HomepageModel = {
   lots: PublicParcelOption[];
   publishedMap: MapPayload | undefined;
   notice: string;
-  application: PublicSiteData | null;
+  hasApplication: boolean;
 };
 
 export type HomepageLayoutProps = {
   model: HomepageModel;
+  application?: ReactNode;
   onPhaseChange: (phaseSlug: string) => void;
   onApplyWithOutline?: (ref: string) => void;
-  onClearInitialOutline?: () => void;
 };

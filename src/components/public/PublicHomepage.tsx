@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType } from "react";
+import { useEffect, type ComponentType, type ReactNode } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { usePublicApplicationPlots } from "../../lib/publicApplicationPlots";
 import type { PublicSiteTemplateId } from "../../lib/publicExperience.mjs";
@@ -18,18 +18,18 @@ export function PublicHomepage({
   data,
   hostname,
   phases,
+  application,
   applicationHref,
   mapHref,
   applyWithOutline,
-  onClearInitialOutline,
 }: {
   data: PublicSiteData;
   hostname: string;
   phases: PublicPhaseOption[];
+  application?: ReactNode;
   applicationHref: string;
   mapHref: string;
   applyWithOutline?: (ref: string) => void;
-  onClearInitialOutline?: () => void;
 }) {
   const { scope, company, projectName, publicApplication: settings, siteExperience } = data;
   const modules = siteExperience.enabledModules;
@@ -101,16 +101,16 @@ export function PublicHomepage({
     lots,
     publishedMap,
     notice,
-    application: modules.application ? data : null,
+    hasApplication: Boolean(application),
   };
   const Layout = homepageLayouts[siteExperience.templateId];
 
   return (
     <Layout
       model={model}
+      application={application}
       onPhaseChange={changePhase}
       onApplyWithOutline={applyWithOutline}
-      onClearInitialOutline={onClearInitialOutline}
     />
   );
 }

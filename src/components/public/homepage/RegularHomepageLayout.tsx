@@ -13,9 +13,9 @@ import {
 
 export function RegularHomepageLayout({
   model,
+  application,
   onPhaseChange,
   onApplyWithOutline,
-  onClearInitialOutline,
 }: HomepageLayoutProps) {
   const { company, projectName, headline, facts, scope } = model;
   const { company_name: companyName, logo_url: logoUrl, short_description: description } = company;
@@ -59,7 +59,7 @@ export function RegularHomepageLayout({
       <HomepageLots model={model} />
       <HomepageInquiry model={model} />
       <HomepageNotice model={model} />
-      <HomepageApplication model={model} onClearInitialOutline={onClearInitialOutline} />
+      <HomepageApplication model={model} application={application} />
       <HomepageFooter company={company} />
     </HomepageFrame>
   );
