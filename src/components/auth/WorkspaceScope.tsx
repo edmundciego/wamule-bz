@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { Field, Select } from "../ui/Field";
+import { buildSharedProjectLinks } from "../../lib/sharedProjectLinks.mjs";
 import { supabase } from "../../lib/supabase";
 import { accessibleWorkspaceChoices, filterWorkspaceChoicesByMembership, preferredWorkspace, workspaceScopeKey } from "../../lib/workspaceScope";
 import type { AdminProfile } from "../../types/database";
@@ -196,9 +197,14 @@ export function WorkspaceSelector() {
   const tenantChoices = [...new Map(choices.map((choice) => [choice.tenantId, choice])).values()];
   const projectChoices = choices.filter((choice, index, values) => values.findIndex((other) => other.projectId === choice.projectId) === index);
   const phaseChoices = choices.filter((choice) => choice.projectId === workspace?.projectId);
-  const mapUrl = workspace
-    ? `/embed/${encodeURIComponent(workspace.tenantSlug)}/${encodeURIComponent(workspace.projectSlug)}?phase=${encodeURIComponent(workspace.phaseSlug)}`
-    : null;
+  let mapUrl: string | null = null;
+  if (workspace) {
+    try {
+      mapUrl = buildSharedProjectLinks(window.location.origin, workspace).mapUrl;
+    } catch {
+      // A legacy workspace without valid public slugs can still use the CRM.
+    }
+  }
 
   if (isLoading) return <div className="text-sm text-muted-foreground" role="status">Loading workspaces…</div>;
   if (error) {
