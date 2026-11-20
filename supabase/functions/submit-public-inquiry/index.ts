@@ -111,29 +111,32 @@ Deno.serve(async (request) => {
   if (rpcResult?.conflict) return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
   if (!rpcResult?.ok || !rpcResult.lead_id) return json({ error: "We could not save your inquiry. Please try again." }, 503);
 
-  const suppressEmail = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
-  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "not-sent" };
-  if (!rpcResult.deduplicated && !suppressEmail) {
+  const testMode = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const trustedIp = trustedRequesterIp(request);
+  let emailSuppressed = testMode || !trustedIp;
+  let emailResult: { ok: boolean; suppressed?: boolean } = { ok: false };
+  if (!rpcResult.deduplicated && !emailSuppressed) {
     const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);
     emailResult = await sendConfirmationEmail({
-      toEmail: input.email, toName: input.name, companyName: company.companyName,
+      supabase, trustedIp, toEmail: input.email, companyName: company.companyName,
       projectName: scope.projectName, publicLink: safePageUrl || company.publicLink, waitlist,
     });
+    emailSuppressed = Boolean(emailResult.suppressed);
   }
   if (!rpcResult.deduplicated) {
     await supabase.from("lead_activities").insert({
       tenant_id: slugTenantId, project_id: scope.projectId, phase_id: scope.phaseId,
       lead_id: rpcResult.lead_id, activity_type: "email",
-      title: suppressEmail ? "Buyer confirmation email suppressed in automated test mode" : emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
-      description: suppressEmail ? "Automated test configuration suppressed outbound communication." : emailResult.ok
+      title: testMode ? "Buyer confirmation email suppressed in automated test mode" : emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
+      description: testMode ? "Automated test configuration suppressed outbound communication." : emailResult.ok
         ? "A public inquiry confirmation email was sent to the buyer."
         : "The inquiry was saved; staff should follow up from this lead.",
-      metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: suppressEmail }, created_by: null,
+      metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed }, created_by: null,
     });
   }
   return json({ ok: true, leadCreated: !rpcResult.deduplicated, followUpCreated: true,
-    deduplicated: Boolean(rpcResult.deduplicated), emailSent: emailResult.ok, emailSuppressed: suppressEmail,
-    waitlist, message: rpcResult.deduplicated ? "Your request was already received. The team will follow up." : suppressEmail
+    deduplicated: Boolean(rpcResult.deduplicated), emailSent: emailResult.ok, emailSuppressed,
+    waitlist, message: rpcResult.deduplicated ? "Your request was already received. The team will follow up." : emailSuppressed
       ? "Your request was received. The team will follow up using the contact information you provided."
       : emailResult.ok ? "Your request was received and a confirmation email was sent." : "Your request was received. The team will follow up using the contact information you provided." });
 });
@@ -292,7 +295,18 @@ async function loadCompanyContext(supabase: ReturnType<typeof createClient>, ten
   };
 }
 
-async function sendConfirmationEmail(input: { toEmail: string; toName: string; companyName: string; projectName: string; publicLink: string; waitlist: boolean }) {
+// Managed Edge Function ingress has no verified anti-spoofing guarantee for
+// client IP headers. Never infer trust from a client-supplied header.
+function trustedRequesterIp(_request: Request): string | null {
+  return null;
+}
+
+async function sha256(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sendConfirmationEmail(input: { supabase: ReturnType<typeof createClient>; trustedIp: string | null; toEmail: string; companyName: string; projectName: string; publicLink: string; waitlist: boolean }) {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
   const fromName = Deno.env.get("EMAIL_FROM_NAME") ?? input.companyName;
@@ -300,12 +314,25 @@ async function sendConfirmationEmail(input: { toEmail: string; toName: string; c
   if (!resendApiKey || !fromAddress) {
     return { ok: false, error: "Email provider is not configured." };
   }
+  if (!input.trustedIp) return { ok: false, suppressed: true };
+
+  // Reserve before the provider call. Failed and timed-out attempts also
+  // consume quota; database or quota errors always suppress the email.
+  try {
+    const { data: reserved, error } = await input.supabase.rpc("reserve_inquiry_confirmation_quota", {
+      p_recipient_hash: await sha256(input.toEmail.trim().toLowerCase()),
+      p_ip_hash: await sha256(input.trustedIp),
+    });
+    if (error || reserved !== true) return { ok: false, suppressed: true };
+  } catch {
+    return { ok: false, suppressed: true };
+  }
 
   const subject = input.waitlist
     ? `You're on the waitlist for ${input.projectName}`
     : `We received your ${input.projectName} information request`;
   const body = [
-    `Hi ${input.toName},`,
+    "Hello,",
     "",
     input.waitlist
       ? `Thanks — we've added you to the waitlist for ${input.projectName}.`
@@ -330,7 +357,7 @@ async function sendConfirmationEmail(input: { toEmail: string; toName: string; c
       },
       body: JSON.stringify({
         from: `${fromName} <${fromAddress}>`,
-        to: [`${input.toName} <${input.toEmail}>`],
+        to: [input.toEmail],
         subject,
         text: body,
         html: renderPublicInquiryEmail({ subject, body, companyName: input.companyName }),
@@ -339,12 +366,11 @@ async function sendConfirmationEmail(input: { toEmail: string; toName: string; c
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      return { ok: false, error: text.slice(0, 500) || `Email provider returned ${response.status}.` };
+      return { ok: false, error: "Email provider request failed." };
     }
     return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Unknown email error." };
+  } catch {
+    return { ok: false, error: "Email provider request failed." };
   }
 }
 
@@ -418,8 +444,8 @@ function escapeHtml(value: string) {
   }[char] ?? char));
 }
 
-function safeError(error: unknown) {
-  return error instanceof Error ? error.message : String(error ?? "Unknown error");
+function safeError(_error: unknown) {
+  return "Database operation failed.";
 }
 
 function json(body: Record<string, unknown>, status = 200) {
