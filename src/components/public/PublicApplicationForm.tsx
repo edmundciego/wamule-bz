@@ -183,8 +183,8 @@ export function PublicApplicationForm({
 
     const scopedInput = { ...input, tenant: scope.tenantSlug, project: scope.projectSlug, phase: scope.phaseSlug, hostname };
     try {
+      submissionReference.current ??= createSubmissionReference();
       if (projectApplication) {
-        submissionReference.current ??= createSubmissionReference();
         const result = await submitPublicFunction<{ ok?: boolean; message?: string; application_id?: number }>(
           "submit-hopkins-project-application",
           buildHopkinsProjectApplicationPayload({
@@ -196,7 +196,10 @@ export function PublicApplicationForm({
         if (result?.ok !== true) throw new Error("Your application could not be confirmed. Please retry.");
         setReceipt({ message: result.message || settings.default_confirmation_message, id: result.application_id });
       } else {
-        await submitPublicFunction("submit-public-application", buildPublicApplicationPayload(scopedInput));
+        await submitPublicFunction("submit-public-application", buildPublicApplicationPayload({
+          ...scopedInput,
+          submission_reference: submissionReference.current,
+        }));
         setReceipt({ message: settings.default_confirmation_message });
       }
       form.reset(emptyApplication);
