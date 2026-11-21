@@ -94,6 +94,7 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
 
   let scopeResolution: Awaited<ReturnType<typeof resolvePublicSubmissionScope>> | null = null;
   let legacyParcelId: number | null = null;
+  let suppliedHostname: string | null = null;
   let input: ValidInquiry;
   if (isLegacyPayload) {
     const validation = validateInquiryPayload({ ...body, specific_lot_id: undefined });
@@ -135,11 +136,15 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
       const rawLotParts = typeof body.specific_lot_ref === "string"
         ? parsePublicLotReference(body.specific_lot_ref)
         : null;
+      const suppliedHostnameValue = body.hostname ?? body.host;
+      suppliedHostname = typeof suppliedHostnameValue === "string" && suppliedHostnameValue.trim()
+        ? normalizePublicHostname(suppliedHostnameValue)
+        : null;
       scopeResolution = await resolvePublicSubmissionScope(supabase, {
         tenantSlug: (body.tenant ?? body.tenant_slug) as string | null | undefined,
         projectSlug: (body.project ?? body.project_slug ?? rawLotParts?.projectSlug) as string | null | undefined,
         phaseSlug: (body.phase ?? body.phase_slug ?? rawLotParts?.phaseSlug) as string | null | undefined,
-        hostname: (body.hostname ?? body.host) as string | null | undefined,
+        hostname: suppliedHostnameValue as string | null | undefined,
         allowTenantAlias: true,
       });
       if (!scopeResolution.ok) {
@@ -163,9 +168,6 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
   const safePageUrl = safePublicPageUrl(input.pageUrl, request.headers.get("origin"));
 
   const lotReferenceProject = specificLotParts?.projectSlug ?? null;
-  if (input.projectSlug && lotReferenceProject && input.projectSlug !== lotReferenceProject) {
-    return json({ error: "The selected lot does not match the requested development." }, 400);
-  }
   // Slugs and hosts are selectors only. Resolve one owned active tenant/project/phase
   // here, then the atomic RPC revalidates ownership at write time.
   scopeResolution ??= await resolvePublicSubmissionScope(supabase, {
@@ -185,16 +187,10 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     adapterLog.scope = { tenantId: scope.tenantId, projectId: scope.projectId, phaseId: scope.phaseId };
   }
   const slugTenantId = scope.tenantId;
-  if (specificLotParts?.phaseSlug && specificLotParts.phaseSlug !== scope.phaseSlug) {
-    return json({ error: "The selected lot does not match the requested phase." }, 400);
-  }
-  if ((input.specificLotRef || legacyParcelId !== null) && scope.mapExperienceMode === "demo") {
-    return json({ error: "This demonstration map does not provide sellable inventory. Please send a general project inquiry." }, 400);
-  }
-  // General inquiries are available without a published map. A selected lot or
-  // outline must belong to the current published package before it can be saved.
+  // General inquiries remain available without a published map. Outline
+  // selections stay strict; unverifiable lots become general inquiries below.
   let publishedSnapshotId: string | null = null;
-  if (input.specificLotRef || legacyParcelId !== null || input.specificMapFeatureRef) {
+  if (input.specificMapFeatureRef) {
     const publication = await verifyPublishedPackage(supabase, slugTenantId, scope);
     if (!publication.ok) return json({ error: publication.message }, publication.status);
     publishedSnapshotId = publication.snapshotId;
@@ -210,33 +206,54 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     if (!selectedFeature) return json({ error: "Select an outline from the current published map." }, 400);
   }
 
-  // A public locator is resolved inside exactly the selected project/phase.
-  const resolution = legacyParcelId !== null
-    ? await loadLotByLegacyId(supabase, slugTenantId, legacyParcelId, scope)
-    : input.specificLotRef
-      ? await loadLotByPublicReference(supabase, slugTenantId, input.specificLotRef, scope)
-      : { lot: null, error: null };
+  const lotRequested = Boolean(input.specificLotRef) || legacyParcelId !== null;
+  const unverifiedLotReference = lotRequested
+    ? sanitizeUnverifiedLotReference(input.specificLotRef ?? String(legacyParcelId))
+    : null;
+  const lotReferenceOutsideScope = Boolean(input.specificLotRef && (
+    (lotReferenceProject && lotReferenceProject !== scope.projectSlug)
+    || (specificLotParts?.phaseSlug && specificLotParts.phaseSlug !== scope.phaseSlug)
+  ));
+
+  // A public locator is resolved only inside the already verified tenant,
+  // project, and phase. Missing publication, foreign references, demo-mode
+  // projects, and unavailable lots are recorded as unverified general inquiries.
+  const resolution = !lotRequested || lotReferenceOutsideScope || scope.mapExperienceMode === "demo"
+    ? { lot: null, error: null }
+    : legacyParcelId !== null
+      ? await loadLotByLegacyId(supabase, slugTenantId, legacyParcelId, scope)
+      : await loadLotByPublicReference(supabase, slugTenantId, input.specificLotRef!, scope);
   if (resolution.error === "database") {
     if (isLegacyPayload) adapterLog.outcome = "lot_lookup_failed";
     return json({ error: "The current lot list could not be verified. Please try again." }, 503);
   }
-  if ((input.specificLotRef || legacyParcelId !== null) && !resolution.lot) {
-    if (isLegacyPayload) adapterLog.outcome = "lot_not_public_in_scope";
-    return json({ error: "Select an available public lot for this inquiry." }, 400);
-  }
-  const specificLot = resolution.lot;
+  const specificLot = resolution.lot && lotDisposition(resolution.lot.status) !== "unavailable"
+    ? resolution.lot
+    : null;
+  const lotUnverified = lotRequested && !specificLot;
   const specificLotId = specificLot?.id ?? null;
-  if (specificLot && lotDisposition(specificLot.status) === "unavailable") {
-    return json({ error: "That lot is no longer available." }, 400);
-  }
   const waitlist = !!specificLot && lotDisposition(specificLot.status) === "waitlist";
+  let fingerprintParcelId = specificLotId ?? resolution.lot?.id ?? null;
+  if (lotRequested && fingerprintParcelId === null && !lotReferenceOutsideScope) {
+    const fingerprintParcel = await loadScopedParcelIdForFingerprint(
+      supabase, slugTenantId, legacyParcelId, specificLotParts, scope,
+    );
+    if (fingerprintParcel.error === "database") {
+      if (isLegacyPayload) adapterLog.outcome = "lot_lookup_failed";
+      return json({ error: "The current lot list could not be verified. Please try again." }, 503);
+    }
+    fingerprintParcelId = fingerprintParcel.id;
+  }
   const fingerprint = await submissionFingerprint({
     kind: "public_inquiry",
     scope: { tenantId: scope.tenantId, projectId: scope.projectId, phaseId: scope.phaseId },
     contact: { name: input.name, email: input.email, phone: input.phone },
     content: {
       message: input.message, interests: [...input.interests].sort(),
-      parcelId: specificLotId, mapFeatureRef: input.specificMapFeatureRef,
+      parcelId: fingerprintParcelId,
+      mapFeatureRef: input.specificMapFeatureRef,
+      ...(lotRequested && fingerprintParcelId === null && unverifiedLotReference
+        ? { unverifiedLotReference } : {}),
     },
   });
   const requestRef = input.clientReferenceId
@@ -259,13 +276,17 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     p_parcel_id: specificLotId,
     p_map_feature_id: input.specificMapFeatureRef,
     p_duplicate_reason: duplicateReason,
+    p_unverified_lot_reference: unverifiedLotReference,
+    p_hostname: suppliedHostname,
   });
   if (rpcError) {
     if (isLegacyPayload) adapterLog.outcome = "persistence_failed";
     console.error("Scoped public inquiry RPC failed", safeError(rpcError));
     return json({ error: "We could not verify and save your inquiry. Please try again." }, 503);
   }
-  const rpcResult = result as { ok?: boolean; conflict?: boolean; deduplicated?: boolean; lead_id?: string } | null;
+  const rpcResult = result as {
+    ok?: boolean; conflict?: boolean; deduplicated?: boolean; lead_id?: string; unverified_lot?: boolean;
+  } | null;
   if (rpcResult?.conflict) {
     if (isLegacyPayload) adapterLog.outcome = "retry_conflict";
     return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
@@ -298,10 +319,15 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
       metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed }, created_by: null,
     });
   }
-  if (isLegacyPayload) adapterLog.outcome = rpcResult.deduplicated ? "deduplicated" : "created";
+  if (isLegacyPayload) adapterLog.outcome = rpcResult.deduplicated
+    ? "deduplicated"
+    : lotUnverified || rpcResult.unverified_lot ? "created_unverified_lot" : "created";
+  const unverifiedLot = lotUnverified || rpcResult.unverified_lot === true;
   return json({ ok: true, leadCreated: !rpcResult.deduplicated, followUpCreated: true,
     deduplicated: Boolean(rpcResult.deduplicated), emailSent: emailResult.ok, emailSuppressed,
-    waitlist, message: rpcResult.deduplicated ? "Your request was already received. The team will follow up." : emailSuppressed
+    waitlist, message: unverifiedLot
+      ? "We received your inquiry. Our team will follow up with available options."
+      : rpcResult.deduplicated ? "Your request was already received. The team will follow up." : emailSuppressed
       ? "Your request was received. The team will follow up using the contact information you provided."
       : emailResult.ok ? "Your request was received and a confirmation email was sent." : "Your request was received. The team will follow up using the contact information you provided." });
 }
@@ -348,6 +374,29 @@ function explicitScopeFieldsAgree(
 
 function normalizeScopeText(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() || null : null;
+}
+
+function sanitizeUnverifiedLotReference(value: string) {
+  return value.replace(/[<>\p{Cc}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 160) || "[empty]";
+}
+
+async function loadScopedParcelIdForFingerprint(
+  supabase: ReturnType<typeof createClient>, tenantId: string, legacyParcelId: number | null,
+  lotParts: ReturnType<typeof parsePublicLotReference>, scope: PublicProjectScope,
+): Promise<{ id: number | null; error: "database" | null }> {
+  if (lotParts && (lotParts.projectSlug !== scope.projectSlug
+    || (lotParts.phaseSlug !== null && lotParts.phaseSlug !== scope.phaseSlug))) {
+    return { id: null, error: null };
+  }
+  if (legacyParcelId === null && !lotParts) return { id: null, error: null };
+  let query = supabase.from("parcels").select("id")
+    .eq("tenant_id", tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId);
+  query = legacyParcelId !== null ? query.eq("id", legacyParcelId) : query.eq("lot_number", lotParts!.lotNumber);
+  const { data, error } = await query.limit(2);
+  if (error) return { id: null, error: "database" };
+  return Array.isArray(data) && data.length === 1 && typeof data[0].id === "number"
+    ? { id: data[0].id, error: null }
+    : { id: null, error: null };
 }
 
 function configuredLegacyInquiryScope() {

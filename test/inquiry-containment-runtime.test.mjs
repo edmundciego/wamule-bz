@@ -97,21 +97,155 @@ test("legacy ApplicationPage general inquiries accept the historic null lot shap
   assert.equal(s.sends.length, 0);
 });
 
-test("legacy inquiry rejects numeric lots outside the configured scope without writes", async (t) => {
+test("legacy inquiries save out-of-scope, unpublished, and unavailable numeric lots unlinked", async (t) => {
   t.after(cleanupEdgeHandler);
-  const s = createPublicIntakeFixture();
+  const cases = [
+    { options: {}, lotId: 84 },
+    { options: { unpublished: true }, lotId: 42 },
+    { options: { lotStatus: "Sold" }, lotId: 42 },
+  ];
+  for (const { options, lotId } of cases) {
+    const s = createPublicIntakeFixture(options);
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+    const result = await submitLegacy(s, legacyApplicationPagePayload({ specific_lot_id: lotId }));
+
+    assert.equal(result.status, 200);
+    assert.equal(result.body.message, "We received your inquiry. Our team will follow up with available options.");
+    assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 1);
+    assert.equal(s.db.leads.length, 1);
+    assert.equal(s.db.leads[0].tenant_id, FIXTURE_IDS.tenant);
+    assert.equal(s.db.leads[0].project_id, FIXTURE_IDS.project);
+    assert.equal(s.db.leads[0].phase_id, FIXTURE_IDS.phase);
+    assert.equal(s.db.leads[0].parcel_id, null);
+    assert.equal(s.db.follow_up_tasks.length, 1);
+    assert.match(s.db.leads[0].notes, new RegExp(`Unverified buyer-supplied lot reference: ${lotId} \\(unverified\\)\\.`));
+    assert.equal(s.db.lead_activities[0].metadata.unverified_lot_reference, String(lotId));
+    assert.doesNotMatch(JSON.stringify(result.body), /84|42|other-project|unverified|inventory|available lot/i);
+    assert.equal(s.sends.length, 0);
+    const event = JSON.parse(s.logs[0]);
+    assert.equal(event.outcome.result, "created_unverified_lot");
+    assert.equal(s.logs.length, 1);
+    cleanupEdgeHandler();
+  }
+});
+
+test("current inquiries save unpublished, unavailable, and foreign lot references without a lot link", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const cases = [
+    { options: { unpublished: true }, overrides: {} },
+    { options: { lotStatus: "Sold" }, overrides: {} },
+    { options: {}, overrides: { hostname: "example.test", specific_lot_ref: "plr2:other-project:other-initial:84" } },
+  ];
+  for (const { options, overrides } of cases) {
+    const s = createPublicIntakeFixture(options);
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+    const result = await submit(s, payload(overrides));
+
+    assert.equal(result.status, 200);
+    assert.equal(result.body.message, "We received your inquiry. Our team will follow up with available options.");
+    assert.equal(s.db.leads.length, 1);
+    assert.equal(s.db.leads[0].tenant_id, FIXTURE_IDS.tenant);
+    assert.equal(s.db.leads[0].project_id, FIXTURE_IDS.project);
+    assert.equal(s.db.leads[0].phase_id, FIXTURE_IDS.phase);
+    assert.equal(s.db.leads[0].parcel_id, null);
+    assert.equal(s.db.follow_up_tasks.length, 1);
+    assert.match(s.db.lead_activities[0].description, /Unverified buyer-supplied lot reference:/);
+    assert.equal(s.db.lead_activities[0].metadata.unverified_lot_reference !== null, true);
+    assert.doesNotMatch(JSON.stringify(result.body), /other-project|84|Sold|unpublished|unverified/i);
+    assert.equal(s.sends.length, 0);
+    cleanupEdgeHandler();
+  }
+});
+
+test("fallback notes sanitize buyer-supplied references and do not expose them in the response", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ unpublished: true });
   await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
 
-  const result = await submitLegacy(s, legacyApplicationPagePayload({ specific_lot_id: 84 }));
+  const result = await submit(s, payload({ specific_lot_ref: "plr2:project:initial:<script>alert(1)</script>" }));
 
-  assert.equal(result.status, 400);
-  assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 0);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.message, "We received your inquiry. Our team will follow up with available options.");
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.leads[0].parcel_id, null);
+  assert.match(s.db.leads[0].notes, /Unverified buyer-supplied lot reference:/);
+  assert.doesNotMatch(s.db.leads[0].notes, /<script>|<|>/i);
+  assert.doesNotMatch(JSON.stringify(result.body), /script|plr2|unverified/i);
+});
+
+test("availability changes across retries keep one lead and one follow-up with stable scope", async (t) => {
+  t.after(cleanupEdgeHandler);
+  for (const firstStatus of ["Sold", "Available"]) {
+    const s = createPublicIntakeFixture({ lotStatus: firstStatus });
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+    const first = await submit(s, payload());
+    s.db.parcels.find((row) => row.id === 42).status = firstStatus === "Available" ? "Sold" : "Available";
+    const retry = await submit(s, payload());
+
+    assert.equal(first.status, 200);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.body.deduplicated, true);
+    assert.equal(s.db.leads.length, 1);
+    assert.equal(s.db.follow_up_tasks.length, 1);
+    assert.equal(s.inquiries.size, 1);
+    assert.equal(s.db.leads[0].parcel_id, firstStatus === "Available" ? 42 : null);
+    assert.equal(retry.body.message, "We received your inquiry. Our team will follow up with available options.");
+  }
+});
+
+test("a lot becoming unavailable during the atomic write is saved unlinked with an internal note", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ beforeInquiryPersist(_args, db) {
+    db.parcels.find((row) => row.id === 42).status = "Sold";
+  } });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s, payload());
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.message, "We received your inquiry. Our team will follow up with available options.");
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.leads[0].parcel_id, null);
+  assert.match(s.db.leads[0].notes, /Unverified buyer-supplied lot reference: plr2:project:initial:42 \(unverified\)\./);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+});
+
+test("a lot entering review during the atomic write is saved unlinked", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ beforeInquiryPersist(_args, db) {
+    db.parcels.find((row) => row.id === 42).needs_review = true;
+  } });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s, payload());
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.message, "We received your inquiry. Our team will follow up with available options.");
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.leads[0].parcel_id, null);
+  assert.match(s.db.leads[0].notes, /Unverified buyer-supplied lot reference: plr2:project:initial:42 \(unverified\)\./);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+});
+
+test("a supplied verified hostname is rechecked at the write boundary", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ beforeInquiryPersist(_args, _db, hostBindings) {
+    hostBindings["example.test"] = {
+      tenant_slug: "other", project_slug: "other-project", phase_slug: "other-initial",
+    };
+  } });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s, payload({ hostname: "EXAMPLE.TEST." }));
+
+  assert.equal(result.status, 503);
+  assert.equal(s.calls.filter((call) => call.name === "create_scoped_public_inquiry").length, 1);
+  assert.equal(s.calls.find((call) => call.name === "create_scoped_public_inquiry").args.p_hostname, "example.test");
   assert.equal(s.db.leads.length, 0);
   assert.equal(s.db.follow_up_tasks.length, 0);
-  assert.equal(s.sends.length, 0);
-  const event = JSON.parse(s.logs[0]);
-  assert.equal(event.outcome.result, "lot_not_public_in_scope");
-  assert.equal(s.logs.length, 1);
 });
 
 test("partially scoped legacy-shaped requests use the strict resolver and are never adapted", async (t) => {
@@ -184,15 +318,13 @@ test("path and verified custom-domain inquiries save with confirmation suppresse
   assert.equal(s.calls.find((call) => call.name === "create_scoped_public_inquiry").args.p_phase_id, FIXTURE_IDS.phase);
 });
 
-test("mixed selectors, conflicting hosts, inactive phases, unpublished scopes, foreign lots and outlines write nothing", async (t) => {
+test("mixed selectors, conflicting hosts, inactive phases, unpublished scopes, and foreign outlines write nothing", async (t) => {
   t.after(cleanupEdgeHandler);
   const cases = [
     { options: {}, body: payload({ tenant: "other", hostname: "example.test" }) },
     { options: {}, body: payload({ phase: "second", hostname: "example.test" }) },
     { options: {}, body: payload({ phase: "inactive", hostname: "" }) },
-    { options: { unpublished: true }, body: payload({ specific_lot_ref: "plr2:project:initial:42" }) },
     { options: { unpublished: true }, body: payload({ specific_lot_ref: undefined, specific_map_feature_ref: FIXTURE_IDS.feature }) },
-    { options: {}, body: payload({ specific_lot_ref: "plr2:other-project:other-initial:84" }) },
     { options: {}, body: payload({ specific_lot_ref: undefined, specific_map_feature_ref: FIXTURE_IDS.otherFeature }) },
     { options: { inactiveOutline: true }, body: payload({ specific_lot_ref: undefined, specific_map_feature_ref: FIXTURE_IDS.feature }) },
   ];

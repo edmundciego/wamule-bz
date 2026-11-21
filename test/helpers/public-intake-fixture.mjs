@@ -159,19 +159,59 @@ export function createPublicIntakeFixture(options = {}) {
           : { data: [{ resolution: "unresolved", reason: "unknown_host", tenant_slug: null, project_slug: null, phase_slug: null }], error: null };
       }
       if (name === "create_scoped_public_inquiry") {
+        options.beforeInquiryPersist?.(args, db, hostBindings);
+        if (args.p_hostname) {
+          const binding = hostBindings[args.p_hostname];
+          const tenant = db.organizations.find((row) => row.id === args.p_tenant_id && row.is_active);
+          const project = db.projects.find((row) => row.id === args.p_project_id && row.tenant_id === args.p_tenant_id);
+          const phase = db.development_phases.find((row) => row.id === args.p_phase_id
+            && row.tenant_id === args.p_tenant_id && row.project_id === args.p_project_id && row.is_active);
+          if (!binding || binding.tenant_slug !== tenant?.slug || binding.project_slug !== project?.slug
+            || binding.phase_slug !== phase?.slug) {
+            return { data: null, error: { message: "verified hostname scope changed before persistence" } };
+          }
+        }
         const existing = s.inquiries.get(args.p_client_reference_id);
         if (existing) {
           if (existing.p_submission_fingerprint !== args.p_submission_fingerprint) return { data: { ok: false, conflict: true }, error: null };
-          return { data: { ok: true, deduplicated: true, lead_id: existing.lead_id, follow_up_created: true }, error: null };
+          return { data: { ok: true, deduplicated: true, lead_id: existing.lead_id, follow_up_created: true, unverified_lot: existing.unverified_lot }, error: null };
+        }
+        let parcelId = args.p_parcel_id;
+        let unverifiedLotReference = null;
+        if (parcelId !== null && parcelId !== undefined) {
+          const parcel = db.parcels.find((row) => row.id === parcelId);
+          const publicParcel = parcel && parcel.tenant_id === args.p_tenant_id
+            && parcel.project_id === args.p_project_id && parcel.phase_id === args.p_phase_id
+            && parcel.needs_review === false && ["Available", "Reserved"].includes(parcel.status)
+            && (parcel.masterplan_version_id === null || db.masterplan_versions.some((version) =>
+              version.id === parcel.masterplan_version_id && version.tenant_id === args.p_tenant_id
+              && version.project_id === args.p_project_id && version.phase_id === args.p_phase_id && version.is_active))
+            && db.map_feature_snapshots.some((snapshot) => snapshot.tenant_id === args.p_tenant_id
+              && snapshot.project_id === args.p_project_id && snapshot.phase_id === args.p_phase_id && snapshot.is_active
+              && db.project_map_packages.some((pkg) => pkg.tenant_id === args.p_tenant_id
+                && pkg.project_id === args.p_project_id && pkg.phase_id === args.p_phase_id
+                && pkg.snapshot_id === snapshot.id && pkg.published_at)
+              && db.map_features.some((feature) => feature.tenant_id === args.p_tenant_id
+                && feature.project_id === args.p_project_id && feature.phase_id === args.p_phase_id
+                && feature.snapshot_id === snapshot.id && feature.is_active && feature.public_visible
+                && db.project_plot_content.some((content) => content.identity_id === feature.identity_id
+                  && content.tenant_id === args.p_tenant_id && content.project_id === args.p_project_id
+                  && content.phase_id === args.p_phase_id && content.public_visible && content.parcel_id === parcelId)));
+          if (!publicParcel) {
+            parcelId = null;
+            unverifiedLotReference = args.p_unverified_lot_reference ?? "[unavailable]";
+          }
+        } else if (args.p_unverified_lot_reference) {
+          unverifiedLotReference = args.p_unverified_lot_reference;
         }
         const leadId = uuid(100 + s.inquiries.size);
-        const record = { ...args, lead_id: leadId };
+        const record = { ...args, p_parcel_id: parcelId, unverified_lot: Boolean(unverifiedLotReference), lead_id: leadId };
         s.inquiries.set(args.p_client_reference_id, record);
-        db.leads.push({ id: leadId, tenant_id: args.p_tenant_id, project_id: args.p_project_id, phase_id: args.p_phase_id, parcel_id: args.p_parcel_id, client_reference_id: args.p_client_reference_id });
-        db.lead_activities.push({ lead_id: leadId, activity_type: "note", metadata: { source: "public_inquiry", submission_fingerprint: args.p_submission_fingerprint } });
-        db.follow_up_tasks.push({ lead_id: leadId, status: "open" });
+        db.leads.push({ id: leadId, tenant_id: args.p_tenant_id, project_id: args.p_project_id, phase_id: args.p_phase_id, parcel_id: parcelId, notes: unverifiedLotReference ? `Unverified buyer-supplied lot reference: ${unverifiedLotReference} (unverified).` : null, client_reference_id: args.p_client_reference_id });
+        db.lead_activities.push({ lead_id: leadId, activity_type: "note", description: unverifiedLotReference ? `Unverified buyer-supplied lot reference: ${unverifiedLotReference} (unverified).` : null, metadata: { source: "public_inquiry", submission_fingerprint: args.p_submission_fingerprint, unverified_lot_reference: unverifiedLotReference } });
+        db.follow_up_tasks.push({ lead_id: leadId, status: "open", description: unverifiedLotReference ? "Contact the buyer and follow up with currently available options; the submitted lot reference is unverified." : "Contact the buyer about their public project information request and answer their questions." });
         s.writes.push({ table: "leads", row: record }, { table: "lead_activities", row: db.lead_activities.at(-1) }, { table: "follow_up_tasks", row: db.follow_up_tasks.at(-1) });
-        return { data: { ok: true, deduplicated: false, lead_id: leadId, follow_up_created: true }, error: null };
+        return { data: { ok: true, deduplicated: false, lead_id: leadId, follow_up_created: true, unverified_lot: Boolean(unverifiedLotReference) }, error: null };
       }
       throw new Error(`Unexpected RPC ${name}`);
     },

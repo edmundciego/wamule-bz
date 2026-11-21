@@ -1532,9 +1532,11 @@ export type Database = {
           p_interests: Json;
           p_client_reference_id: string;
           p_submission_fingerprint: string;
-          p_parcel_id?: number | null;
-          p_map_feature_id?: string | null;
-          p_duplicate_reason?: string | null;
+          p_parcel_id: number | null;
+          p_map_feature_id: string | null;
+          p_duplicate_reason: string | null;
+          p_unverified_lot_reference: string | null;
+          p_hostname: string | null;
         };
         Returns: Json;
       };

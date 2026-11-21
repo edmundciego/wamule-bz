@@ -7,13 +7,15 @@ project_id="f0000000-0000-4000-8000-000000000002"
 phase_id="f0000000-0000-4000-8000-000000000003"
 reference="rpc-contract-inquiry-concurrency-2026"
 fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+fallback_reference="rpc-contract-inquiry-unverified-lot-2026"
+fallback_fingerprint="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 tmpdir="$(mktemp -d)"
 
 cleanup() {
   psql "$database_url" -X -q -v ON_ERROR_STOP=1 <<SQL
 delete from public.follow_up_tasks
-where lead_id in (select id from public.leads where tenant_id='${tenant_id}' and client_reference_id='${reference}');
-delete from public.leads where tenant_id='${tenant_id}' and client_reference_id='${reference}';
+where lead_id in (select id from public.leads where tenant_id='${tenant_id}' and client_reference_id in ('${reference}','${fallback_reference}'));
+delete from public.leads where tenant_id='${tenant_id}' and client_reference_id in ('${reference}','${fallback_reference}');
 delete from public.development_phases where id='${phase_id}';
 delete from public.projects where id='${project_id}';
 delete from public.organizations where id='${tenant_id}';
@@ -50,7 +52,9 @@ select public.create_scoped_public_inquiry(
   p_submission_fingerprint => '${fingerprint}',
   p_parcel_id => null,
   p_map_feature_id => null,
-  p_duplicate_reason => null
+  p_duplicate_reason => null,
+  p_unverified_lot_reference => null,
+  p_hostname => null
 );
 reset role;
 SQL
@@ -134,7 +138,9 @@ select public.create_scoped_public_inquiry(
   p_submission_fingerprint => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   p_parcel_id => null,
   p_map_feature_id => null,
-  p_duplicate_reason => null
+  p_duplicate_reason => null,
+  p_unverified_lot_reference => null,
+  p_hostname => null
 );
 reset role;
 SQL
@@ -156,6 +162,62 @@ SQL
 )"
 if [[ "$counts" != "1|1|1" ]]; then
   echo "Expected one lead, activity, and follow-up; observed ${counts}." >&2
+  exit 1
+fi
+
+cat > "$tmpdir/unverified.sql" <<SQL
+set role service_role;
+select public.create_scoped_public_inquiry(
+  p_tenant_id => '${tenant_id}'::uuid,
+  p_project_id => '${project_id}'::uuid,
+  p_phase_id => '${phase_id}'::uuid,
+  p_name => 'RPC Contract Fallback Buyer',
+  p_email => 'rpc-contract-fallback@example.test',
+  p_phone => null,
+  p_message => 'Please send current options.',
+  p_page_url => 'https://rpc-contract.example.test/project',
+  p_interests => '["Available lots"]'::jsonb,
+  p_client_reference_id => '${fallback_reference}',
+  p_submission_fingerprint => '${fallback_fingerprint}',
+  p_parcel_id => null,
+  p_map_feature_id => null,
+  p_duplicate_reason => null,
+  p_unverified_lot_reference => 'plr2:rpc-contract-project:initial:unpublished-lot',
+  p_hostname => null
+);
+reset role;
+SQL
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At -f "$tmpdir/unverified.sql" > "$tmpdir/unverified.json"
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At -f "$tmpdir/unverified.sql" > "$tmpdir/unverified-retry.json"
+node --input-type=module - "$tmpdir/unverified.json" "$tmpdir/unverified-retry.json" <<'NODE'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+function readResult(path) {
+  const line = readFileSync(path, "utf8").split(/\r?\n/).find((value) => value.startsWith("{"));
+  assert.ok(line, `missing fallback RPC result in ${path}`);
+  return JSON.parse(line);
+}
+
+const results = [readResult(process.argv[2]), readResult(process.argv[3])];
+assert.equal(results[0].ok, true);
+assert.equal(results[0].unverified_lot, true);
+assert.equal(results[1].ok, true);
+assert.equal(results[1].deduplicated, true);
+assert.equal(results[1].unverified_lot, true);
+assert.equal(results[0].lead_id, results[1].lead_id);
+NODE
+
+fallback_counts="$(psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At <<SQL
+select
+  (select count(*) from public.leads where tenant_id='${tenant_id}' and client_reference_id='${fallback_reference}') || '|' ||
+  (select count(*) from public.leads where tenant_id='${tenant_id}' and client_reference_id='${fallback_reference}' and parcel_id is null) || '|' ||
+  (select count(*) from public.lead_activities where tenant_id='${tenant_id}' and metadata->>'unverified_lot_reference'='plr2:rpc-contract-project:initial:unpublished-lot') || '|' ||
+  (select count(*) from public.follow_up_tasks where lead_id=(select id from public.leads where tenant_id='${tenant_id}' and client_reference_id='${fallback_reference}'));
+SQL
+)"
+if [[ "$fallback_counts" != "1|1|1|1" ]]; then
+  echo "Expected one unlinked fallback lead, internal note, and follow-up; observed ${fallback_counts}." >&2
   exit 1
 fi
 echo "Public inquiry concurrency and semantic retry contract passed."
