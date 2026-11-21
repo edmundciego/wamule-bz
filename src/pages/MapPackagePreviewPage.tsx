@@ -41,11 +41,12 @@ export function MapPackagePreviewPage() {
     retry: false,
     queryFn: async (): Promise<PreviewData | null> => {
       const { tenantId, projectId, phaseId } = workspace!;
-      const scope = { tenant_id: tenantId, project_id: projectId, phase_id: phaseId };
       const packages = () => supabase.from("project_map_packages")
-        .select("id,snapshot_id,package_data,background_path,published_at").match(scope);
+        .select("id,snapshot_id,package_data,background_path,published_at")
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId);
       const snapshots = () => supabase.from("map_feature_snapshots")
-        .select("id,snapshot_version,outline_count,is_active").match(scope);
+        .select("id,snapshot_version,outline_count,is_active")
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId);
 
       const draft = await packages()
         .is("published_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -67,7 +68,8 @@ export function MapPackagePreviewPage() {
       }
 
       const features = supabase.from("map_features").select("identity_id,demo_label,map_polygon,provenance")
-        .match(scope).eq("snapshot_id", packageRow.snapshot_id).eq("is_active", true);
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+        .eq("snapshot_id", packageRow.snapshot_id).eq("is_active", true);
       const [snapshotResult, featuresResult] = await Promise.all([
         publishedSnapshot ? { data: publishedSnapshot, error: null } : snapshots().eq("id", packageRow.snapshot_id).single(),
         (publishedSnapshot ? features.eq("public_visible", true) : features).order("demo_label"),
