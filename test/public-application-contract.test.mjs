@@ -55,6 +55,12 @@ test("valid public application payload resolves only the opaque lot reference", 
   assert.equal(result.tenant, "wamule");
   assert.deepEqual(result.preferred_lot_refs, ["plr1:main:L-001"]);
   assert.equal(result.email, "amara@example.com");
+  assert.equal(result.submission_reference, null, "legacy clients may omit the optional retry key");
+});
+
+test("application client includes its stable submission reference for retries", () => {
+  const body = buildPublicApplicationPayload({ ...validInput, submission_reference: "123e4567-e89b-42d3-a456-426614174000" });
+  assert.equal(body.submission_reference, "123e4567-e89b-42d3-a456-426614174000");
 });
 
 test("application validation rejects raw ids, unknown fields, stale references, and duplicate selections", () => {
@@ -71,6 +77,7 @@ test("application browser uses public map and server submission, never the legac
   const form = await read("src/components/public/PublicApplicationForm.tsx");
   const plots = await read("src/lib/publicApplicationPlots.ts");
   assert.match(form, /submitPublicFunction\("submit-public-application"/);
+  assert.match(form, /submission_reference: submissionReference\.current/);
   assert.match(plots, /get-public-lots\?\$\{params\}/);
   assert.match(plots, /phase: scope\.phaseSlug/);
   assert.doesNotMatch(form + plots, /public_parcel_options|\.from\("applications"\)\.insert|preferred_parcel_ids|parcel\.id/);
@@ -80,11 +87,14 @@ test("application browser uses public map and server submission, never the legac
 test("application Edge Function resolves lot refs and derives database ids and tenant server-side", async () => {
   const fn = await read("supabase/functions/submit-public-application/index.ts");
   assert.match(fn, /validatePublicApplicationPayload/);
-  assert.match(fn, /eq\("tenant_id", tenant\.id\)/);
+  assert.match(fn, /resolvePublicSubmissionScope\(supabase/);
+  assert.match(fn, /const tenantId = applicationScope\.tenantId/);
   assert.match(fn, /eq\("status", "Available"\)/);
-  assert.match(fn, /preferred_parcel_ids: lotResolution\.lots\.map\(\(lot\) => lot\.id\)/);
-  assert.match(fn, /!effectiveSettings\.applicationsOpen \|\| !effectiveSettings\.noticesComplete/);
-  assert.match(fn, /return json\(\{ ok: true, message:/);
+  assert.match(fn, /preferred_parcel_ids: parcelIds/);
+  assert.match(fn, /!effectiveSettings\.noticesComplete/);
+  assert.match(fn, /if \(!effectiveSettings\.applicationsOpen\)/);
+  assert.match(fn, /submission_fingerprint: fingerprint/);
+  assert.match(fn, /return json\(\{ ok: true, deduplicated: false/);
   assert.doesNotMatch(fn, /select\("id"\)[\s\S]{0,40}return json\(\{[^}]*id:/);
 });
 

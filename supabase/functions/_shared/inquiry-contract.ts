@@ -53,6 +53,7 @@ export interface InquiryPayload {
   tenant?: unknown;
   project?: unknown;
   phase?: unknown;
+  hostname?: unknown;
   client_reference_id?: unknown;
 }
 
@@ -65,6 +66,7 @@ export interface ValidInquiry {
   tenantSlug: string | null;
   projectSlug: string | null;
   phaseSlug: string | null;
+  hostname: string | null;
   interests: string[];
   specificLotRef: string | null;
   specificMapFeatureRef: string | null;
@@ -96,6 +98,7 @@ export function buildInquiryPayload(input: {
   tenant?: string | null;
   project?: string | null;
   phase?: string | null;
+  hostname?: string | null;
   specificMapFeatureRef?: string | null;
   clientReferenceId?: string;
 }): Record<string, unknown> {
@@ -113,6 +116,7 @@ export function buildInquiryPayload(input: {
   if (input.tenant) body.tenant = input.tenant;
   if (input.project) body.project = input.project;
   if (input.phase) body.phase = input.phase;
+  if (input.hostname) body.hostname = input.hostname;
   if (input.specificMapFeatureRef) body.specific_map_feature_ref = input.specificMapFeatureRef;
   if (input.clientReferenceId) body.client_reference_id = input.clientReferenceId;
   return body;
@@ -128,6 +132,7 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   const tenantSlug = cleanText(body.tenant, INQUIRY_LIMITS.tenant).toLowerCase() || null;
   const projectSlug = cleanText(body.project, INQUIRY_LIMITS.tenant).toLowerCase() || null;
   const phaseSlug = cleanText(body.phase, INQUIRY_LIMITS.tenant).toLowerCase() || null;
+  const hostname = cleanText(body.hostname, 253).toLowerCase().replace(/\.$/, "") || null;
   const interests = Array.isArray(body.interests)
     ? [...new Set(body.interests.map((item) => cleanText(item, INQUIRY_LIMITS.interest)).filter(Boolean))]
     : [];
@@ -164,11 +169,14 @@ export function validateInquiryPayload(body: InquiryPayload): InquiryValidation 
   if ((projectSlug && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(projectSlug)) || (phaseSlug && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(phaseSlug))) {
     return { error: "The development or phase reference is invalid. Reload the map and try again." };
   }
+  if (hostname && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)) {
+    return { error: "The public project host is invalid. Reload the page and try again." };
+  }
   if (clientReferenceId !== null && !/^[A-Za-z0-9-]{8,64}$/.test(clientReferenceId)) {
     return { error: "Invalid request reference. Please reload and try again." };
   }
 
-  return { name, email, phone, message, interests, specificLotRef, specificMapFeatureRef, pageUrl, tenantSlug, projectSlug, phaseSlug, clientReferenceId };
+  return { name, email, phone, message, interests, specificLotRef, specificMapFeatureRef, pageUrl, tenantSlug, projectSlug, phaseSlug, hostname, clientReferenceId };
 }
 
 /**

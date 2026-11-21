@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { resolvePublicApplicationAccess } from "./public-application-access.mjs";
 import {
   defaultPublicExperience,
   normalizePublicExperience,
@@ -43,11 +44,8 @@ export type PublicSiteData = {
 };
 
 export function getPublicApplicationAccess(data: PublicSiteData, hostname: string) {
-  const { publicApplication: settings, siteExperience } = data;
-  const projectApplication = siteExperience.applicationType === "project_application";
-  const accepting = siteExperience.enabledModules.application && settings.applications_open && settings.notices_complete
-    && (!projectApplication || Boolean(settings.allowed_intended_uses?.length));
-  return { accepting, canSubmit: accepting && (projectApplication || Boolean(hostname)) };
+  void hostname;
+  return resolvePublicApplicationAccess(data);
 }
 
 async function loadPublicSiteExperience(

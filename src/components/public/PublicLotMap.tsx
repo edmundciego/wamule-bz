@@ -2910,6 +2910,7 @@ export function PublicLotMap({
           tenantSlug={payload.tenant.slug}
           projectSlug={payload.project?.slug}
           phaseSlug={payload.phase?.slug}
+          hostname={hostname}
           tenantName={payload.branding.company_name || payload.tenant.name}
           lotRef={inquiryLot.public_ref ?? undefined}
           mapFeatureRef={inquiryLot.map_feature_ref}

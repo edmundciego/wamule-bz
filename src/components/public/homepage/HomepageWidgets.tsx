@@ -124,6 +124,7 @@ export function HomepageInquiry({ model }: { model: HomepageModel }) {
       <span id="interest" aria-hidden="true" />
       <PublicInquiryPanel
         scope={scope}
+        hostname={model.hostname}
         company={company}
         projectName={projectName}
         salesInquiry={flags.salesInquiry}

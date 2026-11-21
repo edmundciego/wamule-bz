@@ -29,6 +29,7 @@ function newRequestReference() {
 
 export function PublicInquiryPanel({
   scope,
+  hostname,
   company,
   projectName,
   salesInquiry,
@@ -36,6 +37,7 @@ export function PublicInquiryPanel({
   showPrices,
 }: {
   scope: PublicExperienceScope;
+  hostname?: string;
   company: PublicSiteData["company"];
   projectName: string;
   salesInquiry: boolean;
@@ -79,6 +81,7 @@ export function PublicInquiryPanel({
         tenant: scope.tenantSlug,
         project: scope.projectSlug,
         phase: scope.phaseSlug,
+        hostname,
         clientReferenceId,
       }));
       setConfirmation({ emailSent: Boolean(result?.emailSent) });

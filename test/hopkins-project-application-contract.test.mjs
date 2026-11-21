@@ -68,15 +68,15 @@ test("Hopkins notice acknowledgement and signature are required", () => {
   assert.match(validateHopkinsProjectApplicationPayload({ ...valid, applicant_acknowledgement_signature: "Someone Else" }).error, /full name/i);
 });
 
-test("project application endpoint verifies host scope, active public map identities, and retry references", async () => {
+test("project application endpoint uses shared active scope, publication, public map identities, and retry references", async () => {
   const endpoint = await readFile(new URL("../supabase/functions/submit-hopkins-project-application/index.ts", import.meta.url), "utf8");
-  assert.match(endpoint, /resolve_public_hostname/);
-  assert.match(endpoint, /eq\("slug", input\.tenant\)/);
-  assert.match(endpoint, /eq\("slug", input\.project\)/);
-  assert.match(endpoint, /eq\("slug", input\.phase\)/);
+  assert.match(endpoint, /resolvePublicSubmissionScope\(client/);
+  assert.match(endpoint, /hostname: input\.hostname/);
+  assert.match(endpoint, /application_type !== "project_application"/);
   assert.match(endpoint, /resolvePublicApplicationSettings/);
   assert.match(endpoint, /resolvePublicApplicationSettings\(companySettings\?\.value, settingsRow\.value, phaseId\)/);
   assert.match(endpoint, /from\("map_feature_snapshots"\)[\s\S]*?eq\("is_active", true\)/);
+  assert.match(endpoint, /from\("project_map_packages"\)[\s\S]*?not\("published_at", "is", null\)/);
   assert.match(endpoint, /preferred_map_feature_refs/);
   assert.match(endpoint, /submission_reference/);
   assert.match(endpoint, /submission_fingerprint/);
