@@ -10,6 +10,7 @@ interface PublicInquiryModalProps {
   tenantSlug: string;
   projectSlug?: string;
   phaseSlug?: string;
+  hostname?: string;
   tenantName: string;
   lotRef?: string;
   mapFeatureRef?: string;
@@ -31,7 +32,7 @@ function fallbackUuid(): string {
   });
 }
 
-export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostname, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -136,6 +137,7 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, tenantN
           tenant: tenantSlug,
           project: projectSlug,
           phase: phaseSlug,
+          hostname,
           clientReferenceId,
         }),
       });

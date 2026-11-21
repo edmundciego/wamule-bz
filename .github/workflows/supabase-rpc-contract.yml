@@ -50,6 +50,7 @@ jobs:
           }
           psql "$SCHEMA_QUERY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f scripts/assert-project-site-experience.sql
           psql "$SCHEMA_QUERY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f scripts/assert-inbound-inventory-contract.sql
+          bash scripts/assert-public-inquiry-retry-contract.sh
 
       - name: Stop disposable stack
         if: always()

@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateHopkinsProjectApplicationPayload } from "../_shared/hopkins-project-application-contract.mjs";
 import { resolvePublicApplicationSettings } from "../_shared/public-application-settings.mjs";
-import { normalizePublicHostname, parsePublicHostnameResolution } from "../_shared/public-hostname.mjs";
+import { resolvePublicSubmissionScope } from "../_shared/public-submission-scope.mjs";
+import { submissionFingerprint } from "../_shared/submission-fingerprint.mjs";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -39,8 +40,17 @@ Deno.serve(async (request) => {
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const scope = await resolveScope(client, input);
-  if (!scope) return json({ error: "Hopkins Grove applications are temporarily unavailable." }, 503);
+  const resolved = await resolvePublicSubmissionScope(client, {
+    tenantSlug: input.tenant, projectSlug: input.project, phaseSlug: input.phase,
+    hostname: input.hostname, allowTenantAlias: true,
+  });
+  if (!resolved.ok) {
+    const status = resolved.reason === "lookup_failed" ? 503 : 400;
+    return json({ error: resolved.reason === "host_mismatch" || resolved.reason === "unverified_hostname"
+      ? "This application link does not match a verified public project address."
+      : "Hopkins Grove applications are temporarily unavailable." }, status);
+  }
+  const scope = resolved.scope;
   const { tenantId, projectId, phaseId } = scope;
 
   const [{ data: companySettings, error: companyError }, { data: settingsRow, error: settingError }] = await Promise.all([
@@ -56,6 +66,9 @@ Deno.serve(async (request) => {
     ...objectValue(companySettings?.value),
     ...objectValue(settingsRow.value),
   } as ProjectApplicationSettings;
+  if (objectValue(settingsRow.value).application_type !== "project_application") {
+    return json({ error: "Project applications are not enabled for this development." }, 403);
+  }
   const effective = resolvePublicApplicationSettings(companySettings?.value, settingsRow.value, phaseId);
   const maxMapPreferences = boundedInteger(settings.max_map_preferences, 0, 10, 5);
   const inputValidation = validateHopkinsProjectApplicationPayload(body, maxMapPreferences, settings.allowed_intended_uses);
@@ -66,7 +79,23 @@ Deno.serve(async (request) => {
     return json({ error: "Hopkins application notices or preferences are incomplete." }, 503);
   }
 
-  const fingerprint = await payloadFingerprint(input);
+  const fingerprint = await submissionFingerprint({
+    kind: "project_application",
+    scope: { tenantId, projectId, phaseId },
+    notice: {
+      version: settings.notice_version,
+      publicText: effective.publicNoticeText,
+      acknowledgmentText: effective.acknowledgmentText,
+    },
+    applicant: {
+      fullName: input.applicant_full_name, address: input.applicant_address, nationality: input.nationality,
+      occupation: input.occupation, phone: input.phone, email: input.email, intendedUse: input.intended_use,
+      intendedUseOther: input.intended_use_other,
+      preferredMapFeatureRefs: [...input.preferred_map_feature_refs].sort(), notes: input.notes,
+      legalNoticeAcknowledged: input.legal_notice_acknowledged,
+      applicantAcknowledgementSignature: input.applicant_acknowledgement_signature,
+    },
+  });
   const prior = await findSubmission(client, tenantId, input.submission_reference);
   if (prior.error) return json({ error: "We could not check the earlier submission. Please retry shortly." }, 503);
   if (prior.row) return prior.row.submission_fingerprint === fingerprint
@@ -74,24 +103,22 @@ Deno.serve(async (request) => {
     : json({ error: "This submission reference was already used for different application details. Start a new application." }, 409);
   if (!effective.applicationsOpen) return json({ error: "Project applications are currently closed." }, 403);
 
+  const { data: activeSnapshot, error: snapshotError } = await client.from("map_feature_snapshots")
+    .select("id").eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+    .eq("is_active", true).maybeSingle();
+  if (snapshotError || !activeSnapshot) {
+    console.error("Hopkins active map snapshot lookup failed", safeError(snapshotError));
+    return json({ error: "Hopkins applications require a published active phase map." }, snapshotError ? 503 : 403);
+  }
+  const { data: publishedPackage, error: packageError } = await client.from("project_map_packages")
+    .select("id").eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+    .eq("snapshot_id", activeSnapshot.id).not("published_at", "is", null).maybeSingle();
+  if (packageError || !publishedPackage) {
+    console.error("Hopkins map publication lookup failed", safeError(packageError));
+    return json({ error: "Hopkins applications require a published active phase map." }, packageError ? 503 : 403);
+  }
+
   if (input.preferred_map_feature_refs.length > 0) {
-    const { data: activeSnapshot, error: snapshotError } = await client.from("map_feature_snapshots")
-      .select("id").eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
-      .eq("is_active", true).maybeSingle();
-    if (snapshotError || !activeSnapshot) {
-      console.error("Hopkins active map snapshot lookup failed", safeError(snapshotError));
-      return json({ error: "The current Hopkins map could not be verified. Please try again." }, 503);
-    }
-    const { data: publishedPackage, error: packageError } = await client.from("project_map_packages")
-      .select("id").eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
-      .eq("snapshot_id", activeSnapshot.id).not("published_at", "is", null).maybeSingle();
-    if (packageError) {
-      console.error("Hopkins map publication lookup failed", safeError(packageError));
-      return json({ error: "The current Hopkins map publication could not be verified. Please try again." }, 503);
-    }
-    if (!publishedPackage) {
-      return json({ error: "Map outline preferences are unavailable until the current map is published." }, 404);
-    }
     const { data: features, error: featureError } = await client.from("map_features")
       .select("identity_id").eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
       .eq("snapshot_id", activeSnapshot.id).eq("is_active", true).eq("public_visible", true)
@@ -162,36 +189,10 @@ Deno.serve(async (request) => {
   }, 201);
 });
 
-async function resolveScope(client: ReturnType<typeof createClient>, input: { hostname: string; tenant: string; project: string; phase: string }) {
-  const hostname = normalizePublicHostname(input.hostname);
-  if (hostname) {
-    const { data: bindingData, error: bindingError } = await client.rpc("resolve_public_hostname", { p_hostname: hostname });
-    const binding = bindingError ? { resolved: false as const } : parsePublicHostnameResolution(bindingData);
-    if (!binding.resolved || binding.scope.tenantSlug !== input.tenant || binding.scope.projectSlug !== input.project) return null;
-  }
-  const { data: tenant, error: tenantError } = await client.from("organizations")
-    .select("id").eq("slug", input.tenant).eq("is_active", true).maybeSingle();
-  if (tenantError || !tenant) return null;
-  const { data: project, error: projectError } = await client.from("projects")
-    .select("id").eq("tenant_id", tenant.id).eq("slug", input.project).maybeSingle();
-  if (projectError || !project) return null;
-  const { data: phase, error: phaseError } = await client.from("development_phases")
-    .select("id").eq("tenant_id", tenant.id).eq("project_id", project.id)
-    .eq("slug", input.phase).eq("is_active", true).maybeSingle();
-  if (phaseError || !phase) return null;
-  return { tenantId: tenant.id, projectId: project.id, phaseId: phase.id };
-}
-
 async function findSubmission(client: ReturnType<typeof createClient>, tenantId: string, reference: string) {
   const { data, error } = await client.from("applications")
     .select("id,submission_fingerprint").eq("tenant_id", tenantId).eq("submission_reference", reference).maybeSingle();
   return { row: data as { id: number; submission_fingerprint: string } | null, error };
-}
-
-async function payloadFingerprint(input: Record<string, unknown>): Promise<string> {
-  const bytes = new TextEncoder().encode(JSON.stringify(input));
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
