@@ -37,10 +37,15 @@ async function readReviewRows(snapshotId: string, workspace: WorkspaceChoice): P
   return { rows, total };
 }
 
-export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace: WorkspaceChoice; canManage: boolean }) {
+export function ProjectMapPackagePublisher({
+  workspace,
+  canManage,
+  requestedPackageId = null,
+}: { workspace: WorkspaceChoice; canManage: boolean; requestedPackageId?: string | null }) {
   const client = useQueryClient();
   const queryKey = ["map-package-publisher", workspace.tenantId, workspace.projectId, workspace.phaseId];
   const [selectedId, setSelectedId] = useState("");
+  const [completedHandoffId, setCompletedHandoffId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,7 +67,9 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
       return { packages: packages.data ?? [], activeSnapshotId: active.data?.id ?? null };
     },
   });
-  const selected = state.data?.packages.find((item) => item.id === selectedId) ?? null;
+  const pinnedPackageId = requestedPackageId?.trim() || null;
+  const effectiveSelectedId = pinnedPackageId ?? selectedId;
+  const selected = state.data?.packages.find((item) => item.id === effectiveSelectedId) ?? null;
   const review = useQuery({
     queryKey: [...queryKey, selected?.id, selected?.snapshot_id, "review"],
     enabled: Boolean(selected),
@@ -77,7 +84,13 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
   const fullyReviewed = Boolean(review.data && review.data.total > 0 && review.data.rows.length === review.data.total && reviewedCount === review.data.total);
   const revision = selected ? packageRevision(selected.package_data) : null;
   const published = Boolean(selected && selected.snapshot_id === state.data?.activeSnapshotId);
-  const displayError = errorMessage ?? (state.error instanceof Error ? state.error.message : review.error instanceof Error ? review.error.message : null);
+  const packageHandoffError = pinnedPackageId && state.data && !selected
+    ? "The reviewed package is not available in the selected tenant, project, and phase."
+    : pinnedPackageId && selected && selected.published_at !== null && completedHandoffId !== selected.id
+      ? "The review handoff only accepts an unpublished package."
+      : null;
+  const displayError = errorMessage ?? packageHandoffError
+    ?? (state.error instanceof Error ? state.error.message : review.error instanceof Error ? review.error.message : null);
 
   async function publish() {
     if (!selected || revision === null || !canManage || !fullyReviewed || published || !confirmReplace) return;
@@ -96,6 +109,7 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
       setErrorMessage(result.error.message);
       return;
     }
+    if (pinnedPackageId) setCompletedHandoffId(pinnedPackageId);
     setNotice(`Revision ${revision} is now published for ${workspace.phaseName}. Intake settings were not changed.`);
     await client.invalidateQueries({ queryKey });
     await client.invalidateQueries({ queryKey: ["public-site-experience"] });
@@ -111,7 +125,7 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
       {displayError ? <ErrorState message={displayError} /> : null}
       {notice ? <p role="status" className="rounded-md border border-secondary/30 bg-secondary/5 p-3 text-sm text-primary">{notice}</p> : null}
       <Field label="Map Studio packages for this phase">
-        <Select aria-label="Map Studio packages for this phase" value={selectedId} disabled={state.isLoading || busy} onChange={(event) => { setSelectedId(event.target.value); setConfirming(false); setConfirmReplace(false); setErrorMessage(null); }}>
+        <Select aria-label="Map Studio packages for this phase" value={effectiveSelectedId} disabled={state.isLoading || busy || Boolean(pinnedPackageId)} onChange={(event) => { setSelectedId(event.target.value); setConfirming(false); setConfirmReplace(false); setErrorMessage(null); }}>
           <option value="">Select a package</option>
           {packages.map((item) => {
             const itemRevision = packageRevision(item.package_data);
@@ -121,11 +135,13 @@ export function ProjectMapPackagePublisher({ workspace, canManage }: { workspace
       </Field>
       {selected ? (
         <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-sm">
+          {pinnedPackageId ? <p role="status"><strong>Reviewed package handoff:</strong> this package is locked to the review selection.</p> : null}
+          <p><strong>Target tenant and project:</strong> {workspace.tenantName} · {workspace.projectName}</p>
           <p><strong>Target phase:</strong> {workspace.phaseName} <span className="text-muted-foreground">({workspace.phaseSlug})</span></p>
           <p><strong>Package revision:</strong> {revision ?? "Unavailable"}</p>
           {review.isLoading ? <p role="status">Checking reviewed outlines…</p> : review.isError ? <p className="text-danger">Review state could not be loaded.</p> : <p>{reviewedCount} of {review.data?.total ?? 0} outlines reviewed{fullyReviewed ? " · ready to publish" : " · all outlines must be reviewed first"}.</p>}
           {published ? <p className="font-semibold text-secondary">This package is already the active map for this phase.</p> : null}
-          {canManage && !published ? <Button type="button" variant="outline" disabled={!fullyReviewed || revision === null || busy || review.isLoading} onClick={() => { setErrorMessage(null); setConfirmReplace(false); setConfirming(true); }}>Review publish details</Button> : null}
+          {canManage && !published && !packageHandoffError ? <Button type="button" variant="outline" disabled={!fullyReviewed || revision === null || busy || review.isLoading} onClick={() => { setErrorMessage(null); setConfirmReplace(false); setConfirming(true); }}>Review publish details</Button> : null}
         </div>
       ) : null}
       {confirming && selected && !published ? (
