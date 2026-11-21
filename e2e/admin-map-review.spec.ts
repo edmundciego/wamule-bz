@@ -24,7 +24,7 @@ const publishedSnapshot = {
 };
 const publishedPackageId = "9db38ced-822f-5c48-9688-cc82c8a5956e";
 const olderSnapshot = { ...publishedSnapshot, id: "older-snapshot", is_active: false, snapshot_version: 2 };
-const draftSnapshot = { ...scope, phase_id: draftPhaseId, id: "draft-snapshot", is_active: false, snapshot_version: 5, outline_count: 1 };
+const draftSnapshot = { ...scope, phase_id: draftPhaseId, id: "draft-snapshot", is_active: false, snapshot_version: 5, outline_count: 2 };
 
 function mapPackage(snapshot: typeof publishedSnapshot, publication: string | null, id = `package-${snapshot.id}`) {
   return {
@@ -40,10 +40,11 @@ function outline(
   visible = true,
   identityId = label,
   mapPolygon = [{ x: 10, y: 10 }, { x: 12, y: 10 }, { x: 12, y: 12 }, { x: 10, y: 12 }],
+  state: { active?: boolean; reviewed?: boolean } = {},
 ) {
   return {
     ...scope, phase_id: snapshot.phase_id, snapshot_id: snapshot.id, identity_id: identityId,
-    is_active: true, public_visible: visible, demo_label: label, provenance: { reviewed: true },
+    is_active: state.active ?? true, public_visible: visible, demo_label: label, provenance: { reviewed: state.reviewed ?? true },
     map_polygon: mapPolygon,
   };
 }
@@ -75,6 +76,7 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
       mapPackage(olderSnapshot, publishedAt),
       mapPackage(publishedSnapshot, publishedAt, publishedPackageId),
       mapPackage({ ...publishedSnapshot, phase_id: draftPhaseId, id: "draft-phase-live" }, publishedAt),
+      ...Array.from({ length: 101 }, (_, index) => mapPackage(draftSnapshot, publishedAt, `newer-package-${index + 1}`)),
       mapPackage(draftSnapshot, null),
     ],
     map_feature_snapshots: [
@@ -85,8 +87,8 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
     map_features: [
       outline(olderSnapshot, "Older"),
       ...publishedOutlines,
-      outline(publishedSnapshot, "Hidden", false),
       outline(draftSnapshot, "Draft", false),
+      outline(draftSnapshot, "Hidden inactive draft", false, "draft-hidden-inactive", undefined, { active: false, reviewed: false }),
     ],
     project_plot_content: publishedOutlines.map((feature) => ({
       ...scope, phase_id: publishedPhaseId, identity_id: feature.identity_id,
@@ -104,7 +106,8 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
       expires_at: Math.floor(Date.now() / 1000) + 3600,
       user: { id, aud: "authenticated" },
     }));
-    window.localStorage.setItem(`wamule.active-workspace:${id}`, JSON.stringify(workspace));
+    const workspaceKey = `wamule.active-workspace:${id}`;
+    if (!window.localStorage.getItem(workspaceKey)) window.localStorage.setItem(workspaceKey, JSON.stringify(workspace));
   }, {
     key: `sb-${supabaseUrl.hostname.split(".")[0]}-auth-token`,
     id: userId,
@@ -236,7 +239,28 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
   await page.getByLabel("Workspace phase").selectOption(draftPhaseId);
   await expect(page.getByRole("heading", { name: "Private map preview" })).toBeVisible();
   await expect(page.getByRole("status", { name: "Map revision details" })).toContainText("Map revision: 5");
-  await expect(page.getByRole("group", { name: "Unpublished phase map outlines" }).locator("polygon")).toHaveCount(1);
+  const draftMap = page.getByRole("group", { name: "Unpublished phase map outlines" });
+  await expect(draftMap.locator("polygon")).toHaveCount(2);
+  const hiddenDraftOutline = draftMap.getByRole("button", { name: "Select outline Hidden inactive draft", exact: true });
+  await hiddenDraftOutline.click();
+  const selectedDraftPlot = page.getByRole("status", { name: "Selected plot" });
+  await expect(selectedDraftPlot).toContainText("Hidden inactive draft");
+  await expect(selectedDraftPlot).toContainText("Needs review");
+  await page.screenshot({ path: testInfo.outputPath("inactive-unreviewed-outline.png"), fullPage: true });
+  await page.evaluate(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), {
+    key: `wamule.active-workspace:${userId}`,
+    value: { tenantId, projectId, phaseId: draftPhaseId },
+  });
+  await page.goto("/maps?packageId=package-draft-snapshot");
+  await expect(page.getByText("1 of 2 outlines reviewed")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review publish details" })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("package-review-gate.png"), fullPage: true });
+  // Simulate the separate review workflow updating the hidden outline before the publisher handoff.
+  rowsByTable.map_features.find((row) => row.identity_id === "draft-hidden-inactive")!.provenance = { reviewed: true };
+
+  await page.goto("/map-review");
+  await page.getByLabel("Workspace phase").selectOption(draftPhaseId);
+  await expect(draftMap.locator("polygon")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Create reviewer link" })).toBeEnabled();
   await expect(page.getByText("No reviewer links have been created for this phase.")).toBeVisible();
 

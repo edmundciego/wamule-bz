@@ -81,7 +81,7 @@ export function MapPackagePreviewPage() {
 
       const [snapshotResult, featureRows] = await Promise.all([
         publishedSnapshot ? { data: publishedSnapshot, error: null } : snapshots().eq("id", packageRow.snapshot_id).single(),
-        loadScopedMapFeatures(tenantId, projectId, phaseId, packageRow.snapshot_id, Boolean(publishedSnapshot)),
+        loadScopedMapFeatures(tenantId, projectId, phaseId, packageRow.snapshot_id),
       ]);
       if (snapshotResult.error) throw snapshotResult.error;
       const plotContentRows = await loadScopedPlotContent(tenantId, projectId, phaseId);
@@ -541,15 +541,12 @@ async function loadScopedMapFeatures(
   projectId: string,
   phaseId: string,
   snapshotId: string,
-  published: boolean,
 ): Promise<Array<Pick<MapFeature, "identity_id" | "demo_label" | "map_polygon" | "provenance">>> {
   const rows: Array<Pick<MapFeature, "identity_id" | "demo_label" | "map_polygon" | "provenance">> = [];
   for (let from = 0; ; from += MAP_REVIEW_PAGE_SIZE) {
-    const scoped = supabase.from("map_features").select("identity_id,demo_label,map_polygon,provenance")
+    const { data, error } = await supabase.from("map_features").select("identity_id,demo_label,map_polygon,provenance")
       .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
-      .eq("snapshot_id", snapshotId).eq("is_active", true);
-    const query = published ? scoped.eq("public_visible", true) : scoped;
-    const { data, error } = await query.order("demo_label").order("identity_id")
+      .eq("snapshot_id", snapshotId).order("demo_label").order("identity_id")
       .range(from, from + MAP_REVIEW_PAGE_SIZE - 1);
     if (error) throw error;
     const page = data ?? [];

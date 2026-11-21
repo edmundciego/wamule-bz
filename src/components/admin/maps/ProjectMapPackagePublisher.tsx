@@ -43,7 +43,7 @@ export function ProjectMapPackagePublisher({
   requestedPackageId = null,
 }: { workspace: WorkspaceChoice; canManage: boolean; requestedPackageId?: string | null }) {
   const client = useQueryClient();
-  const queryKey = ["map-package-publisher", workspace.tenantId, workspace.projectId, workspace.phaseId];
+  const queryKey = ["map-package-publisher", workspace.tenantId, workspace.projectId, workspace.phaseId, requestedPackageId?.trim() || null];
   const [selectedId, setSelectedId] = useState("");
   const [completedHandoffId, setCompletedHandoffId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -54,10 +54,14 @@ export function ProjectMapPackagePublisher({
   const state = useQuery({
     queryKey,
     queryFn: async () => {
+      const packageFields = "id,tenant_id,project_id,phase_id,snapshot_id,dataset_id,package_digest,package_data,background_path,created_by,created_at,published_at";
+      const scopedPackages = supabase.from("project_map_packages").select(packageFields)
+        .eq("tenant_id", workspace.tenantId).eq("project_id", workspace.projectId).eq("phase_id", workspace.phaseId);
+      const packageRequest = requestedPackageId?.trim()
+        ? scopedPackages.eq("id", requestedPackageId.trim()).maybeSingle().then(({ data, error }) => ({ data: data ? [data] : [], error }))
+        : scopedPackages.order("created_at", { ascending: false }).limit(100);
       const [packages, active] = await Promise.all([
-        supabase.from("project_map_packages").select("id,tenant_id,project_id,phase_id,snapshot_id,dataset_id,package_digest,package_data,background_path,created_by,created_at,published_at")
-          .eq("tenant_id", workspace.tenantId).eq("project_id", workspace.projectId).eq("phase_id", workspace.phaseId)
-          .order("created_at", { ascending: false }).limit(100),
+        packageRequest,
         supabase.from("map_feature_snapshots").select("id")
           .eq("tenant_id", workspace.tenantId).eq("project_id", workspace.projectId).eq("phase_id", workspace.phaseId)
           .eq("is_active", true).maybeSingle(),
