@@ -31,6 +31,10 @@ test("Edge Function signs scoped links and revalidates expiry, revocation, packa
   assert.match(source, /authorizeWorkspaceActivePhase\(/);
   assert.match(source, /\["Super Admin", "Admin"\]/);
   assert.match(source, /feature\.provenance\)\.reviewed !== true/);
+  assert.match(source, /packageRow\.published_at/);
+  assert.match(source, /Reviewer links can only be created for an unpublished draft/);
+  assert.match(source, /snapshot_version: reviewScope\.snapshot\.snapshot_version/);
+  assert.match(source, /snapshotVersions\.get\(row\.snapshot_id\)/);
   assert.match(source, /row\.revoked_at/);
   assert.match(source, /Date\.now\(\) >= Date\.parse\(row\.expires_at\)/);
   assert.match(source, /packageRow\.package_digest !== row\.package_digest/);
@@ -57,6 +61,11 @@ test("review surface is signed-out, no-index, revision-bound, and has no submiss
   assert.match(page, /reviewerRequest<ReviewerMap>\("resolve", token\)/);
   assert.match(page, /JSON\.stringify\(\{ action: "asset", token \}\)/);
   assert.match(adminPage, /<option value="60">In 1 minute<\/option>/);
+  assert.match(adminPage, /const linkScope = workspace \?/);
+  assert.match(adminPage, /Boolean\(linkScope && canManageReviewLinks\)/);
+  assert.match(adminPage, /linkActionLock\.current/);
+  assert.match(adminPage, /data-review-link-binding=/);
+  assert.match(adminPage, /reviewerLinksManager\}\s*<\/main>/);
   assert.match(headers, /X-Robots-Tag: noindex, nofollow, noarchive, nosnippet/);
   assert.match(headers, /Referrer-Policy: no-referrer/);
 });
