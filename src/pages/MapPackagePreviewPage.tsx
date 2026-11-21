@@ -40,20 +40,39 @@ export function MapPackagePreviewPage() {
     enabled: Boolean(workspace),
     retry: false,
     queryFn: async (): Promise<PreviewData | null> => {
-      const scope = workspace!;
-      const { data: packageRow, error: packageError } = await supabase.from("project_map_packages")
+      const { tenantId, projectId, phaseId } = workspace!;
+      const packages = () => supabase.from("project_map_packages")
         .select("id,snapshot_id,package_data,background_path,published_at")
-        .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
-        .is("published_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (packageError) throw packageError;
-      if (!packageRow) return null;
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId);
+      const snapshots = () => supabase.from("map_feature_snapshots")
+        .select("id,snapshot_version,outline_count,is_active")
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId);
 
+      const draft = await packages()
+        .is("published_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (draft.error) throw draft.error;
+      let packageRow = draft.data;
+      let publishedSnapshot: PreviewData["snapshot"] | null = null;
+
+      if (!packageRow) {
+        const active = await snapshots().eq("is_active", true).maybeSingle();
+        if (active.error) throw active.error;
+        if (!active.data) return null;
+
+        const published = await packages()
+          .eq("snapshot_id", active.data.id).not("published_at", "is", null).maybeSingle();
+        if (published.error) throw published.error;
+        if (!published.data) return null;
+        packageRow = published.data;
+        publishedSnapshot = active.data;
+      }
+
+      const features = supabase.from("map_features").select("identity_id,demo_label,map_polygon,provenance")
+        .eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId)
+        .eq("snapshot_id", packageRow.snapshot_id).eq("is_active", true);
       const [snapshotResult, featuresResult] = await Promise.all([
-        supabase.from("map_feature_snapshots").select("id,snapshot_version,outline_count,is_active")
-          .eq("id", packageRow.snapshot_id).single(),
-        supabase.from("map_features").select("identity_id,demo_label,map_polygon,provenance")
-          .eq("tenant_id", scope.tenantId).eq("project_id", scope.projectId).eq("phase_id", scope.phaseId)
-          .eq("snapshot_id", packageRow.snapshot_id).eq("is_active", true).order("demo_label"),
+        publishedSnapshot ? { data: publishedSnapshot, error: null } : snapshots().eq("id", packageRow.snapshot_id).single(),
+        (publishedSnapshot ? features.eq("public_visible", true) : features).order("demo_label"),
       ]);
       if (snapshotResult.error) throw snapshotResult.error;
       if (featuresResult.error) throw featuresResult.error;
@@ -73,7 +92,8 @@ export function MapPackagePreviewPage() {
     },
   });
 
-  const linkScope = workspace && previewQuery.data ? {
+  const draftPreview = previewQuery.data?.packageRow.published_at === null ? previewQuery.data : null;
+  const linkScope = workspace && draftPreview ? {
     tenant_id: workspace.tenantId,
     project_id: workspace.projectId,
     phase_id: workspace.phaseId,
@@ -93,14 +113,14 @@ export function MapPackagePreviewPage() {
   });
 
   async function createReviewerLink() {
-    if (!linkScope || !previewQuery.data) return;
+    if (!linkScope || !draftPreview) return;
     setLinkActionError(null);
     setCreatedLink("");
     setCopiedLink(false);
     const { data, error } = await supabase.functions.invoke("project-map-review-link", {
       body: {
         action: "create", ...linkScope,
-        package_id: previewQuery.data.packageRow.id,
+        package_id: draftPreview.packageRow.id,
         expires_in_seconds: Number(expiresInSeconds),
       },
     });
@@ -126,15 +146,24 @@ export function MapPackagePreviewPage() {
     await queryClient.invalidateQueries({ queryKey: ["project-map-review-links", linkScope.tenant_id, linkScope.project_id, linkScope.phase_id] });
   }
 
-  if (workspaceLoading || previewQuery.isLoading) return <LoadingState label="Loading private phase map preview" />;
+  if (workspaceLoading || previewQuery.isLoading) return <LoadingState label="Loading phase map" />;
   if (workspaceError) return <ErrorState message={workspaceError} />;
   if (!workspace) return <ErrorState message="Choose an assigned project and phase to preview its map." />;
   if (previewQuery.error) return <ErrorState message={(previewQuery.error as Error).message} />;
   if (!previewQuery.data) {
-    return <main className="v2-page-shell"><h1 className="v2-page-title">Private map review</h1><p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">No unpublished Map Studio package is available in this assigned phase.</p></main>;
+    return (
+      <main className="v2-page-shell">
+        <h1 className="v2-page-title">Map review</h1>
+        <p className="rounded-md border border-dashed bg-muted p-4 text-sm text-muted-foreground">
+          No draft or published map is available for this phase.
+        </p>
+      </main>
+    );
   }
 
   const preview = previewQuery.data;
+  const isPublished = !draftPreview;
+  const selectedOutline = preview.features.find((feature) => feature.identity_id === selectedIdentityId);
   const canvas = record(preview.packageRow.package_data).canvas;
   const canvasData = record(canvas);
   const width = positiveNumber(canvasData.width) ?? 100;
@@ -143,15 +172,15 @@ export function MapPackagePreviewPage() {
   return (
     <main className="v2-page-shell">
       <header className="v2-page-header">
-        <p className="v2-page-kicker">Internal review · private to this assigned phase</p>
-        <h1 className="v2-page-title">Private map preview</h1>
+        {!isPublished ? <p className="v2-page-kicker">Internal review · private to this assigned phase</p> : null}
+        <h1 className="v2-page-title">{isPublished ? "Current published map" : "Private map preview"}</h1>
         <p className="v2-page-description">{workspace.tenantName} · {workspace.projectName} · {workspace.phaseName}</p>
       </header>
       <div className="v2-workflow-panel grid gap-1 p-4 text-sm" role="status" aria-label="Map revision details">
         <p><strong>Map revision:</strong> {preview.snapshot.snapshot_version} · package revision {revision(preview.packageRow.package_data)}</p>
-        <p><strong>Visibility:</strong> unpublished; accessible only to users assigned to this phase</p>
+        <p><strong>Visibility:</strong> {isPublished ? "Published" : "Unpublished draft · visible to users assigned to this phase"}</p>
       </div>
-      {canManageReviewLinks ? (
+      {canManageReviewLinks && draftPreview ? (
         <section className="v2-workflow-panel grid gap-4 p-4" aria-labelledby="reviewer-link-heading">
           <div>
             <h2 id="reviewer-link-heading" className="font-semibold text-primary">Signed reviewer link</h2>
@@ -207,8 +236,8 @@ export function MapPackagePreviewPage() {
         </section>
       ) : null}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="overflow-hidden rounded-lg border bg-muted" aria-label="Private phase map canvas">
-          <svg className="aspect-square w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Unpublished phase map outlines">
+        <div className="overflow-hidden rounded-lg border bg-muted" aria-label={isPublished ? "Published phase map canvas" : "Private phase map canvas"}>
+          <svg className="aspect-square w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={isPublished ? "Published phase map outlines" : "Unpublished phase map outlines"}>
             {preview.backgroundUrl ? <MapRasterLayer src={preview.backgroundUrl} x={0} y={0} width={width} height={height} preserveAspectRatio="none" /> : null}
             {preview.features.map((feature) => {
               const coordinates = polygon(feature.map_polygon);
@@ -253,8 +282,8 @@ export function MapPackagePreviewPage() {
             </button>
           ))}
           <p role="status" aria-label="Selected outline">
-            {selectedIdentityId
-              ? `Selected outline ID ${selectedIdentityId}`
+            {selectedOutline
+              ? `Selected outline ID ${selectedOutline.identity_id}`
               : "No outline selected"}
           </p>
         </aside>
