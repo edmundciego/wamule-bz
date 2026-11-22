@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 interface TurnstileApi {
   render(target: HTMLElement, options: {
@@ -54,6 +54,7 @@ export function PublicInquiryChallenge({
   resetCount: number;
   onToken: (token: string | null) => void;
 }) {
+  const statusId = useId();
   const targetRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,9 +99,9 @@ export function PublicInquiryChallenge({
   }, [resetCount]);
 
   return (
-    <div className="grid gap-2" role="group" aria-label="Security check" aria-describedby="inquiry-security-status">
+    <div className="grid gap-2" role="group" aria-label="Security check" aria-describedby={statusId}>
       {siteKey ? <div ref={targetRef} /> : null}
-      <p id="inquiry-security-status" className="text-xs text-muted-foreground" role={error || !siteKey ? "alert" : "status"}>
+      <p id={statusId} className="text-xs text-muted-foreground" role={error || !siteKey ? "alert" : "status"}>
         {error ?? (!siteKey ? "The security check is not configured. Please try again later." : token ? "Security check complete." : "Complete the security check to send your inquiry.")}
       </p>
     </div>
