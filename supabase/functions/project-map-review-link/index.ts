@@ -10,7 +10,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Cache-Control": "private, no-store, max-age=0",
+  "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
   "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
 };
@@ -82,11 +82,25 @@ Deno.serve(async (request) => {
 
   if (body.action === "list") {
     const { data, error } = await supabase.from("project_map_review_links")
-      .select("id,package_id,snapshot_id,created_at,expires_at,revoked_at,settings_snapshot")
+      .select("id,tenant_id,project_id,phase_id,package_id,snapshot_id,created_at,expires_at,revoked_at")
       .eq("tenant_id", authorization.tenantId).eq("project_id", body.project_id)
       .eq("phase_id", body.phase_id).order("created_at", { ascending: false }).limit(25);
     if (error) return json({ error: "Review links could not be loaded." }, 503);
-    return json({ links: data ?? [] }, 200);
+    const rows = data ?? [];
+    const snapshotIds = [...new Set(rows.map((row) => row.snapshot_id))];
+    const snapshots = snapshotIds.length
+      ? await supabase.from("map_feature_snapshots").select("id,snapshot_version")
+        .eq("tenant_id", authorization.tenantId).eq("project_id", body.project_id)
+        .eq("phase_id", body.phase_id).in("id", snapshotIds)
+      : { data: [], error: null };
+    if (snapshots.error) return json({ error: "Review-link revisions could not be loaded." }, 503);
+    const snapshotVersions = new Map((snapshots.data ?? []).map((snapshot) => [snapshot.id, snapshot.snapshot_version]));
+    return json({
+      links: rows.map((row) => ({
+        ...row,
+        snapshot_version: snapshotVersions.get(row.snapshot_id) ?? null,
+      })),
+    }, 200);
   }
 
   if (body.action === "revoke") {
@@ -156,7 +170,12 @@ Deno.serve(async (request) => {
       token,
       created_at: inserted.created_at,
       expires_at: inserted.expires_at,
-      settings_snapshot: inserted.settings_snapshot,
+      tenant_id: authorization.tenantId,
+      project_id: reviewScope.project.id,
+      phase_id: reviewScope.phase.id,
+      package_id: reviewScope.package.id,
+      snapshot_id: reviewScope.snapshot.id,
+      snapshot_version: reviewScope.snapshot.snapshot_version,
     }, 201);
   }
 
@@ -180,7 +199,7 @@ async function verifiedReviewScope(tenantId: string, projectId: string, phaseId:
     supabase.from("projects").select("id,tenant_id,name,slug").eq("id", projectId).eq("tenant_id", tenantId).maybeSingle(),
     supabase.from("development_phases").select("id,tenant_id,project_id,name,slug,is_active")
       .eq("id", phaseId).eq("tenant_id", tenantId).eq("project_id", projectId).eq("is_active", true).maybeSingle(),
-    supabase.from("project_map_packages").select("id,tenant_id,project_id,phase_id,snapshot_id,package_digest,package_data,background_path")
+    supabase.from("project_map_packages").select("id,tenant_id,project_id,phase_id,snapshot_id,package_digest,package_data,background_path,published_at")
       .eq("id", packageId).eq("tenant_id", tenantId).eq("project_id", projectId).eq("phase_id", phaseId).maybeSingle(),
   ]);
   if (projectResult.error || phaseResult.error || packageResult.error) {
@@ -191,6 +210,9 @@ async function verifiedReviewScope(tenantId: string, projectId: string, phaseId:
   const packageRow = packageResult.data;
   if (!project || !phase || !packageRow || !packageRow.snapshot_id || !packageRow.package_digest) {
     return { ok: false as const, status: 404, error: "The reviewed map package was not found in this phase." };
+  }
+  if (packageRow.published_at) {
+    return { ok: false as const, status: 409, error: "Reviewer links can only be created for an unpublished draft." };
   }
 
   const [snapshotResult, featuresResult] = await Promise.all([

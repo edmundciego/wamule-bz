@@ -158,7 +158,18 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
       } });
     }
     if (url.pathname === "/functions/v1/project-map-review-link") {
-      expect(route.request().postDataJSON()).toEqual({ action: "list", ...scope, phase_id: draftPhaseId });
+      if (route.request().method() === "OPTIONS") {
+        return route.fulfill({ status: 204, headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "POST, OPTIONS",
+          "access-control-allow-headers": "authorization, apikey, content-type, x-client-info",
+        } });
+      }
+      const body = route.request().postDataJSON();
+      expect(body.action).toBe("list");
+      expect(body.tenant_id).toBe(tenantId);
+      expect(body.project_id).toBe(projectId);
+      expect([publishedPhaseId, draftPhaseId, emptyPhaseId]).toContain(body.phase_id);
       reviewerLinkRequests++;
       return route.fulfill({ json: { links: [] } });
     }
@@ -194,7 +205,9 @@ test("admin Map Review searches the full snapshot and selects Plot 775 from map 
   await expect(publishedMap.locator("polygon")).toHaveCount(775);
   await expect(page.getByRole("status", { name: "Snapshot outline count" })).toContainText("775 outlines");
   await expect(page.getByRole("button", { name: "Create reviewer link" })).toHaveCount(0);
-  expect(reviewerLinkRequests).toBe(0);
+  await expect(page.getByRole("heading", { name: "Signed reviewer links for this phase" })).toBeVisible();
+  await expect(page.getByText("No reviewer links have been created for this phase.")).toBeVisible();
+  expect(reviewerLinkRequests).toBeGreaterThan(0);
 
   const plotSearch = page.getByLabel("Search plots");
   await expect(page.getByText("Page 1 of 31", { exact: true })).toBeVisible();
