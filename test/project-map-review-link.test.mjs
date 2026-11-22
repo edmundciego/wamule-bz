@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createHmac, webcrypto } from "node:crypto";
+import vm from "node:vm";
+import ts from "typescript";
 
 const root = new URL("../", import.meta.url);
 const file = (path) => readFile(new URL(path, root), "utf8");
@@ -93,4 +96,145 @@ test("walkthrough tests reviewer denial, expiry, revocation, and post-publicatio
   assert.match(workflow, /tenant-walkthrough-shared-map-link\.png/);
   assert.match(workflow, /WALKTHROUGH_EVIDENCE_PATH/);
   assert.match(workflow, /Stop and remove the disposable stack/);
+});
+
+
+const testSecret = "project-map-review-link-unit-test-secret";
+const linkId = "11111111-1111-4111-8111-111111111111";
+const tenantId = "22222222-2222-4222-8222-222222222222";
+const projectId = "33333333-3333-4333-8333-333333333333";
+const phaseId = "44444444-4444-4444-8444-444444444444";
+const packageId = "55555555-5555-4555-8555-555555555555";
+const snapshotId = "66666666-6666-4666-8666-666666666666";
+
+function signedReviewToken(expiresAtSeconds) {
+  const payload = `v1.${linkId}.${expiresAtSeconds}`;
+  const signature = createHmac("sha256", testSecret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+async function reviewLinkRuntime({ revoked = false } = {}) {
+  let handler;
+  const downloads = [];
+  const expiresAtSeconds = Math.ceil((Date.now() + 60 * 60 * 1000) / 1000);
+  const link = {
+    id: linkId,
+    tenant_id: tenantId,
+    project_id: projectId,
+    phase_id: phaseId,
+    package_id: packageId,
+    snapshot_id: snapshotId,
+    package_digest: "package-digest",
+    snapshot_fingerprint: "snapshot-fingerprint",
+    settings_snapshot: { tenant_name: "Test Tenant" },
+    created_at: new Date().toISOString(),
+    expires_at: new Date(expiresAtSeconds * 1000).toISOString(),
+    revoked_at: revoked ? new Date().toISOString() : null,
+  };
+  const packageRow = {
+    id: packageId,
+    tenant_id: tenantId,
+    project_id: projectId,
+    phase_id: phaseId,
+    snapshot_id: snapshotId,
+    package_digest: "package-digest",
+    package_data: { canvas: { width: 800, height: 600 }, revision: 7 },
+    background_path: "approved-background.png",
+  };
+  const snapshot = {
+    id: snapshotId,
+    tenant_id: tenantId,
+    project_id: projectId,
+    phase_id: phaseId,
+    snapshot_fingerprint: "snapshot-fingerprint",
+    snapshot_version: 7,
+    outline_count: 0,
+  };
+  const resultFor = (table, columns) => {
+    if (table === "project_map_review_links") return { data: link, error: null };
+    if (table === "organizations") return { data: { id: tenantId, is_active: true }, error: null };
+    if (table === "development_phases") return { data: { id: phaseId, is_active: true }, error: null };
+    if (table === "project_map_packages") return { data: packageRow, error: null };
+    if (table === "map_feature_snapshots") return { data: snapshot, error: null };
+    if (table === "map_features") return { data: [], error: null };
+    throw new Error(`Unexpected mocked table: ${table} (${columns})`);
+  };
+  const supabase = {
+    from(table) {
+      let columns = "*";
+      const query = {
+        select(value) { columns = value; return query; },
+        eq() { return query; },
+        maybeSingle() { return Promise.resolve(resultFor(table, columns)); },
+        order() { return Promise.resolve(resultFor(table, columns)); },
+        then(resolve, reject) { return Promise.resolve(resultFor(table, columns)).then(resolve, reject); },
+      };
+      return query;
+    },
+    storage: {
+      from(bucket) {
+        assert.equal(bucket, "project-map-packages");
+        return {
+          async download(path) {
+            downloads.push(path);
+            return { data: new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }), error: null };
+          },
+        };
+      },
+    },
+  };
+  const source = await file("supabase/functions/project-map-review-link/index.ts");
+  const withoutImports = source.replace(/^import .*?;[ \t]*$/gm, "");
+  const javascript = ts.transpileModule(withoutImports, {
+    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const sandbox = {
+    Deno: {
+      env: { get: (key) => key === "MAP_REVIEW_LINK_SIGNING_SECRET" ? testSecret : "unit-test-value" },
+      serve: (candidate) => { handler = candidate; },
+    },
+    createClient: () => supabase,
+    authorizeWorkspaceActivePhase: async () => ({ ok: false, status: 401, error: "unused in this test" }),
+    resolvePublicApplicationSettings: () => ({ applicationsOpen: false, noticesComplete: false }),
+    crypto: webcrypto,
+    TextEncoder,
+    Request,
+    Response,
+    Blob,
+    btoa,
+    atob,
+  };
+  vm.runInNewContext(javascript, sandbox, { filename: "project-map-review-link/index.ts" });
+  assert.equal(typeof handler, "function", "Deno.serve registers the request handler");
+  return { handler, downloads, token: signedReviewToken(expiresAtSeconds) };
+}
+
+async function postReviewAction(handler, action, token) {
+  return handler(new Request("https://function.test/project-map-review-link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, token }),
+  }));
+}
+
+test("a validly signed asset request for a revoked link returns 410 before Storage download", async () => {
+  const runtime = await reviewLinkRuntime({ revoked: true });
+  const response = await postReviewAction(runtime.handler, "asset", runtime.token);
+
+  assert.equal(response.status, 410);
+  assert.deepEqual(runtime.downloads, []);
+});
+
+test("successful asset and resolve responses both use Cache-Control: no-store", async () => {
+  const assetRuntime = await reviewLinkRuntime();
+  const assetResponse = await postReviewAction(assetRuntime.handler, "asset", assetRuntime.token);
+  assert.equal(assetResponse.status, 200);
+  assert.equal(assetResponse.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(assetRuntime.downloads, ["approved-background.png"]);
+
+  const resolveRuntime = await reviewLinkRuntime();
+  const resolveResponse = await postReviewAction(resolveRuntime.handler, "resolve", resolveRuntime.token);
+  assert.equal(resolveResponse.status, 200);
+  assert.equal(resolveResponse.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(resolveRuntime.downloads, []);
 });
