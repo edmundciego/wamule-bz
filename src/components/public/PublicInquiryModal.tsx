@@ -5,6 +5,7 @@ import { ALLOWED_INQUIRY_INTERESTS, buildInquiryPayload } from "../../../supabas
 import { Button } from "../ui/Button";
 import { Field, Input, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
+import { PublicInquiryChallenge } from "./PublicInquiryChallenge";
 
 interface PublicInquiryModalProps {
   tenantSlug: string;
@@ -46,6 +47,8 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeResetCount, setChallengeResetCount] = useState(0);
   // Idempotency key, stable for this form instance: retries after an error
   // resubmit the same key, so the endpoint can't create a duplicate lead.
   const [clientReferenceId] = useState(() => fallbackUuid());
@@ -117,6 +120,10 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
       setError("Tell the team what you would like help with.");
       return;
     }
+    if (!challengeToken) {
+      setError("Complete the security check before sending your inquiry.");
+      return;
+    }
     setSubmitting(true);
     try {
       const inquiryMessage = [
@@ -125,21 +132,24 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
         message.trim() ? `Additional details: ${message.trim()}` : null,
       ].filter((part): part is string => Boolean(part)).join("\n").slice(0, 1000);
       const { data, error: functionError } = await supabase.functions.invoke("submit-public-inquiry", {
-        body: buildInquiryPayload({
-          name: name.trim(),
-          email: email.trim(),
-          phone: phone.trim() || undefined,
-          interests: [reason],
-          specificLotRef: lotRef,
-          specificMapFeatureRef: mapFeatureRef,
-          message: inquiryMessage,
-          pageUrl: window.location.href,
-          tenant: tenantSlug,
-          project: projectSlug,
-          phase: phaseSlug,
-          hostname,
-          clientReferenceId,
-        }),
+        body: {
+          ...buildInquiryPayload({
+            name: name.trim(),
+            email: email.trim(),
+            phone: phone.trim() || undefined,
+            interests: [reason],
+            specificLotRef: lotRef,
+            specificMapFeatureRef: mapFeatureRef,
+            message: inquiryMessage,
+            pageUrl: window.location.href,
+            tenant: tenantSlug,
+            project: projectSlug,
+            phase: phaseSlug,
+            hostname,
+            clientReferenceId,
+          }),
+          turnstile_token: challengeToken,
+        },
       });
       if (functionError) throw new Error(await resolveInquirySubmitError(functionError));
       if (data?.error) throw new Error(String(data.error));
@@ -147,6 +157,8 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "We could not send your inquiry.");
     } finally {
+      setChallengeToken(null);
+      setChallengeResetCount((count) => count + 1);
       setSubmitting(false);
     }
   }
@@ -211,11 +223,12 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
             <Field label="Additional details (optional)">
               <Textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={1000} />
             </Field>
+            <PublicInquiryChallenge token={challengeToken} resetCount={challengeResetCount} onToken={setChallengeToken} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" disabled={submitting || !challengeToken}>
                 {submitting ? "Sending…" : waitlist ? "Join Waitlist" : "Send Inquiry"}
               </Button>
             </div>

@@ -109,11 +109,15 @@ export function createPublicIntakeFixture(options = {}) {
     env: {
       SUPABASE_URL: "https://supabase.invalid", SUPABASE_SERVICE_ROLE_KEY: "test-role",
       SUPPRESS_OUTBOUND_EMAILS: "true",
+      TURNSTILE_SECRET_KEY: "test-turnstile-secret",
+      RESEND_API_KEY: "test-resend-key",
+      EMAIL_FROM_ADDRESS: "test@example.test",
       WAMULE_LEGACY_INQUIRY_TENANT_SLUG: "example",
       WAMULE_LEGACY_INQUIRY_PROJECT_SLUG: "project",
       WAMULE_LEGACY_INQUIRY_PHASE_SLUG: "initial",
+      ...options.env,
     },
-    db, calls: [], writes: [], sends: [], events: [], queries: [], logs: [], inquiries: new Map(), handler: null,
+    options, db, calls: [], writes: [], sends: [], botChecks: [], quotaReservations: [], events: [], queries: [], logs: [], inquiries: new Map(), handler: null,
   };
 
   class Query {
@@ -157,6 +161,10 @@ export function createPublicIntakeFixture(options = {}) {
         return hostBindings[host]
           ? { data: [{ resolution: "resolved", reason: null, ...hostBindings[host] }], error: null }
           : { data: [{ resolution: "unresolved", reason: "unknown_host", tenant_slug: null, project_slug: null, phase_slug: null }], error: null };
+      }
+      if (name === "reserve_inquiry_confirmation_quota") {
+        s.quotaReservations.push(args);
+        return { data: options.quotaAllowed !== false, error: null };
       }
       if (name === "create_scoped_public_inquiry") {
         options.beforeInquiryPersist?.(args, db, hostBindings);
@@ -238,7 +246,27 @@ export async function installEdgeHandler(s, file) {
   const bundled = await build({ stdin: { contents: source, resolveDir: sourceDirectory, loader: "ts" }, bundle: true, write: false, platform: "neutral", format: "esm" });
   globalThis.__publicIntakeTestClient = s.client;
   globalThis.Deno = { env: { get: (key) => s.env[key] }, serve: (handler) => { s.handler = handler; } };
-  globalThis.fetch = async (...args) => { s.sends.push(args); return new Response("{}", { status: 200 }); };
+  globalThis.fetch = async (...args) => {
+    const requestUrl = args[0] instanceof Request ? args[0].url : String(args[0]);
+    const init = args[1] ?? {};
+    if (requestUrl === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+      if (s.options.turnstileFetchError) throw new Error("synthetic Turnstile network failure");
+      const form = new URLSearchParams(init.body);
+      s.botChecks.push({ hasSecret: form.has("secret"), hasResponse: form.has("response"), idempotencyKey: form.get("idempotency_key") });
+      const configured = typeof s.options.turnstileResponse === "function"
+        ? s.options.turnstileResponse(s)
+        : s.options.turnstileResponse;
+      const data = configured ?? { success: true, hostname: s.requestHostname ?? "example.test", action: "public_inquiry" };
+      const status = s.options.turnstileResponseStatus ?? 200;
+      return new Response(JSON.stringify(data), { status });
+    }
+    if (requestUrl === "https://api.resend.com/emails") {
+      s.sends.push({ url: requestUrl, body: JSON.parse(init.body) });
+      if (s.options.resendFetchError) throw new Error("synthetic provider network failure");
+      return new Response(JSON.stringify(s.options.resendResponseBody ?? {}), { status: s.options.resendResponseStatus ?? 200 });
+    }
+    throw new Error(`Unexpected fetch target ${requestUrl}`);
+  };
   console.info = (...args) => { s.logs.push(args.map(String).join(" ")); };
   if (!globalThis.crypto) {
     const { webcrypto } = await import("node:crypto");

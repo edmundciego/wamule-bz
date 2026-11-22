@@ -13,8 +13,10 @@ function payload(overrides = {}) {
 }
 
 async function submit(s, data = payload()) {
+  s.requestHostname = "example.test";
+  const body = { ...data, turnstile_token: Object.hasOwn(data, "turnstile_token") ? data.turnstile_token : "synthetic-turnstile-token" };
   const response = await s.handler(new Request("https://edge.invalid/submit-public-inquiry", {
-    method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify(data),
+    method: "POST", headers: { "content-type": "application/json", origin: "https://example.test", "cf-connecting-ip": s.options.requesterIp ?? "203.0.113.10", "x-forwarded-for": "198.51.100.9" }, body: JSON.stringify(body),
   }));
   return { status: response.status, body: await response.json() };
 }
@@ -29,10 +31,11 @@ function legacyApplicationPagePayload(overrides = {}) {
 }
 
 async function submitLegacy(s, data = legacyApplicationPagePayload()) {
+  s.requestHostname = "wamuledevelopment.com";
   const response = await s.handler(new Request("https://edge.invalid/submit-public-inquiry", {
     method: "POST",
-    headers: { "content-type": "application/json", origin: "https://wamuledevelopment.com" },
-    body: JSON.stringify(data),
+    headers: { "content-type": "application/json", origin: "https://wamuledevelopment.com", "cf-connecting-ip": s.options.requesterIp ?? "203.0.113.10", "x-forwarded-for": "198.51.100.9" },
+    body: JSON.stringify({ ...data, turnstile_token: "synthetic-turnstile-token" }),
   }));
   return { status: response.status, body: await response.json() };
 }
@@ -374,4 +377,105 @@ test("general inquiries do not require a published map", async (t) => {
   const result = await submit(s, payload({ specific_lot_ref: undefined, interests: ["General project interest"] }));
   assert.equal(result.status, 200); assert.equal(s.db.leads.length, 1);
   assert.equal(s.db.follow_up_tasks.length, 1); assert.equal(s.sends.length, 0);
+});
+
+test("bot verification fails closed before any inquiry lookup or write", async (t) => {
+  t.after(cleanupEdgeHandler);
+  for (const options of [
+    { turnstileResponse: { success: false, "error-codes": ["invalid-input-response"] } },
+    { turnstileResponse: { success: true, hostname: "wrong.example", action: "public_inquiry" } },
+    { turnstileResponse: { success: true, hostname: "example.test", action: "signup" } },
+    { env: { TURNSTILE_SECRET_KEY: undefined } },
+    { turnstileFetchError: true },
+  ]) {
+    const s = createPublicIntakeFixture(options);
+    await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+    const result = await submit(s);
+
+    assert.ok([403, 503].includes(result.status));
+    assert.equal(s.calls.some((call) => call.name === "create_scoped_public_inquiry"), false);
+    assert.equal(s.db.leads.length, 0);
+    assert.equal(s.db.follow_up_tasks.length, 0);
+    cleanupEdgeHandler();
+  }
+
+  const missing = createPublicIntakeFixture();
+  await installEdgeHandler(missing, "../../supabase/functions/submit-public-inquiry/index.ts");
+  const missingToken = await submit(missing, payload({ turnstile_token: "" }));
+  assert.equal(missingToken.status, 403);
+  assert.equal(missing.botChecks.length, 0);
+  assert.equal(missing.db.leads.length, 0);
+});
+
+test("an eligible verified inquiry sends one confirmation and a retry sends none", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ env: { SUPPRESS_OUTBOUND_EMAILS: "false", PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED: "true" } });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const first = await submit(s);
+  const retry = await submit(s, payload({ turnstile_token: "fresh-retry-token", page_url: "https://example.test/retry" }));
+
+  assert.equal(first.status, 200);
+  assert.equal(first.body.emailSent, true);
+  assert.equal(first.body.leadCreated, true);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.deduplicated, true);
+  assert.equal(retry.body.emailSent, false);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.sends.length, 1);
+  assert.equal(s.quotaReservations.length, 1);
+  assert.equal(s.botChecks.length, 2);
+  assert.equal(s.botChecks[0].idempotencyKey, s.botChecks[1].idempotencyKey);
+  assert.equal(s.sends[0].body.to[0], "buyer@example.test");
+});
+
+test("email provider failure preserves the lead and follow-up and is not retried", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ env: { SUPPRESS_OUTBOUND_EMAILS: "false", PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED: "true" }, resendResponseStatus: 503 });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const first = await submit(s);
+  const retry = await submit(s, payload({ turnstile_token: "fresh-retry-token" }));
+
+  assert.equal(first.status, 200);
+  assert.equal(first.body.emailSent, false);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.deduplicated, true);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.db.lead_activities.filter((activity) => activity.activity_type === "email").length, 1);
+  assert.equal(s.sends.length, 1);
+  assert.equal(s.quotaReservations.length, 1);
+});
+
+test("quota denial keeps the saved inquiry and suppresses confirmation", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ env: { SUPPRESS_OUTBOUND_EMAILS: "false", PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED: "true" }, quotaAllowed: false });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s);
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.emailSent, false);
+  assert.equal(result.body.emailSuppressed, true);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.quotaReservations.length, 1);
+  assert.equal(s.sends.length, 0);
+});
+
+test("malformed or missing trusted requester IP suppresses confirmation", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ env: { SUPPRESS_OUTBOUND_EMAILS: "false", PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED: "true" }, requesterIp: "not-an-ip" });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s);
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.emailSuppressed, true);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.quotaReservations.length, 0);
+  assert.equal(s.sends.length, 0);
 });

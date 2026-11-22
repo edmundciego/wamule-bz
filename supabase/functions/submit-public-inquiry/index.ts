@@ -37,6 +37,8 @@ const LEGACY_INQUIRY_SCOPE_ENV = {
 } as const;
 
 const LEGACY_INQUIRY_FIELDS = ["name", "email", "phone", "interests", "specific_lot_id", "message", "page_url"] as const;
+const TURNSTILE_FIELD = "turnstile_token";
+const TURNSTILE_ACTION = "public_inquiry";
 const EXPLICIT_SCOPE_FIELDS = [
   "tenant", "tenant_slug", "tenant_id", "tenantId",
   "project", "project_slug", "project_id", "projectId",
@@ -87,6 +89,16 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
   const body = isRecord(parsedBody) ? parsedBody as InquiryPayload & Record<string, unknown> : {};
   const isLegacyPayload = isLegacyInquiryPayload(body);
   adapterLog.invoked = isLegacyPayload;
+
+  const botVerification = await verifyInquiryChallenge(request, body);
+  if (botVerification === "unavailable") {
+    if (isLegacyPayload) adapterLog.outcome = "bot_verification_unavailable";
+    return json({ error: "The security check is temporarily unavailable. Please try again." }, 503);
+  }
+  if (botVerification !== "verified") {
+    if (isLegacyPayload) adapterLog.outcome = "bot_verification_rejected";
+    return json({ error: "Complete the security check and try again." }, 403);
+  }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -297,8 +309,9 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
   }
 
   const testMode = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const confirmationsEnabled = Deno.env.get("PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED") === "true";
   const trustedIp = trustedRequesterIp(request);
-  let emailSuppressed = testMode || !trustedIp;
+  let emailSuppressed = testMode || !confirmationsEnabled || !trustedIp;
   let emailResult: { ok: boolean; suppressed?: boolean } = { ok: false };
   if (!rpcResult.deduplicated && !emailSuppressed) {
     const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);
@@ -337,9 +350,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isLegacyInquiryPayload(body: Record<string, unknown>) {
-  const keys = Object.keys(body);
+  const keys = Object.keys(body).filter((key) => key !== TURNSTILE_FIELD);
   return keys.length === LEGACY_INQUIRY_FIELDS.length
     && LEGACY_INQUIRY_FIELDS.every((field) => Object.prototype.hasOwnProperty.call(body, field));
+}
+
+type BotVerificationResult = "verified" | "rejected" | "unavailable";
+
+async function verifyInquiryChallenge(
+  request: Request,
+  body: Record<string, unknown>,
+): Promise<BotVerificationResult> {
+  const secret = Deno.env.get("TURNSTILE_SECRET_KEY")?.trim() ?? "";
+  const token = typeof body[TURNSTILE_FIELD] === "string" ? body[TURNSTILE_FIELD].trim() : "";
+  if (!secret) return "unavailable";
+  if (!token || token.length > 2048) return "rejected";
+
+  const origin = request.headers.get("origin");
+  let expectedHostname: string;
+  try {
+    expectedHostname = new URL(origin ?? "").hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "rejected";
+  }
+  if (!expectedHostname) return "rejected";
+
+  const rawReference = body.client_reference_id;
+  const idempotencyKey = typeof rawReference === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawReference)
+    ? rawReference
+    : crypto.randomUUID();
+  const form = new URLSearchParams({ secret, response: token, idempotency_key: idempotencyKey });
+
+  let response: Response;
+  try {
+    response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form,
+    });
+  } catch {
+    return "unavailable";
+  }
+  if (!response.ok) return "unavailable";
+
+  const result = await response.json().catch(() => null) as {
+    success?: boolean; hostname?: string; action?: string;
+  } | null;
+  if (!result?.success) return "rejected";
+  const verifiedHostname = typeof result.hostname === "string"
+    ? result.hostname.trim().toLowerCase().replace(/\.$/, "")
+    : "";
+  return verifiedHostname === expectedHostname && result.action === TURNSTILE_ACTION
+    ? "verified"
+    : "rejected";
 }
 
 function hasExplicitScopeField(body: Record<string, unknown>) {
@@ -550,11 +614,30 @@ async function loadCompanyContext(supabase: ReturnType<typeof createClient>, ten
   };
 }
 
-// Managed Edge Function ingress has no verified anti-spoofing guarantee for
-// client IP headers. Never infer trust from a client-supplied header.
-function trustedRequesterIp(_request: Request): string | null {
-  void _request;
-  return null;
+// Supabase's managed Cloudflare edge supplies CF-Connecting-IP. Do not use
+// X-Forwarded-For, which can contain client-provided values. Keep confirmation
+// sending disabled until staging acceptance verifies the gateway replaces a
+// forged CF-Connecting-IP sentinel.
+function trustedRequesterIp(request: Request): string | null {
+  return canonicalIpAddress(request.headers.get("cf-connecting-ip"));
+}
+
+function canonicalIpAddress(value: string | null): string | null {
+  if (!value || value !== value.trim() || value.includes(",") || value.includes("%")) return null;
+  const ipv4Parts = value.split(".");
+  if (ipv4Parts.length === 4 && ipv4Parts.every((part) => /^\d{1,3}$/.test(part))) {
+    const octets = ipv4Parts.map(Number);
+    if (octets.every((part) => part >= 0 && part <= 255)) return octets.join(".");
+    return null;
+  }
+  try {
+    const hostname = new URL(`http://[${value}]/`).hostname;
+    return hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1).toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function sha256(value: string): Promise<string> {

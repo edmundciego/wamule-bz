@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 
 const root = new URL("..", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -50,9 +51,16 @@ const staging = loadStagingConfig();
 // The roundtrip test writes to staging. Never run any live check as a side
 // effect of the default `npm test`; require an explicit operator opt-in.
 const LIVE = Boolean(staging) && process.env.WAMULE_RUN_LIVE_E2E === "1";
+const stagingTurnstileTokens = (process.env.STAGING_TURNSTILE_TEST_TOKENS ?? "")
+  .split(",").map((token) => token.trim()).filter(Boolean);
+const stagingInquiryEmail = process.env.STAGING_CONTROLLED_INQUIRY_EMAIL?.trim() ?? "";
+const LIVE_INQUIRY = LIVE && stagingTurnstileTokens.length >= 2 && Boolean(stagingInquiryEmail);
 const skipReason = staging
   ? "live staging checks are opt-in (set WAMULE_RUN_LIVE_E2E=1 deliberately)"
   : "live staging env (URL, anon key, DB password, psycopg) not available";
+const inquirySkipReason = LIVE
+  ? "live inquiry test also requires two fresh Turnstile tokens and STAGING_CONTROLLED_INQUIRY_EMAIL"
+  : skipReason;
 
 function functionsUrl(path) {
   return `${staging.url.replace(/\/$/, "")}/functions/v1/${path}`;
@@ -123,9 +131,9 @@ test("embed page serves without auth redirects", { skip: !LIVE && skipReason }, 
   assert.ok(html.includes('id="root"'), "SPA mount point served (no login redirect)");
 });
 
-test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && skipReason }, async (t) => {
-  const referenceId = `live-${Date.now()}-inquiry`;
-  const email = `test-buyer+${referenceId}@streetside.local`;
+test("live inquiry roundtrip sends one confirmation and lands in the tenant pipeline", { skip: !LIVE_INQUIRY && inquirySkipReason }, async (t) => {
+  const referenceId = randomUUID();
+  const email = stagingInquiryEmail;
   // Cleanup is limited to the unique row this opted-in test may create.
   t.after(() => dbRows("delete from public.leads where client_reference_id = %s", [referenceId]));
 
@@ -149,21 +157,23 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
     page_url: `${staging.site}/embed/${staging.tenantSlug}`,
     tenant: staging.tenantSlug,
     client_reference_id: referenceId,
+    turnstile_token: stagingTurnstileTokens[0],
   };
   const submit = await fetch(functionsUrl("submit-public-inquiry"), {
     method: "POST",
-    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    headers: { ...anonHeaders(), "Content-Type": "application/json", Origin: staging.site },
     body: JSON.stringify(payload),
   });
   assert.equal(submit.status, 200);
   const result = await submit.json();
   assert.equal(result.ok, true);
   assert.equal(result.leadCreated, true);
+  assert.equal(result.emailSent, true, "one confirmation reaches the configured controlled inbox");
 
   // Retry with the same idempotency key: no duplicate lead.
   const retry = await fetch(functionsUrl("submit-public-inquiry"), {
     method: "POST",
-    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    headers: { ...anonHeaders(), "Content-Type": "application/json", Origin: staging.site },
     body: JSON.stringify(payload),
   });
   assert.equal(retry.status, 200);
@@ -175,7 +185,7 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   // Same key, divergent payload: 409, still a single row.
   const conflict = await fetch(functionsUrl("submit-public-inquiry"), {
     method: "POST",
-    headers: { ...anonHeaders(), "Content-Type": "application/json" },
+    headers: { ...anonHeaders(), "Content-Type": "application/json", Origin: staging.site },
     body: JSON.stringify({ ...payload, name: "Someone Else" }),
   });
   assert.equal(conflict.status, 409);
@@ -183,12 +193,12 @@ test("live inquiry roundtrip lands in the tenant pipeline", { skip: !LIVE && ski
   // Unknown tenant slug with no usable fallback: 400, no row.
   const unknownTenant = await fetch(functionsUrl("submit-public-inquiry"), {
     method: "POST",
-    headers: { ...anonHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, tenant: "no-such-development", client_reference_id: `live-${Date.now()}-unknown` }),
+    headers: { ...anonHeaders(), "Content-Type": "application/json", Origin: staging.site },
+    body: JSON.stringify({ ...payload, tenant: "no-such-development", client_reference_id: randomUUID(), turnstile_token: stagingTurnstileTokens[1] }),
   });
   assert.equal(unknownTenant.status, 400);
 
-  const leads = dbRows("select id, tenant_id, email from public.leads where email = %s", [email]);
+  const leads = dbRows("select id, tenant_id, email from public.leads where client_reference_id = %s", [referenceId]);
   assert.equal(leads.length, 1, "exactly one lead row for the test buyer");
   assert.equal(leads[0][1], staging.expectedTenantId, "lead tenant_id set to the embed tenant");
   const activities = dbRows("select id from public.lead_activities where lead_id = %s", [leads[0][0]]);
