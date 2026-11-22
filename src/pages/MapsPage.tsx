@@ -1,5 +1,5 @@
 import { ArrowUpRight, ClipboardList, Layers3, Map } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { MasterplanUpload } from "../components/admin/settings/MasterplanUpload";
 import { SharedProjectLinks } from "../components/admin/settings/SharedProjectLinks";
@@ -11,8 +11,10 @@ import { getSessionAndProfile } from "../lib/data";
 
 export function MapsPage() {
   const { workspace, isLoading: workspaceLoading, error: workspaceError } = useWorkspaceScope();
+  const [searchParams] = useSearchParams();
   const { data: sessionProfile } = useQuery({ queryKey: ["session-profile"], queryFn: getSessionAndProfile });
   const canManage = sessionProfile?.profile?.role === "Super Admin" || sessionProfile?.profile?.role === "Admin";
+  const requestedPackageId = searchParams.get("packageId");
 
   if (workspaceLoading) return <LoadingState label="Loading map workspace" />;
   if (workspaceError) return <ErrorState message={workspaceError} />;
@@ -28,7 +30,7 @@ export function MapsPage() {
         <p className="v2-page-description">{workspace.tenantName} · {workspace.projectName} · {workspace.phaseName}. Map revisions and backgrounds are phase scoped; stable outline identities are retained across revisions.</p>
       </header>
 
-      <ProjectMapPackagePublisher workspace={workspace} canManage={canManage} />
+      <ProjectMapPackagePublisher workspace={workspace} canManage={canManage} requestedPackageId={requestedPackageId} />
       <SharedProjectLinks workspace={workspace} />
 
       <Card>
