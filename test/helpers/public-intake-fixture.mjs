@@ -112,6 +112,7 @@ export function createPublicIntakeFixture(options = {}) {
       TURNSTILE_SECRET_KEY: "test-turnstile-secret",
       RESEND_API_KEY: "test-resend-key",
       EMAIL_FROM_ADDRESS: "test@example.test",
+      WAMULE_LEGACY_INQUIRY_COMPAT_ENABLED: "true",
       WAMULE_LEGACY_INQUIRY_TENANT_SLUG: "example",
       WAMULE_LEGACY_INQUIRY_PROJECT_SLUG: "project",
       WAMULE_LEGACY_INQUIRY_PHASE_SLUG: "initial",
@@ -168,6 +169,9 @@ export function createPublicIntakeFixture(options = {}) {
       }
       if (name === "create_scoped_public_inquiry") {
         options.beforeInquiryPersist?.(args, db, hostBindings);
+        if (options.leadLimitReachedError === true) {
+          return { data: null, error: { code: "P0001", message: "public_inquiry_lead_limit_reached" } };
+        }
         if (args.p_hostname) {
           const binding = hostBindings[args.p_hostname];
           const tenant = db.organizations.find((row) => row.id === args.p_tenant_id && row.is_active);
@@ -184,6 +188,7 @@ export function createPublicIntakeFixture(options = {}) {
           if (existing.p_submission_fingerprint !== args.p_submission_fingerprint) return { data: { ok: false, conflict: true }, error: null };
           return { data: { ok: true, deduplicated: true, lead_id: existing.lead_id, follow_up_created: true, unverified_lot: existing.unverified_lot }, error: null };
         }
+        if (options.leadLimitReached === true) return { data: { ok: false, limit_reached: true }, error: null };
         let parcelId = args.p_parcel_id;
         let unverifiedLotReference = null;
         if (parcelId !== null && parcelId !== undefined) {

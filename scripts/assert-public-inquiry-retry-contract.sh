@@ -5,6 +5,7 @@ database_url="${SCHEMA_QUERY_DATABASE_URL:?SCHEMA_QUERY_DATABASE_URL is required
 tenant_id="f0000000-0000-4000-8000-000000000001"
 project_id="f0000000-0000-4000-8000-000000000002"
 phase_id="f0000000-0000-4000-8000-000000000003"
+second_phase_id="f0000000-0000-4000-8000-000000000004"
 reference="rpc-contract-inquiry-concurrency-2026"
 fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 fallback_reference="rpc-contract-inquiry-unverified-lot-2026"
@@ -17,6 +18,7 @@ delete from public.follow_up_tasks
 where lead_id in (select id from public.leads where tenant_id='${tenant_id}' and client_reference_id in ('${reference}','${fallback_reference}'));
 delete from public.leads where tenant_id='${tenant_id}' and client_reference_id in ('${reference}','${fallback_reference}');
 delete from public.development_phases where id='${phase_id}';
+delete from public.development_phases where id='${second_phase_id}';
 delete from public.projects where id='${project_id}';
 delete from public.organizations where id='${tenant_id}';
 SQL
@@ -34,6 +36,13 @@ on conflict (id) do nothing;
 insert into public.development_phases(id, tenant_id, project_id, slug, name, is_default, is_active)
 values ('${phase_id}', '${tenant_id}', '${project_id}', 'initial', 'Initial', true, true)
 on conflict (id) do nothing;
+insert into public.development_phases(id, tenant_id, project_id, slug, name, is_default, is_active)
+values ('${second_phase_id}', '${tenant_id}', '${project_id}', 'phase-two', 'Phase Two', false, true)
+on conflict (id) do nothing;
+insert into public.project_public_inquiry_limits(project_id, max_leads, rolling_window)
+values ('${project_id}', 2, interval '24 hours')
+on conflict (project_id) do update
+set max_leads=excluded.max_leads, rolling_window=excluded.rolling_window;
 SQL
 
 cat > "$tmpdir/call.sql" <<SQL
@@ -218,6 +227,45 @@ SQL
 )"
 if [[ "$fallback_counts" != "1|1|1|1" ]]; then
   echo "Expected one unlinked fallback lead, internal note, and follow-up; observed ${fallback_counts}." >&2
+  exit 1
+fi
+
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 <<SQL
+set role service_role;
+do \$\$
+begin
+  perform public.create_scoped_public_inquiry(
+    p_tenant_id => '${tenant_id}'::uuid,
+    p_project_id => '${project_id}'::uuid,
+    p_phase_id => '${second_phase_id}'::uuid,
+    p_name => 'RPC Contract Over-Limit Buyer',
+    p_email => 'rpc-contract-over-limit@example.test',
+    p_phone => null,
+    p_message => 'This third inquiry should be rejected.',
+    p_page_url => 'https://rpc-contract.example.test/phase-two',
+    p_interests => '["General project interest"]'::jsonb,
+    p_client_reference_id => 'rpc-contract-inquiry-over-limit-2026',
+    p_submission_fingerprint => 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+    p_parcel_id => null,
+    p_map_feature_id => null,
+    p_duplicate_reason => null
+  );
+  raise exception 'expected project lead limit to reject the third inquiry';
+exception when sqlstate 'P0001' then
+  if sqlerrm <> 'public_inquiry_lead_limit_reached' then raise; end if;
+end;
+\$\$;
+reset role;
+SQL
+
+project_limit_counts="$(psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At <<SQL
+select
+  (select count(*) from public.leads where project_id='${project_id}' and source='public_inquiry') || '|' ||
+  (select count(*) from public.follow_up_tasks where lead_id in (select id from public.leads where project_id='${project_id}' and source='public_inquiry'));
+SQL
+)"
+if [[ "$project_limit_counts" != "2|2" ]]; then
+  echo "Expected two project-wide inquiries with one follow-up each after limit rejection; observed ${project_limit_counts}." >&2
   exit 1
 fi
 echo "Public inquiry concurrency and semantic retry contract passed."
