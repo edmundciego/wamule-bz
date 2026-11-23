@@ -37,6 +37,16 @@ const LEGACY_INQUIRY_SCOPE_ENV = {
 } as const;
 
 const LEGACY_INQUIRY_FIELDS = ["name", "email", "phone", "interests", "specific_lot_id", "message", "page_url"] as const;
+const LEGACY_INQUIRY_COMPAT_FLAG = "WAMULE_LEGACY_INQUIRY_COMPAT_ENABLED";
+const TURNSTILE_FIELD = "turnstile_token";
+const TURNSTILE_ACTION = "public_inquiry";
+const STAGING_SUPABASE_PROJECT_REF = "kvocwmrcuhiaezlcgzjf";
+const STAGING_RECIPIENT_HASHES_ENV = "STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES";
+const STAGING_TEST_SEND_ENABLED_ENV = "STAGING_PUBLIC_INQUIRY_TEST_SEND_ENABLED";
+const STAGING_TEST_RECIPIENT_HASH_ENV = "STAGING_PUBLIC_INQUIRY_TEST_RECIPIENT_HASH";
+const STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES: readonly string[] = [
+  "e188816c18f7e77bf3f59bfe073f97e65f6cdf082b9fe26821a5d5dde8cc83db",
+];
 const EXPLICIT_SCOPE_FIELDS = [
   "tenant", "tenant_slug", "tenant_id", "tenantId",
   "project", "project_slug", "project_id", "projectId",
@@ -87,6 +97,21 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
   const body = isRecord(parsedBody) ? parsedBody as InquiryPayload & Record<string, unknown> : {};
   const isLegacyPayload = isLegacyInquiryPayload(body);
   adapterLog.invoked = isLegacyPayload;
+
+  if (isLegacyPayload && !legacyInquiryCompatibilityEnabled()) {
+    adapterLog.outcome = "compatibility_disabled";
+    return json({ error: "This inquiry form is temporarily unavailable. Please reload and try again." }, 503);
+  }
+
+  if (!isLegacyPayload) {
+    const botVerification = await verifyInquiryChallenge(request, body);
+    if (botVerification === "unavailable") {
+      return json({ error: "The security check is temporarily unavailable. Please try again." }, 503);
+    }
+    if (botVerification !== "verified") {
+      return json({ error: "Complete the security check and try again." }, 403);
+    }
+  }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -280,6 +305,10 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     p_hostname: suppliedHostname,
   });
   if (rpcError) {
+    if (rpcError.code === "P0001" && rpcError.message === "public_inquiry_lead_limit_reached") {
+      if (isLegacyPayload) adapterLog.outcome = "lead_limit_reached";
+      return json({ error: "This project's inquiry limit has been reached. Please contact the project team directly." }, 429);
+    }
     if (isLegacyPayload) adapterLog.outcome = "persistence_failed";
     console.error("Scoped public inquiry RPC failed", safeError(rpcError));
     return json({ error: "We could not verify and save your inquiry. Please try again." }, 503);
@@ -291,32 +320,54 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     if (isLegacyPayload) adapterLog.outcome = "retry_conflict";
     return json({ error: "This request conflicts with an earlier submission. Please start a new inquiry." }, 409);
   }
+  if (rpcResult?.limit_reached) {
+    if (isLegacyPayload) adapterLog.outcome = "lead_limit_reached";
+    return json({ error: "This project's inquiry limit has been reached. Please contact the project team directly." }, 429);
+  }
   if (!rpcResult?.ok || !rpcResult.lead_id) {
     if (isLegacyPayload) adapterLog.outcome = "persistence_failed";
     return json({ error: "We could not save your inquiry. Please try again." }, 503);
   }
 
-  const testMode = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const globalOutboundSuppressed = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const confirmationFlag = Deno.env.get("PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED");
+  const confirmationsEnabled = confirmationFlag === "true"
+    || (isStagingProject() && confirmationFlag !== "false");
+  const stagingTestSendAllowed = globalOutboundSuppressed && !isLegacyPayload && confirmationsEnabled
+    ? await stagingTestSendRecipientAllowed(input.email)
+    : false;
+  const stagingTestSendOverrideApplied = !rpcResult.deduplicated && stagingTestSendAllowed;
   const trustedIp = trustedRequesterIp(request);
-  let emailSuppressed = testMode || !trustedIp;
+  let emailSuppressed = isLegacyPayload || !confirmationsEnabled
+    || (globalOutboundSuppressed && !stagingTestSendAllowed);
   let emailResult: { ok: boolean; suppressed?: boolean } = { ok: false };
   if (!rpcResult.deduplicated && !emailSuppressed) {
     const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);
     emailResult = await sendConfirmationEmail({
-      supabase, trustedIp, toEmail: input.email, companyName: company.companyName,
+      supabase, trustedIp, projectId: scope.projectId, toEmail: input.email, companyName: company.companyName,
       projectName: scope.projectName, publicLink: safePageUrl || company.publicLink, waitlist,
     });
     emailSuppressed = Boolean(emailResult.suppressed);
   }
   if (!rpcResult.deduplicated) {
+    const emailActivityTitle = emailResult.ok
+      ? stagingTestSendOverrideApplied ? "Staging test buyer confirmation email sent" : "Buyer confirmation email sent"
+      : emailSuppressed ? "Buyer confirmation email suppressed" : "Buyer confirmation email not sent";
+    const emailActivityDescription = emailResult.ok
+      ? stagingTestSendOverrideApplied
+        ? "The staging-only test switch allowed a recipient-scoped buyer confirmation email."
+        : "A public inquiry confirmation email was sent to the buyer."
+      : "The inquiry was saved; staff should follow up from this lead.";
     await supabase.from("lead_activities").insert({
       tenant_id: slugTenantId, project_id: scope.projectId, phase_id: scope.phaseId,
       lead_id: rpcResult.lead_id, activity_type: "email",
-      title: testMode ? "Buyer confirmation email suppressed in automated test mode" : emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
-      description: testMode ? "Automated test configuration suppressed outbound communication." : emailResult.ok
-        ? "A public inquiry confirmation email was sent to the buyer."
-        : "The inquiry was saved; staff should follow up from this lead.",
-      metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed }, created_by: null,
+      title: emailActivityTitle,
+      description: emailActivityDescription,
+      metadata: {
+        source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed,
+        staging_test_send_override: stagingTestSendOverrideApplied,
+      },
+      created_by: null,
     });
   }
   if (isLegacyPayload) adapterLog.outcome = rpcResult.deduplicated
@@ -340,6 +391,86 @@ function isLegacyInquiryPayload(body: Record<string, unknown>) {
   const keys = Object.keys(body);
   return keys.length === LEGACY_INQUIRY_FIELDS.length
     && LEGACY_INQUIRY_FIELDS.every((field) => Object.prototype.hasOwnProperty.call(body, field));
+}
+
+function legacyInquiryCompatibilityEnabled() {
+  const flag = Deno.env.get(LEGACY_INQUIRY_COMPAT_FLAG);
+  if (isStagingProject()) {
+    if (flag === "false") return false;
+    const configured = configuredLegacyInquiryScope();
+    return configured?.tenantSlug.toLowerCase() === "wamule"
+      && configured.projectSlug.toLowerCase() === "wamule"
+      && configured.phaseSlug.toLowerCase() === "default";
+  }
+  return flag === "true";
+}
+
+function isStagingProject() {
+  try {
+    return new URL(supabaseUrl).hostname.split(".")[0].toLowerCase() === STAGING_SUPABASE_PROJECT_REF;
+  } catch {
+    return false;
+  }
+}
+
+async function stagingTestSendRecipientAllowed(toEmail: string): Promise<boolean> {
+  if (!isStagingProject() || Deno.env.get(STAGING_TEST_SEND_ENABLED_ENV) !== "true") return false;
+  const configuredHash = (Deno.env.get(STAGING_TEST_RECIPIENT_HASH_ENV) ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(configuredHash)) return false;
+  const recipientHash = await sha256(toEmail.trim().toLowerCase());
+  return recipientHash === configuredHash && stagingRecipientAllowlisted(recipientHash);
+}
+
+type BotVerificationResult = "verified" | "rejected" | "unavailable";
+
+async function verifyInquiryChallenge(
+  request: Request,
+  body: Record<string, unknown>,
+): Promise<BotVerificationResult> {
+  const secret = Deno.env.get("TURNSTILE_SECRET_KEY")?.trim() ?? "";
+  const token = typeof body[TURNSTILE_FIELD] === "string" ? body[TURNSTILE_FIELD].trim() : "";
+  if (!secret) return "unavailable";
+  if (!token || token.length > 2048) return "rejected";
+
+  const origin = request.headers.get("origin");
+  let expectedHostname: string;
+  try {
+    expectedHostname = new URL(origin ?? "").hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "rejected";
+  }
+  if (!expectedHostname) return "rejected";
+  const suppliedHostname = body.hostname ?? body.host;
+  if (suppliedHostname !== undefined
+    && normalizePublicHostname(suppliedHostname) !== expectedHostname) return "rejected";
+
+  // Turnstile tokens are single-use. Each fresh token gets its own verification
+  // key so semantic inquiry retries cannot reuse a previous verification result.
+  const idempotencyKey = crypto.randomUUID();
+  const form = new URLSearchParams({ secret, response: token, idempotency_key: idempotencyKey });
+
+  let response: Response;
+  try {
+    response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form,
+    });
+  } catch {
+    return "unavailable";
+  }
+  if (!response.ok) return "unavailable";
+
+  const result = await response.json().catch(() => null) as {
+    success?: boolean; hostname?: string; action?: string;
+  } | null;
+  if (!result?.success) return "rejected";
+  const verifiedHostname = typeof result.hostname === "string"
+    ? result.hostname.trim().toLowerCase().replace(/\.$/, "")
+    : "";
+  return verifiedHostname === expectedHostname && result.action === TURNSTILE_ACTION
+    ? "verified"
+    : "rejected";
 }
 
 function hasExplicitScopeField(body: Record<string, unknown>) {
@@ -403,6 +534,9 @@ function configuredLegacyInquiryScope() {
   const tenantSlug = Deno.env.get(LEGACY_INQUIRY_SCOPE_ENV.tenantSlug)?.trim() ?? "";
   const projectSlug = Deno.env.get(LEGACY_INQUIRY_SCOPE_ENV.projectSlug)?.trim() ?? "";
   const phaseSlug = Deno.env.get(LEGACY_INQUIRY_SCOPE_ENV.phaseSlug)?.trim() ?? "";
+  if (!tenantSlug && !projectSlug && !phaseSlug && isStagingProject()) {
+    return { tenantSlug: "wamule", projectSlug: "wamule", phaseSlug: "default" };
+  }
   if (!tenantSlug || !projectSlug || !phaseSlug) return null;
   return { tenantSlug, projectSlug, phaseSlug };
 }
@@ -550,11 +684,31 @@ async function loadCompanyContext(supabase: ReturnType<typeof createClient>, ten
   };
 }
 
-// Managed Edge Function ingress has no verified anti-spoofing guarantee for
-// client IP headers. Never infer trust from a client-supplied header.
-function trustedRequesterIp(_request: Request): string | null {
-  void _request;
-  return null;
+// Only use CF-Connecting-IP for the optional per-IP quota after an operator has
+// verified that the managed ingress overwrites client-supplied values. Until
+// then, recipient and project quotas still apply and the request remains
+// eligible for delivery. Never use X-Forwarded-For.
+function trustedRequesterIp(request: Request): string | null {
+  if (Deno.env.get("SUPABASE_GATEWAY_IP_HEADER_VERIFIED") !== "true") return null;
+  return canonicalIpAddress(request.headers.get("cf-connecting-ip"));
+}
+
+function canonicalIpAddress(value: string | null): string | null {
+  if (!value || value !== value.trim() || value.includes(",") || value.includes("%")) return null;
+  const ipv4Parts = value.split(".");
+  if (ipv4Parts.length === 4 && ipv4Parts.every((part) => /^\d{1,3}$/.test(part))) {
+    const octets = ipv4Parts.map(Number);
+    if (octets.every((part) => part >= 0 && part <= 255)) return octets.join(".");
+    return null;
+  }
+  try {
+    const hostname = new URL(`http://[${value}]/`).hostname;
+    return hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1).toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function sha256(value: string): Promise<string> {
@@ -562,22 +716,39 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function sendConfirmationEmail(input: { supabase: ReturnType<typeof createClient>; trustedIp: string | null; toEmail: string; companyName: string; projectName: string; publicLink: string; waitlist: boolean }) {
+function stagingRecipientAllowlisted(toEmailHash: string) {
+  let projectRef = "";
+  try {
+    projectRef = new URL(supabaseUrl).hostname.split(".")[0].toLowerCase();
+  } catch {
+    return false;
+  }
+  if (projectRef !== STAGING_SUPABASE_PROJECT_REF) return true;
+  const allowedHashes = [...STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES,
+    ...(Deno.env.get(STAGING_RECIPIENT_HASHES_ENV) ?? "").split(",")]
+    .map((hash) => hash.trim().toLowerCase())
+    .filter((hash) => /^[0-9a-f]{64}$/.test(hash));
+  return allowedHashes.includes(toEmailHash);
+}
+
+async function sendConfirmationEmail(input: { supabase: ReturnType<typeof createClient>; trustedIp: string | null; projectId: string; toEmail: string; companyName: string; projectName: string; publicLink: string; waitlist: boolean }) {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromAddress = Deno.env.get("EMAIL_FROM_ADDRESS") ?? "";
   const fromName = Deno.env.get("EMAIL_FROM_NAME") ?? input.companyName;
   const replyTo = Deno.env.get("EMAIL_REPLY_TO") ?? Deno.env.get("NOTIFICATION_ADMIN_EMAIL") ?? "";
   if (!resendApiKey || !fromAddress) {
-    return { ok: false, error: "Email provider is not configured." };
+    return { ok: false, suppressed: true, error: "Email provider is not configured." };
   }
-  if (!input.trustedIp) return { ok: false, suppressed: true };
+  const recipientHash = await sha256(input.toEmail.trim().toLowerCase());
+  if (!stagingRecipientAllowlisted(recipientHash)) return { ok: false, suppressed: true };
 
   // Reserve before the provider call. Failed and timed-out attempts also
   // consume quota; database or quota errors always suppress the email.
   try {
     const { data: reserved, error } = await input.supabase.rpc("reserve_inquiry_confirmation_quota", {
-      p_recipient_hash: await sha256(input.toEmail.trim().toLowerCase()),
-      p_ip_hash: await sha256(input.trustedIp),
+      p_project_id: input.projectId,
+      p_recipient_hash: recipientHash,
+      p_ip_hash: input.trustedIp ? await sha256(input.trustedIp) : null,
     });
     if (error || reserved !== true) return { ok: false, suppressed: true };
   } catch {

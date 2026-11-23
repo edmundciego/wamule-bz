@@ -9,6 +9,7 @@ import { cn, money } from "../../lib/utils";
 import { Button } from "../ui/Button";
 import { Field, Input, Select, Textarea } from "../ui/Field";
 import { ErrorState } from "../ui/State";
+import { PublicInquiryChallenge } from "./PublicInquiryChallenge";
 
 const inquiryInterests = [
   "Available lots",
@@ -51,6 +52,8 @@ export function PublicInquiryPanel({
   const [interests, setInterests] = useState<InquiryInterest[]>([]);
   const [specificLotRef, setSpecificLotRef] = useState("");
   const [clientReferenceId, setClientReferenceId] = useState(newRequestReference);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeResetCount, setChallengeResetCount] = useState(0);
   const [confirmation, setConfirmation] = useState<{ emailSent: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,23 +70,30 @@ export function PublicInquiryPanel({
       setError("Choose an available lot to ask about.");
       return;
     }
+    if (!challengeToken) {
+      setError("Complete the security check before sending your inquiry.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const result = await submitPublicFunction<{ emailSent?: boolean }>("submit-public-inquiry", buildInquiryPayload({
-        name,
-        email,
-        phone,
-        interests: interests.length ? interests : ["General project interest"],
-        specificLotRef: specificLotSelected && specificLotRef ? specificLotRef : null,
-        message,
-        pageUrl: window.location.href,
-        tenant: scope.tenantSlug,
-        project: scope.projectSlug,
-        phase: scope.phaseSlug,
-        hostname,
-        clientReferenceId,
-      }));
+      const result = await submitPublicFunction<{ emailSent?: boolean }>("submit-public-inquiry", {
+        ...buildInquiryPayload({
+          name,
+          email,
+          phone,
+          interests: interests.length ? interests : ["General project interest"],
+          specificLotRef: specificLotSelected && specificLotRef ? specificLotRef : null,
+          message,
+          pageUrl: window.location.href,
+          tenant: scope.tenantSlug,
+          project: scope.projectSlug,
+          phase: scope.phaseSlug,
+          hostname,
+          clientReferenceId,
+        }),
+        turnstile_token: challengeToken,
+      });
       setConfirmation({ emailSent: Boolean(result?.emailSent) });
       setName("");
       setEmail("");
@@ -95,6 +105,8 @@ export function PublicInquiryPanel({
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "We could not send your inquiry. Please try again.");
     } finally {
+      setChallengeToken(null);
+      setChallengeResetCount((count) => count + 1);
       setSubmitting(false);
     }
   }
@@ -159,9 +171,10 @@ export function PublicInquiryPanel({
             </Field>
           ) : null}
           <Field label="Message (optional)"><Textarea name="message" value={message} onChange={(event) => setMessage(event.target.value)} maxLength={INQUIRY_LIMITS.message} rows={3} /></Field>
+          <PublicInquiryChallenge token={challengeToken} resetCount={challengeResetCount} onToken={setChallengeToken} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">Your details are used to respond to this inquiry.</p>
-            <Button type="submit" disabled={submitting}>{submitting ? "Sending…" : "Send inquiry"}<Send aria-hidden="true" className="h-4 w-4" /></Button>
+            <Button type="submit" disabled={submitting || !challengeToken}>{submitting ? "Sending…" : "Send inquiry"}<Send aria-hidden="true" className="h-4 w-4" /></Button>
           </div>
         </form>
       )}
