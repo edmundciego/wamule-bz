@@ -60,6 +60,9 @@ try {
     );
     grant select, insert on public.leads to service_role`);
   await admin.query('insert into public.projects (id) values ($1), ($2), ($3)', [PROJECT_A, PROJECT_B, PROJECT_CAP]);
+  await admin.query(`insert into public.leads (id, tenant_id, project_id, source, client_reference_id)
+    values ($1, $2, $3, 'public_inquiry', 'pre-migration-inquiry')`,
+  ['55555555-5555-4555-8555-555555555555', '99999999-9999-4999-8999-999999999999', PROJECT_A]);
   for (const name of [
     '20261120002343_inquiry_confirmation_email_quota.sql',
     '20261123015624_slice_b_public_inquiry_quotas_and_limits.sql',
@@ -74,6 +77,9 @@ try {
     { max_leads: 100, rolling_window: '24:00:00' },
     { max_leads: 100, rolling_window: '24:00:00' },
   ], 'migration seeds all existing projects with the B1 100/24h allowance');
+  assert.equal((await admin.query(`select count(*)::int as n from public.public_inquiry_lead_reservations
+    where project_id=$1`, [PROJECT_A])).rows[0].n, 1,
+  'migration backfills recent public leads into the protected rolling ledger');
   const PROJECT_NEW = '44444444-4444-4444-8444-444444444444';
   await admin.query('insert into public.projects (id) values ($1)', [PROJECT_NEW]);
   assert.deepEqual((await admin.query(`select max_leads, rolling_window::text from public.project_public_inquiry_limits
@@ -88,11 +94,15 @@ try {
     has_function_privilege('service_role','public.reserve_inquiry_confirmation_quota(uuid,text,text)','execute') as service_exec,
     has_table_privilege('anon','public.project_public_inquiry_limits','select') as anon_limit_read,
     has_table_privilege('service_role','public.project_public_inquiry_limits','select') as service_limit_read,
+    has_table_privilege('anon','public.public_inquiry_lead_reservations','select') as anon_ledger_read,
+    has_table_privilege('service_role','public.public_inquiry_lead_reservations','select') as service_ledger_read,
     (select relrowsecurity from pg_class where oid='public.inquiry_confirmation_email_attempts'::regclass) as email_rls,
-    (select relrowsecurity from pg_class where oid='public.project_public_inquiry_limits'::regclass) as lead_limit_rls`);
+    (select relrowsecurity from pg_class where oid='public.project_public_inquiry_limits'::regclass) as lead_limit_rls,
+    (select relrowsecurity from pg_class where oid='public.public_inquiry_lead_reservations'::regclass) as lead_ledger_rls`);
   assert.deepEqual(migrationPrivileges.rows[0], {
     anon_read: false, auth_write: false, anon_exec: false, auth_exec: false, service_exec: true,
-    anon_limit_read: false, service_limit_read: false, email_rls: true, lead_limit_rls: true,
+    anon_limit_read: false, service_limit_read: false, anon_ledger_read: false, service_ledger_read: false,
+    email_rls: true, lead_limit_rls: true, lead_ledger_rls: true,
   });
   const anon = await client('anon');
   await assert.rejects(() => reserve(anon, PROJECT_A, hash('a'), hash('b')), {code: '42501'});
@@ -143,7 +153,7 @@ try {
   assert.equal(await reserve(s, PROJECT_B, hash('project-cap-overflow')), true, 'project allowance is independent across projects');
 
   await admin.query(`insert into public.project_public_inquiry_limits (project_id, max_leads, rolling_window)
-    values ($1, 1, $2::interval) on conflict (project_id) do update
+    values ($1, 2, $2::interval) on conflict (project_id) do update
     set max_leads=excluded.max_leads, rolling_window=excluded.rolling_window`, [PROJECT_B, '24 hours']);
   const leadTenant = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const leadClients = projectCapClients.slice(0, 24);
@@ -158,15 +168,26 @@ try {
       return { allowed: false, reference };
     }
   }));
-  assert.equal(leadAttempts.filter((attempt) => attempt.allowed).length, 1, 'a project-wide lead cap remains atomic across concurrent phases');
+  assert.equal(leadAttempts.filter((attempt) => attempt.allowed).length, 2, 'a project-wide lead cap remains atomic across concurrent phases');
   const winningReference = leadAttempts.find((attempt) => attempt.allowed).reference;
   await admin.query(`insert into public.leads (id, tenant_id, project_id, phase_id, source, client_reference_id)
     values ($1, $2, $3, $4, 'public_inquiry', $5) on conflict (tenant_id, client_reference_id) do nothing`, [randomUUID(), leadTenant, PROJECT_B, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', winningReference]);
-  assert.equal((await admin.query("select count(*)::int as n from public.leads where project_id=$1 and source='public_inquiry'", [PROJECT_B])).rows[0].n, 1, 'a retry reuses the existing lead and does not consume another slot');
+  assert.equal((await admin.query("select count(*)::int as n from public.leads where project_id=$1 and source='public_inquiry'", [PROJECT_B])).rows[0].n, 2, 'a retry reuses the existing lead and does not consume another slot at capacity');
+  assert.equal((await admin.query('select count(*)::int as n from public.public_inquiry_lead_reservations where project_id=$1', [PROJECT_B])).rows[0].n, 2);
+  const nonWinningReference = leadAttempts.find((attempt) => attempt.allowed && attempt.reference !== winningReference).reference;
+  await admin.query(`update public.leads set source='staff_referral', created_at=clock_timestamp() - interval '30 days'
+    where tenant_id=$1 and client_reference_id=$2`, [leadTenant, winningReference]);
+  await admin.query('delete from public.leads where tenant_id=$1 and client_reference_id=$2', [leadTenant, nonWinningReference]);
+  assert.equal((await admin.query('select count(*)::int as n from public.public_inquiry_lead_reservations where project_id=$1', [PROJECT_B])).rows[0].n, 2,
+    'lead edits and deletion do not free B1 slots during the rolling window');
+  await assert.rejects(() => s.query(`insert into public.leads (id, tenant_id, project_id, phase_id, source, client_reference_id)
+    values ($1, $2, $3, $4, 'public_inquiry', 'lead-limit-after-edit-or-delete')`,
+  [randomUUID(), leadTenant, PROJECT_B, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd']),
+  {code: 'P0001', message: 'public_inquiry_lead_limit_reached'});
   await admin.query(`insert into public.leads (id, tenant_id, project_id, phase_id, source, client_reference_id)
     values ($1, $2, $3, $4, 'staff_referral', $5)`, [randomUUID(), leadTenant, PROJECT_B, null, 'staff-referral-unmetered']);
 
-  console.log('PASS: fresh migration; service-role-only email RPC and RLS; 100/24h B1 allowance seeded for existing/new projects; invalid input; cross-project recipient limit; blocking concurrency; 1/24 recipient and 10/24 IP limits; optional IP; concurrent project 50/24 email cap; 1-slot Postgres lead cap across phases with retry reuse; expiry/pruning; reservations retained after provider failure');
+  console.log('PASS: fresh migration; service-role-only email RPC and RLS; 100/24h B1 allowance seeded for existing/new projects; recent-lead backfill; inaccessible rolling ledger; invalid input; cross-project recipient limit; blocking concurrency; 1/24 recipient and 10/24 IP limits; optional IP; concurrent project 50/24 email cap; 2-slot Postgres lead cap across phases with retry reuse and edit/delete resistance; expiry/pruning; reservations retained after provider failure');
 } finally {
   await Promise.allSettled(clients.map((c) => c.end()));
   if (started) await database.stop();

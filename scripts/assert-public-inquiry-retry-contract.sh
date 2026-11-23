@@ -268,4 +268,62 @@ if [[ "$project_limit_counts" != "2|2" ]]; then
   echo "Expected two project-wide inquiries with one follow-up each after limit rejection; observed ${project_limit_counts}." >&2
   exit 1
 fi
+
+# B1 charges accepted lead creation, not the current contents of the mutable
+# leads table. Editing or deleting recent leads must not free rolling slots.
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 <<SQL
+update public.leads
+set source='staff_referral', created_at=clock_timestamp() - interval '30 days'
+where tenant_id='${tenant_id}' and client_reference_id='${reference}';
+delete from public.leads
+where tenant_id='${tenant_id}' and client_reference_id='${fallback_reference}';
+SQL
+
+ledger_count="$(psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At -c \
+  "select count(*) from public.public_inquiry_lead_reservations where project_id='${project_id}'")"
+if [[ "$ledger_count" != "2" ]]; then
+  echo "Expected two retained rolling reservations after lead edit/delete; observed ${ledger_count}." >&2
+  exit 1
+fi
+
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 -At -f "$tmpdir/call.sql" > "$tmpdir/edit-retry.json"
+node --input-type=module - "$tmpdir/edit-retry.json" <<'NODE'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const line = readFileSync(process.argv[2], "utf8").split(/\r?\n/).find((value) => value.startsWith("{"));
+assert.ok(line, "missing edited-lead retry result");
+assert.equal(JSON.parse(line).ok, true);
+assert.equal(JSON.parse(line).deduplicated, true, "an existing idempotency reference remains successful at capacity after a lead edit/delete");
+NODE
+
+psql "$database_url" -X -q -v ON_ERROR_STOP=1 <<SQL
+set role service_role;
+do \$\$
+begin
+  perform public.create_scoped_public_inquiry(
+    p_tenant_id => '${tenant_id}'::uuid,
+    p_project_id => '${project_id}'::uuid,
+    p_phase_id => '${second_phase_id}'::uuid,
+    p_name => 'RPC Contract Over-Limit After Lead Changes',
+    p_email => 'rpc-contract-over-limit-after-changes@example.test',
+    p_phone => null,
+    p_message => 'Lead edits and deletion must not create another slot.',
+    p_page_url => 'https://rpc-contract.example.test/phase-two',
+    p_interests => '["General project interest"]'::jsonb,
+    p_client_reference_id => 'rpc-contract-inquiry-over-limit-after-lead-changes-2026',
+    p_submission_fingerprint => 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    p_parcel_id => null,
+    p_map_feature_id => null,
+    p_duplicate_reason => null,
+    p_unverified_lot_reference => null,
+    p_hostname => null
+  );
+  raise exception 'expected retained project lead reservations to reject a new inquiry';
+exception when sqlstate 'P0001' then
+  if sqlerrm <> 'public_inquiry_lead_limit_reached' then raise; end if;
+end;
+\$\$;
+reset role;
+SQL
+
 echo "Public inquiry concurrency and semantic retry contract passed."
