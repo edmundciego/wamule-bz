@@ -2,6 +2,7 @@ import { ArrowDown, ArrowRight, ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { PublicSiteTemplateId } from "../../../lib/publicExperience.mjs";
+import { isHopkinsPublicProject } from "../../../lib/referencePlotPricing.mjs";
 import { money } from "../../../lib/utils";
 import { Select } from "../../ui/Field";
 import { PublicInquiryPanel } from "../PublicInquiryPanel";
@@ -37,7 +38,7 @@ export function HomepageNavigation({ model, onPhaseChange }: Pick<HomepageLayout
       {flags.mapVisible ? <a className="py-2 hover:underline" href={hrefs.map}>Map</a> : null}
       {flags.inquiryEnabled ? <a className="py-2 hover:underline" href={hrefs.inquiry}>Contact</a> : null}
       {flags.canSubmit ? <Link className={primaryLink} to={hrefs.application}>Apply</Link> : null}
-      {phases.length > 1 ? (
+      {phases.length > 1 && !isHopkinsPublicProject(scope.tenantSlug, scope.projectSlug) ? (
         <Select aria-label="Project phase" className="w-auto max-w-full" value={scope.phaseSlug} onChange={(event) => onPhaseChange(event.target.value)}>
           {phases.map((phase) => <option key={phase.slug} value={phase.slug}>{phase.name}</option>)}
         </Select>

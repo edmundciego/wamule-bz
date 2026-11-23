@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { MapPayload } from "../components/public/PublicLotMap";
 import type { PublicExperienceScope } from "./publicExperience.mjs";
 import { hasSupabaseConfig } from "./supabase";
+import { hasHopkinsReferencePricing, publicHopkinsPrintedNumber } from "./referencePlotPricing.mjs";
 
 export type PublicParcelOption = {
   public_ref: string;
@@ -16,7 +17,6 @@ export type PublicOutlineOption = {
   ref: string;
   label: string;
   tierKey: string | null;
-  verifiedPrintedNumber: string | null;
 };
 
 export function usePublicApplicationPlots(hostname: string, scope: PublicExperienceScope, enabled: boolean) {
@@ -53,19 +53,18 @@ export function usePublicApplicationPlots(hostname: string, scope: PublicExperie
             dimensions: typeof parcel.dimensions === "string" ? parcel.dimensions : null,
           }]
           : []);
+      const hopkinsReferenceMap = hasHopkinsReferencePricing(body);
       const outlines = body.map_experience_mode === "demo"
-        ? (body.features ?? []).flatMap((feature): PublicOutlineOption[] =>
-          typeof feature.map_feature_ref === "string" && typeof feature.demo_label === "string"
-            ? [{
-              ref: feature.map_feature_ref,
-              label: feature.demo_label,
-              tierKey: typeof feature.source_tier_key === "string" && feature.source_tier_status !== "source-tier-ambiguous-multiple-colors"
-                ? feature.source_tier_key : null,
-              verifiedPrintedNumber: feature.source_printed_lot_number_status === "source-image-cross-checked"
-                && typeof feature.source_printed_lot_number_candidate === "string"
-                ? feature.source_printed_lot_number_candidate : null,
-            }]
-            : [])
+        ? (body.features ?? []).flatMap((feature): PublicOutlineOption[] => {
+          if (typeof feature.map_feature_ref !== "string" || typeof feature.demo_label !== "string") return [];
+          const printedNumber = hopkinsReferenceMap ? publicHopkinsPrintedNumber(feature) : null;
+          return [{
+            ref: feature.map_feature_ref,
+            label: hopkinsReferenceMap ? printedNumber ? `Plot ${printedNumber}` : "Map plot" : feature.demo_label,
+            tierKey: typeof feature.source_tier_key === "string" && feature.source_tier_status !== "source-tier-ambiguous-multiple-colors"
+              ? feature.source_tier_key : null,
+          }];
+        })
         : [];
       return { parcels, outlines, map: body };
     },
