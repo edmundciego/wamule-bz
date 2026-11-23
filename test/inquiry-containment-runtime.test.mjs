@@ -37,6 +37,18 @@ function sha256(value) {
   return createHash("sha256").update(value.trim().toLowerCase()).digest("hex");
 }
 
+function stagingTestSendEnv(overrides = {}) {
+  const recipientHash = sha256("buyer@example.test");
+  return {
+    SUPABASE_URL: "https://kvocwmrcuhiaezlcgzjf.supabase.co",
+    SUPPRESS_OUTBOUND_EMAILS: "true",
+    STAGING_PUBLIC_INQUIRY_TEST_SEND_ENABLED: "true",
+    STAGING_PUBLIC_INQUIRY_TEST_RECIPIENT_HASH: recipientHash,
+    STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES: recipientHash,
+    ...overrides,
+  };
+}
+
 async function submitLegacy(s, data = legacyApplicationPagePayload()) {
   s.requestHostname = "wamuledevelopment.com";
   const response = await s.handler(new Request("https://edge.invalid/submit-public-inquiry", {
@@ -554,6 +566,117 @@ test("staging allowlist permits the controlled recipient and suppresses other re
   assert.equal(blocked.db.follow_up_tasks.length, 1);
   assert.equal(blocked.quotaReservations.length, 0);
   assert.equal(blocked.sends.length, 0);
+});
+
+test("staging test send override honors global suppression for one configured recipient and one inquiry", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const s = createPublicIntakeFixture({ env: stagingTestSendEnv() });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const first = await submit(s);
+  s.options.leadLimitReached = true;
+  const retry = await submit(s, payload({ turnstile_token: "fresh-retry-token", page_url: "https://example.test/retry" }));
+
+  assert.equal(s.env.SUPPRESS_OUTBOUND_EMAILS, "true");
+  assert.equal(first.status, 200);
+  assert.equal(first.body.emailSent, true);
+  assert.equal(first.body.emailSuppressed, false);
+  assert.equal(first.body.leadCreated, true);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.deduplicated, true);
+  assert.equal(retry.body.emailSent, false);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.db.lead_activities.filter((activity) => activity.activity_type === "email").length, 1);
+  assert.equal(s.db.lead_activities.find((activity) => activity.title === "Staging test buyer confirmation email sent")
+    ?.metadata.staging_test_send_override, true);
+  assert.equal(s.sends.length, 1);
+  assert.equal(s.quotaReservations.length, 1);
+  assert.equal(s.botChecks.length, 2);
+  assert.notEqual(s.botChecks[0].idempotencyKey, s.botChecks[1].idempotencyKey);
+  cleanupEdgeHandler();
+});
+
+test("staging test send override is off by default and does not bypass the global suppression switch", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const { STAGING_PUBLIC_INQUIRY_TEST_SEND_ENABLED: _off, ...env } = stagingTestSendEnv();
+  const s = createPublicIntakeFixture({ env });
+  await installEdgeHandler(s, "../../supabase/functions/submit-public-inquiry/index.ts");
+
+  const result = await submit(s);
+
+  assert.equal(s.env.SUPPRESS_OUTBOUND_EMAILS, "true");
+  assert.equal(result.status, 200);
+  assert.equal(result.body.leadCreated, true);
+  assert.equal(result.body.emailSent, false);
+  assert.equal(result.body.emailSuppressed, true);
+  assert.equal(s.db.leads.length, 1);
+  assert.equal(s.db.follow_up_tasks.length, 1);
+  assert.equal(s.quotaReservations.length, 0);
+  assert.equal(s.sends.length, 0);
+  cleanupEdgeHandler();
+});
+
+test("staging test send override requires the exact staging project and configured recipient hash", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const wrongProject = createPublicIntakeFixture({
+    env: stagingTestSendEnv({ SUPABASE_URL: "https://otherproject.supabase.co", PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED: "true" }),
+  });
+  await installEdgeHandler(wrongProject, "../../supabase/functions/submit-public-inquiry/index.ts");
+  const projectResult = await submit(wrongProject);
+  assert.equal(projectResult.body.emailSuppressed, true);
+  assert.equal(wrongProject.quotaReservations.length, 0);
+  assert.equal(wrongProject.sends.length, 0);
+  cleanupEdgeHandler();
+
+  const wrongRecipient = createPublicIntakeFixture({ env: stagingTestSendEnv() });
+  await installEdgeHandler(wrongRecipient, "../../supabase/functions/submit-public-inquiry/index.ts");
+  const recipientResult = await submit(wrongRecipient, payload({ email: "outside@example.test" }));
+  assert.equal(recipientResult.status, 200);
+  assert.equal(recipientResult.body.emailSuppressed, true);
+  assert.equal(wrongRecipient.db.leads.length, 1);
+  assert.equal(wrongRecipient.db.follow_up_tasks.length, 1);
+  assert.equal(wrongRecipient.quotaReservations.length, 0);
+  assert.equal(wrongRecipient.sends.length, 0);
+  cleanupEdgeHandler();
+});
+
+test("staging test send override requires Turnstile and never enables legacy email", async (t) => {
+  t.after(cleanupEdgeHandler);
+  const invalidToken = createPublicIntakeFixture({
+    env: stagingTestSendEnv(),
+    turnstileResponse: { success: false, hostname: "example.test", action: "public_inquiry" },
+  });
+  await installEdgeHandler(invalidToken, "../../supabase/functions/submit-public-inquiry/index.ts");
+  const refused = await submit(invalidToken);
+  assert.equal(refused.status, 403);
+  assert.equal(invalidToken.db.leads.length, 0);
+  assert.equal(invalidToken.db.follow_up_tasks.length, 0);
+  assert.equal(invalidToken.quotaReservations.length, 0);
+  assert.equal(invalidToken.sends.length, 0);
+  cleanupEdgeHandler();
+
+  const legacyHash = sha256("legacy-buyer@example.test");
+  const legacy = createPublicIntakeFixture({ env: stagingTestSendEnv({
+    STAGING_PUBLIC_INQUIRY_TEST_RECIPIENT_HASH: legacyHash,
+    STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES: legacyHash,
+    WAMULE_LEGACY_INQUIRY_TENANT_SLUG: "wamule",
+    WAMULE_LEGACY_INQUIRY_PROJECT_SLUG: "wamule",
+    WAMULE_LEGACY_INQUIRY_PHASE_SLUG: "default",
+  }) });
+  legacy.db.organizations[0].slug = "wamule";
+  legacy.db.projects[0].slug = "wamule";
+  legacy.db.development_phases[0].slug = "default";
+  await installEdgeHandler(legacy, "../../supabase/functions/submit-public-inquiry/index.ts");
+  const savedLegacy = await submitLegacy(legacy);
+  assert.equal(savedLegacy.status, 200);
+  assert.equal(savedLegacy.body.emailSent, false);
+  assert.equal(savedLegacy.body.emailSuppressed, true);
+  assert.equal(legacy.db.leads.length, 1);
+  assert.equal(legacy.db.follow_up_tasks.length, 1);
+  assert.equal(legacy.quotaReservations.length, 0);
+  assert.equal(legacy.sends.length, 0);
+  cleanupEdgeHandler();
 });
 
 test("the exact seven-field legacy payload is temporary, scoped, persisted, and never emailed", async (t) => {

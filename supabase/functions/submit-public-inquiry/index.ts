@@ -42,6 +42,8 @@ const TURNSTILE_FIELD = "turnstile_token";
 const TURNSTILE_ACTION = "public_inquiry";
 const STAGING_SUPABASE_PROJECT_REF = "kvocwmrcuhiaezlcgzjf";
 const STAGING_RECIPIENT_HASHES_ENV = "STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES";
+const STAGING_TEST_SEND_ENABLED_ENV = "STAGING_PUBLIC_INQUIRY_TEST_SEND_ENABLED";
+const STAGING_TEST_RECIPIENT_HASH_ENV = "STAGING_PUBLIC_INQUIRY_TEST_RECIPIENT_HASH";
 const STAGING_PUBLIC_INQUIRY_RECIPIENT_HASHES: readonly string[] = [
   "e188816c18f7e77bf3f59bfe073f97e65f6cdf082b9fe26821a5d5dde8cc83db",
 ];
@@ -327,12 +329,17 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     return json({ error: "We could not save your inquiry. Please try again." }, 503);
   }
 
-  const testMode = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
+  const globalOutboundSuppressed = Deno.env.get("SUPPRESS_OUTBOUND_EMAILS") === "true";
   const confirmationFlag = Deno.env.get("PUBLIC_INQUIRY_CONFIRMATIONS_ENABLED");
   const confirmationsEnabled = confirmationFlag === "true"
     || (isStagingProject() && confirmationFlag !== "false");
+  const stagingTestSendAllowed = globalOutboundSuppressed && !isLegacyPayload && confirmationsEnabled
+    ? await stagingTestSendRecipientAllowed(input.email)
+    : false;
+  const stagingTestSendOverrideApplied = !rpcResult.deduplicated && stagingTestSendAllowed;
   const trustedIp = trustedRequesterIp(request);
-  let emailSuppressed = isLegacyPayload || testMode || !confirmationsEnabled;
+  let emailSuppressed = isLegacyPayload || !confirmationsEnabled
+    || (globalOutboundSuppressed && !stagingTestSendAllowed);
   let emailResult: { ok: boolean; suppressed?: boolean } = { ok: false };
   if (!rpcResult.deduplicated && !emailSuppressed) {
     const company = await loadCompanyContext(supabase, slugTenantId, scope.projectId);
@@ -343,14 +350,24 @@ async function handlePublicInquiry(request: Request, adapterLog: LegacyAdapterLo
     emailSuppressed = Boolean(emailResult.suppressed);
   }
   if (!rpcResult.deduplicated) {
+    const emailActivityTitle = emailResult.ok
+      ? stagingTestSendOverrideApplied ? "Staging test buyer confirmation email sent" : "Buyer confirmation email sent"
+      : emailSuppressed ? "Buyer confirmation email suppressed" : "Buyer confirmation email not sent";
+    const emailActivityDescription = emailResult.ok
+      ? stagingTestSendOverrideApplied
+        ? "The staging-only test switch allowed a recipient-scoped buyer confirmation email."
+        : "A public inquiry confirmation email was sent to the buyer."
+      : "The inquiry was saved; staff should follow up from this lead.";
     await supabase.from("lead_activities").insert({
       tenant_id: slugTenantId, project_id: scope.projectId, phase_id: scope.phaseId,
       lead_id: rpcResult.lead_id, activity_type: "email",
-      title: testMode ? "Buyer confirmation email suppressed in automated test mode" : emailResult.ok ? "Buyer confirmation email sent" : "Buyer confirmation email not sent",
-      description: testMode ? "Automated test configuration suppressed outbound communication." : emailResult.ok
-        ? "A public inquiry confirmation email was sent to the buyer."
-        : "The inquiry was saved; staff should follow up from this lead.",
-      metadata: { source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed }, created_by: null,
+      title: emailActivityTitle,
+      description: emailActivityDescription,
+      metadata: {
+        source: "public_inquiry", email_sent: emailResult.ok, email_suppressed: emailSuppressed,
+        staging_test_send_override: stagingTestSendOverrideApplied,
+      },
+      created_by: null,
     });
   }
   if (isLegacyPayload) adapterLog.outcome = rpcResult.deduplicated
@@ -394,6 +411,14 @@ function isStagingProject() {
   } catch {
     return false;
   }
+}
+
+async function stagingTestSendRecipientAllowed(toEmail: string): Promise<boolean> {
+  if (!isStagingProject() || Deno.env.get(STAGING_TEST_SEND_ENABLED_ENV) !== "true") return false;
+  const configuredHash = (Deno.env.get(STAGING_TEST_RECIPIENT_HASH_ENV) ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(configuredHash)) return false;
+  const recipientHash = await sha256(toEmail.trim().toLowerCase());
+  return recipientHash === configuredHash && stagingRecipientAllowlisted(recipientHash);
 }
 
 type BotVerificationResult = "verified" | "rejected" | "unavailable";

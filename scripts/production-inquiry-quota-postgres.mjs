@@ -65,7 +65,7 @@ try {
   ['55555555-5555-4555-8555-555555555555', '99999999-9999-4999-8999-999999999999', PROJECT_A]);
   for (const name of [
     '20261120002343_inquiry_confirmation_email_quota.sql',
-    '20261123015624_slice_b_public_inquiry_quotas_and_limits.sql',
+    '20261123033951_slice_b_public_inquiry_quotas_and_limits.sql',
   ]) {
     const migration = new URL(`../supabase/migrations/${name}`, import.meta.url);
     await admin.query(await readFile(migration, 'utf8'));
