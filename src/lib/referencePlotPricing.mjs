@@ -1,7 +1,10 @@
+export function isHopkinsPublicProject(tenantSlug, projectSlug) {
+  return tenantSlug === "hopkins-grove" && projectSlug === "hopkins-grove";
+}
+
 export function hasHopkinsReferencePricing(map) {
   return map?.map_experience_mode === "demo"
-    && map.tenant?.slug === "hopkins-grove"
-    && map.project?.slug === "hopkins-grove";
+    && isHopkinsPublicProject(map.tenant?.slug, map.project?.slug);
 }
 
 /** Resolve source-plan reference pricing without treating it as inventory pricing. */
@@ -52,4 +55,18 @@ export function verifiedHopkinsPrintedNumber(provenance) {
   if (provenance.source_printed_lot_number_status !== "source-image-cross-checked") return null;
   const number = provenance.source_printed_lot_number_verified;
   return typeof number === "string" && /^\d{1,5}$/.test(number) ? number : null;
+}
+
+/** The public map API projects the verified value into its candidate field. */
+export function publicHopkinsPrintedNumber(feature) {
+  return verifiedHopkinsPrintedNumber({
+    source_printed_lot_number_status: feature.source_printed_lot_number_status,
+    source_printed_lot_number_verified: feature.source_printed_lot_number_candidate,
+  });
+}
+
+export function hopkinsPriceUnit(basis) {
+  if (basis === "per 1/4 acre") return "per quarter acre";
+  if (basis === "per 1/2 acre") return "per half acre";
+  return null;
 }

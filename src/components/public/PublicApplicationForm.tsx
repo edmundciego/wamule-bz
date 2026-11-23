@@ -6,7 +6,7 @@ import type { z } from "zod";
 import { buildHopkinsProjectApplicationPayload } from "../../../supabase/functions/_shared/hopkins-project-application-contract.mjs";
 import { buildPublicApplicationPayload } from "../../../supabase/functions/_shared/public-application-contract";
 import hopkinsTierSource from "../../../map-input/hopkins.tiers.json";
-import { hasHopkinsReferencePricing, resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
+import { hasHopkinsReferencePricing, hopkinsPriceUnit, resolveHopkinsReferencePrice } from "../../lib/referencePlotPricing.mjs";
 import { usePublicApplicationPlots, type PublicOutlineOption, type PublicParcelOption } from "../../lib/publicApplicationPlots";
 import { getPublicApplicationAccess, type PublicSiteData } from "../../lib/publicSiteExperience";
 import { submitPublicFunction } from "../../lib/publicSubmission";
@@ -122,7 +122,7 @@ export function PublicApplicationForm({
     const outline = outlines.find((item) => item.ref === ref);
     if (!outline) return [];
     const price = showReferencePrices ? resolveHopkinsReferencePrice(outline.tierKey, hopkinsTierSource) : null;
-    const referencePrice = price ? [price.display, price.basis].filter(Boolean).join(" · ") : "";
+    const referencePrice = price ? [price.display, hopkinsPriceUnit(price.basis)].filter(Boolean).join(" ") : "";
     return [{ ...outline, referencePrice }];
   });
   const unverifiedSelection = projectApplication && selectedRefs.length > selectedOutlines.length;
@@ -560,7 +560,6 @@ function OutlinePreferences({ outlines, onRemove }: {
             <li key={outline.ref} className="flex items-start justify-between gap-2 rounded-md border bg-card px-3 py-2 text-sm">
               <div>
                 <p className="font-semibold">{outline.label}</p>
-                {outline.verifiedPrintedNumber ? <p className="text-xs">Verified printed plan number: {outline.verifiedPrintedNumber}</p> : null}
                 {outline.referencePrice ? <p className="text-xs">Reference price: {outline.referencePrice}</p> : null}
               </div>
               <Button type="button" variant="ghost" className="shrink-0" aria-label={`Remove ${outline.label}`} onClick={() => onRemove(outline.ref)}>Remove</Button>

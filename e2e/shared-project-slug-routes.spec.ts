@@ -254,18 +254,22 @@ test("Showcase uses the same scoped widgets and application as Regular", async (
   expect(hostnameResolutionCalls).toBe(0);
 });
 
-test("a configured project headline and plot 559 reference price survive the map to application handoff", async ({ page }) => {
+test("Hopkins shows only verified plot numbers and carries reference pricing into the application", async ({ page }, testInfo) => {
   const projectSlug = "hopkins-grove";
   const scope = { tenantSlug: projectSlug, projectSlug, phaseSlug: "initial" };
   const projectName = "Hopkins Grove";
   const projectHeadline = "A place to put down roots.";
+  const provisionalId = "50000000-0000-4000-8000-000000000032";
+  const verifiedNumber = "821";
+  const generatedLabel = "Plot 194";
+  const provisionalNumber = "945";
   let pricePublished = true;
   await page.route("**/functions/v1/get-public-site-experience**", async (route) => {
     await route.fulfill({ json: {
-      scope, projectName, phases: [{ slug: scope.phaseSlug, name: "Initial" }],
+      scope, projectName, phases: [{ slug: scope.phaseSlug, name: "Initial" }, { slug: "later", name: "Later" }],
       siteExperience: {
         templateId: "hopkins-project", headline: projectHeadline, applicationType: "project_application",
-        enabledModules: { map: true, inquiry: false, application: true, pricing: pricePublished },
+        enabledModules: { map: true, inquiry: true, application: true, pricing: pricePublished },
       },
       company: { company_name: "Ceiba", short_description: "Local map fixture." },
       publicApplication: {
@@ -276,36 +280,98 @@ test("a configured project headline and plot 559 reference price survive the map
     } });
   });
   await page.route("**/functions/v1/get-public-lots**", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("phase")).toBe(scope.phaseSlug);
     await route.fulfill({ json: {
-      tenant: { slug: scope.tenantSlug, name: "Ceiba" },
+      tenant: { slug: scope.tenantSlug, name: projectName },
       project: { slug: scope.projectSlug, name: projectName },
       phase: { slug: scope.phaseSlug, name: "Initial" },
       map_experience_mode: "demo", branding: { company_name: "Ceiba" },
       parcels: [],
       features: [{
-        map_feature_ref: outlineId, demo_label: "PLAN-559", source_tier_key: "premium",
-        source_printed_lot_number_candidate: "559", source_printed_lot_number_status: "source-image-cross-checked",
+        map_feature_ref: outlineId, demo_label: generatedLabel, source_tier_key: "premium",
+        source_printed_lot_number_candidate: verifiedNumber, source_printed_lot_number_status: "source-image-cross-checked",
         map_polygon: [{ x: 15, y: 15 }, { x: 35, y: 15 }, { x: 35, y: 35 }, { x: 15, y: 35 }],
+      }, {
+        map_feature_ref: provisionalId, demo_label: "Plot 195", source_tier_key: "standard",
+        source_printed_lot_number_candidate: provisionalNumber, source_printed_lot_number_status: "ocr-match-pending-human-review",
+        map_polygon: [{ x: 55, y: 15 }, { x: 75, y: 15 }, { x: 75, y: 35 }, { x: 55, y: 35 }],
       }],
     } });
   });
 
   await page.goto("/p/hopkins-grove/hopkins-grove?phase=initial");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(projectHeadline);
+  await expect(page.getByRole("combobox", { name: "Project phase" })).toHaveCount(0);
   const map = page.getByRole("region", { name: "Explore the project map" });
-  await map.getByRole("textbox", { name: "Search source number candidates or generated map references" }).fill("559");
-  await map.getByRole("button", { name: /Select generated map reference PLAN-559/ }).click();
-  const price = /BZD 30,000\s*·\s*per 1\/4 acre/i;
-  await expect(map.getByRole("complementary", { name: "Map details and source price guide" }).getByText(price).last()).toBeVisible();
-  await map.getByRole("button", { name: "Apply with this plot" }).click();
+  await expect(map.getByLabel("Demo map")).toHaveCount(0);
+  const legend = map.getByTestId("hopkins-pricing-legend");
+  await expect(legend).toHaveJSProperty("open", true);
+  await expect(legend.getByRole("listitem")).toHaveCount(7);
+  const lastCommercialPrice = legend.getByText("BZD 125,000");
+  await lastCommercialPrice.scrollIntoViewIfNeeded();
+  await expect(lastCommercialPrice).toBeInViewport();
+
+  const search = map.getByRole("textbox", { name: "Search plots" });
+  for (const hiddenNumber of ["194", provisionalNumber]) {
+    await search.fill(hiddenNumber);
+    await expect(map.getByText("No matching plots.")).toBeVisible();
+  }
+  await search.fill(verifiedNumber);
+  const verifiedResult = map.getByRole("button", { name: "Select Plot 821", exact: true });
+  await expect(verifiedResult).toBeVisible();
+  await search.press("ArrowDown");
+  await expect(verifiedResult).toBeFocused();
+  await verifiedResult.press("Enter");
+  const plotDetails = map.getByRole("region", { name: "Details for Plot 821" });
+  await expect(plotDetails).toBeFocused();
+  await expect(plotDetails.getByRole("heading")).toHaveText("Plot 821");
+  await expect(plotDetails.getByText("Premium Interior", { exact: true })).toBeVisible();
+  await expect(plotDetails.locator("dd span[aria-hidden]")).toHaveCSS("background-color", "rgb(246, 202, 187)");
+  const price = "BZD 30,000 per quarter acre";
+  await expect(plotDetails.getByText(price, { exact: true })).toBeVisible();
+  await expect(plotDetails).not.toContainText(generatedLabel);
+  await expect(plotDetails).not.toContainText(/OCR status|Source tier/);
+  await expect(plotDetails).toContainText("Printed plan numbers are shown only where the source outline can be matched clearly. Generated map references remain separate, and neither implies sale eligibility.");
+
+  await plotDetails.getByRole("button", { name: "Get more info about this plot" }).click();
+  const inquiry = page.getByRole("dialog");
+  await expect(inquiry.getByRole("heading")).toHaveText("Ask about Plot 821");
+  await inquiry.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  await plotDetails.getByRole("button", { name: "Apply with this plot" }).click();
   const selection = page.getByRole("status", { name: "Selected map outlines" });
-  await expect(selection).toContainText("PLAN-559");
+  await expect(selection).toContainText("Plot 821");
+  await expect(selection).not.toContainText(generatedLabel);
   await expect(selection).toContainText(price);
 
+  await page.goto("/p/hopkins-grove/hopkins-grove/map?phase=initial");
+  await expect(page.getByRole("combobox", { name: "Project phase" })).toHaveCount(0);
+  await expect(page.getByTestId("hopkins-pricing-legend")).toHaveJSProperty("open", true);
+  await page.screenshot({ path: testInfo.outputPath("hopkins-price-guide.png") });
+  const options = page.getByRole("listbox", { name: "Hopkins Grove plots" });
+  await options.getByRole("option", { name: "Select Plot 821", exact: true }).click();
+  const standaloneDetails = page.getByRole("region", { name: "Details for Plot 821" });
+  await expect(standaloneDetails).toBeVisible();
+  for (const name of ["Zoom to Plot 821", "Get more info about this plot", "Apply with this plot"]) {
+    const action = standaloneDetails.getByRole("button", { name, exact: true });
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toBeInViewport();
+  }
+  await expect.poll(() => new URL(page.url()).searchParams.get("feature")).toBe(outlineId);
+  expect(new URL(page.url()).searchParams.has("lot")).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath("hopkins-plot-821.png") });
+
+  await page.goto(`/p/hopkins-grove/hopkins-grove/map?phase=initial&feature=${provisionalId}`);
+  const unnumbered = page.getByRole("region", { name: "Details for Map plot" });
+  await expect(unnumbered.getByRole("heading")).toHaveText("Map plot");
+  await expect(unnumbered).not.toContainText(/945|195/);
+  await expect(options.getByRole("option", { name: "Select Map plot", exact: true })).toHaveCount(1);
+
   pricePublished = false;
-  await page.reload();
-  await expect(selection).toContainText("PLAN-559");
+  await page.goto("/p/hopkins-grove/hopkins-grove?phase=initial");
+  await expect(selection).toContainText("Plot 821");
   await expect(selection).not.toContainText("BZD 30,000");
+  await expect(page.getByTestId("hopkins-pricing-legend")).toHaveCount(0);
 });
 
 test("the original verified /apply page keeps lot selection, payment preference, and review", async ({ page, baseURL }) => {

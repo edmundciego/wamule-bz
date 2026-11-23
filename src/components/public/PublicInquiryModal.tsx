@@ -14,6 +14,7 @@ interface PublicInquiryModalProps {
   tenantName: string;
   lotRef?: string;
   mapFeatureRef?: string;
+  mapPlotLabel?: string;
   lotNumber: string;
   /** Reserved lots open in waitlist mode: no availability promise anywhere. */
   waitlist?: boolean;
@@ -32,7 +33,8 @@ function fallbackUuid(): string {
   });
 }
 
-export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostname, tenantName, lotRef, mapFeatureRef, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostname, tenantName, lotRef, mapFeatureRef, mapPlotLabel, lotNumber, waitlist = false, onClose }: PublicInquiryModalProps) {
+  const outlineSubject = mapPlotLabel ?? `mapped outline ${lotNumber}`;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -40,7 +42,7 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
   const [otherReason, setOtherReason] = useState("");
   const [message, setMessage] = useState(
     mapFeatureRef
-      ? `I have a question about mapped outline ${lotNumber}`
+      ? `I have a question about ${outlineSubject}`
       : waitlist ? `I would like to join the waitlist for Lot ${lotNumber}` : `I am interested in reserving Lot ${lotNumber}`,
   );
   const [submitting, setSubmitting] = useState(false);
@@ -169,7 +171,7 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
               {mapFeatureRef
-                ? `The development team will follow up about your question on mapped outline ${lotNumber}. This map feature is not a saleable inventory listing.`
+                ? `The development team will follow up about your question on ${outlineSubject}. This map feature is not a saleable inventory listing.`
                 : waitlist
                 ? `We'll contact you if Lot ${lotNumber} becomes available. Joining the waitlist does not reserve the lot.`
                 : `The development team will reach out to you shortly about Lot ${lotNumber}.`}
@@ -183,7 +185,7 @@ export function PublicInquiryModal({ tenantSlug, projectSlug, phaseSlug, hostnam
             <div>
               <h2 id={titleId} className="font-display text-xl font-semibold text-primary">
                 {mapFeatureRef
-                  ? `Ask About Mapped Outline ${lotNumber}`
+                  ? mapPlotLabel ? `Ask about ${mapPlotLabel}` : `Ask About Mapped Outline ${lotNumber}`
                   : waitlist ? `Join the Waitlist for Lot ${lotNumber}` : `Inquire About Lot ${lotNumber}`}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">{tenantName}</p>
